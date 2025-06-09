@@ -31,7 +31,7 @@ Syn2 allows you to create synthetic sensors using mathematical equations with an
 ⚠️ **All synthetic sensors MUST have unique IDs** - the package uses these for all internal operations:
 
 Use sensor attributes the way HA new architecture uses them as defined in developer_attribute_readme.md
-Use modern Poetry (poetry env activate, poetry install --with dev, poetry run, poetry shell is deprectated, etc.)
+Use modern Poetry (poetry env activate, poetry install --with dev, poetry run, poetry shell is deprecated, etc.)
 
 - **Entity ID Generation**: `sensor.syn2_{unique_id}` or `sensor.syn2_{sensor_id}_{formula_id}`
 - **Service Operations**: All services accept `sensor_id` or `entity_id`, never friendly names
