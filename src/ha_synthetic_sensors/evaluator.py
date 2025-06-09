@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
@@ -88,6 +89,62 @@ class Evaluator(FormulaEvaluator):
         self._error_count: dict[str, int] = {}
         self._max_errors = 5
 
+    def _map_range(
+        self,
+        x: float,
+        in_min: float,
+        in_max: float,
+        out_min: float,
+        out_max: float,
+    ) -> float:
+        """Map a value from one range to another range.
+
+        Args:
+            x: Input value
+            in_min: Minimum of input range
+            in_max: Maximum of input range
+            out_min: Minimum of output range
+            out_max: Maximum of output range
+
+        Returns:
+            Mapped value in output range
+        """
+        if in_max == in_min:
+            return out_min
+        return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
+    def _percent(self, part: float, whole: float) -> float:
+        """Calculate percentage of part relative to whole.
+
+        Args:
+            part: The part value
+            whole: The whole value
+
+        Returns:
+            Percentage (0-100)
+        """
+        return (part / whole) * 100 if whole != 0 else 0
+
+    def _avg(self, *values) -> float:
+        """Calculate the average (mean) of a list of values.
+
+        Args:
+            *values: Variable number of numeric values
+
+        Returns:
+            Average value
+        """
+        if not values:
+            return 0.0
+        # Handle case where a single iterable is passed
+        if (
+            len(values) == 1
+            and hasattr(values[0], "__iter__")
+            and not isinstance(values[0], str)
+        ):
+            values = values[0]
+        return sum(values) / len(values)
+
     def evaluate_formula(
         self, config: FormulaConfig, context: dict[str, ContextValue] | None = None
     ) -> EvaluationResult:
@@ -107,7 +164,9 @@ class Evaluator(FormulaEvaluator):
                 }
 
             # Check cache first
-            cached_result = self._get_cached_result(formula_name, config.formula)
+            cached_result = self._get_cached_result(
+                formula_name, config.formula, context
+            )
             if cached_result is not None:
                 return {"success": True, "value": cached_result, "cached": True}
 
@@ -130,6 +189,7 @@ class Evaluator(FormulaEvaluator):
             evaluator = SimpleEval()
             evaluator.names = eval_context
             evaluator.functions = {
+                # Basic mathematical functions (existing)
                 "abs": abs,
                 "min": min,
                 "max": max,
@@ -137,13 +197,23 @@ class Evaluator(FormulaEvaluator):
                 "sum": sum,
                 "float": float,
                 "int": int,
+                # Phase 1: High Priority Functions
+                "sqrt": math.sqrt,
+                "pow": pow,
+                "floor": math.floor,
+                "ceil": math.ceil,
+                "clamp": lambda x, low, high: max(low, min(x, high)),
+                "map": self._map_range,
+                "percent": self._percent,
+                "avg": self._avg,
+                "mean": self._avg,
             }
 
             # Evaluate the formula
             result = evaluator.eval(config.formula)
 
             # Cache the result
-            self._cache_result(formula_name, config.formula, result)
+            self._cache_result(formula_name, config.formula, result, context)
 
             # Reset error count on success
             self._error_count.pop(formula_name, None)
@@ -242,6 +312,16 @@ class Evaluator(FormulaEvaluator):
             "dict",
             "set",
             "tuple",
+            # Phase 1 mathematical functions
+            "sqrt",
+            "pow",
+            "floor",
+            "ceil",
+            "clamp",
+            "map",
+            "percent",
+            "avg",
+            "mean",
         }
 
         for var in variable_matches:
@@ -400,9 +480,15 @@ class Evaluator(FormulaEvaluator):
         )
         return eval_context
 
-    def _get_cached_result(self, formula_name: str, formula: str) -> Any:
+    def _get_cached_result(
+        self,
+        formula_name: str,
+        formula: str,
+        context: dict[str, ContextValue] | None = None,
+    ) -> Any:
         """Get cached result if valid."""
-        cache_key = f"{formula_name}:{formula}"
+        context_key = self._get_context_key(context)
+        cache_key = f"{formula_name}:{formula}:{context_key}"
         if cache_key in self._evaluation_cache:
             result, timestamp = self._evaluation_cache[cache_key]
             if datetime.now() - timestamp < self._cache_ttl:
@@ -412,10 +498,27 @@ class Evaluator(FormulaEvaluator):
                 del self._evaluation_cache[cache_key]
         return None
 
-    def _cache_result(self, formula_name: str, formula: str, result: Any) -> None:
+    def _cache_result(
+        self,
+        formula_name: str,
+        formula: str,
+        result: Any,
+        context: dict[str, ContextValue] | None = None,
+    ) -> None:
         """Cache evaluation result with timestamp."""
-        cache_key = f"{formula_name}:{formula}"
+        context_key = self._get_context_key(context)
+        cache_key = f"{formula_name}:{formula}:{context_key}"
         self._evaluation_cache[cache_key] = (result, datetime.now())
+
+    def _get_context_key(self, context: dict[str, ContextValue] | None) -> str:
+        """Generate a consistent cache key from context values."""
+        if not context:
+            return "no_context"
+
+        # Sort by key to ensure consistent ordering
+        sorted_items = sorted(context.items())
+        context_parts = [f"{k}={v}" for k, v in sorted_items]
+        return "_".join(context_parts)
 
     def _should_skip_evaluation(self, formula_name: str) -> bool:
         """Check if formula should be skipped due to repeated errors."""
