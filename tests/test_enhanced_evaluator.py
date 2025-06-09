@@ -22,8 +22,9 @@ class TestEvaluator:
         """Test evaluator initialization."""
         evaluator = Evaluator(mock_hass)
         assert evaluator._hass == mock_hass
-        assert evaluator._dependency_cache == {}
-        assert evaluator._evaluation_cache == {}
+        assert evaluator._cache is not None
+        assert evaluator._dependency_parser is not None
+        assert evaluator._math_functions is not None
 
     def test_extract_variables(self, mock_hass):
         """Test variable extraction from formulas."""

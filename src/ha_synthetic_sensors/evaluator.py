@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import logging
-import math
 import re
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
 from typing import Any, Callable, NotRequired, TypedDict, Union
 
 from homeassistant.core import HomeAssistant
 from simpleeval import SimpleEval
 
+from .cache import CacheConfig, FormulaCache
 from .config_manager import FormulaConfig
+from .dependency_parser import DependencyParser
+from .math_functions import MathFunctions
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,79 +72,26 @@ class FormulaEvaluator(ABC):
 
 
 class Evaluator(FormulaEvaluator):
-    """formula evaluator with dependency tracking and caching."""
+    """Enhanced formula evaluator with dependency tracking and optimized caching."""
 
-    def __init__(self, hass: HomeAssistant):
+    def __init__(self, hass: HomeAssistant, cache_config: CacheConfig | None = None):
         """Initialize the enhanced formula evaluator.
 
         Args:
             hass: Home Assistant instance
+            cache_config: Optional cache configuration
 
         """
         self._hass = hass
-        # Don't create name resolver here - create it per evaluation with
-        # proper variables
-        self._dependency_cache: dict[str, set[str]] = {}
-        self._evaluation_cache: dict[str, tuple] = {}  # (result, timestamp)
-        self._cache_ttl = timedelta(seconds=30)  # Cache for 30 seconds
+
+        # Initialize optimized components
+        self._cache = FormulaCache(cache_config)
+        self._dependency_parser = DependencyParser()
+        self._math_functions = MathFunctions.get_builtin_functions()
+
+        # Error tracking for circuit breaker pattern
         self._error_count: dict[str, int] = {}
         self._max_errors = 5
-
-    def _map_range(
-        self,
-        x: float,
-        in_min: float,
-        in_max: float,
-        out_min: float,
-        out_max: float,
-    ) -> float:
-        """Map a value from one range to another range.
-
-        Args:
-            x: Input value
-            in_min: Minimum of input range
-            in_max: Maximum of input range
-            out_min: Minimum of output range
-            out_max: Maximum of output range
-
-        Returns:
-            Mapped value in output range
-        """
-        if in_max == in_min:
-            return out_min
-        return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
-
-    def _percent(self, part: float, whole: float) -> float:
-        """Calculate percentage of part relative to whole.
-
-        Args:
-            part: The part value
-            whole: The whole value
-
-        Returns:
-            Percentage (0-100)
-        """
-        return (part / whole) * 100 if whole != 0 else 0
-
-    def _avg(self, *values) -> float:
-        """Calculate the average (mean) of a list of values.
-
-        Args:
-            *values: Variable number of numeric values
-
-        Returns:
-            Average value
-        """
-        if not values:
-            return 0.0
-        # Handle case where a single iterable is passed
-        if (
-            len(values) == 1
-            and hasattr(values[0], "__iter__")
-            and not isinstance(values[0], str)
-        ):
-            values = values[0]
-        return sum(values) / len(values)
 
     def evaluate_formula(
         self, config: FormulaConfig, context: dict[str, ContextValue] | None = None
@@ -164,13 +112,13 @@ class Evaluator(FormulaEvaluator):
                 }
 
             # Check cache first
-            cached_result = self._get_cached_result(
-                formula_name, config.formula, context
+            cached_result = self._cache.get_result(
+                config.formula, context, formula_name
             )
             if cached_result is not None:
                 return {"success": True, "value": cached_result, "cached": True}
 
-            # Extract dependencies using enhanced method instead of config.dependencies
+            # Extract dependencies using optimized parser
             dependencies = self.get_formula_dependencies(config.formula)
 
             # Validate dependencies are available
@@ -185,35 +133,16 @@ class Evaluator(FormulaEvaluator):
             # Build evaluation context
             eval_context = self._build_evaluation_context(dependencies, context)
 
-            # Create evaluator
+            # Create evaluator with mathematical functions
             evaluator = SimpleEval()
             evaluator.names = eval_context
-            evaluator.functions = {
-                # Basic mathematical functions (existing)
-                "abs": abs,
-                "min": min,
-                "max": max,
-                "round": round,
-                "sum": sum,
-                "float": float,
-                "int": int,
-                # Phase 1: High Priority Functions
-                "sqrt": math.sqrt,
-                "pow": pow,
-                "floor": math.floor,
-                "ceil": math.ceil,
-                "clamp": lambda x, low, high: max(low, min(x, high)),
-                "map": self._map_range,
-                "percent": self._percent,
-                "avg": self._avg,
-                "mean": self._avg,
-            }
+            evaluator.functions = self._math_functions.copy()
 
             # Evaluate the formula
             result = evaluator.eval(config.formula)
 
             # Cache the result
-            self._cache_result(formula_name, config.formula, result, context)
+            self._cache.store_result(config.formula, result, context, formula_name)
 
             # Reset error count on success
             self._error_count.pop(formula_name, None)
@@ -254,81 +183,16 @@ class Evaluator(FormulaEvaluator):
 
     def get_formula_dependencies(self, formula: str) -> set[str]:
         """Extract and return all entity dependencies from a formula."""
-        if formula in self._dependency_cache:
-            return self._dependency_cache[formula]
+        # Check cache first
+        cached_deps = self._cache.get_dependencies(formula)
+        if cached_deps is not None:
+            return cached_deps
 
-        dependencies = set()
+        # Use optimized dependency parser
+        dependencies = self._dependency_parser.extract_dependencies(formula)
 
-        # Enhanced regex patterns for different entity reference formats
-        patterns = [
-            r'entity\(["\']([^"\']+)["\']\)',  # entity("sensor.name")
-            r'state\(["\']([^"\']+)["\']\)',  # state("sensor.name")
-            # statest.sensor.name
-            r"states\.[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*",
-            r'states\[["\']([^"\']+)["\']\]',  # states["sensor.name"]
-        ]
-
-        for pattern in patterns:
-            matches = re.findall(pattern, formula)
-            dependencies.update(matches)
-
-        # Handle states.domain.entity format
-        states_pattern = r"states\.([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)"
-        states_matches = re.findall(states_pattern, formula)
-        dependencies.update(states_matches)
-
-        # Handle simple variable names (like A, B, C, hvac_upstairs, etc.)
-        # This extracts alphanumeric identifiers that are not
-        # Python keywords or functions
-        import keyword
-
-        variable_pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b"
-        variable_matches = re.findall(variable_pattern, formula)
-
-        # Filter out Python keywords, built-in functions, and common math operations
-        excluded = {
-            "if",
-            "else",
-            "and",
-            "or",
-            "not",
-            "in",
-            "is",
-            "True",
-            "False",
-            "None",
-            "abs",
-            "min",
-            "max",
-            "round",
-            "sum",
-            "float",
-            "int",
-            "len",
-            "range",
-            "str",
-            "bool",
-            "list",
-            "dict",
-            "set",
-            "tuple",
-            # Phase 1 mathematical functions
-            "sqrt",
-            "pow",
-            "floor",
-            "ceil",
-            "clamp",
-            "map",
-            "percent",
-            "avg",
-            "mean",
-        }
-
-        for var in variable_matches:
-            if var not in excluded and not keyword.iskeyword(var):
-                dependencies.add(var)
-
-        self._dependency_cache[formula] = dependencies
+        # Cache the result
+        self._cache.store_dependencies(formula, dependencies)
         return dependencies
 
     def validate_formula_syntax(self, formula: str) -> list[str]:
@@ -421,32 +285,21 @@ class Evaluator(FormulaEvaluator):
     def clear_cache(self, formula_name: str | None = None) -> None:
         """Clear evaluation cache for specific formula or all formulas."""
         if formula_name:
-            # Clear specific formula cache entries
-            keys_to_remove = [
-                k for k in self._evaluation_cache if k.startswith(formula_name)
-            ]
-            for key in keys_to_remove:
-                self._evaluation_cache.pop(key, None)
+            # For specific formula, we could implement formula-specific clearing
+            # For now, clear all as a simple implementation
+            self._cache.clear_all()
         else:
-            # Clear all caches
-            self._evaluation_cache.clear()
-            self._dependency_cache.clear()
+            self._cache.clear_all()
 
     def get_cache_stats(self) -> CacheStats:
         """Get cache statistics for monitoring."""
-        now = datetime.now()
-        valid_entries = 0
-
-        for _, (_, timestamp) in self._evaluation_cache.items():
-            if now - timestamp < self._cache_ttl:
-                valid_entries += 1
-
+        stats = self._cache.get_statistics()
         return {
-            "total_cached_formulas": len(self._dependency_cache),
-            "total_cached_evaluations": len(self._evaluation_cache),
-            "valid_cached_evaluations": valid_entries,
+            "total_cached_formulas": stats["dependency_entries"],
+            "total_cached_evaluations": stats["total_entries"],
+            "valid_cached_evaluations": stats["valid_entries"],
             "error_counts": dict(self._error_count),
-            "cache_ttl_seconds": self._cache_ttl.total_seconds(),
+            "cache_ttl_seconds": stats["ttl_seconds"],
         }
 
     def _build_evaluation_context(
@@ -480,46 +333,6 @@ class Evaluator(FormulaEvaluator):
         )
         return eval_context
 
-    def _get_cached_result(
-        self,
-        formula_name: str,
-        formula: str,
-        context: dict[str, ContextValue] | None = None,
-    ) -> Any:
-        """Get cached result if valid."""
-        context_key = self._get_context_key(context)
-        cache_key = f"{formula_name}:{formula}:{context_key}"
-        if cache_key in self._evaluation_cache:
-            result, timestamp = self._evaluation_cache[cache_key]
-            if datetime.now() - timestamp < self._cache_ttl:
-                return result
-            else:
-                # Remove expired cache entry
-                del self._evaluation_cache[cache_key]
-        return None
-
-    def _cache_result(
-        self,
-        formula_name: str,
-        formula: str,
-        result: Any,
-        context: dict[str, ContextValue] | None = None,
-    ) -> None:
-        """Cache evaluation result with timestamp."""
-        context_key = self._get_context_key(context)
-        cache_key = f"{formula_name}:{formula}:{context_key}"
-        self._evaluation_cache[cache_key] = (result, datetime.now())
-
-    def _get_context_key(self, context: dict[str, ContextValue] | None) -> str:
-        """Generate a consistent cache key from context values."""
-        if not context:
-            return "no_context"
-
-        # Sort by key to ensure consistent ordering
-        sorted_items = sorted(context.items())
-        context_parts = [f"{k}={v}" for k, v in sorted_items]
-        return "_".join(context_parts)
-
     def _should_skip_evaluation(self, formula_name: str) -> bool:
         """Check if formula should be skipped due to repeated errors."""
         return self._error_count.get(formula_name, 0) >= self._max_errors
@@ -545,58 +358,6 @@ class Evaluator(FormulaEvaluator):
 
             # Return 0 as fallback for non-numeric states
             return 0.0
-
-    def evaluate(self, formula: str, context: dict[str, Any] | None = None) -> float:
-        """Evaluate a formula with the given context.
-
-        Args:
-            formula: Formula to evaluate
-            context: Additional context variables
-
-        Returns:
-            float: Evaluation result
-        """
-        try:
-            evaluator = SimpleEval()
-            if context:
-                evaluator.names.update(context)
-            result = evaluator.eval(formula)
-            return float(result)
-        except Exception as exc:
-            _LOGGER.error("Formula evaluation failed: %s", exc)
-            return 0.0
-
-    def extract_variables(self, formula: str) -> set[str]:
-        """Extract variable names from a formula.
-
-        Args:
-            formula: Formula to analyze
-
-        Returns:
-            set: Set of variable names used in formula
-        """
-        # Simple regex-based extraction - in real implementation would be more
-        # sophisticated
-        import re
-
-        # Find potential variable names (alphanumeric + underscore, not starting
-        # with digit)
-        variables = set(re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", formula))
-
-        # Remove known built-in functions and operators
-        builtins = {"abs", "max", "min", "round", "int", "float", "str", "len", "sum"}
-        return variables - builtins
-
-    def get_dependencies(self, formula: str) -> set[str]:
-        """Get dependencies for a formula.
-
-        Args:
-            formula: Formula to analyze
-
-        Returns:
-            set: Set of dependencies
-        """
-        return self.extract_variables(formula)
 
 
 class DependencyResolver:

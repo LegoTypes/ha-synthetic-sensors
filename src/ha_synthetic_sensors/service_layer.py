@@ -371,12 +371,20 @@ class ServiceLayer:
             formula = call.data["formula"]
             context = call.data.get("context", {})
 
-            # Evaluate formula
-            result = self._evaluator.evaluate(formula, context)
+            # Create a temporary formula config for evaluation
+            from .config_manager import FormulaConfig
 
-            # Get variables and dependencies
-            variables = self._evaluator.extract_variables(formula)
-            dependencies = self._evaluator.get_dependencies(formula)
+            config = FormulaConfig(
+                id="temp_eval", name="temp_eval", formula=formula, dependencies=set()
+            )
+
+            # Evaluate formula
+            eval_result = self._evaluator.evaluate_formula(config, context)
+            result = eval_result["value"] if eval_result["success"] else 0.0
+
+            # Get dependencies (variables and dependencies are the same in this context)
+            dependencies = self._evaluator.get_formula_dependencies(formula)
+            variables = dependencies  # In this context, they're the same
 
             _LOGGER.info("Formula evaluation result: %s = %s", formula, result)
             _LOGGER.debug("Variables: %s, Dependencies: %s", variables, dependencies)
