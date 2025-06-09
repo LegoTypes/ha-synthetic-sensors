@@ -8,6 +8,7 @@ import logging
 from typing import TypedDict
 
 import voluptuous as vol
+import yaml  # type: ignore[import-untyped]
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
@@ -133,6 +134,20 @@ EVALUATE_FORMULA_SCHEMA = vol.Schema(
     }
 )
 
+VALIDATE_CONFIG_SCHEMA = vol.Schema(
+    {
+        vol.Optional("config_file"): cv.string,
+        vol.Optional("config_data"): vol.Any(cv.string, dict),
+        vol.Optional("check_entity_availability"): cv.boolean,
+    }
+)
+
+GET_SENSOR_INFO_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entity_id"): cv.entity_id,
+    }
+)
+
 
 class ServiceLayer:
     """Service layer for synthetic sensors integration."""
@@ -205,18 +220,14 @@ class ServiceLayer:
             self._domain,
             "validate_config",
             self._async_validate_config,
-            schema=RELOAD_CONFIG_SCHEMA,
+            schema=VALIDATE_CONFIG_SCHEMA,
         )
 
         self._hass.services.async_register(
             self._domain,
             "get_sensor_info",
             self._async_get_sensor_info,
-            schema=vol.Schema(
-                {
-                    vol.Optional("entity_id"): cv.entity_id,
-                }
-            ),
+            schema=GET_SENSOR_INFO_SCHEMA,
         )
 
         _LOGGER.info("Registered %s services", self._domain)
@@ -408,27 +419,136 @@ class ServiceLayer:
     async def _async_validate_config(self, call: ServiceCall) -> None:
         """Handle validate config service call."""
         try:
-            # Validate current configuration
-            issues = self._config_manager.validate_configuration()
+            config_file = call.data.get("config_file")
+            config_data = call.data.get("config_data")
+            check_entity_availability = call.data.get(
+                "check_entity_availability", False
+            )
 
-            if issues["errors"]:
-                _LOGGER.error("Configuration validation errors: %s", issues["errors"])
+            validation_result = {}
+
+            if config_file:
+                # Validate config file
+                file_result = self._config_manager.validate_config_file(config_file)
+                validation_result.update(file_result)
+            elif config_data:
+                # Validate raw config data
+                yaml_data = None
+                if isinstance(config_data, str):
+                    try:
+                        yaml_data = yaml.safe_load(config_data)
+                    except yaml.YAMLError as exc:
+                        validation_result = {
+                            "valid": False,
+                            "errors": [
+                                {
+                                    "message": f"YAML parsing error: {exc}",
+                                    "path": "config_data",
+                                    "severity": "error",
+                                    "schema_path": "",
+                                    "suggested_fix": "Check YAML syntax and formatting",
+                                }
+                            ],
+                            "warnings": [],
+                            "schema_version": "unknown",
+                        }
+                else:
+                    yaml_data = config_data
+
+                if yaml_data is not None and "valid" not in validation_result:
+                    schema_result = self._config_manager.validate_yaml_data(yaml_data)
+                    validation_result.update(schema_result)
+            else:
+                # Validate current configuration
+                current_issues = self._config_manager.validate_configuration()
+                validation_result = {
+                    "valid": len(current_issues["errors"]) == 0,
+                    "errors": [
+                        {
+                            "message": error,
+                            "path": "current_config",
+                            "severity": "error",
+                            "schema_path": "",
+                            "suggested_fix": "",
+                        }
+                        for error in current_issues["errors"]
+                    ],
+                    "warnings": [
+                        {
+                            "message": warning,
+                            "path": "current_config",
+                            "severity": "warning",
+                            "schema_path": "",
+                            "suggested_fix": "",
+                        }
+                        for warning in current_issues["warnings"]
+                    ],
+                    "schema_version": "current",
+                }
+
+            # Additional entity availability check if requested
+            if check_entity_availability and validation_result.get("valid", False):
+                # This would require integration with Home Assistant to check entities
+                # For now, just add a warning that this feature needs implementation
+                validation_result.setdefault("warnings", []).append(
+                    {
+                        "message": "Entity availability checking not yet implemented",
+                        "path": "check_entity_availability",
+                        "severity": "warning",
+                        "schema_path": "",
+                        "suggested_fix": "This feature will be implemented in future",
+                    }
+                )
+
+            # Log validation results
+            if validation_result["errors"]:
+                _LOGGER.error(
+                    "Configuration validation errors: %s",
+                    [error["message"] for error in validation_result["errors"]],
+                )
             else:
                 _LOGGER.info("Configuration validation passed")
 
-            if issues["warnings"]:
+            if validation_result["warnings"]:
                 _LOGGER.warning(
-                    "Configuration validation warnings: %s", issues["warnings"]
+                    "Configuration validation warnings: %s",
+                    [warning["message"] for warning in validation_result["warnings"]],
                 )
 
             # Store validation results
             if "synthetic_sensors_validation" not in self._hass.data:
                 self._hass.data["synthetic_sensors_validation"] = {}
 
-            self._hass.data["synthetic_sensors_validation"]["last_result"] = issues
+            self._hass.data["synthetic_sensors_validation"][
+                "last_result"
+            ] = validation_result
+
+            # Fire event with validation results
+            self._hass.bus.async_fire(
+                "synthetic_sensors_config_validated",
+                {
+                    "valid": validation_result["valid"],
+                    "error_count": len(validation_result["errors"]),
+                    "warning_count": len(validation_result["warnings"]),
+                    "schema_version": validation_result.get(
+                        "schema_version", "unknown"
+                    ),
+                },
+            )
 
         except Exception as e:
             _LOGGER.error("Failed to validate configuration: %s", e)
+            # Fire error event
+            self._hass.bus.async_fire(
+                "synthetic_sensors_config_validated",
+                {
+                    "valid": False,
+                    "error_count": 1,
+                    "warning_count": 0,
+                    "schema_version": "unknown",
+                    "validation_error": str(e),
+                },
+            )
 
     async def _async_get_sensor_info(self, call: ServiceCall) -> None:
         """Handle get sensor info service call."""

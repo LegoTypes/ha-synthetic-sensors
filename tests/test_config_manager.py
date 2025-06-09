@@ -235,8 +235,19 @@ class TestConfigManager:
         """Test file modification detection."""
         manager = ConfigManager(mock_hass)
 
+        # Create a valid configuration with at least one sensor
+        valid_config = {
+            "version": "1.0",
+            "sensors": [
+                {
+                    "unique_id": "test_sensor",
+                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+                }
+            ],
+        }
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            yaml.dump({"sensors": []}, f)
+            yaml.dump(valid_config, f)
             temp_path = f.name
 
         try:

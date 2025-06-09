@@ -16,6 +16,8 @@ import yaml  # type: ignore[import-untyped]
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 
+from .schema_validator import validate_yaml_config
+
 _LOGGER = logging.getLogger(__name__)
 
 # Type alias for attribute values (allows complex types for formula metadata)
@@ -213,9 +215,36 @@ class ConfigManager:
                 self._config = Config()
                 return self._config
 
+            # Perform schema validation first
+            schema_result = validate_yaml_config(yaml_data)
+
+            # Log warnings
+            for warning in schema_result["warnings"]:
+                self._logger.warning(
+                    "Config warning at %s: %s", warning.path, warning.message
+                )
+                if warning.suggested_fix:
+                    self._logger.warning("Suggested fix: %s", warning.suggested_fix)
+
+            # Check for schema errors
+            if not schema_result["valid"]:
+                error_messages = []
+                for error in schema_result["errors"]:
+                    msg = f"{error.path}: {error.message}"
+                    if error.suggested_fix:
+                        msg += f" (Suggested fix: {error.suggested_fix})"
+                    error_messages.append(msg)
+
+                error_msg = (
+                    f"Configuration schema validation failed: "
+                    f"{'; '.join(error_messages)}"
+                )
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
+
             self._config = self._parse_yaml_config(yaml_data)
 
-            # Validate the loaded configuration
+            # Validate the loaded configuration (additional semantic validation)
             errors = self._config.validate()
             if errors:
                 error_msg = f"Configuration validation failed: {', '.join(errors)}"
@@ -637,3 +666,138 @@ class ConfigManager:
             return False
         except Exception:
             return False
+
+    def validate_yaml_data(self, yaml_data: dict[str, Any]) -> dict[str, Any]:
+        """Validate raw YAML configuration data and return detailed results.
+
+        Args:
+            yaml_data: Raw configuration dictionary from YAML
+
+        Returns:
+            Dictionary with validation results:
+            {
+                "valid": bool,
+                "errors": list of error dictionaries,
+                "warnings": list of warning dictionaries,
+                "schema_version": str
+            }
+        """
+        from .schema_validator import validate_yaml_config
+
+        schema_result = validate_yaml_config(yaml_data)
+
+        # Convert ValidationError objects to dictionaries for JSON serialization
+        errors = [
+            {
+                "message": error.message,
+                "path": error.path,
+                "severity": error.severity.value,
+                "schema_path": error.schema_path,
+                "suggested_fix": error.suggested_fix,
+            }
+            for error in schema_result["errors"]
+        ]
+
+        warnings = [
+            {
+                "message": warning.message,
+                "path": warning.path,
+                "severity": warning.severity.value,
+                "schema_path": warning.schema_path,
+                "suggested_fix": warning.suggested_fix,
+            }
+            for warning in schema_result["warnings"]
+        ]
+
+        return {
+            "valid": schema_result["valid"],
+            "errors": errors,
+            "warnings": warnings,
+            "schema_version": yaml_data.get("version", "1.0"),
+        }
+
+    def validate_config_file(self, config_path: str | Path) -> dict[str, Any]:
+        """Validate a YAML configuration file and return detailed results.
+
+        Args:
+            config_path: Path to YAML configuration file
+
+        Returns:
+            Dictionary with validation results and file info
+        """
+        path = Path(config_path)
+
+        if not path.exists():
+            return {
+                "valid": False,
+                "errors": [
+                    {
+                        "message": f"Configuration file not found: {path}",
+                        "path": "file",
+                        "severity": "error",
+                        "schema_path": "",
+                        "suggested_fix": "Check file path and ensure file exists",
+                    }
+                ],
+                "warnings": [],
+                "schema_version": "unknown",
+                "file_path": str(path),
+            }
+
+        try:
+            with open(path, encoding="utf-8") as file:
+                yaml_data = yaml.safe_load(file)
+
+            if not yaml_data:
+                return {
+                    "valid": False,
+                    "errors": [
+                        {
+                            "message": "Configuration file is empty",
+                            "path": "file",
+                            "severity": "error",
+                            "schema_path": "",
+                            "suggested_fix": "Add configuration content to the file",
+                        }
+                    ],
+                    "warnings": [],
+                    "schema_version": "unknown",
+                    "file_path": str(path),
+                }
+
+            result = self.validate_yaml_data(yaml_data)
+            result["file_path"] = str(path)
+            return result
+
+        except yaml.YAMLError as exc:
+            return {
+                "valid": False,
+                "errors": [
+                    {
+                        "message": f"YAML parsing error: {exc}",
+                        "path": "file",
+                        "severity": "error",
+                        "schema_path": "",
+                        "suggested_fix": "Check YAML syntax and formatting",
+                    }
+                ],
+                "warnings": [],
+                "schema_version": "unknown",
+                "file_path": str(path),
+            }
+        except Exception as exc:
+            return {
+                "valid": False,
+                "errors": [
+                    {
+                        "message": f"File reading error: {exc}",
+                        "path": "file",
+                        "severity": "error",
+                        "schema_path": "",
+                        "suggested_fix": "Check file permissions and encoding",
+                    }
+                ],
+                "warnings": [],
+                "schema_version": "unknown",
+                "file_path": str(path),
+            }

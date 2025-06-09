@@ -529,18 +529,11 @@ class Evaluator(FormulaEvaluator):
                             state.state,
                         )
                         eval_context[var] = 0.0
-        # Add common functions
-        eval_context.update(
-            {
-                "abs": abs,
-                "min": min,
-                "max": max,
-                "round": round,
-                "sum": sum,
-                "float": float,
-                "int": int,
-            }
-        )
+
+        # Add mathematical functions
+        from .math_functions import MathFunctions
+
+        eval_context.update(MathFunctions.get_builtin_functions())
         return eval_context
 
     def _increment_transitory_error_count(self, formula_name: str) -> None:
