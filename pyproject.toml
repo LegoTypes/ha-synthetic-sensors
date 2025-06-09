@@ -1,0 +1,93 @@
+[tool.poetry]
+name = "ha-synthetic-sensors"
+version = "1.0.0"
+description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
+authors = ["SpanPanel"]
+readme = "README.md"
+packages = [
+    {include = "ha_synthetic_sensors", from = "src"},
+]
+
+[tool.poetry.urls]
+Homepage = "https://github.com/SpanPanel/ha-synthetic-sensors"
+Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
+
+[tool.poetry.dependencies]
+python = ">=3.13.2,<4.0"
+# Core dependencies for synthetic sensors
+pyyaml = "^6.0.0"
+simpleeval = "^1.0.2"
+voluptuous = ">=0.15.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.26.0"
+pytest-cov = "^6.0.0"
+bandit = "^1.8.0"
+twine = "^6.0.1"
+pre-commit = "^4.0.0"
+ruff = "^0.11.0"
+mypy = "^1.15.0"
+types-PyYAML = "^6.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+exclude = [
+    ".*_cache/",
+    "dist/",
+    "venv/",
+    ".venv/",
+]
+
+[tool.ruff.lint]
+select = ["F", "I", "UP", "E", "W"]
+
+[tool.mypy]
+exclude = [
+    "tests/",
+    "docs/",
+    ".*_cache/",
+    "dist/",
+    "venv/",
+    ".venv/",
+]
+ignore_missing_imports = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+warn_return_any = false
+warn_unused_ignores = false
+no_implicit_optional = false
+strict_optional = false
+python_version = "3.13"
+
+[tool.coverage.run]
+source = ["src/ha_synthetic_sensors"]
+omit = [
+    "tests/*",
+    "*/tests/*",
+    "*/.venv/*",
+    "*/venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests"]

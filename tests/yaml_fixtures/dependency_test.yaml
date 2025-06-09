@@ -1,0 +1,93 @@
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+  enabled: true
+
+sensors:
+  - unique_id: "base_sensor_a"
+    name: "Base Sensor A"
+    description: "Base sensor for dependency testing"
+    formulas:
+      - id: "base_a_formula"
+        name: "Base A Formula"
+        formula: "external_input_1"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        variables:
+          external_input_1: "sensor.external_source_1"
+    enabled: true
+
+  - unique_id: "base_sensor_b"
+    name: "Base Sensor B"
+    description: "Base sensor B for dependency testing"
+    formulas:
+      - id: "base_b_formula"
+        name: "Base B Formula"
+        formula: "external_input_2 * 2"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        variables:
+          external_input_2: "sensor.external_source_2"
+    enabled: true
+
+  - unique_id: "dependent_sensor_c"
+    name: "Dependent Sensor C"
+    description: "Sensor that depends on A and B"
+    formulas:
+      - id: "dependent_c_formula"
+        name: "Dependent C Formula"
+        formula: "base_a + base_b"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        variables:
+          base_a: "sensor.syn2_base_sensor_a_base_a_formula"
+          base_b: "sensor.syn2_base_sensor_b_base_b_formula"
+    enabled: true
+
+  - unique_id: "complex_dependent_d"
+    name: "Complex Dependent D"
+    description: "Complex sensor with multiple dependencies"
+    formulas:
+      - id: "complex_d_formula"
+        name: "Complex D Formula"
+        formula: "(base_a * 0.6) + (base_b * 0.4) + dependent_c"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        variables:
+          base_a: "sensor.syn2_base_sensor_a_base_a_formula"
+          base_b: "sensor.syn2_base_sensor_b_base_b_formula"
+          dependent_c: "sensor.syn2_dependent_sensor_c_dependent_c_formula"
+    enabled: true
+
+  - unique_id: "circular_test_e"
+    name: "Circular Test E"
+    description: "Sensor for testing circular dependency detection"
+    formulas:
+      - id: "circular_e_formula"
+        name: "Circular E Formula"
+        formula: "circular_f + external_input_1"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        variables:
+          circular_f: "sensor.syn2_circular_test_f_circular_f_formula"
+          external_input_1: "sensor.external_source_1"
+    enabled: true
+
+  - unique_id: "circular_test_f"
+    name: "Circular Test F"
+    description: "Sensor that creates circular dependency with E"
+    formulas:
+      - id: "circular_f_formula"
+        name: "Circular F Formula"
+        formula: "circular_e + 10"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        variables:
+          circular_e: "sensor.syn2_circular_test_e_circular_e_formula"
+    enabled: true

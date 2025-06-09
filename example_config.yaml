@@ -1,0 +1,285 @@
+# Example Synthetic Sensors Configuration
+# This file demonstrates the capabilities of the ha-synthetic-sensors package
+
+version: "1.0"
+
+sensors:
+  # Basic Energy Cost Analysis
+  - name: "energy_cost_analysis"
+    friendly_name: "Energy Cost Analysis"
+    description: "Real-time energy cost calculations based on current usage and rates"
+    category: "energy"
+    enabled: true
+    update_interval: 30
+    formulas:
+      - name: "current_cost_rate"
+        formula: "current_power * electricity_rate / 1000"
+        unit_of_measurement: "¢/h"
+        device_class: "monetary"
+        state_class: "measurement"
+        icon: "mdi:currency-usd"
+        attributes:
+          calculation_type: "instantaneous"
+          precision: 2
+
+      - name: "daily_projected_cost"
+        formula: "current_cost_rate * 24"
+        unit_of_measurement: "¢"
+        device_class: "monetary"
+        icon: "mdi:calendar-today"
+        attributes:
+          calculation_type: "projected"
+          projection_hours: 24
+
+  # HVAC Efficiency Monitoring
+  - name: "hvac_system_analysis"
+    friendly_name: "HVAC System Analysis"
+    description: "Efficiency and performance metrics for HVAC system"
+    category: "hvac"
+    enabled: true
+    formulas:
+      - name: "total_hvac_power"
+        formula: "hvac_upstairs + hvac_downstairs + hvac_basement"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        icon: "mdi:hvac"
+
+      - name: "hvac_efficiency_ratio"
+        formula: "(cooling_output / total_hvac_power * 100) if total_hvac_power > 0 else 0"
+        unit_of_measurement: "%"
+        state_class: "measurement"
+        icon: "mdi:gauge"
+
+      - name: "hvac_load_distribution"
+        formula: "max(hvac_upstairs, hvac_downstairs, hvac_basement) / total_hvac_power * 100"
+        unit_of_measurement: "%"
+        state_class: "measurement"
+        attributes:
+          metric_type: "load_balance"
+
+  # Solar Energy Analytics
+  - name: "solar_analytics"
+    friendly_name: "Solar Energy Analytics"
+    description: "Advanced solar energy production and consumption analysis"
+    category: "solar"
+    enabled: true
+    formulas:
+      - name: "solar_production_positive"
+        formula: "abs(min(grid_power, 0))"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        icon: "mdi:solar-power"
+        attributes:
+          source: "grid_meter"
+          calculation: "export_only"
+
+      - name: "solar_self_consumption"
+        formula: "max(solar_inverter_power - abs(min(grid_power, 0)), 0)"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        icon: "mdi:home-lightning-bolt"
+
+      - name: "solar_efficiency_score"
+        formula: "(solar_inverter_power / solar_irradiance * 100) if solar_irradiance > 1 else 0"
+        unit_of_measurement: "%"
+        state_class: "measurement"
+        icon: "mdi:weather-sunny"
+
+  # Circuit Grouping and Analysis
+  - name: "circuit_groups"
+    friendly_name: "Circuit Groups"
+    description: "Logical grouping of electrical circuits for monitoring"
+    category: "electrical"
+    enabled: true
+    formulas:
+      - name: "lighting_total"
+        formula: "kitchen_lights + living_room_lights + bedroom_lights + bathroom_lights"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        icon: "mdi:lightbulb-group"
+
+      - name: "outlets_total"
+        formula: "kitchen_outlets + living_room_outlets + bedroom_outlets + garage_outlets"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        icon: "mdi:power-socket"
+
+      - name: "major_appliances"
+        formula: "water_heater + dishwasher + washer + dryer + oven"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        icon: "mdi:washing-machine"
+
+  # Peak Demand Analysis
+  - name: "demand_analysis"
+    friendly_name: "Peak Demand Analysis"
+    description: "Analysis of peak power demand and load factors"
+    category: "analysis"
+    enabled: true
+    formulas:
+      - name: "instantaneous_demand"
+        formula: "max(total_house_power, 0)"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        icon: "mdi:chart-line"
+
+      - name: "demand_factor"
+        formula: "(total_house_power / peak_rating * 100) if peak_rating > 0 else 0"
+        unit_of_measurement: "%"
+        state_class: "measurement"
+        attributes:
+          calculation_type: "utilization"
+
+      - name: "safety_margin"
+        formula: "((peak_rating - total_house_power) / peak_rating * 100) if peak_rating > 0 else 0"
+        unit_of_measurement: "%"
+        state_class: "measurement"
+        icon: "mdi:shield-check"
+
+  # Time-of-Use Rate Calculations
+  - name: "time_of_use_rates"
+    friendly_name: "Time-of-Use Rates"
+    description: "Energy cost calculations based on time-of-use pricing"
+    category: "energy"
+    enabled: true
+    formulas:
+      - name: "current_rate_cost"
+        formula: "total_house_power * (peak_rate if is_peak_time else off_peak_rate) / 1000"
+        unit_of_measurement: "¢/h"
+        device_class: "monetary"
+        state_class: "measurement"
+        attributes:
+          rate_type: "time_of_use"
+
+      - name: "rate_savings"
+        formula: "total_house_power * (peak_rate - off_peak_rate) / 1000 if not is_peak_time else 0"
+        unit_of_measurement: "¢/h"
+        device_class: "monetary"
+        state_class: "measurement"
+        icon: "mdi:piggy-bank"
+
+  # Complex Mathematical Examples
+  - name: "advanced_calculations"
+    friendly_name: "Advanced Calculations"
+    description: "Complex mathematical formulas demonstrating advanced capabilities"
+    category: "analysis"
+    enabled: true
+    formulas:
+      - name: "power_factor_estimate"
+        formula: "real_power / sqrt(real_power**2 + reactive_power**2) if reactive_power > 0 else 1"
+        unit_of_measurement: "ratio"
+        state_class: "measurement"
+        icon: "mdi:sine-wave"
+
+      - name: "harmonic_distortion"
+        formula: "sqrt(sum([harmonic_3**2, harmonic_5**2, harmonic_7**2])) / fundamental * 100"
+        unit_of_measurement: "%"
+        state_class: "measurement"
+        attributes:
+          calculation_type: "thd"
+
+      - name: "load_diversity_factor"
+        formula: "max_individual_load / sum_of_loads if sum_of_loads > 0 else 0"
+        unit_of_measurement: "ratio"
+        state_class: "measurement"
+
+  # Environmental Impact
+  - name: "environmental_impact"
+    friendly_name: "Environmental Impact"
+    description: "Environmental impact calculations based on energy usage"
+    category: "environment"
+    enabled: true
+    formulas:
+      - name: "carbon_footprint_rate"
+        formula: "total_house_power * carbon_intensity / 1000"
+        unit_of_measurement: "g CO₂/h"
+        state_class: "measurement"
+        icon: "mdi:leaf"
+
+      - name: "carbon_offset_solar"
+        formula: "solar_production_positive * carbon_intensity / 1000"
+        unit_of_measurement: "g CO₂/h"
+        state_class: "measurement"
+        icon: "mdi:tree"
+        attributes:
+          calculation_type: "offset"
+
+# Global settings for all sensors
+global_settings:
+  # Default update interval in seconds (can be overridden per sensor)
+  default_update_interval: 30
+
+  # Cache time-to-live in seconds for formula results
+  cache_ttl: 60
+
+  # Maximum number of consecutive errors before disabling a sensor
+  error_threshold: 5
+
+  # Enable Home Assistant long-term statistics for synthetic sensors
+  enable_statistics: true
+
+  # Default fallback value when calculations fail
+  default_fallback_value: 0
+
+  # Precision for floating point calculations (decimal places)
+  default_precision: 2
+
+# Variable mappings (example - these would typically be set programmatically)
+# This section shows how variables in formulas map to actual Home Assistant entities
+variable_mappings:
+  # Power measurements
+  current_power: "sensor.span_panel_instantaneous_power"
+  total_house_power: "sensor.span_panel_instantaneous_power"
+  grid_power: "sensor.span_panel_current_power"
+  solar_inverter_power: "sensor.solar_inverter_instant_power"
+  solar_irradiance: "sensor.solar_irradiance"
+
+  # HVAC circuits
+  hvac_upstairs: "sensor.span_panel_circuit_15_instant_power"
+  hvac_downstairs: "sensor.span_panel_circuit_17_instant_power"
+  hvac_basement: "sensor.span_panel_circuit_19_instant_power"
+  cooling_output: "sensor.hvac_cooling_output_power"
+
+  # Lighting circuits
+  kitchen_lights: "sensor.span_panel_circuit_3_instant_power"
+  living_room_lights: "sensor.span_panel_circuit_5_instant_power"
+  bedroom_lights: "sensor.span_panel_circuit_7_instant_power"
+  bathroom_lights: "sensor.span_panel_circuit_9_instant_power"
+
+  # Outlet circuits
+  kitchen_outlets: "sensor.span_panel_circuit_4_instant_power"
+  living_room_outlets: "sensor.span_panel_circuit_6_instant_power"
+  bedroom_outlets: "sensor.span_panel_circuit_8_instant_power"
+  garage_outlets: "sensor.span_panel_circuit_10_instant_power"
+
+  # Major appliances
+  water_heater: "sensor.span_panel_circuit_21_instant_power"
+  dishwasher: "sensor.span_panel_circuit_11_instant_power"
+  washer: "sensor.span_panel_circuit_13_instant_power"
+  dryer: "sensor.span_panel_circuit_23_instant_power"
+  oven: "sensor.span_panel_circuit_25_instant_power"
+
+  # Rate and configuration entities
+  electricity_rate: "input_number.electricity_rate_cents_kwh"
+  peak_rate: "input_number.peak_rate_cents_kwh"
+  off_peak_rate: "input_number.off_peak_rate_cents_kwh"
+  is_peak_time: "binary_sensor.peak_rate_period"
+  peak_rating: "input_number.panel_peak_rating_watts"
+  carbon_intensity: "input_number.grid_carbon_intensity_g_kwh"
+
+  # Advanced electrical measurements (if available)
+  real_power: "sensor.real_power"
+  reactive_power: "sensor.reactive_power"
+  fundamental: "sensor.fundamental_frequency"
+  harmonic_3: "sensor.third_harmonic"
+  harmonic_5: "sensor.fifth_harmonic"
+  harmonic_7: "sensor.seventh_harmonic"
+  max_individual_load: "sensor.max_circuit_power"
+  sum_of_loads: "sensor.total_circuit_power"

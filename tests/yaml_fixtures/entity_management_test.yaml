@@ -1,0 +1,48 @@
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+  enabled: true
+
+sensors:
+  - unique_id: "test_entity_lifecycle"
+    name: "Entity Lifecycle Test"
+    description: "Test sensor for entity lifecycle management"
+    formulas:
+      - id: "lifecycle_formula"
+        name: "Lifecycle Formula"
+        formula: "temp + humidity"
+        unit_of_measurement: "index"
+        state_class: "measurement"
+        variables:
+          temp: "sensor.temperature"
+          humidity: "sensor.humidity"
+    enabled: true
+
+  - unique_id: "test_dynamic_creation"
+    name: "Dynamic Creation Test"
+    description: "Test sensor for dynamic entity creation"
+    formulas:
+      - id: "dynamic_formula"
+        name: "Dynamic Formula"
+        formula: "power * status"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+        variables:
+          power: "sensor.power_meter"
+          status: "sensor.status_indicator"
+    enabled: true
+
+  - unique_id: "test_configuration_reload"
+    name: "Configuration Reload Test"
+    description: "Test sensor for configuration reload functionality"
+    formulas:
+      - id: "reload_formula"
+        name: "Reload Formula"
+        formula: "load + efficiency"
+        unit_of_measurement: "%"
+        state_class: "measurement"
+        variables:
+          load: "sensor.system_load"
+          efficiency: "sensor.efficiency_rating"
+    enabled: true

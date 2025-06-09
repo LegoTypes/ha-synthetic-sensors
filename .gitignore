@@ -1,0 +1,28 @@
+__pycache__/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.envrc
+.venv
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ruff
+.ruff_cache/
+
+# JetBrains
+.idea/
+
+/coverage.xml
+/.coverage
+.cursor/

@@ -1,0 +1,33 @@
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+  enabled: true
+
+sensors:
+  - unique_id: "comfort_index"
+    name: "Comfort Index"
+    description: "Basic comfort index calculation"
+    formulas:
+      - id: "comfort_formula"
+        name: "Comfort Level"
+        formula: "temp + humidity"
+        unit_of_measurement: "index"
+        state_class: "measurement"
+        variables:
+          temp: "sensor.temperature"
+          humidity: "sensor.humidity"
+    enabled: true
+
+  - unique_id: "power_status"
+    name: "Power Status"
+    description: "Power status calculation"
+    formulas:
+      - id: "power_formula"
+        name: "Power Level"
+        formula: "power * status"
+        unit_of_measurement: "W"
+        state_class: "measurement"
+        variables:
+          power: "sensor.power_meter"
+          status: "sensor.status_indicator"
+    enabled: true
