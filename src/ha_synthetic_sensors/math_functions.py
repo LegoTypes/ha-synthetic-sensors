@@ -7,7 +7,12 @@ that can be used in formula evaluation, making them easily testable and maintain
 from __future__ import annotations
 
 import math
-from typing import Any, Callable
+from collections.abc import Iterable
+from typing import Any, Callable, Union
+
+# Type alias for numeric values (excluding complex since it doesn't work with float())
+NumericValue = Union[int, float]
+IterableOrValues = Union[NumericValue, Iterable[NumericValue]]
 
 
 class MathFunctions:
@@ -65,7 +70,7 @@ class MathFunctions:
         return (part / whole) * 100 if whole != 0 else 0
 
     @staticmethod
-    def avg(*values: Any) -> float:
+    def avg(*values: NumericValue) -> float:
         """Calculate the average (mean) of values.
 
         Args:
@@ -83,7 +88,7 @@ class MathFunctions:
             and hasattr(values[0], "__iter__")
             and not isinstance(values[0], str)
         ):
-            values = tuple(values[0])
+            values = tuple(values[0])  # type: ignore[arg-type]
 
         if not values:
             return 0.0
@@ -91,7 +96,7 @@ class MathFunctions:
         return sum(float(v) for v in values) / len(values)
 
     @staticmethod
-    def mean(*values: Any) -> float:
+    def mean(*values: NumericValue) -> float:
         """Alias for avg function."""
         return MathFunctions.avg(*values)
 

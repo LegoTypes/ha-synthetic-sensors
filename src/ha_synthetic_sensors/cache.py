@@ -1,8 +1,4 @@
-"""Optimized caching system for formula evaluation results.
-
-This module provides an efficient caching layer that separates caching concerns
-from evaluation logic, improving maintainability and performance.
-"""
+"""Optimized caching system for formula evaluation results."""
 
 from __future__ import annotations
 
@@ -10,18 +6,35 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, TypedDict
+from typing import TypedDict, Union
 
 _LOGGER = logging.getLogger(__name__)
+
+# Type alias for formula evaluation results
+FormulaResult = Union[float, int, str, bool, None]
 
 
 class CacheEntry(TypedDict):
     """Single cache entry with metadata."""
 
-    value: Any
+    value: FormulaResult
     timestamp: datetime
     hit_count: int
     formula_hash: str
+
+
+class CacheStatistics(TypedDict):
+    """Cache performance statistics."""
+
+    total_entries: int
+    valid_entries: int
+    dependency_entries: int
+    hits: int
+    misses: int
+    evictions: int
+    hit_rate: float
+    ttl_seconds: float
+    max_entries: int
 
 
 @dataclass
@@ -54,9 +67,9 @@ class FormulaCache:
     def get_result(
         self,
         formula: str,
-        context: dict[str, Any] | None = None,
+        context: dict[str, str | float | int | bool] | None = None,
         formula_id: str | None = None,
-    ) -> Any | None:
+    ) -> FormulaResult:
         """Get cached result if valid.
 
         Args:
@@ -89,8 +102,8 @@ class FormulaCache:
     def store_result(
         self,
         formula: str,
-        result: Any,
-        context: dict[str, Any] | None = None,
+        result: FormulaResult,
+        context: dict[str, str | float | int | bool] | None = None,
         formula_id: str | None = None,
     ) -> None:
         """Store evaluation result in cache.
@@ -165,7 +178,7 @@ class FormulaCache:
         self._misses = 0
         self._evictions = 0
 
-    def get_statistics(self) -> dict[str, Any]:
+    def get_statistics(self) -> CacheStatistics:
         """Get cache performance statistics.
 
         Returns:
@@ -196,7 +209,7 @@ class FormulaCache:
     def _generate_cache_key(
         self,
         formula: str,
-        context: dict[str, Any] | None,
+        context: dict[str, str | float | int | bool] | None,
         formula_id: str | None,
     ) -> str:
         """Generate optimized cache key.

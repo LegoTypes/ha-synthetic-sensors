@@ -53,6 +53,13 @@ class DependencyValidation(TypedDict):
     unavailable_entities: list[str]
 
 
+class EvaluationContext(TypedDict, total=False):
+    """Context for formula evaluation with entity states and functions.
+
+    Using total=False since the actual keys depend on the formula being evaluated.
+    """
+
+
 class FormulaEvaluator(ABC):
     """Abstract base class for formula evaluators."""
 
@@ -112,8 +119,9 @@ class Evaluator(FormulaEvaluator):
                 }
 
             # Check cache first
+            filtered_context = self._filter_context_for_cache(context)
             cached_result = self._cache.get_result(
-                config.formula, context, formula_name
+                config.formula, filtered_context, formula_name
             )
             if cached_result is not None:
                 return {"success": True, "value": cached_result, "cached": True}
@@ -142,7 +150,9 @@ class Evaluator(FormulaEvaluator):
             result = evaluator.eval(config.formula)
 
             # Cache the result
-            self._cache.store_result(config.formula, result, context, formula_name)
+            self._cache.store_result(
+                config.formula, result, filtered_context, formula_name
+            )
 
             # Reset error count on success
             self._error_count.pop(formula_name, None)
@@ -359,6 +369,26 @@ class Evaluator(FormulaEvaluator):
             # Return 0 as fallback for non-numeric states
             return 0.0
 
+    def _filter_context_for_cache(
+        self, context: dict[str, ContextValue] | None
+    ) -> dict[str, str | float | int | bool] | None:
+        """Filter context to only include types that can be cached.
+
+        Args:
+            context: Original context which may include callables
+
+        Returns:
+            Filtered context with only cacheable types
+        """
+        if context is None:
+            return None
+
+        return {
+            key: value
+            for key, value in context.items()
+            if isinstance(value, (str, float, int, bool))
+        }
+
 
 class DependencyResolver:
     """Resolves and tracks dependencies between synthetic sensors."""
@@ -471,7 +501,9 @@ class DependencyResolver:
 
             del self._dependency_graph[sensor_name]
 
-    def evaluate(self, formula: str, context: dict[str, Any] | None = None) -> float:
+    def evaluate(
+        self, formula: str, context: dict[str, float | int | str] | None = None
+    ) -> float:
         """Evaluate a formula with the given context.
 
         Args:
