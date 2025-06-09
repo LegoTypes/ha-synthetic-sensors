@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Callable, NotRequired, TypedDict, Union
 
 from homeassistant.core import HomeAssistant
@@ -16,6 +17,16 @@ from .dependency_parser import DependencyParser
 from .math_functions import MathFunctions
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class NonNumericStateError(Exception):
+    """Raised when an entity state cannot be converted to a numeric value."""
+
+    def __init__(self, entity_id: str, state_value: str):
+        self.entity_id = entity_id
+        self.state_value = state_value
+        super().__init__(f"Entity '{entity_id}' has non-numeric state '{state_value}'")
+
 
 # Type alias for evaluation context values
 ContextValue = Union[str, float, int, bool, Callable[..., Any]]
@@ -32,6 +43,9 @@ class EvaluationResult(TypedDict):
     value: FormulaResult
     error: NotRequired[str]
     cached: NotRequired[bool]
+    state: NotRequired[str]  # "ok", "unknown", "unavailable"
+    unavailable_dependencies: NotRequired[list[str]]
+    missing_dependencies: NotRequired[list[str]]
 
 
 class CacheStats(TypedDict):
@@ -79,26 +93,67 @@ class FormulaEvaluator(ABC):
 
 
 class Evaluator(FormulaEvaluator):
-    """Enhanced formula evaluator with dependency tracking and optimized caching."""
+    """Enhanced formula evaluator with dependency tracking and optimized caching.
 
-    def __init__(self, hass: HomeAssistant, cache_config: CacheConfig | None = None):
+    TWO-TIER CIRCUIT BREAKER PATTERN:
+    ============================================
+
+    This evaluator implements an error handling system that distinguishes
+    between different types of errors and handles them appropriately:
+
+    TIER 1 - FATAL ERROR CIRCUIT BREAKER:
+    - Tracks permanent configuration issues (syntax errors, missing entities)
+    - Uses traditional circuit breaker pattern with configurable threshold (default: 5)
+    - When threshold is reached, evaluation attempts are completely skipped
+    - Designed to prevent resource waste on permanently broken formulas
+
+    TIER 2 - TRANSITORY ERROR RESILIENCE:
+    - Tracks temporary issues (unavailable entities, network problems)
+    - Does NOT trigger circuit breaker - allows continued evaluation attempts
+    - Propagates "unknown" state to synthetic sensors
+    - Recovers when underlying issues resolve
+
+    STATE PROPAGATION STRATEGY:
+    - Missing entities → "unavailable" state (fatal error)
+    - Unavailable entities → "unknown" state (transitory error)
+    - Successful evaluation → "ok" state (resets all error counters)
+
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        cache_config: CacheConfig | None = None,
+        circuit_breaker_config: CircuitBreakerConfig | None = None,
+        retry_config: RetryConfig | None = None,
+    ):
         """Initialize the enhanced formula evaluator.
 
         Args:
             hass: Home Assistant instance
             cache_config: Optional cache configuration
+            circuit_breaker_config: Optional circuit breaker configuration
+            retry_config: Optional retry configuration for transitory errors
 
         """
         self._hass = hass
 
-        # Initialize optimized components
+        # Initialize components
         self._cache = FormulaCache(cache_config)
         self._dependency_parser = DependencyParser()
         self._math_functions = MathFunctions.get_builtin_functions()
 
-        # Error tracking for circuit breaker pattern
+        # Initialize configuration objects
+        self._circuit_breaker_config = circuit_breaker_config or CircuitBreakerConfig()
+        self._retry_config = retry_config or RetryConfig()
+
+        # TIER 1: Fatal Error Circuit Breaker (Traditional Pattern)
+        # Tracks configuration errors, syntax errors, missing entities, etc.
         self._error_count: dict[str, int] = {}
-        self._max_errors = 5
+
+        # TIER 2: Transitory Error Tracking (Intelligent Resilience)
+        # Tracks temporary issues like unknown/unavailable entity states.
+        self._transitory_error_count: dict[str, int] = {}
 
     def evaluate_formula(
         self, config: FormulaConfig, context: dict[str, ContextValue] | None = None
@@ -108,7 +163,7 @@ class Evaluator(FormulaEvaluator):
         formula_name = config.name or config.id
 
         try:
-            # Check if we should skip due to too many errors
+            # Check if we should bail due to too many attempts
             if self._should_skip_evaluation(formula_name):
                 return {
                     "success": False,
@@ -124,18 +179,52 @@ class Evaluator(FormulaEvaluator):
                 config.formula, filtered_context, formula_name
             )
             if cached_result is not None:
-                return {"success": True, "value": cached_result, "cached": True}
+                return {
+                    "success": True,
+                    "value": cached_result,
+                    "cached": True,
+                    "state": "ok",
+                }
 
-            # Extract dependencies using optimized parser
+            # Extract dependencies using parser
             dependencies = self.get_formula_dependencies(config.formula)
 
             # Validate dependencies are available
-            missing_deps = self._check_dependencies(dependencies, context)
+            missing_deps, unavailable_deps = self._check_dependencies(
+                dependencies, context
+            )
+
+            # Handle missing entities (fatal error)
             if missing_deps:
+                # TIER 1 FATAL ERROR: Increment fatal error counter
+                # Missing entities indicate permanent configuration issues
+                self._increment_error_count(formula_name)
                 return {
                     "success": False,
                     "error": f"Missing dependencies: {missing_deps}",
                     "value": None,
+                    "state": "unavailable",
+                    "missing_dependencies": list(missing_deps),
+                }
+
+            # Handle unavailable entities (propagate unknown state)
+            if unavailable_deps:
+                # TIER 2 TRANSITORY HANDLING: Don't increment fatal error count
+                # Instead, track as transitory and propagate unknown state upward
+                # Allows the synthetic sensor to indicate temporary unavailability
+                if self._circuit_breaker_config.track_transitory_errors:
+                    self._increment_transitory_error_count(formula_name)
+                _LOGGER.info(
+                    "Formula '%s' has unavailable dependencies: %s. "
+                    "Setting synthetic sensor to unknown state.",
+                    formula_name,
+                    unavailable_deps,
+                )
+                return {
+                    "success": True,  # Not an error, but dependency unavailable
+                    "value": None,
+                    "state": "unknown",
+                    "unavailable_dependencies": list(unavailable_deps),
                 }
 
             # Build evaluation context
@@ -155,12 +244,44 @@ class Evaluator(FormulaEvaluator):
             )
 
             # Reset error count on success
-            self._error_count.pop(formula_name, None)
+            # CIRCUIT BREAKER RESET: When a formula evaluates successfully,
+            # we reset BOTH error counters to allow recovery from previous issues
+            if self._circuit_breaker_config.reset_on_success:
+                self._error_count.pop(formula_name, None)
+                self._transitory_error_count.pop(formula_name, None)
 
-            return {"success": True, "value": result, "cached": False}
+            return {
+                "success": True,
+                "value": result,
+                "cached": False,
+                "state": "ok",
+            }
 
         except Exception as err:
-            self._increment_error_count(formula_name)
+            # TWO-TIER ERROR CLASSIFICATION:
+            # We analyze the exception to determine whether it represents a fatal
+            # error (configuration/syntax issues) or a transitory error (temporary
+            # runtime issues that might resolve themselves).
+
+            error_message = str(err)
+            is_fatal_error = (
+                # Missing variable definitions (e.g., typos in entity names)
+                "name" in error_message.lower()
+                and "not defined" in error_message.lower()
+            ) or (
+                # Syntax errors in formula (e.g., malformed expressions)
+                "syntax"
+                in error_message.lower()
+            )
+
+            if is_fatal_error:
+                # TIER 1: Fatal errors
+                self._increment_error_count(formula_name)
+            else:
+                # TIER 2: Transitory errors
+                if self._circuit_breaker_config.track_transitory_errors:
+                    self._increment_transitory_error_count(formula_name)
+
             return {
                 "success": False,
                 "error": f"Formula evaluation failed for '{formula_name}': {err}",
@@ -169,18 +290,34 @@ class Evaluator(FormulaEvaluator):
 
     def _check_dependencies(
         self, dependencies: set[str], context: dict[str, ContextValue] | None = None
-    ) -> set[str]:
+    ) -> tuple[set[str], set[str]]:
         """Check which dependencies are missing or unavailable.
+
+        This method is a critical part of the two-tier circuit breaker system.
+        It distinguishes between two types of dependency issues:
+
+        1. MISSING ENTITIES: Entities that don't exist in Home Assistant
+           - These are FATAL errors (Tier 1)
+           - Usually indicate configuration mistakes or typos
+           - Will cause the formula to fail and increment fatal error count
+
+        2. UNAVAILABLE ENTITIES: Entities that exist but are unavailable/unknown/
+           non-numeric
+           - These are TRANSITORY errors (Tier 2)
+           - Usually indicate temporary issues (network, device offline, etc.)
+           - Formula evaluation continues but propagates unknown state upward
 
         Args:
             dependencies: Set of dependency names to check
             context: Optional context dictionary with variable values
 
         Returns:
-            Set of missing dependency names
+            Tuple of (missing_entities, unavailable_entities)
         """
         missing = set()
+        unavailable = set()
         context = context or {}
+
         for entity_id in dependencies:
             # First check if provided in context
             if entity_id in context:
@@ -188,8 +325,28 @@ class Evaluator(FormulaEvaluator):
             # Then check if it's a Home Assistant entity
             state = self._hass.states.get(entity_id)
             if state is None:
+                # FATAL ERROR: Entity doesn't exist in Home Assistant
                 missing.add(entity_id)
-        return missing
+            elif state.state in ("unavailable", "unknown"):
+                # TRANSITORY ERROR: Entity exists but currently unavailable
+                unavailable.add(entity_id)
+            else:
+                # Check if the state can be converted to numeric
+                try:
+                    self._convert_to_numeric(state.state, entity_id)
+                except NonNumericStateError:
+                    # Determine if this is a FATAL or TRANSITORY error based on
+                    # entity type
+                    if self._is_entity_supposed_to_be_numeric(state):
+                        # TRANSITORY ERROR: Entity should be numeric but currently isn't
+                        # (e.g., sensor.temperature returning "starting_up")
+                        unavailable.add(entity_id)
+                    else:
+                        # FATAL ERROR: Entity is fundamentally non-numeric
+                        # (e.g., binary_sensor.door, weather.current_condition)
+                        missing.add(entity_id)
+
+        return missing, unavailable
 
     def get_formula_dependencies(self, formula: str) -> set[str]:
         """Extract and return all entity dependencies from a formula."""
@@ -198,7 +355,7 @@ class Evaluator(FormulaEvaluator):
         if cached_deps is not None:
             return cached_deps
 
-        # Use optimized dependency parser
+        # Use dependency parser
         dependencies = self._dependency_parser.extract_dependencies(formula)
 
         # Cache the result
@@ -302,20 +459,56 @@ class Evaluator(FormulaEvaluator):
             self._cache.clear_all()
 
     def get_cache_stats(self) -> CacheStats:
-        """Get cache statistics for monitoring."""
+        """Get cache statistics for monitoring.
+
+        Returns statistics that include both cache performance metrics and
+        error tracking information from the two-tier circuit breaker system.
+        This allows monitoring of both successful operations and error patterns.
+        """
         stats = self._cache.get_statistics()
         return {
             "total_cached_formulas": stats["dependency_entries"],
             "total_cached_evaluations": stats["total_entries"],
             "valid_cached_evaluations": stats["valid_entries"],
-            "error_counts": dict(self._error_count),
+            "error_counts": dict(self._error_count),  # Fatal errors only
             "cache_ttl_seconds": stats["ttl_seconds"],
+            # Note: transitory_error_count is tracked but not exposed in stats
+            # as these are temporary issues that don't indicate system problems
         }
+
+    def get_circuit_breaker_config(self) -> CircuitBreakerConfig:
+        """Get the current circuit breaker configuration."""
+        return self._circuit_breaker_config
+
+    def get_retry_config(self) -> RetryConfig:
+        """Get the current retry configuration."""
+        return self._retry_config
+
+    def update_circuit_breaker_config(self, config: CircuitBreakerConfig) -> None:
+        """Update the circuit breaker configuration.
+
+        Args:
+            config: New circuit breaker configuration
+        """
+        self._circuit_breaker_config = config
+
+    def update_retry_config(self, config: RetryConfig) -> None:
+        """Update the retry configuration.
+
+        Args:
+            config: New retry configuration
+        """
+        self._retry_config = config
 
     def _build_evaluation_context(
         self, dependencies: set[str], context: dict[str, ContextValue] | None = None
     ) -> dict[str, Any]:
-        """Build context for formula evaluation."""
+        """Build context for formula evaluation.
+
+        This method should only be called after dependencies have been validated
+        by _check_dependencies, so all entities should have numeric states.
+        If we encounter non-numeric states here, it indicates a logic error.
+        """
         eval_context = {}
         context = context or {}
         for var in dependencies:
@@ -326,8 +519,15 @@ class Evaluator(FormulaEvaluator):
                 state = self._hass.states.get(var)
                 if state:
                     try:
-                        eval_context[var] = float(state.state)
-                    except (ValueError, TypeError):
+                        eval_context[var] = self._convert_to_numeric(state.state, var)
+                    except NonNumericStateError:
+                        # This should not happen if _check_dependencies was called first
+                        _LOGGER.warning(
+                            "Unexpected non-numeric state for '%s': '%s'. "
+                            "Dependencies should have been validated first.",
+                            var,
+                            state.state,
+                        )
                         eval_context[var] = 0.0
         # Add common functions
         eval_context.update(
@@ -343,31 +543,117 @@ class Evaluator(FormulaEvaluator):
         )
         return eval_context
 
+    def _increment_transitory_error_count(self, formula_name: str) -> None:
+        """Increment transitory error count for a formula.
+
+        TIER 2 ERROR TRACKING: Transitory errors are tracked separately from
+        fatal errors. They represent temporary issues that might resolve on their
+        own (e.g., network connectivity, device availability). Unlike fatal errors,
+        these don't trigger the circuit breaker and don't prevent continued
+        evaluation attempts.
+
+        Examples of transitory errors:
+        - Entity states showing "unknown" or "unavailable"
+        - Temporary network connectivity issues
+        - Devices that are temporarily offline but will come back
+
+        Args:
+            formula_name: Name/ID of the formula that encountered the error
+        """
+        current = self._transitory_error_count.get(formula_name, 0)
+        self._transitory_error_count[formula_name] = current + 1
+
     def _should_skip_evaluation(self, formula_name: str) -> bool:
-        """Check if formula should be skipped due to repeated errors."""
-        return self._error_count.get(formula_name, 0) >= self._max_errors
+        """Check if formula should be skipped due to repeated errors.
+
+        CIRCUIT BREAKER LOGIC: This method implements the traditional circuit
+        breaker pattern but ONLY for fatal errors (Tier 1). Transitory errors
+        (Tier 2) are tracked separately and do NOT trigger the circuit breaker.
+
+        This intelligent approach allows the system to:
+        1. Stop wasting resources on permanently broken formulas (fatal errors)
+        2. Continue attempting evaluation for temporarily unavailable dependencies
+        3. Gracefully handle mixed scenarios where some dependencies are missing
+           and others are just temporarily unavailable
+
+        Args:
+            formula_name: Name/ID of the formula to check
+
+        Returns:
+            True if evaluation should be skipped due to too many FATAL errors
+        """
+        fatal_errors = self._error_count.get(formula_name, 0)
+        return fatal_errors >= self._circuit_breaker_config.max_fatal_errors
 
     def _increment_error_count(self, formula_name: str) -> None:
-        """Increment error count for a formula."""
+        """Increment fatal error count for a formula.
+
+        TIER 1 ERROR TRACKING: Fatal errors represent permanent issues that
+        require manual intervention to resolve. These errors trigger the
+        traditional circuit breaker pattern to prevent wasting system resources.
+
+        Examples of fatal errors:
+        - Syntax errors in formula expressions
+        - References to non-existent entities (typos in entity_ids)
+        - Invalid mathematical operations or function calls
+        - Configuration errors that won't resolve automatically
+
+        When the fatal error count reaches the configured maximum (default: 5), the
+        circuit breaker opens and evaluation attempts are skipped entirely.
+
+        Args:
+            formula_name: Name/ID of the formula that encountered the error
+        """
         self._error_count[formula_name] = self._error_count.get(formula_name, 0) + 1
 
     def _get_numeric_state(self, state) -> float:
-        """Get numeric value from entity state, with fallback handling."""
+        """Get numeric value from entity state, with error handling.
+
+        This method now properly raises exceptions for non-numeric states
+        instead of silently returning 0, which could mask configuration issues.
+        """
         try:
-            return float(state.state)
+            return self._convert_to_numeric(
+                state.state, getattr(state, "entity_id", "unknown")
+            )
+        except NonNumericStateError:
+            # For backward compatibility in contexts where we need a fallback,
+            # log the issue but still return 0. The caller should handle this properly.
+            _LOGGER.warning(
+                "Entity '%s' has non-numeric state '%s', using 0 as fallback",
+                getattr(state, "entity_id", "unknown"),
+                state.state,
+            )
+            return 0.0
+
+    def _convert_to_numeric(self, state_value: Any, entity_id: str) -> float:
+        """Convert a state value to numeric, raising exception if not possible.
+
+        Args:
+            state_value: The state value to convert
+            entity_id: Entity ID for error reporting
+
+        Returns:
+            float: Numeric value
+
+        Raises:
+            NonNumericStateError: If the state cannot be converted to numeric
+        """
+        try:
+            return float(state_value)
         except (ValueError, TypeError):
-            # Try to extract numeric value from common patterns
-            if isinstance(state.state, str):
+            # Try to extract numeric value from common patterns (e.g., "25.5°C")
+            if isinstance(state_value, str):
                 # Remove common units and try again
-                cleaned = re.sub(r"[^\d.-]", "", state.state)
+                cleaned = re.sub(r"[^\d.-]", "", state_value)
                 if cleaned:
                     try:
                         return float(cleaned)
                     except ValueError:
                         pass
 
-            # Return 0 as fallback for non-numeric states
-            return 0.0
+            # If we can't convert, raise an exception instead of returning 0
+            raise NonNumericStateError(entity_id, str(state_value))
 
     def _filter_context_for_cache(
         self, context: dict[str, ContextValue] | None
@@ -388,6 +674,149 @@ class Evaluator(FormulaEvaluator):
             for key, value in context.items()
             if isinstance(value, (str, float, int, bool))
         }
+
+    def _is_entity_supposed_to_be_numeric(self, state) -> bool:
+        """Determine if entity should be numeric based on domain and device_class.
+
+        This method implements smart error classification by analyzing entity
+        metadata to distinguish between:
+
+        NUMERIC entities (TRANSITORY when non-numeric):
+        - sensor.* with numeric device classes (power, energy, temperature, etc.)
+        - input_number.*
+        - counter.*
+        - number.*
+
+        NON-NUMERIC entities (FATAL when referenced in formulas):
+        - binary_sensor.* (returns "on"/"off")
+        - switch.* (returns "on"/"off")
+        - device_tracker.* (returns location names)
+        - sensor.* with non-numeric device classes (timestamp, date, etc.)
+
+        Args:
+            state: Home Assistant state object
+
+        Returns:
+            bool: True if entity should contain numeric values
+        """
+        entity_id = getattr(state, "entity_id", "")
+        domain = entity_id.split(".")[0] if "." in entity_id else ""
+        device_class = getattr(state, "attributes", {}).get("device_class")
+
+        # Domains that are always numeric
+        numeric_domains = {"input_number", "counter", "number"}
+
+        # Domains that are never numeric
+        non_numeric_domains = {
+            "binary_sensor",
+            "switch",
+            "input_boolean",
+            "device_tracker",
+            "weather",
+            "climate",
+            "media_player",
+            "light",
+            "fan",
+            "cover",
+            "alarm_control_panel",
+            "lock",
+            "vacuum",
+        }
+
+        # Check obvious cases first
+        if domain in numeric_domains:
+            return True
+        if domain in non_numeric_domains:
+            return False
+
+        # For sensors, analyze device_class
+        if domain == "sensor":
+            # Non-numeric sensor device classes
+            non_numeric_device_classes = {
+                "timestamp",
+                "date",
+                "enum",
+                "connectivity",
+                "moving",
+                "opening",
+                "presence",
+                "problem",
+                "safety",
+                "tamper",
+                "update",
+            }
+
+            if device_class in non_numeric_device_classes:
+                return False
+
+            # If no device_class, try to infer from state value patterns
+            if device_class is None:
+                # Check if current state looks numeric
+                try:
+                    float(state.state)
+                    # Current state is numeric, likely a numeric sensor
+                    return True
+                except (ValueError, TypeError):
+                    # Non-numeric state - could be temporary or permanent
+                    # Use heuristics based on common patterns
+                    state_value = str(state.state).lower()
+
+                    # Temporary states that indicate a normally numeric sensor
+                    temporary_states = {
+                        "unknown",
+                        "unavailable",
+                        "starting",
+                        "initializing",
+                        "calibrating",
+                        "loading",
+                        "connecting",
+                        "offline",
+                        "error",
+                    }
+
+                    if state_value in temporary_states:
+                        return True
+
+                    # Check for numeric patterns with units (e.g., "25.5°C")
+                    if re.search(r"\d+\.?\d*", state_value):
+                        return True
+
+                    # Non-numeric descriptive states suggest non-numeric sensor
+                    return False
+
+            # If we have a device_class but it's not in our non-numeric list,
+            # assume it's numeric (most sensor device_classes are numeric)
+            return True
+
+        # For other domains, default to assuming non-numeric
+        return False
+
+
+@dataclass
+class CircuitBreakerConfig:
+    """Configuration for the two-tier circuit breaker pattern."""
+
+    # TIER 1: Fatal Error Circuit Breaker
+    max_fatal_errors: int = 5  # Stop trying after this many fatal errors
+
+    # TIER 2: Transitory Error Handling
+    max_transitory_errors: int = 20  # Track but don't stop on transitory errors
+    track_transitory_errors: bool = True  # Whether to track transitory errors
+
+    # Error Reset Behavior
+    reset_on_success: bool = True  # Reset counters on successful evaluation
+
+
+@dataclass
+class RetryConfig:
+    """Configuration for handling unavailable dependencies and retry logic."""
+
+    enabled: bool = True
+    max_attempts: int = 3
+    backoff_seconds: float = 5.0
+    exponential_backoff: bool = True
+    retry_on_unknown: bool = True
+    retry_on_unavailable: bool = True
 
 
 class DependencyResolver:

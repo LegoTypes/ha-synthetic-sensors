@@ -30,7 +30,12 @@ class DependencyParser:
             r"states\.([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)"
         )
 
-        # Pattern for variable names
+        # Pattern for direct entity ID references (domain.entity_name)
+        self._direct_entity_pattern = re.compile(
+            r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)\b"
+        )
+
+        # Pattern for variable names (after entity IDs are extracted)
         self._variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
 
         # Cache excluded terms to avoid repeated lookups
@@ -47,17 +52,33 @@ class DependencyParser:
         """
         dependencies = set()
 
-        # Extract entity references
+        # Extract entity references from function calls
         for pattern in self._entity_patterns:
             dependencies.update(pattern.findall(formula))
 
         # Extract states.domain.entity references
         dependencies.update(self._states_pattern.findall(formula))
 
-        # Extract variable names (exclude keywords and functions)
+        # Extract direct entity ID references (domain.entity_name)
+        dependencies.update(self._direct_entity_pattern.findall(formula))
+
+        # Extract variable names (exclude keywords, functions, and entity IDs)
+        all_entity_ids = self.extract_entity_references(formula)
+
+        # Create a set of all parts of entity IDs to exclude
+        entity_id_parts = set()
+        for entity_id in all_entity_ids:
+            entity_id_parts.update(entity_id.split("."))
+
         variable_matches = self._variable_pattern.findall(formula)
         for var in variable_matches:
-            if var not in self._excluded_terms and not keyword.iskeyword(var):
+            if (
+                var not in self._excluded_terms
+                and not keyword.iskeyword(var)
+                and var not in all_entity_ids
+                and var not in entity_id_parts  # Skip parts of entity IDs
+                and "." not in var  # Skip parts of entity IDs
+            ):
                 dependencies.add(var)
 
         return dependencies
@@ -79,6 +100,9 @@ class DependencyParser:
 
         # Extract from states.domain.entity format
         entities.update(self._states_pattern.findall(formula))
+
+        # Extract direct entity ID references (domain.entity_name)
+        entities.update(self._direct_entity_pattern.findall(formula))
 
         return entities
 
@@ -163,6 +187,10 @@ class DependencyParser:
 
         # Check states.domain.entity format
         if self._states_pattern.search(formula):
+            return True
+
+        # Check direct entity ID references
+        if self._direct_entity_pattern.search(formula):
             return True
 
         return False

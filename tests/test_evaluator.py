@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
-from ha_synthetic_sensors.evaluator import Evaluator
+from ha_synthetic_sensors.evaluator import CircuitBreakerConfig, Evaluator, RetryConfig
 
 
 class TestEvaluator:
@@ -162,3 +162,89 @@ class TestEvaluator:
         stats = evaluator.get_cache_stats()
         assert stats["total_cached_evaluations"] == 0
         assert stats["total_cached_formulas"] == 0
+
+    def test_circuit_breaker_configuration(self, mock_hass):
+        """Test that circuit breaker configuration is customizable."""
+        # Test with custom configuration
+        cb_config = CircuitBreakerConfig(
+            max_fatal_errors=3,
+            max_transitory_errors=10,
+            track_transitory_errors=True,
+            reset_on_success=True,
+        )
+
+        retry_config = RetryConfig(
+            enabled=True,
+            max_attempts=5,
+            retry_on_unknown=True,
+            retry_on_unavailable=False,
+        )
+
+        evaluator = Evaluator(
+            mock_hass, circuit_breaker_config=cb_config, retry_config=retry_config
+        )
+
+        # Verify configuration was applied
+        assert evaluator.get_circuit_breaker_config().max_fatal_errors == 3
+        assert evaluator.get_circuit_breaker_config().max_transitory_errors == 10
+        assert evaluator.get_retry_config().max_attempts == 5
+        assert evaluator.get_retry_config().retry_on_unavailable is False
+
+    def test_circuit_breaker_default_configuration(self, mock_hass):
+        """Test that default configuration is applied when none provided."""
+        evaluator = Evaluator(mock_hass)
+
+        # Verify default configuration
+        cb_config = evaluator.get_circuit_breaker_config()
+        assert cb_config.max_fatal_errors == 5
+        assert cb_config.max_transitory_errors == 20
+        assert cb_config.track_transitory_errors is True
+        assert cb_config.reset_on_success is True
+
+        retry_config = evaluator.get_retry_config()
+        assert retry_config.enabled is True
+        assert retry_config.max_attempts == 3
+
+    def test_configuration_updates(self, mock_hass):
+        """Test that configuration can be updated after initialization."""
+        evaluator = Evaluator(mock_hass)
+
+        # Update circuit breaker config
+        new_cb_config = CircuitBreakerConfig(max_fatal_errors=10)
+        evaluator.update_circuit_breaker_config(new_cb_config)
+        assert evaluator.get_circuit_breaker_config().max_fatal_errors == 10
+
+        # Update retry config
+        new_retry_config = RetryConfig(max_attempts=7)
+        evaluator.update_retry_config(new_retry_config)
+        assert evaluator.get_retry_config().max_attempts == 7
+
+    def test_custom_fatal_error_threshold(self, mock_hass):
+        """Test that custom fatal error threshold is respected."""
+        # Set a low threshold for testing
+        cb_config = CircuitBreakerConfig(max_fatal_errors=2)
+        evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config)
+
+        # Mock a missing entity to trigger fatal errors
+        mock_hass.states.get.return_value = None
+
+        config = FormulaConfig(
+            id="test_formula", name="test", formula="missing_entity + 1"
+        )
+
+        # First two evaluations should attempt and fail
+        result1 = evaluator.evaluate_formula(config)
+        assert result1["success"] is False
+        assert "error" in result1
+        assert "Missing dependencies" in result1["error"]
+
+        result2 = evaluator.evaluate_formula(config)
+        assert result2["success"] is False
+        assert "error" in result2
+        assert "Missing dependencies" in result2["error"]
+
+        # Third evaluation should be skipped due to circuit breaker
+        result3 = evaluator.evaluate_formula(config)
+        assert result3["success"] is False
+        assert "error" in result3
+        assert "Skipping formula" in result3["error"]
