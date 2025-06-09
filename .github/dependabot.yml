@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # Enable version updates for Python dependencies managed by Poetry
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: "all"
+    groups:
+      # Group development dependencies together
+      dev-dependencies:
+        patterns:
+          - "pytest*"
+          - "mypy"
+          - "ruff"
+          - "bandit"
+          - "pre-commit"
+          - "twine"
+          - "*-cov"
+          - "types-*"
+      # Group core runtime dependencies for ha-synthetic-sensors
+      runtime-dependencies:
+        patterns:
+          - "pyyaml"
+          - "simpleeval"
+          - "voluptuous"
+    reviewers:
+      - "cayossarian"
+    assignees:
+      - "cayossarian"
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "cayossarian"
+    assignees:
+      - "cayossarian"
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "cayossarian"
+    assignees:
+      - "cayossarian"
