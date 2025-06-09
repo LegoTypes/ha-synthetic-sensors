@@ -40,9 +40,8 @@ class TestNonNumericStateHandling:
         # Should detect non-numeric state and return unknown
         result = evaluator.evaluate_formula(config)
         assert result["success"] is False  # Switch is fundamentally non-numeric
-        assert result["state"] == "unavailable"
-        assert "missing_dependencies" in result
-        assert "switch.test" in result["missing_dependencies"]
+        assert result.get("state") == "unavailable"
+        assert "switch.test" in result.get("missing_dependencies", [])
 
     def test_numeric_extraction_from_units(self, mock_hass):
         """Test that numeric values can be extracted from unit strings."""
@@ -95,8 +94,8 @@ class TestNonNumericStateHandling:
         # Should return unknown due to non-numeric dependency
         result = evaluator.evaluate_formula(config)
         assert result["success"] is True
-        assert result["state"] == "unknown"
-        assert "sensor.non_numeric" in result["unavailable_dependencies"]
+        assert result.get("state") == "unknown"
+        assert "sensor.non_numeric" in result.get("unavailable_dependencies", [])
 
     def test_circuit_breaker_for_non_numeric_states(self, mock_hass):
         """Test that non-numeric states are treated as transitory errors."""
@@ -120,8 +119,8 @@ class TestNonNumericStateHandling:
         for i in range(10):
             result = evaluator.evaluate_formula(config)
             assert result["success"] is True
-            assert result["state"] == "unknown"
-            assert "sensor.temperature" in result["unavailable_dependencies"]
+            assert result.get("state") == "unknown"
+            assert "sensor.temperature" in result.get("unavailable_dependencies", [])
 
     def test_backward_compatibility_fallback(self, mock_hass):
         """Test that _get_numeric_state still provides fallback for compatibility."""
@@ -161,7 +160,7 @@ class TestNonNumericStateHandling:
 
         result1 = evaluator.evaluate_formula(missing_config)
         assert result1["success"] is False
-        assert result1["state"] == "unavailable"
+        assert result1.get("state") == "unavailable"
 
         result2 = evaluator.evaluate_formula(missing_config)
         assert result2["success"] is False
@@ -169,7 +168,7 @@ class TestNonNumericStateHandling:
         # After max_fatal_errors, should skip evaluation
         result3 = evaluator.evaluate_formula(missing_config)
         assert result3["success"] is False
-        assert "Skipping formula" in result3["error"]
+        assert "Skipping formula" in result3.get("error", "")
 
         # Test non-numeric entity (should be transitory)
         non_numeric_config = FormulaConfig(
@@ -180,4 +179,4 @@ class TestNonNumericStateHandling:
         for i in range(10):
             result = evaluator.evaluate_formula(non_numeric_config)
             assert result["success"] is True
-            assert result["state"] == "unknown"
+            assert result.get("state") == "unknown"
