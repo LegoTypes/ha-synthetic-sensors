@@ -1,61 +1,41 @@
+# Formula Evaluation Test Configuration
 version: "1.0"
 global_settings:
   domain_prefix: "syn2"
-  enabled: true
 
 sensors:
-  - unique_id: "formula_eval_basic"
-    name: "Formula Evaluation Basic"
-    description: "Basic formula evaluation testing"
-    formulas:
-      - id: "simple_addition"
-        name: "Simple Addition"
-        formula: "value_a + value_b"
-        unit_of_measurement: "units"
-        state_class: "measurement"
-        variables:
-          value_a: "sensor.value_a"
-          value_b: "sensor.value_b"
-    enabled: true
+  formula_eval_basic:
+    name: "Formula Basic Test"
+    formula: "a + b + c"
+    variables:
+      a: "sensor.test_value_a"
+      b: "sensor.test_value_b"
+      c: "sensor.test_value_c"
+    unit_of_measurement: "sum"
+    state_class: "measurement"
 
-  - unique_id: "formula_eval_math"
-    name: "Formula Math Functions"
-    description: "Mathematical function evaluation testing"
-    formulas:
-      - id: "math_functions"
-        name: "Math Functions"
-        formula: "sqrt(pow(x, 2) + pow(y, 2))"
-        unit_of_measurement: "distance"
-        state_class: "measurement"
-        variables:
-          x: "sensor.coordinate_x"
-          y: "sensor.coordinate_y"
-    enabled: true
+  formula_eval_math:
+    name: "Formula Math Test"
+    formula: "sqrt(x * x + y * y)"
+    variables:
+      x: "sensor.test_coordinate_x"
+      y: "sensor.test_coordinate_y"
+    unit_of_measurement: "distance"
+    state_class: "measurement"
 
-  - unique_id: "formula_eval_conditional"
-    name: "Formula Conditional Logic"
-    description: "Conditional logic evaluation testing"
-    formulas:
-      - id: "conditional_logic"
-        name: "Conditional Logic"
-        formula: "value if condition > threshold else 0"
-        unit_of_measurement: "conditional"
-        state_class: "measurement"
-        variables:
-          value: "sensor.measured_value"
-          condition: "sensor.condition_check"
-          threshold: "sensor.threshold_value"
-    enabled: true
+  formula_eval_conditional:
+    name: "Formula Conditional Test"
+    formula: "if(temp > threshold, 'hot', if(temp < 15, 'cold', 'moderate'))"
+    variables:
+      temp: "sensor.test_temperature"
+      threshold: "sensor.hot_threshold"
+    state_class: "measurement"
 
-  - unique_id: "formula_eval_error"
-    name: "Formula Error Testing"
-    description: "Error handling in formula evaluation"
-    formulas:
-      - id: "error_formula"
-        name: "Error Formula"
-        formula: "invalid_var + syntax_error +"
-        unit_of_measurement: "error"
-        state_class: "measurement"
-        variables:
-          invalid_var: "sensor.non_existent"
-    enabled: false  # Disabled due to syntax error
+  formula_eval_error:
+    name: "Formula Error Test"
+    formula: "value / divisor"  # May cause division by zero
+    variables:
+      value: "sensor.test_numerator"
+      divisor: "sensor.test_divisor"
+    unit_of_measurement: "ratio"
+    state_class: "measurement"

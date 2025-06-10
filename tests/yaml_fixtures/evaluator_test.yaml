@@ -1,59 +1,40 @@
+# Evaluator Test Configuration
 version: "1.0"
 global_settings:
   domain_prefix: "syn2"
-  enabled: true
 
 sensors:
-  - unique_id: "evaluator_test_basic"
-    name: "Evaluator Basic Test"
-    description: "Basic formula evaluation test"
-    formulas:
-      - id: "basic_math"
-        name: "Basic Math"
-        formula: "A + B * C"
-        unit_of_measurement: "units"
-        state_class: "measurement"
-        variables:
-          A: "sensor.test_a"
-          B: "sensor.test_b"
-          C: "sensor.test_c"
-    enabled: true
+  evaluator_test_basic:
+    name: "Basic Evaluator Test"
+    formula: "temp + humidity"
+    variables:
+      temp: "sensor.test_temperature"
+      humidity: "sensor.test_humidity"
+    unit_of_measurement: "index"
+    state_class: "measurement"
 
-  - unique_id: "evaluator_test_functions"
-    name: "Evaluator Functions Test"
-    description: "Test with safe mathematical functions"
-    formulas:
-      - id: "function_test"
-        name: "Function Test"
-        formula: "max(temp, 0) + min(humidity, 100) + abs(power)"
-        unit_of_measurement: "mixed"
-        state_class: "measurement"
-        variables:
-          temp: "sensor.temperature"
-          humidity: "sensor.humidity"
-          power: "sensor.power_meter"
-    enabled: true
+  evaluator_test_functions:
+    name: "Function Test"
+    formula: "max(a, b) + min(c, d)"
+    variables:
+      a: "sensor.test_value_a"
+      b: "sensor.test_value_b"
+      c: "sensor.test_value_c"
+      d: "sensor.test_value_d"
+    unit_of_measurement: "value"
+    state_class: "measurement"
 
-  - unique_id: "evaluator_test_entity_refs"
-    name: "Evaluator Entity References Test"
-    description: "Test with entity() function references"
-    formulas:
-      - id: "entity_ref_test"
-        name: "Entity Reference Test"
-        formula: 'entity("sensor.temp") + entity("sensor.humidity")'
-        unit_of_measurement: "mixed"
-        state_class: "measurement"
-    enabled: true
+  evaluator_test_entity_refs:
+    name: "Entity Reference Test"
+    formula: "entity('sensor.test_entity_1') + entity('sensor.test_entity_2')"
+    unit_of_measurement: "combined"
+    state_class: "measurement"
 
-  - unique_id: "evaluator_test_complex"
-    name: "Evaluator Complex Test"
-    description: "Complex evaluation with multiple operations"
-    formulas:
-      - id: "complex_eval"
-        name: "Complex Evaluation"
-        formula: "((temp * 1.8) + 32) if temp > 0 else 0"
-        unit_of_measurement: "°F"
-        state_class: "measurement"
-        variables:
-          temp: "sensor.temperature_celsius"
-    enabled: true
+  evaluator_test_complex:
+    name: "Complex Formula Test"
+    formula: "if(temp > 20, temp * humidity / 100, temp + humidity)"
+    variables:
+      temp: "sensor.test_temperature"
+      humidity: "sensor.test_humidity"
+    unit_of_measurement: "complex"
+    state_class: "measurement"

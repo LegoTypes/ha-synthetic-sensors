@@ -6,15 +6,16 @@ Syn2 (Synthetic Sensors v2) is a standalone Python package that enables users to
 
 ### Key Concept
 
-Syn2 allows you to create synthetic sensors using mathematical equations with any number of participant entities. All sensors must have **unique IDs** as primary identifiers - the package uses these IDs internally for all operations. Friendly names are optional and used only for display purposes.
+Syn2 allows you to create synthetic sensors using mathematical equations with any number of participant entities. The improved syntax simplifies configuration by using sensor keys as unique identifiers and flattening single-formula sensors. Multi-formula sensors use calculated attributes to provide rich data without cluttering the UI.
 
 ### Core Capabilities
 
 - **Universal Entity Support**: Use any Home Assistant sensor entity in formulas
 - **Mathematical Formulas**: Safe evaluation of mathematical expressions with real-time updates
 - **Hierarchical Relationships**: Create sensors that reference other synthetic sensors
-- **YAML Configuration**: ID-based configuration management
-- **Unique ID Requirements**: All sensors must have stable, unique identifiers
+- **Simplified YAML Configuration**: Flattened syntax for common use cases
+- **Calculated Attributes**: Rich sensor data through computed attributes
+- **Smart Cross-References**: Automatic entity ID resolution
 
 ### Use Cases
 
@@ -26,70 +27,82 @@ Syn2 allows you to create synthetic sensors using mathematical equations with an
 
 ## Configuration Principles
 
-### **Critical: Unique ID Requirements**
+### **Configuration Principles (Improved)**
 
-⚠️ **All synthetic sensors MUST have unique IDs** - the package uses these for all internal operations:
+⚠️ **Simplified Syntax** - improved YAML structure for better usability:
 
 Use sensor attributes the way HA new architecture uses them as defined in developer_attribute_readme.md
 Use modern Poetry (poetry env activate, poetry install --with dev, poetry run, poetry shell is deprecated, etc.)
 
-- **Entity ID Generation**: `sensor.syn2_{unique_id}` or `sensor.syn2_{sensor_id}_{formula_id}`
-- **Service Operations**: All services accept `sensor_id` or `entity_id`, never friendly names
-- **Cross-References**: Sensors reference each other by entity ID or unique ID
-- **Configuration Storage**: All internal storage keyed by unique ID
+- **Entity ID Generation**: `sensor.syn2_{sensor_key}` (simplified, no formula nesting)
+- **Service Operations**: All services accept `sensor_key` or `entity_id`
+- **Cross-References**: Sensors reference each other by entity ID or sensor key
+- **Configuration Storage**: All internal storage keyed by sensor key
 
-✅ **Names are optional** - used only for display when creating sensors:
+✅ **Two syntax patterns** - choose based on complexity:
 
-- Set as sensor's `name` attribute for Home Assistant UI
-- Never used for internal identification or operations
-- Can be changed without affecting functionality
+- **Single Formula**: Flattened YAML with direct `formula` key (90% of use cases)
+- **Multi-Formula**: Use `state_formula` with calculated `attributes` for rich data
 
 ### YAML Configuration Format
 
 ```yaml
-# ha-synthetic-sensors configuration
+# ha-synthetic-sensors configuration - Improved Syntax
 version: "1.0"
 global_settings:
   domain_prefix: "syn2"  # Creates sensor.syn2_* entities
 
 sensors:
-  - unique_id: "solar_sold_positive"                    # REQUIRED: Unique identifier
+  # Single Formula Sensors (Flattened Syntax)
+  solar_sold_positive:                                  # REQUIRED: Unique identifier (key)
     name: "Solar Sold (Positive Value)"                 # OPTIONAL: Display name only
-    formulas:
-      - id: "solar_sold"                                # REQUIRED: Formula ID
-        name: "Solar Sold"                              # OPTIONAL: Display name only
-        formula: "abs(solar_power)"
-        variables:
-          solar_power: "sensor.span_panel_solar_inverter_instant_power"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+    formula: "abs(solar_power)"                         # Direct formula (no nested array)
+    variables:
+      solar_power: "sensor.span_panel_solar_inverter_instant_power"
+    unit: "W"                                           # Simplified key name
+    device_class: "power"
+    state_class: "measurement"
 
-  - unique_id: "net_energy_cost"                        # REQUIRED: Unique identifier
-    name: "Net Energy Cost"                             # OPTIONAL: Display name only
-    formulas:
-      - id: "cost_rate"                                 # REQUIRED: Formula ID
-        name: "Current Cost Rate"                       # OPTIONAL: Display name only
-        formula: "net_power * buy_rate / 1000 if net_power > 0 else abs(net_power) * sell_rate / 1000"
-        variables:
-          net_power: "sensor.span_panel_current_power"
-          buy_rate: "input_number.electricity_buy_rate_cents_kwh"
-          sell_rate: "input_number.electricity_sell_rate_cents_kwh"
-        unit_of_measurement: "¢/h"
-        device_class: "monetary"
+  # Multi-Formula Sensors (Calculated Attributes)
+  net_energy_analysis:                                  # REQUIRED: Unique identifier (key)
+    name: "Net Energy Analysis"                         # OPTIONAL: Display name only
+    state_formula: "net_power * buy_rate / 1000 if net_power > 0 else abs(net_power) * sell_rate / 1000"
+    attributes:
+      daily_projected:
+        formula: "state * 24"                           # References main state
+        unit: "¢/day"
+      monthly_projected:
+        formula: "state * 24 * 30"
+        unit: "¢/month"
+      efficiency_rating:
+        formula: "abs(net_power) / max_capacity * 100"
+        unit: "%"
+    variables:
+      net_power: "sensor.span_panel_current_power"
+      buy_rate: "input_number.electricity_buy_rate_cents_kwh"
+      sell_rate: "input_number.electricity_sell_rate_cents_kwh"
+      max_capacity: "input_number.max_panel_capacity"
+    unit: "¢/h"
+    device_class: "monetary"
 ```
 
-### Entity ID Generation
+### Entity ID Generation (Improved)
 
 ```python
-# Entity IDs generated from unique IDs, not names
-sensor_entity_id = f"sensor.syn2_{sensor_config.unique_id}"                    # sensor.syn2_solar_sold_positive
-formula_entity_id = f"sensor.syn2_{sensor_config.unique_id}_{formula_config.id}"  # sensor.syn2_solar_sold_positive_solar_sold
+# Simplified Entity IDs (Flattened Syntax)
+sensor_entity_id = f"sensor.syn2_{sensor_key}"                    # sensor.syn2_solar_sold_positive
+
+# For multi-formula sensors with attributes, only one main entity
+main_entity_id = f"sensor.syn2_{sensor_key}"                      # sensor.syn2_net_energy_analysis
 
 # Names set as display attributes (if provided)
 sensor_attributes = {
-    "name": sensor_config.name or sensor_config.unique_id,  # Falls back to unique_id
-    "unique_id": f"syn2_{sensor_config.unique_id}_{formula_config.id}"
+    "name": sensor_config.get("name", sensor_key),                # Falls back to unique_id
+    "unique_id": f"syn2_{sensor_key}",
+    # Calculated attributes included in same entity
+    "daily_projected": calculated_attribute_value,
+    "monthly_projected": calculated_attribute_value,
+    "efficiency_rating": calculated_attribute_value
 }
 ```
 
@@ -143,36 +156,30 @@ data:
 
 ## Example Use Cases
 
-### Solar Analytics (ID-Based Configuration)
+### Solar Analytics (Improved Syntax)
 
 ```yaml
-# All examples use unique IDs as primary identifiers
+# Simplified syntax with flattened single-formula sensors
 sensors:
-  # Solar sold as positive value
-  - unique_id: "solar_sold_watts"                      # REQUIRED: Unique ID
+  # Solar sold as positive value (Single Formula)
+  solar_sold_watts:                                    # REQUIRED: Unique sensor key
     name: "Solar Energy Sold"                          # OPTIONAL: Display name
-    formulas:
-      - id: "solar_sold"                               # REQUIRED: Formula ID
-        name: "Solar Sold Power"                       # OPTIONAL: Display name
-        formula: "abs(min(grid_power, 0))"
-        variables:
-          grid_power: "sensor.span_panel_current_power"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+    formula: "abs(min(grid_power, 0))"                 # Direct formula definition
+    variables:
+      grid_power: "sensor.span_panel_current_power"
+    unit: "W"                                          # Simplified key name
+    device_class: "power"
+    state_class: "measurement"
 
-  # Solar self-consumption rate
-  - unique_id: "solar_self_consumption_rate"           # REQUIRED: Unique ID
+  # Solar self-consumption rate (Single Formula)
+  solar_self_consumption_rate:                         # REQUIRED: Unique sensor key
     name: "Solar Self-Consumption Rate"                # OPTIONAL: Display name
-    formulas:
-      - id: "consumption_rate"                         # REQUIRED: Formula ID
-        name: "Self-Consumption %"                     # OPTIONAL: Display name
-        formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
-        variables:
-          solar_production: "sensor.span_panel_solar_inverter_instant_power"
-          solar_export: "sensor.syn2_solar_sold_watts_solar_sold"  # References by entity ID
-        unit_of_measurement: "%"
-        state_class: "measurement"
+    formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
+    variables:
+      solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      solar_export: "sensor.syn2_solar_sold_watts"     # Direct entity reference (simplified)
+    unit: "%"
+    state_class: "measurement"
 ```
 
 ### Hierarchical Calculations (Cross-References by ID)

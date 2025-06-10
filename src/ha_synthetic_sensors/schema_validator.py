@@ -64,11 +64,8 @@ class SchemaValidator:
 
     def _load_schemas(self) -> None:
         """Load all schema definitions."""
-        # Schema for version 1.0
-        self._schemas["1.0"] = self._get_v1_schema()
-
-        # Add future schema versions here
-        # self._schemas["1.1"] = self._get_v1_1_schema()
+        # Schema for version 1.0 (modernized format)
+        self._schemas["1.0"] = self._get_v2_schema()
 
     def validate_config(self, config_data: dict[str, Any]) -> ValidationResult:
         """Validate configuration data against appropriate schema.
@@ -166,7 +163,7 @@ class SchemaValidator:
     def _perform_semantic_validation(
         self, config_data: dict[str, Any]
     ) -> tuple[list[ValidationError], list[ValidationError]]:
-        """Perform additional semantic validation beyond schema structure.
+        """Perform additional semantic validation beyond schema structure (v2.0 format).
 
         Returns:
             Tuple of (errors, warnings)
@@ -174,69 +171,62 @@ class SchemaValidator:
         errors: list[ValidationError] = []
         warnings: list[ValidationError] = []
 
-        sensors = config_data.get("sensors", [])
+        sensors = config_data.get("sensors", {})
 
-        # Check for duplicate unique_ids
-        unique_ids = []
-        for i, sensor in enumerate(sensors):
-            unique_id = sensor.get("unique_id")
-            if unique_id in unique_ids:
-                errors.append(
+        # v2.0 format: sensors is a dict with sensor keys
+        for sensor_key, sensor_config in sensors.items():
+            self._validate_sensor_config(sensor_key, sensor_config, warnings)
+
+        return errors, warnings
+
+    def _validate_sensor_config(
+        self, sensor_key: str, sensor_config: dict, warnings: list[ValidationError]
+    ) -> None:
+        """Validate a single sensor configuration."""
+        # Single formula sensor validation
+        if "formula" in sensor_config:
+            formula_text = sensor_config.get("formula", "")
+            variables = sensor_config.get("variables", {})
+
+            validation_result = self._validate_formula_variables(
+                formula_text, variables
+            )
+            for error_msg in validation_result:
+                warnings.append(
                     ValidationError(
-                        message=f"Duplicate unique_id '{unique_id}' found",
-                        path=f"sensors[{i}].unique_id",
-                        severity=ValidationSeverity.ERROR,
-                        suggested_fix=(
-                            "Use unique values for unique_id across all sensors"
-                        ),
+                        message=error_msg,
+                        path=f"sensors.{sensor_key}.formula",
+                        severity=ValidationSeverity.WARNING,
+                        suggested_fix="Define all variables used in the formula",
                     )
                 )
-            else:
-                unique_ids.append(unique_id)
 
-        # Check for duplicate formula IDs within sensors
-        for i, sensor in enumerate(sensors):
-            formulas = sensor.get("formulas", [])
-            formula_ids = []
-            for j, formula in enumerate(formulas):
-                formula_id = formula.get("id")
-                if formula_id in formula_ids:
-                    errors.append(
-                        ValidationError(
-                            message=(
-                                f"Duplicate formula id '{formula_id}' in sensor "
-                                f"'{sensor.get('unique_id')}'"
-                            ),
-                            path=f"sensors[{i}].formulas[{j}].id",
-                            severity=ValidationSeverity.ERROR,
-                            suggested_fix=("Use unique formula IDs within each sensor"),
-                        )
-                    )
-                else:
-                    formula_ids.append(formula_id)
+        # Validate calculated attributes (if present)
+        attributes = sensor_config.get("attributes", {})
+        if attributes:
+            variables = sensor_config.get("variables", {})
+            for attr_name, attr_config in attributes.items():
+                attr_formula = attr_config.get("formula", "")
 
-        # Validate entity references in formulas
-        for i, sensor in enumerate(sensors):
-            formulas = sensor.get("formulas", [])
-            for j, formula in enumerate(formulas):
-                formula_text = formula.get("formula", "")
-                variables = formula.get("variables", {})
+                # Allow 'state' variable in attribute formulas
+                extended_variables = variables.copy()
+                extended_variables["state"] = "main_sensor_state"
 
-                # Check if all variables used in formula are defined
                 validation_result = self._validate_formula_variables(
-                    formula_text, variables
+                    attr_formula, extended_variables
                 )
                 for error_msg in validation_result:
                     warnings.append(
                         ValidationError(
                             message=error_msg,
-                            path=f"sensors[{i}].formulas[{j}]",
+                            path=f"sensors.{sensor_key}.attributes.{attr_name}.formula",
                             severity=ValidationSeverity.WARNING,
-                            suggested_fix=("Define all variables used in the formula"),
+                            suggested_fix=(
+                                "Define all variables used in attribute formulas "
+                                "(or use 'state' for main sensor value)"
+                            ),
                         )
                     )
-
-        return errors, warnings
 
     def _validate_formula_variables(
         self, formula: str, variables: dict[str, str]
@@ -286,9 +276,9 @@ class SchemaValidator:
 
         return warnings
 
-    def _get_v1_schema(self) -> dict[str, Any]:
-        """Get the JSON schema for version 1.0 configurations."""
-        # Define common patterns to reduce repetition
+    def _get_v2_schema(self) -> dict[str, Any]:
+        """Get the JSON schema for version 1.0 configurations (modernized format)."""
+        # Define common patterns
         id_pattern = "^[a-z][a-z0-9_]*$"
         entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
         var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
@@ -301,12 +291,12 @@ class SchemaValidator:
                 "Schema for Home Assistant Synthetic Sensors YAML configuration"
             ),
             "type": "object",
-            "properties": self._get_main_properties(
+            "properties": self._get_v1_main_properties(
                 id_pattern, entity_pattern, var_pattern, icon_pattern
             ),
             "required": ["sensors"],
             "additionalProperties": False,
-            "definitions": self._get_schema_definitions(
+            "definitions": self._get_v1_schema_definitions(
                 id_pattern, entity_pattern, var_pattern, icon_pattern
             ),
         }
@@ -477,43 +467,231 @@ class SchemaValidator:
         }
 
     def _get_device_class_enum(self) -> list[str]:
-        """Get the list of valid device classes."""
+        """Get the list of valid device classes from Home Assistant constants."""
+        from homeassistant.components.sensor import SensorDeviceClass
+
         return [
-            "energy",
-            "power",
-            "voltage",
-            "current",
-            "temperature",
-            "humidity",
-            "pressure",
-            "illuminance",
-            "battery",
-            "timestamp",
-            "duration",
-            "distance",
-            "speed",
-            "weight",
-            "volume",
-            "monetary",
-            "signal_strength",
-            "data_rate",
-            "data_size",
-            "frequency",
-            "reactive_power",
-            "apparent_power",
-            "power_factor",
-            "carbon_monoxide",
-            "carbon_dioxide",
-            "nitrogen_dioxide",
-            "nitrogen_monoxide",
-            "nitrous_oxide",
-            "ozone",
-            "pm1",
-            "pm25",
-            "pm10",
-            "sulphur_dioxide",
-            "volatile_organic_compounds",
+            device_class.value
+            for device_class in SensorDeviceClass.__members__.values()
         ]
+
+    def _get_state_class_enum(self) -> list[str]:
+        """Get the list of valid state classes from Home Assistant constants."""
+        from homeassistant.components.sensor import SensorStateClass
+
+        return [
+            state_class.value for state_class in SensorStateClass.__members__.values()
+        ]
+
+    def _get_v1_main_properties(
+        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+    ) -> dict[str, Any]:
+        """Get the main properties for the v1.0 schema."""
+        return {
+            "version": {
+                "type": "string",
+                "enum": ["1.0"],
+                "description": "Configuration schema version",
+            },
+            "global_settings": {
+                "type": "object",
+                "description": "Global settings for all sensors",
+                "properties": {
+                    "domain_prefix": {
+                        "type": "string",
+                        "description": "Prefix for sensor entity IDs",
+                        "pattern": id_pattern,
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": (
+                            "Whether synthetic sensors are globally enabled"
+                        ),
+                    },
+                    "update_interval": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Default update interval in seconds",
+                    },
+                },
+                "additionalProperties": True,
+            },
+            "global": {
+                "type": "object",
+                "description": (
+                    "Global settings for all sensors (alias for global_settings)"
+                ),
+                "properties": {
+                    "domain_prefix": {
+                        "type": "string",
+                        "description": "Prefix for sensor entity IDs",
+                        "pattern": id_pattern,
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": (
+                            "Whether synthetic sensors are globally enabled"
+                        ),
+                    },
+                    "update_interval": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Default update interval in seconds",
+                    },
+                    "restore_state": {
+                        "type": "boolean",
+                        "description": "Whether to restore state on startup",
+                    },
+                },
+                "additionalProperties": True,
+            },
+            "sensors": {
+                "type": "object",
+                "description": "Dictionary of synthetic sensor definitions",
+                "patternProperties": {id_pattern: {"$ref": "#/definitions/v1_sensor"}},
+                "additionalProperties": False,
+                "minProperties": 1,
+            },
+        }
+
+    def _get_v1_schema_definitions(
+        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+    ) -> dict[str, Any]:
+        """Get the definitions section for the v2.0 schema."""
+        return {
+            "v1_sensor": self._get_v1_sensor_definition(
+                id_pattern, entity_pattern, var_pattern, icon_pattern
+            ),
+            "v1_attribute": self._get_v1_attribute_definition(
+                var_pattern, icon_pattern
+            ),
+        }
+
+    def _get_v1_sensor_definition(
+        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+    ) -> dict[str, Any]:
+        """Get the sensor definition for the v2.0 schema."""
+        return {
+            "type": "object",
+            "description": "Synthetic sensor definition (v2.0 syntax)",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Human-readable name for the sensor",
+                    "minLength": 1,
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Description of what the sensor calculates",
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Whether this sensor is enabled",
+                    "default": True,
+                },
+                "update_interval": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Update interval in seconds for this sensor",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category for grouping sensors",
+                },
+                # Main formula for sensor calculation
+                "formula": {
+                    "type": "string",
+                    "description": "Mathematical expression for sensor calculation",
+                    "minLength": 1,
+                },
+                "attributes": {
+                    "type": "object",
+                    "description": "Calculated attributes for rich sensor data",
+                    "patternProperties": {
+                        var_pattern: {"$ref": "#/definitions/v1_attribute"}
+                    },
+                    "additionalProperties": False,
+                },
+                # Common properties for both syntax patterns
+                "variables": {
+                    "type": "object",
+                    "description": "Variable mappings to Home Assistant entities",
+                    "patternProperties": {
+                        var_pattern: {
+                            "type": "string",
+                            "pattern": entity_pattern,
+                            "description": "Home Assistant entity ID",
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                "unit_of_measurement": {
+                    "type": "string",
+                    "description": "Unit of measurement for the calculated value",
+                },
+                "device_class": {
+                    "type": "string",
+                    "description": "Home Assistant device class",
+                    "enum": self._get_device_class_enum(),
+                },
+                "state_class": {
+                    "type": "string",
+                    "description": "Home Assistant state class",
+                    "enum": self._get_state_class_enum(),
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "Material Design icon identifier",
+                    "pattern": icon_pattern,
+                },
+                "extra_attributes": {
+                    "type": "object",
+                    "description": "Additional static attributes for the entity",
+                    "additionalProperties": True,
+                },
+            },
+            "required": ["formula"],
+            "additionalProperties": False,
+        }
+
+    def _get_v1_attribute_definition(
+        self, var_pattern: str, icon_pattern: str
+    ) -> dict[str, Any]:
+        """Get the calculated attribute definition for the v2.0 schema."""
+        return {
+            "type": "object",
+            "description": "Calculated attribute definition",
+            "properties": {
+                "formula": {
+                    "type": "string",
+                    "description": (
+                        "Mathematical expression to evaluate for this attribute"
+                    ),
+                    "minLength": 1,
+                },
+                "unit_of_measurement": {
+                    "type": "string",
+                    "description": "Unit of measurement for this attribute",
+                },
+                "device_class": {
+                    "type": "string",
+                    "description": "Home Assistant device class",
+                    "enum": self._get_device_class_enum(),
+                },
+                "state_class": {
+                    "type": "string",
+                    "description": "Home Assistant state class",
+                    "enum": self._get_state_class_enum(),
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "Material Design icon identifier",
+                    "pattern": icon_pattern,
+                },
+            },
+            "required": ["formula"],
+            "additionalProperties": False,
+        }
 
 
 class SchemaValidationError(Exception):

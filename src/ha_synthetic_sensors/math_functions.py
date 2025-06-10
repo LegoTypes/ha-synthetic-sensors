@@ -137,6 +137,23 @@ class MathFunctions:
             "pow": pow,
             "floor": math.floor,
             "ceil": math.ceil,
+            # Trigonometric functions
+            "sin": math.sin,
+            "cos": math.cos,
+            "tan": math.tan,
+            "asin": math.asin,
+            "acos": math.acos,
+            "atan": math.atan,
+            "atan2": math.atan2,
+            # Hyperbolic functions
+            "sinh": math.sinh,
+            "cosh": math.cosh,
+            "tanh": math.tanh,
+            # Logarithmic functions
+            "log": math.log,
+            "log10": math.log10,
+            "log2": math.log2,
+            "exp": math.exp,
             # Statistics - using our custom implementations that handle individual args
             "mean": MathFunctions.mean,
             # Custom functions

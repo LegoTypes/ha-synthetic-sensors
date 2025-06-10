@@ -39,11 +39,20 @@ class TestSchemaFixtures:
             if not result["valid"]:
                 error_details = []
                 for error in result["errors"]:
-                    error_msg = f"  - {error.message}"
-                    if error.path:
-                        error_msg += f" (path: {error.path})"
-                    if error.suggested_fix:
-                        error_msg += f" → Fix: {error.suggested_fix}"
+                    # Handle both ValidationError objects and dict format
+                    if hasattr(error, "message"):
+                        error_msg = f"  - {error.message}"
+                        if hasattr(error, "path") and error.path:
+                            error_msg += f" (path: {error.path})"
+                        if hasattr(error, "suggested_fix") and error.suggested_fix:
+                            error_msg += f" → Fix: {error.suggested_fix}"
+                    else:
+                        # Dict format from config_manager
+                        error_msg = f"  - {error.get('message', str(error))}"
+                        if error.get("path"):
+                            error_msg += f" (path: {error['path']})"
+                        if error.get("suggested_fix"):
+                            error_msg += f" → Fix: {error['suggested_fix']}"
                     error_details.append(error_msg)
 
                 invalid_files.append(f"{yaml_file.name}:\n" + "\n".join(error_details))
@@ -83,11 +92,20 @@ class TestSchemaFixtures:
         if not result["valid"]:
             error_messages = []
             for error in result["errors"]:
-                msg = error.message
-                if error.path:
-                    msg += f" (at {error.path})"
-                if error.suggested_fix:
-                    msg += f" → {error.suggested_fix}"
+                # Handle both ValidationError objects and dict format
+                if hasattr(error, "message"):
+                    msg = error.message
+                    if hasattr(error, "path") and error.path:
+                        msg += f" (at {error.path})"
+                    if hasattr(error, "suggested_fix") and error.suggested_fix:
+                        msg += f" → {error.suggested_fix}"
+                else:
+                    # Dict format from config_manager
+                    msg = error.get("message", str(error))
+                    if error.get("path"):
+                        msg += f" (at {error['path']})"
+                    if error.get("suggested_fix"):
+                        msg += f" → {error['suggested_fix']}"
                 error_messages.append(msg)
 
             pytest.fail(

@@ -1,0 +1,69 @@
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+
+sensors:
+  # Single variable example - YOU choose the variable name
+  solar_sold_positive:
+    name: "Solar Sold (Positive Value)"
+    formula: "abs(solar_power)"                   # ← Variable name you choose
+    variables:
+      solar_power: "sensor.span_panel_solar_inverter_instant_power"  # ← Maps to actual entity
+    unit: "W"
+    device_class: "power"
+
+  # Multiple variables example - YOU choose ALL the variable names
+  energy_cost_analysis:
+    name: "Current Energy Cost"
+    formula: "current_consumption * electricity_rate / 1000"
+    variables:
+      current_consumption: "sensor.span_panel_instantaneous_power"    # ← You pick "current_consumption"
+      electricity_rate: "input_number.electricity_rate_cents_kwh"     # ← You pick "electricity_rate"
+    unit: "¢/h"
+    device_class: "monetary"
+
+  # Complex formula with many variables - ALL names are your choice
+  hvac_efficiency:
+    name: "HVAC Efficiency Analysis"
+    formula: "(heating + cooling) / total_consumption * 100 if total_consumption > 0 else 0"
+    variables:
+      heating: "sensor.span_panel_circuit_5_power"          # ← You choose "heating"
+      cooling: "sensor.span_panel_circuit_6_power"          # ← You choose "cooling"
+      total_consumption: "sensor.span_panel_net_power"      # ← You choose "total_consumption"
+    unit: "%"
+    state_class: "measurement"
+
+  # You could use different variable names for the same entities
+  hvac_efficiency_alt:
+    name: "HVAC Efficiency (Alternative Names)"
+    formula: "(heat_pump + ac_unit) / house_power * 100 if house_power > 0 else 0"
+    variables:
+      heat_pump: "sensor.span_panel_circuit_5_power"        # ← Same entity, different variable name
+      ac_unit: "sensor.span_panel_circuit_6_power"          # ← Same entity, different variable name
+      house_power: "sensor.span_panel_net_power"            # ← Same entity, different variable name
+    unit: "%"
+    state_class: "measurement"
+
+  # Mixed approach - some variables, some direct entity IDs
+  solar_analysis_mixed:
+    name: "Solar Analysis (Mixed References)"
+    formula: "solar_production - sensor.syn2_solar_sold_positive + grid_import"
+    variables:
+      solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      grid_import: "sensor.span_panel_grid_import_power"
+      # Note: sensor.syn2_solar_sold_positive is referenced directly (no variable needed)
+    unit: "W"
+    device_class: "power"
+
+  # Descriptive variable names for clarity
+  solar_self_consumption:
+    name: "Solar Self-Consumption Rate"
+    formula: |
+      if(total_solar_production > 0,
+         (total_solar_production - solar_exported_to_grid) / total_solar_production * 100,
+         0)
+    variables:
+      total_solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      solar_exported_to_grid: "sensor.syn2_solar_sold_positive"
+    unit: "%"
+    state_class: "measurement"

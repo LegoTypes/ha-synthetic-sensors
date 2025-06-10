@@ -1,0 +1,85 @@
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+
+sensors:
+  # Basic solar self-consumption (current formula)
+  solar_self_consumption_basic:
+    name: "Solar Self-Consumption (Basic)"
+    formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
+    variables:
+      solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      solar_export: "sensor.syn2_solar_sold_watts"
+    unit: "%"
+    state_class: "measurement"
+
+  # Improved solar self-consumption with edge case handling
+  solar_self_consumption_improved:
+    name: "Solar Self-Consumption (Improved)"
+    formula: |
+      if(solar_production > 0,
+        max(0, min(100, (solar_production - max(0, solar_export)) / solar_production * 100)),
+        0)
+    variables:
+      solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      solar_export: "sensor.syn2_solar_sold_watts"
+    unit: "%"
+    state_class: "measurement"
+
+  # Comprehensive solar analysis with multiple calculated attributes
+  solar_consumption_analysis:
+    name: "Solar Consumption Analysis"
+    state_formula: |
+      if(solar_production > 0,
+        max(0, min(100, (solar_production - max(0, solar_export)) / solar_production * 100)),
+        0)
+    attributes:
+      self_consumed_power:
+        formula: "max(0, solar_production - max(0, solar_export))"
+        unit: "W"
+      export_rate:
+        formula: "if(solar_production > 0, max(0, solar_export) / solar_production * 100, 0)"
+        unit: "%"
+      production_status:
+        formula: |
+          if(solar_production > 100, "Producing",
+          if(solar_production > 0, "Low Production", "No Production"))
+        unit: ""
+      efficiency_tier:
+        formula: |
+          if(state >= 80, "Excellent",
+          if(state >= 60, "Good",
+          if(state >= 40, "Fair", "Poor")))
+        unit: ""
+    variables:
+      solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      solar_export: "sensor.syn2_solar_sold_watts"
+    unit: "%"
+    state_class: "measurement"
+
+  # Edge case examples with explanations
+  solar_edge_case_examples:
+    name: "Solar Edge Cases"
+    state_formula: "solar_production"  # Just track production for comparison
+    attributes:
+      # Handle negative export (grid import during solar production)
+      corrected_export:
+        formula: "max(0, solar_export)"  # Ensure export is never negative
+        unit: "W"
+
+      # Handle export > production (measurement errors)
+      export_ratio:
+        formula: "if(solar_production > 0, solar_export / solar_production, 0)"
+        unit: "ratio"
+
+      # Detect suspicious readings
+      data_quality:
+        formula: |
+          if(solar_export < 0, "Negative Export",
+          if(solar_export > solar_production * 1.1, "Export > Production", "Normal"))
+        unit: ""
+    variables:
+      solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      solar_export: "sensor.syn2_solar_sold_watts"
+    unit: "W"
+    device_class: "power"

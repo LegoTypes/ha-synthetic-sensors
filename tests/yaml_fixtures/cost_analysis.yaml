@@ -1,20 +1,15 @@
-# Cost Analysis Example - Based on Feature Planning Document
+# Cost Analysis Configuration
 version: "1.0"
 global_settings:
   domain_prefix: "syn2"  # Creates sensor.syn2_* entities
 
 sensors:
-  # Real-time energy cost rate
-  - unique_id: "current_energy_cost_rate"              # REQUIRED: Unique ID
-    name: "Current Energy Cost Rate"                   # OPTIONAL: Display name
-    formulas:
-      - id: "cost_rate"                                # REQUIRED: Formula ID
-        name: "Energy Cost Rate"                       # OPTIONAL: Display name
-        formula: "net_power * buy_rate / 1000 if net_power > 0 else abs(net_power) * sell_rate / 1000"
-        variables:
-          net_power: "sensor.span_panel_current_power"
-          buy_rate: "input_number.electricity_buy_rate_cents_kwh"
-          sell_rate: "input_number.electricity_sell_rate_cents_kwh"
-        unit_of_measurement: "¢/h"
-        device_class: "monetary"
-        state_class: "measurement"
+  current_energy_cost_rate:              # Sensor key becomes the unique_id
+    name: "Current Energy Cost Rate"     # OPTIONAL: Display name
+    formula: "energy_usage * rate_per_kwh / 1000"
+    variables:
+      energy_usage: "sensor.total_energy_usage"
+      rate_per_kwh: "sensor.current_electricity_rate"
+    unit_of_measurement: "$/h"
+    device_class: "monetary"
+    state_class: "measurement"

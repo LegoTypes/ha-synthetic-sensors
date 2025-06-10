@@ -85,6 +85,10 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "ha_integration: marks tests as requiring real Home Assistant (deselect with '-m \"not ha_integration\"')"
 ]
+# Filter out warnings from dependencies we can't control
+filterwarnings = [
+    "ignore:Inheritance class HomeAssistantApplication from web.Application is discouraged:DeprecationWarning:homeassistant.components.http",
+]
 
 [tool.coverage.report]
 exclude_lines = [

@@ -1,33 +1,22 @@
+# Sample Configuration for syn2 - From existing test_config.yaml format
 version: "1.0"
 global_settings:
   domain_prefix: "syn2"
-  enabled: true
 
 sensors:
-  - unique_id: "comfort_index"
+  comfort_index:
     name: "Comfort Index"
-    description: "Basic comfort index calculation"
-    formulas:
-      - id: "comfort_formula"
-        name: "Comfort Level"
-        formula: "temp + humidity"
-        unit_of_measurement: "index"
-        state_class: "measurement"
-        variables:
-          temp: "sensor.temperature"
-          humidity: "sensor.humidity"
-    enabled: true
+    formula: "(temperature - 20) * humidity / 100"
+    variables:
+      temperature: "sensor.living_room_temperature"
+      humidity: "sensor.living_room_humidity"
+    unit_of_measurement: "comfort"
+    state_class: "measurement"
 
-  - unique_id: "power_status"
+  power_status:
     name: "Power Status"
-    description: "Power status calculation"
-    formulas:
-      - id: "power_formula"
-        name: "Power Level"
-        formula: "power * status"
-        unit_of_measurement: "W"
-        state_class: "measurement"
-        variables:
-          power: "sensor.power_meter"
-          status: "sensor.status_indicator"
-    enabled: true
+    formula: "if(power > 1000, 'high', if(power > 500, 'medium', 'low'))"
+    variables:
+      power: "sensor.main_power_consumption"
+    icon: "mdi:power"
+    state_class: "measurement"

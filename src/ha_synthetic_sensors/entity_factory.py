@@ -11,7 +11,7 @@ from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 
-from .config_manager import FormulaConfigDict, SensorConfigDict
+from .config_manager import AttributeConfigDict, SensorConfigDict
 from .name_resolver import NameResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ class EntityFactory:
     def create_entity_description(
         self,
         sensor_config: SensorConfigDict,
-        formula_config: FormulaConfigDict | None = None,
+        formula_config: AttributeConfigDict | None = None,
     ) -> EntityDescription:
         """Create an entity description from sensor and formula configuration.
 
@@ -100,32 +100,49 @@ class EntityFactory:
         Returns:
             EntityDescription: Entity description with generated IDs and metadata
         """
-        sensor_id = sensor_config.get("unique_id", sensor_config.get("name"))
-        if not sensor_id:
+        sensor_id_val = sensor_config.get("unique_id") or sensor_config.get("name")
+        if not sensor_id_val or not isinstance(sensor_id_val, str):
             raise ValueError("Sensor must have either 'unique_id' or 'name' field")
+        sensor_id = str(sensor_id_val)
 
-        formula_id = formula_config.get("id") if formula_config else None
+        formula_id_val = formula_config.get("id") if formula_config else None
+        formula_id = str(formula_id_val) if formula_id_val else None
 
         unique_id = self.generate_unique_id(sensor_id, formula_id)
         entity_id = self.generate_entity_id(sensor_id, formula_id)
 
         # Determine display name (formula name takes priority, then
         # sensor name, then unique_id)
-        name = None
+        name: str | None = None
         if formula_config and formula_config.get("name"):
-            name = formula_config.get("name")
+            name_val = formula_config.get("name")
+            name = str(name_val) if name_val else None
         elif sensor_config.get("name"):
-            name = sensor_config.get("name")
+            name_val = sensor_config.get("name")
+            name = str(name_val) if name_val else None
         else:
             name = unique_id
 
-        # Extract entity metadata from formula config
-        icon = formula_config.get("icon") if formula_config else None
-        device_class = formula_config.get("device_class") if formula_config else None
-        unit_of_measurement = (
+        # Extract entity metadata from formula config (v1.0) or sensor config (v2.0)
+        icon_val = (
+            formula_config.get("icon") if formula_config else None
+        ) or sensor_config.get("icon")
+        icon = str(icon_val) if icon_val else None
+
+        device_class_val = (
+            formula_config.get("device_class") if formula_config else None
+        ) or sensor_config.get("device_class")
+        device_class = str(device_class_val) if device_class_val else None
+
+        unit_val = (
             formula_config.get("unit_of_measurement") if formula_config else None
-        )
-        state_class = formula_config.get("state_class") if formula_config else None
+        ) or sensor_config.get("unit_of_measurement")
+        unit_of_measurement = str(unit_val) if unit_val else None
+
+        state_class_val = (
+            formula_config.get("state_class") if formula_config else None
+        ) or sensor_config.get("state_class")
+        state_class = str(state_class_val) if state_class_val else None
 
         return EntityDescription(
             unique_id=unique_id,
@@ -183,15 +200,8 @@ class EntityFactory:
         if not sensor_config.get("unique_id") and not sensor_config.get("name"):
             errors.append("Sensor must have either 'unique_id' or 'name' field")
 
-        # Check formulas
-        formulas = sensor_config.get("formulas", [])
-        if not formulas:
-            errors.append("Sensor must have at least one formula")
-
-        for i, formula in enumerate(formulas):
-            if not formula.get("id"):
-                errors.append(f"Formula {i} must have an 'id' field")
-            if not formula.get("formula"):
-                errors.append(f"Formula {i} must have a 'formula' field")
+        # Check that formula is present (required for all sensors)
+        if not sensor_config.get("formula"):
+            errors.append("Sensor must have 'formula' field")
 
         return {"is_valid": len(errors) == 0, "errors": errors}

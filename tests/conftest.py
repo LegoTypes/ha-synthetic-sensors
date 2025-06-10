@@ -13,6 +13,28 @@ test_dir = Path(__file__).parent
 src_dir = test_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
+# Import real Home Assistant enums before installing mock finder to avoid recursion
+try:
+    from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+
+    REAL_SENSOR_DEVICE_CLASS = SensorDeviceClass
+    REAL_SENSOR_STATE_CLASS = SensorStateClass
+except ImportError:
+    # If Home Assistant is not installed, create basic mock enums
+    from enum import Enum
+
+    class MockDeviceClass(Enum):
+        MEASUREMENT = "measurement"
+        POWER = "power"
+        ENERGY = "energy"
+
+    class MockStateClass(Enum):
+        MEASUREMENT = "measurement"
+        TOTAL = "total"
+
+    REAL_SENSOR_DEVICE_CLASS = MockDeviceClass
+    REAL_SENSOR_STATE_CLASS = MockStateClass
+
 
 # Comprehensive Home Assistant mocking
 class MockHomeAssistant:
@@ -89,6 +111,29 @@ class HomeAssistantMockFinder:
 
     def find_spec(self, fullname, path, target=None):
         if fullname.startswith("homeassistant"):
+            # Special handling for sensor module to provide real enums but mock
+            # SensorEntity
+            if fullname == "homeassistant.components.sensor":
+                # Create a mock module with real enums but mock SensorEntity
+                mock_module = MagicMock()
+                mock_module.SensorDeviceClass = REAL_SENSOR_DEVICE_CLASS
+                mock_module.SensorStateClass = REAL_SENSOR_STATE_CLASS
+                mock_module.SensorEntity = MockSensorEntity
+
+                # Install the mock in sys.modules
+                sys.modules[fullname] = mock_module
+
+                # Return a mock spec
+                spec = MagicMock()
+                spec.loader = MagicMock()
+                spec.loader.create_module.return_value = mock_module
+                spec.loader.exec_module.return_value = None
+                return spec
+
+            # Don't mock homeassistant.const - let it be imported normally
+            if fullname == "homeassistant.const":
+                return None
+
             # Create a comprehensive mock for any HA module
             mock_module = MagicMock()
 
@@ -106,18 +151,10 @@ class HomeAssistantMockFinder:
                 mock_module.ConfigEntryError = MockConfigEntryError
             elif fullname == "homeassistant.config_entries":
                 mock_module.ConfigEntry = MagicMock
-            elif fullname == "homeassistant.components.sensor":
-                mock_module.SensorEntity = MockSensorEntity
-                mock_module.SensorDeviceClass = MagicMock
-                mock_module.SensorStateClass = MagicMock
             elif fullname == "homeassistant.helpers.event":
                 mock_module.async_track_state_change_event = MagicMock
             elif fullname == "homeassistant.helpers.restore_state":
                 mock_module.RestoreEntity = MockRestoreEntity
-            elif fullname == "homeassistant.const":
-                # Mock Home Assistant constants
-                mock_module.STATE_UNAVAILABLE = "unavailable"
-                mock_module.STATE_UNKNOWN = "unknown"
             elif fullname == "homeassistant.util.dt":
                 # Mock datetime utilities
                 from datetime import datetime
@@ -184,27 +221,15 @@ def mock_state():
 def sample_config() -> dict[str, Any]:
     """Sample configuration for testing."""
     return {
-        "variables": [
-            {
-                "name": "temp",
-                "entity_id": "sensor.temperature",
-                "description": "Room temperature",
-            },
-            {
-                "name": "humidity",
-                "entity_id": "sensor.humidity",
-                "description": "Room humidity",
-            },
-            {
-                "name": "power",
-                "entity_id": "sensor.power_meter",
-                "description": "Power consumption",
-            },
-        ],
-        "sensors": [
-            {
+        "version": "1.0",
+        "sensors": {
+            "comfort_index": {
                 "name": "Comfort Index",
                 "formula": "temp * 0.5 + humidity * 0.3",
+                "variables": {
+                    "temp": "sensor.temperature",
+                    "humidity": "sensor.humidity",
+                },
                 "unit_of_measurement": "comfort",
                 "device_class": None,
                 "state_class": "measurement",
@@ -213,16 +238,18 @@ def sample_config() -> dict[str, Any]:
                 "update_interval": 30,
                 "round_digits": 2,
             },
-            {
+            "power_status": {
                 "name": "Power Status",
                 "formula": "if_else(power > 1000, 1, 0)",
+                "variables": {
+                    "power": "sensor.power_meter",
+                },
                 "unit_of_measurement": None,
                 "device_class": "power",
                 "state_class": "measurement",
                 "enabled": True,
-                "availability_formula": "power > 0",
             },
-        ],
+        },
         "global_settings": {
             "default_update_interval": 30,
             "cache_ttl": 10,
@@ -241,24 +268,31 @@ def mock_config_entry():
 
 
 @pytest.fixture
-def sample_sensor_configs() -> list[dict[str, Any]]:
+def sample_sensor_configs() -> dict[str, dict[str, Any]]:
     """Sample sensor configurations for testing."""
-    return [
-        {
+    return {
+        "test_sensor_1": {
             "name": "Test Sensor 1",
             "formula": "temp + humidity",
+            "variables": {
+                "temp": "sensor.temperature",
+                "humidity": "sensor.humidity",
+            },
             "unit_of_measurement": "units",
             "device_class": "measurement",
             "enabled": True,
             "update_interval": 30,
         },
-        {
+        "test_sensor_2": {
             "name": "Test Sensor 2",
             "formula": "power / 1000",
+            "variables": {
+                "power": "sensor.power_meter",
+            },
             "unit_of_measurement": "kW",
             "device_class": "power",
             "state_class": "measurement",
             "enabled": True,
             "round_digits": 3,
         },
-    ]
+    }

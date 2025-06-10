@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypedDict, Union
+from typing import Any, TypeAlias, TypedDict, Union
 
 import yaml  # type: ignore[import-untyped]
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 
@@ -23,34 +24,46 @@ _LOGGER = logging.getLogger(__name__)
 # Type alias for attribute values (allows complex types for formula metadata)
 AttributeValue = Union[str, float, int, bool, list[str], dict[str, Any]]
 
+# Type aliases for Home Assistant constants - use the actual enum types
+DeviceClassType: TypeAlias = (
+    SensorDeviceClass | str
+)  # str for YAML parsing, enum for runtime
+StateClassType: TypeAlias = (
+    SensorStateClass | str
+)  # str for YAML parsing, enum for runtime
 
-# TypedDicts for YAML config structures
-class FormulaConfigDict(TypedDict, total=False):
-    id: str
+
+# TypedDicts for v2.0 YAML config structures
+class AttributeConfigDict(TypedDict, total=False):
     formula: str
-    name: str
-    variables: dict[str, str]
     unit_of_measurement: str
-    device_class: str
-    state_class: str
+    device_class: DeviceClassType
+    state_class: StateClassType
     icon: str
-    attributes: dict[str, AttributeValue]
 
 
 class SensorConfigDict(TypedDict, total=False):
-    unique_id: str
     name: str
-    formulas: list[FormulaConfigDict]
+    description: str
     enabled: bool
     update_interval: int
     category: str
-    description: str
+    # Main formula syntax
+    formula: str
+    attributes: dict[str, AttributeConfigDict]
+    # Common properties
+    variables: dict[str, str]
+    unit_of_measurement: str
+    device_class: DeviceClassType
+    state_class: StateClassType
+    icon: str
+    extra_attributes: dict[str, AttributeValue]
 
 
 class ConfigDict(TypedDict, total=False):
     version: str
     global_settings: dict[str, AttributeValue]
-    sensors: list[SensorConfigDict]
+    sensors: dict[str, SensorConfigDict]
 
 
 @dataclass
@@ -61,8 +74,8 @@ class FormulaConfig:
     formula: str
     name: str | None = None  # OPTIONAL: Display name
     unit_of_measurement: str | None = None
-    device_class: str | None = None
-    state_class: str | None = None
+    device_class: DeviceClassType | None = None
+    state_class: StateClassType | None = None
     icon: str | None = None
     attributes: dict[str, AttributeValue] = field(default_factory=dict)
     dependencies: set[str] = field(default_factory=set)
@@ -278,72 +291,112 @@ class ConfigManager:
             global_settings=yaml_data.get("global_settings", {}),
         )
 
-        # Parse sensors
-        sensors_data = yaml_data.get("sensors", [])
-        for sensor_data in sensors_data:
-            sensor = self._parse_sensor_config(sensor_data)
+        # Parse sensors (v2.0 dict format)
+        sensors_data = yaml_data.get("sensors", {})
+        for sensor_key, sensor_data in sensors_data.items():
+            sensor = self._parse_sensor_config(sensor_key, sensor_data)
             config.sensors.append(sensor)
 
         return config
 
-    def _parse_sensor_config(self, sensor_data: SensorConfigDict) -> SensorConfig:
-        """Parse a single sensor configuration.
+    def _parse_sensor_config(
+        self, sensor_key: str, sensor_data: SensorConfigDict
+    ) -> SensorConfig:
+        """Parse sensor configuration from v2.0 dict format.
 
         Args:
+            sensor_key: Sensor key (serves as unique_id)
             sensor_data: Sensor configuration dictionary
 
         Returns:
             SensorConfig: Parsed sensor configuration
         """
-        # Support both old 'name' and new 'unique_id' field for migration
-        unique_id = sensor_data.get("unique_id") or sensor_data.get("name")
-        if not unique_id:
-            raise ValueError("Sensor must have either 'unique_id' or 'name' field")
+        sensor = SensorConfig(unique_id=sensor_key)
 
-        sensor = SensorConfig(
-            unique_id=unique_id,
-            name=str(sensor_data.get("name") or sensor_data.get("friendly_name") or ""),
-            enabled=sensor_data.get("enabled", True),
-            update_interval=sensor_data.get("update_interval"),
-            category=sensor_data.get("category"),
-            description=sensor_data.get("description"),
-        )
+        # Copy basic properties
+        sensor.name = sensor_data.get("name")
+        sensor.enabled = sensor_data.get("enabled", True)
+        sensor.update_interval = sensor_data.get("update_interval")
+        sensor.category = sensor_data.get("category")
+        sensor.description = sensor_data.get("description")
 
-        # Parse formulas
-        formulas_data = sensor_data.get("formulas", [])
-        for formula_data in formulas_data:
-            formula = self._parse_formula_config(formula_data)
-            sensor.formulas.append(formula)
+        # Parse main formula (required)
+        formula = self._parse_single_formula(sensor_key, sensor_data)
+        sensor.formulas.append(formula)
+
+        # Parse calculated attributes if present
+        attributes_data = sensor_data.get("attributes", {})
+        for attr_name, attr_config in attributes_data.items():
+            attr_formula = self._parse_attribute_formula(
+                sensor_key, attr_name, attr_config, sensor_data
+            )
+            sensor.formulas.append(attr_formula)
 
         return sensor
 
-    def _parse_formula_config(self, formula_data: FormulaConfigDict) -> FormulaConfig:
-        """Parse a single formula configuration.
+    def _parse_single_formula(
+        self, sensor_key: str, sensor_data: SensorConfigDict
+    ) -> FormulaConfig:
+        """Parse a single formula sensor configuration (v2.0 format).
 
         Args:
-            formula_data: Formula configuration dictionary
+            sensor_key: Sensor key (used as base for formula ID)
+            sensor_data: Sensor configuration dictionary
 
         Returns:
             FormulaConfig: Parsed formula configuration
         """
-        # Support both old 'name' and new 'id' field for migration
-        formula_id = formula_data.get("id") or formula_data.get("name")
-        if not formula_id:
-            raise ValueError("Formula must have either 'id' or 'name' field")
-
-        formula_str = formula_data.get("formula")
-        if formula_str is None:
-            raise ValueError("Formula must have a 'formula' field")
+        formula_str = sensor_data.get("formula")
+        if not formula_str:
+            raise ValueError(
+                f"Single formula sensor '{sensor_key}' must have 'formula' field"
+            )
 
         return FormulaConfig(
-            id=formula_id,
-            name=formula_data.get("name"),  # Use name as display name if provided
+            id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
+            name=sensor_data.get("name"),
             formula=formula_str,
-            unit_of_measurement=formula_data.get("unit_of_measurement"),
-            device_class=formula_data.get("device_class"),
-            state_class=formula_data.get("state_class"),
-            icon=formula_data.get("icon"),
-            attributes=formula_data.get("attributes", {}),
+            unit_of_measurement=sensor_data.get("unit_of_measurement"),
+            device_class=sensor_data.get("device_class"),
+            state_class=sensor_data.get("state_class"),
+            icon=sensor_data.get("icon"),
+            attributes=sensor_data.get("extra_attributes", {}),
+        )
+
+    def _parse_attribute_formula(
+        self,
+        sensor_key: str,
+        attr_name: str,
+        attr_config: AttributeConfigDict,
+        sensor_data: SensorConfigDict,
+    ) -> FormulaConfig:
+        """Parse a calculated attribute formula (v2.0 format).
+
+        Args:
+            sensor_key: Sensor key (used as base for formula ID)
+            attr_name: Attribute name
+            attr_config: Attribute configuration dictionary
+            sensor_data: Parent sensor configuration dictionary
+
+        Returns:
+            FormulaConfig: Parsed attribute formula configuration
+        """
+        attr_formula = attr_config.get("formula")
+        if not attr_formula:
+            raise ValueError(
+                f"Attribute '{attr_name}' in sensor '{sensor_key}' must have "
+                f"'formula' field"
+            )
+
+        return FormulaConfig(
+            id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
+            name=f"{sensor_data.get('name', sensor_key)} - {attr_name}",
+            formula=attr_formula,
+            unit_of_measurement=attr_config.get("unit_of_measurement"),
+            device_class=None,  # Attributes don't typically have device classes
+            state_class=None,  # Attributes don't typically have state classes
+            icon=attr_config.get("icon"),
+            attributes={},
         )
 
     def reload_config(self) -> Config:

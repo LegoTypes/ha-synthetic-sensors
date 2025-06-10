@@ -73,36 +73,22 @@ def syn2_sample_config():
     return {
         "version": "1.0",
         "global_settings": {},
-        "sensors": [
-            {
-                "unique_id": "comfort_index",  # REQUIRED: Unique identifier
-                "name": "Comfort Index",  # OPTIONAL: Display name
-                "formulas": [
-                    {
-                        "id": "comfort_formula",  # REQUIRED: Formula identifier
-                        "name": "Comfort Level",  # OPTIONAL: Display name
-                        "formula": "temp + humidity",
-                        "unit_of_measurement": "index",
-                        "state_class": "measurement",
-                    }
-                ],
+        "sensors": {
+            "comfort_index": {
+                "name": "Comfort Index",
+                "formula": "temp + humidity",
+                "unit_of_measurement": "index",
+                "state_class": "measurement",
                 "enabled": True,
             },
-            {
-                "unique_id": "power_status",  # REQUIRED: Unique identifier
-                "name": "Power Status",  # OPTIONAL: Display name
-                "formulas": [
-                    {
-                        "id": "power_formula",  # REQUIRED: Formula identifier
-                        "name": "Power Level",  # OPTIONAL: Display name
-                        "formula": "power * status",
-                        "unit_of_measurement": "W",
-                        "state_class": "measurement",
-                    }
-                ],
+            "power_status": {
+                "name": "Power Status",
+                "formula": "power * status",
+                "unit_of_measurement": "W",
+                "state_class": "measurement",
                 "enabled": True,
             },
-        ],
+        },
     }
 
 

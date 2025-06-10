@@ -1,49 +1,30 @@
+# Service Layer Test Configuration
 version: "1.0"
 global_settings:
   domain_prefix: "syn2"
-  enabled: true
 
 sensors:
-  - unique_id: "service_test_basic"
+  service_test_basic:
     name: "Service Basic Test"
-    description: "Basic service layer functionality test"
-    formulas:
-      - id: "service_basic"
-        name: "Service Basic Formula"
-        formula: "input_1 + input_2"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
-        variables:
-          input_1: "sensor.service_input_1"
-          input_2: "sensor.service_input_2"
-    enabled: true
+    formula: "A + B"
+    variables:
+      A: "sensor.test_input_a"
+      B: "sensor.test_input_b"
+    unit_of_measurement: "units"
+    state_class: "measurement"
 
-  - unique_id: "service_test_async"
+  service_test_async:
     name: "Service Async Test"
-    description: "Test for asynchronous service operations"
-    formulas:
-      - id: "async_operation"
-        name: "Async Operation"
-        formula: "async_data * multiplier"
-        unit_of_measurement: "units"
-        state_class: "measurement"
-        variables:
-          async_data: "sensor.async_data_source"
-          multiplier: "sensor.multiplier_value"
-    enabled: true
+    formula: "value * 2"
+    variables:
+      value: "sensor.async_test_value"
+    unit_of_measurement: "doubled"
+    state_class: "measurement"
 
-  - unique_id: "service_test_integration"
+  service_test_integration:
     name: "Service Integration Test"
-    description: "Integration test for service layer components"
-    formulas:
-      - id: "integration_test"
-        name: "Integration Test Formula"
-        formula: "component_a + component_b + component_c"
-        unit_of_measurement: "composite"
-        state_class: "measurement"
-        variables:
-          component_a: "sensor.component_a"
-          component_b: "sensor.component_b"
-          component_c: "sensor.component_c"
-    enabled: true
+    formula: "entity('sensor.integration_source') * factor"
+    variables:
+      factor: "sensor.multiplication_factor"
+    unit_of_measurement: "scaled"
+    state_class: "measurement"

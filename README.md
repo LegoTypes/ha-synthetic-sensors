@@ -47,26 +47,67 @@ async def async_setup_entry(
 
 ## YAML configuration
 
+### Simple sensors (flattened syntax)
+
 ```yaml
 version: "1.0"
 
 sensors:
-  - unique_id: "energy_cost_analysis"
-    name: "Energy Cost Analysis"
-    formulas:
-      - id: "current_cost_rate"
-        formula: "current_power * electricity_rate / 1000"
-        variables:
-          current_power: "sensor.span_panel_instantaneous_power"
-          electricity_rate: "input_number.electricity_rate_cents_kwh"
-        unit_of_measurement: "¢/h"
-        device_class: "monetary"
-        state_class: "measurement"
+  # Single formula sensor (90% of use cases)
+  energy_cost_current:
+    name: "Current Energy Cost"
+    formula: "current_power * electricity_rate / 1000"
+    variables:
+      current_power: "sensor.span_panel_instantaneous_power"
+      electricity_rate: "input_number.electricity_rate_cents_kwh"
+    unit_of_measurement: "¢/h"
+    device_class: "monetary"
+    state_class: "measurement"
 
-      - id: "daily_projected_cost"
-        formula: "current_cost_rate * 24"
+  # Another simple sensor
+  solar_sold_power:
+    name: "Solar Sold Power"
+    formula: "abs(min(grid_power, 0))"
+    variables:
+      grid_power: "sensor.span_panel_current_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+```
+
+### Rich sensors with calculated attributes
+
+```yaml
+sensors:
+  # Sensor with calculated attributes
+  energy_cost_analysis:
+    name: "Energy Cost Analysis"
+    formula: "current_power * electricity_rate / 1000"
+    attributes:
+      daily_projected:
+        formula: "state * 24"
         unit_of_measurement: "¢"
-        device_class: "monetary"
+      monthly_projected:
+        formula: "state * 24 * 30"
+        unit_of_measurement: "¢"
+      annual_projected:
+        formula: "state * 24 * 365"
+        unit_of_measurement: "¢"
+      efficiency:
+        formula: "state / sensor.max_power_capacity * 100"
+        unit_of_measurement: "%"
+    variables:
+      current_power: "sensor.span_panel_instantaneous_power"
+      electricity_rate: "input_number.electricity_rate_cents_kwh"
+    unit_of_measurement: "¢/h"
+    device_class: "monetary"
+```
+
+**How attributes work:**
+- Main sensor state is calculated first using the `formula`
+- Attributes are calculated second and have access to the `state` variable
+- `state` always refers to the fresh main sensor calculation
+- Attributes can also reference other entities normally (like `sensor.max_power_capacity` above)
+- Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
 ```
 
 ## Variable mapping
@@ -149,11 +190,28 @@ value_template: >
 
 **This package:**
 ```yaml
-formulas:
-  - id: "base_calculation"
-    formula: "power_usage * rate"
-  - id: "with_tax"
-    formula: "base_calculation * 1.08"
+# Base calculation sensor
+base_calculation:
+  formula: "power_usage * rate"
+  variables:
+    power_usage: "sensor.power_meter"
+    rate: "input_number.electricity_rate"
+
+# Derived calculation referencing the first sensor
+with_tax:
+  formula: "sensor.syn2_base_calculation * 1.08"
+
+# Or use attributes for related calculations
+comprehensive_analysis:
+  formula: "power_usage * rate"
+  attributes:
+    with_tax:
+      formula: "state * 1.08"
+    with_discount:
+      formula: "state * 0.90"
+  variables:
+    power_usage: "sensor.power_meter"
+    rate: "input_number.electricity_rate"
 ```
 
 **Templates:** Each sensor needs separate template with repeated calculations.

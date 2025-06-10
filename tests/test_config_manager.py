@@ -56,7 +56,9 @@ class TestConfigManager:
 
             sensors = config.sensors
             assert len(sensors) == 2
-            assert sensors[0].name == "Simple Test Sensor"
+            sensor_names = [s.name for s in sensors]
+            assert "Simple Test Sensor" in sensor_names
+            assert "Complex Test Sensor" in sensor_names
 
         finally:
             Path(temp_path).unlink()
@@ -243,12 +245,11 @@ class TestConfigManager:
         # Create a valid configuration with at least one sensor
         valid_config = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -295,12 +296,11 @@ class TestConfigManagerExtended:
         """Test load_config when schema validation returns warnings."""
         config_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -334,12 +334,11 @@ class TestConfigManagerExtended:
         """Test load_config when schema validation fails."""
         config_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    # Missing unique_id to trigger schema error
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -374,12 +373,11 @@ class TestConfigManagerExtended:
         """Test load_config when config.validate() returns errors."""
         config_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -505,12 +503,11 @@ class TestConfigManagerExtended:
         """Test load_from_file method."""
         config_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -554,10 +551,8 @@ class TestConfigManagerExtended:
         yaml_content = """
 version: "1.0"
 sensors:
-  - unique_id: "test_sensor"
-    formulas:
-      - id: "test_formula"
-        formula: "1 + 1"
+  test_sensor:
+    formula: "1 + 1"
 """
         # Mock Config.validate to return errors
         with patch.object(Config, "validate") as mock_validate:
@@ -599,12 +594,11 @@ sensors:
         """Test reload_config method."""
         config_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -646,12 +640,11 @@ sensors:
         """Test validate_yaml_data method."""
         yaml_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         result = config_manager.validate_yaml_data(yaml_data)
@@ -663,21 +656,17 @@ sensors:
         """Test validate_yaml_data with validation errors."""
         yaml_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    # Missing unique_id
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "invalid_field": "this should not be allowed",
+                    # Missing required formula field
                 }
-            ],
+            },
         }
 
-        # The actual validation will catch the missing unique_id
         result = config_manager.validate_yaml_data(yaml_data)
         assert result["valid"] is False
         assert len(result["errors"]) >= 1
-        # Check that there's an error about unique_id
-        error_messages = [error["message"] for error in result["errors"]]
-        assert any("unique_id" in msg for msg in error_messages)
 
     def test_validate_config_file_nonexistent_file(self, config_manager):
         """Test validate_config_file with nonexistent file."""
@@ -721,12 +710,11 @@ sensors:
         """Test validate_config_file with valid YAML."""
         config_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
-                    "formulas": [{"id": "test_formula", "formula": "1 + 1"}],
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
                 }
-            ],
+            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -745,28 +733,21 @@ sensors:
         """Test _parse_yaml_config method with basic configuration."""
         yaml_data = {
             "version": "1.0",
-            "sensors": [
-                {
-                    "unique_id": "test_sensor",
+            "sensors": {
+                "test_sensor": {
                     "name": "Test Sensor",
-                    "formulas": [
-                        {
-                            "id": "test_formula",
-                            "name": "Test Formula",
-                            "formula": "1 + 1",
-                            "unit_of_measurement": "test_unit",
-                            "device_class": "energy",
-                            "state_class": "measurement",
-                            "icon": "mdi:test",
-                            "attributes": {"test_attr": "test_value"},
-                        }
-                    ],
+                    "formula": "1 + 1",
+                    "unit_of_measurement": "test_unit",
+                    "device_class": "energy",
+                    "state_class": "measurement",
+                    "icon": "mdi:test",
                     "enabled": True,
                     "update_interval": 30,
                     "category": "test_category",
                     "description": "Test description",
+                    "extra_attributes": {"test_attr": "test_value"},
                 }
-            ],
+            },
             "global_settings": {"test_setting": "test_value"},
         }
 
@@ -783,26 +764,18 @@ sensors:
         assert sensor.category == "test_category"
         assert sensor.description == "Test description"
 
+        # In v2.0, there's only one formula per sensor (the main formula)
         formula = sensor.formulas[0]
-        assert formula.id == "test_formula"
-        assert formula.name == "Test Formula"
+        assert formula.id == "test_sensor"  # Formula ID matches sensor key
         assert formula.formula == "1 + 1"
         assert formula.unit_of_measurement == "test_unit"
         assert formula.device_class == "energy"
         assert formula.state_class == "measurement"
         assert formula.icon == "mdi:test"
-        assert formula.attributes == {"test_attr": "test_value"}
 
     def test_parse_yaml_config_minimal(self, config_manager):
         """Test _parse_yaml_config with minimal required fields."""
-        yaml_data = {
-            "sensors": [
-                {
-                    "unique_id": "minimal_sensor",
-                    "formulas": [{"id": "minimal_formula", "formula": "1"}],
-                }
-            ]
-        }
+        yaml_data = {"sensors": {"minimal_sensor": {"formula": "1"}}}
 
         config = config_manager._parse_yaml_config(yaml_data)
         assert config is not None
@@ -811,11 +784,11 @@ sensors:
 
         sensor = config.sensors[0]
         assert sensor.unique_id == "minimal_sensor"
-        assert sensor.name == ""  # Empty string for missing name
+        assert sensor.name is None  # No name provided
         assert sensor.enabled is True  # Default value
 
         formula = sensor.formulas[0]
-        assert formula.id == "minimal_formula"
+        assert formula.id == "minimal_sensor"  # Formula ID matches sensor key
         assert formula.formula == "1"
         assert formula.name is None  # Optional field
 

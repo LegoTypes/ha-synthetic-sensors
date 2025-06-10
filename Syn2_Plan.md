@@ -1,16 +1,60 @@
-# Technical Implementation Plan - HA Synthetic Sensors
+# Technical Implementation Plan - HA Synthetic Sensors (Version 2.0)
 
 ## Package Status
 
-**Current State**: Production ready with comprehensive test coverage and YAML schema validation
-**Test Results**: 138/138 tests passing
+**Current State**: Production ready foundation with clean v2.0 YAML syntax design
+**Test Results**: 138/138 tests passing (foundation components)
 **Type Safety**: Complete TypedDict implementation
 **Code Quality**: All linting checks passing
-**YAML Validation**: Comprehensive JSON Schema v4.17.0 validation infrastructure implemented
+**YAML Validation**: Clean v2.0 schema implementation
 
 ## Implementation Overview
 
-Python package providing YAML-based synthetic sensor creation for Home Assistant. Supports mathematical formula evaluation with entity references, dynamic sensor management, and service integration.
+Python package providing YAML-based synthetic sensor creation for Home Assistant with clean v2.0 syntax. Features flattened single-formula sensors, calculated attributes for rich data, mathematical formula evaluation with entity references, dynamic sensor management, and service integration.
+
+## Version 2.0 YAML Syntax Improvements
+
+### Key Improvements
+
+1. **Flattened Single-Formula Sensors** (90% of use cases):
+   - Sensor key becomes unique identifier
+   - Direct `formula` key (no nested arrays)
+   - Simplified configuration for common scenarios
+
+2. **Calculated Attributes for Rich Data**:
+   - `state_formula` for main sensor value
+   - `attributes` section for computed attributes
+   - Reduces UI clutter while providing rich data
+
+3. **Smart Cross-References**:
+   - Direct entity ID resolution: `sensor.syn2_sensor_key`
+   - No more long nested entity IDs
+   - Cleaner hierarchical references
+
+### Design Philosophy
+
+**Clean v2.0 Syntax:**
+```yaml
+sensors:
+  # Single formula (90% of use cases)
+  energy_cost_current:
+    formula: "power * rate"
+
+  # Rich sensor with calculated attributes
+  energy_cost_analysis:
+    state_formula: "power * rate"
+    attributes:
+      daily_projected:
+        formula: "state * 24"
+      monthly_projected:
+        formula: "state * 24 * 30"
+```
+
+**Key Benefits:**
+- **Simplified Entity IDs**: `sensor.syn2_energy_cost_analysis`
+- **Reduced Configuration**: No nested arrays for common cases
+- **Rich Data**: Multiple calculated values in single entity
+- **Clean Cross-References**: Direct entity ID resolution
 
 ## Current State Analysis
 
@@ -133,6 +177,91 @@ Status: All Phase 1 functions implemented, tested, and passing in production cod
 **Home Assistant Specific Functions (Phase 6):**
 - delta - Absolute difference between values
 - Custom entity reference syntax improvements
+
+## Version 2.0 Implementation Roadmap
+
+### Phase 1: Schema and Parser Implementation
+
+**Objective**: Implement clean v2.0 YAML schema validation
+
+**Implementation Steps**:
+1. **Schema Definition** (`schema/schema_v2.py`):
+   - Clean v2.0 schema with flattened syntax
+   - Support for `formula` vs `state_formula` keys
+   - Add `attributes` section validation
+   - Simplified key names (`unit` vs `unit_of_measurement`)
+
+2. **ConfigManager Implementation** (`config_manager.py`):
+   - Clean v2.0 config parser
+   - Sensor key-based configuration handling
+   - Direct formula and calculated attributes parsing
+   - Validation integration
+
+3. **Validation Service Implementation**:
+   - `validate_config` service for v2.0 syntax
+   - Clear error messages for syntax issues
+   - Schema validation integration
+
+### Phase 2: Calculated Attributes Support
+
+**Objective**: Implement rich sensor data through calculated attributes
+
+**Implementation Steps**:
+1. **EntityManager Updates** (`entity_manager.py`):
+   - Add attribute calculation support to sensor entities
+   - Implement `state_formula` vs regular `formula` handling
+   - Add attribute update cycles alongside main state updates
+
+2. **Evaluator Enhancements** (`evaluator.py`):
+   - Support for `state` variable in attribute formulas
+   - Attribute-specific dependency tracking
+   - Caching for attribute calculations
+
+3. **Service Updates**:
+   - Update `get_sensor_info` to include attribute information
+   - Add attribute inspection capabilities
+   - Support attribute updates in `update_sensor` service
+
+### Phase 3: Clean Entity ID Implementation
+
+**Objective**: Implement simplified entity ID generation
+
+**Implementation Steps**:
+1. **Entity ID Generation** (`integration.py`):
+   - Implement clean `sensor.syn2_{sensor_key}` pattern
+   - Single entity per sensor with calculated attributes
+   - Smart entity ID resolution for cross-references
+
+2. **Name Resolution Implementation** (`name_resolver.py`):
+   - Clean resolution for simplified entity IDs
+   - Direct sensor key to entity ID mapping
+   - Cross-reference validation for hierarchical sensors
+
+3. **Dependency Implementation** (`dependency_parser.py`):
+   - Clean dependency parsing for simplified entity IDs
+   - Support for direct entity ID references
+   - Enhanced circular dependency detection
+
+### Phase 4: Testing and Documentation
+
+**Objective**: Comprehensive testing and documentation for v2.0 implementation
+
+**Implementation Steps**:
+1. **Test Suite Implementation**:
+   - v2.0 syntax validation tests
+   - Calculated attributes functionality tests
+   - Clean entity ID implementation tests
+   - Integration tests for complete v2.0 workflow
+
+2. **Example Configurations**:
+   - Comprehensive v2.0 example configurations
+   - Real-world use case examples
+   - Best practices documentation
+
+3. **Service Documentation**:
+   - Complete service documentation for v2.0 features
+   - Implementation guide
+   - Performance optimization guidelines
 
 ### Current Implementation Status
 

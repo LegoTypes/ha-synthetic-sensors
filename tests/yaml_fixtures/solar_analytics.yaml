@@ -4,26 +4,20 @@ global_settings:
   domain_prefix: "syn2"  # Creates sensor.syn2_* entities
 
 sensors:
-  - unique_id: "solar_sold_positive"                    # REQUIRED: Unique identifier
-    name: "Solar Sold (Positive Value)"                 # OPTIONAL: Display name only
-    formulas:
-      - id: "solar_sold"                                # REQUIRED: Formula ID
-        name: "Solar Sold"                              # OPTIONAL: Display name only
-        formula: "abs(min(grid_power, 0))"
-        variables:
-          grid_power: "sensor.span_panel_current_power"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+  solar_sold_positive:                    # Sensor key becomes the unique_id
+    name: "Solar Sold (Positive Value)"   # OPTIONAL: Display name only
+    formula: "abs(min(grid_power, 0))"
+    variables:
+      grid_power: "sensor.span_panel_current_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
 
-  - unique_id: "solar_self_consumption_rate"           # REQUIRED: Unique ID
-    name: "Solar Self-Consumption Rate"                # OPTIONAL: Display name
-    formulas:
-      - id: "consumption_rate"                         # REQUIRED: Formula ID
-        name: "Self-Consumption %"                     # OPTIONAL: Display name
-        formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
-        variables:
-          solar_production: "sensor.span_panel_solar_inverter_instant_power"
-          solar_export: "sensor.syn2_solar_sold_positive_solar_sold"  # References by entity ID
-        unit_of_measurement: "%"
-        state_class: "measurement"
+  solar_self_consumption_rate:           # Sensor key becomes the unique_id
+    name: "Solar Self-Consumption Rate"  # OPTIONAL: Display name
+    formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
+    variables:
+      solar_production: "sensor.span_panel_solar_inverter_instant_power"
+      solar_export: "sensor.syn2_solar_sold_positive"  # References by entity ID (now simplified)
+    unit_of_measurement: "%"
+    state_class: "measurement"

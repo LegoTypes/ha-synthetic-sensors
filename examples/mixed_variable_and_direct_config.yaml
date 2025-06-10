@@ -1,0 +1,118 @@
+# Mixed Variable and Direct Entity Reference Example
+# Demonstrates all three patterns supported by the system:
+# 1. Pure variable mapping
+# 2. Pure direct entity ID references
+# 3. Mixed (variables + direct entity IDs in same formula)
+
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+
+sensors:
+  # Pattern 1: Pure Variable Mapping (Clean YAML approach)
+  - unique_id: "hvac_total_clean"
+    name: "HVAC Total (Clean Variables)"
+    formulas:
+      - id: "hvac_total"
+        name: "Total HVAC Power"
+        formula: "heating + cooling"  # Clean variable names
+        variables:
+          heating: "sensor.circuit_5_power"
+          cooling: "sensor.circuit_6_power"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+
+  # Pattern 2: Pure Direct Entity ID References (No variables)
+  - unique_id: "lighting_total_direct"
+    name: "Lighting Total (Direct Entity IDs)"
+    formulas:
+      - id: "lighting_total"
+        name: "Total Lighting Power"
+        formula: "sensor.circuit_10_power + sensor.circuit_11_power + sensor.circuit_12_power"  # Direct entity IDs
+        variables: {}  # No variable mapping needed
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+
+  # Pattern 3: Mixed Approach (Variables + Direct Entity IDs)
+  - unique_id: "home_consumption_mixed"
+    name: "Home Consumption (Mixed Pattern)"
+    formulas:
+      - id: "total_consumption"
+        name: "Total Home Consumption"
+        formula: "hvac_total + lighting_total + sensor.major_appliances_power + sensor.water_heater_power"
+        variables:
+          hvac_total: "sensor.syn2_hvac_total_clean_hvac_total"        # Variable to synthetic sensor
+          lighting_total: "sensor.syn2_lighting_total_direct_lighting_total"  # Variable to synthetic sensor
+          # sensor.major_appliances_power and sensor.water_heater_power are direct references
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+
+  # Pattern 4: Complex Mixed with Calculations
+  - unique_id: "energy_efficiency"
+    name: "Energy Efficiency Analysis"
+    formulas:
+      - id: "efficiency_ratio"
+        name: "Home Efficiency Ratio"
+        formula: "if(total_consumption > 0, solar_production / total_consumption * 100, 0)"
+        variables:
+          total_consumption: "sensor.syn2_home_consumption_mixed_total_consumption"  # Variable to synthetic sensor
+          # solar_production will be direct reference in formula
+        unit_of_measurement: "%"
+        state_class: "measurement"
+      - id: "efficiency_with_direct"
+        name: "Efficiency with Direct References"
+        formula: "if(sensor.span_panel_current_power > 0, solar_inverter / sensor.span_panel_current_power * 100, 0)"
+        variables:
+          solar_inverter: "sensor.span_panel_solar_inverter_instant_power"  # Variable mapping
+          # sensor.span_panel_current_power is direct reference (used twice)
+        unit_of_measurement: "%"
+        state_class: "measurement"
+
+  # Pattern 5: Cost Analysis with Mixed References
+  - unique_id: "real_time_cost"
+    name: "Real-time Energy Cost"
+    formulas:
+      - id: "cost_per_hour"
+        name: "Current Cost Rate"
+        formula: "if(net_power > 0, net_power * input_number.electricity_buy_rate_cents_kwh / 1000, abs(net_power) * sell_rate / 1000)"
+        variables:
+          net_power: "sensor.span_panel_current_power"  # Variable mapping
+          sell_rate: "input_number.electricity_sell_rate_cents_kwh"  # Variable mapping
+          # input_number.electricity_buy_rate_cents_kwh is direct reference
+        unit_of_measurement: "¢/h"
+        device_class: "monetary"
+        state_class: "measurement"
+
+  # Pattern 6: Solar Analytics with All Three Patterns
+  - unique_id: "solar_analytics"
+    name: "Solar Analytics Dashboard"
+    formulas:
+      - id: "solar_export"
+        name: "Solar Export Power"
+        formula: "abs(min(grid_power, 0))"  # Pure variable
+        variables:
+          grid_power: "sensor.span_panel_current_power"
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+      - id: "solar_self_consumption"
+        name: "Solar Self-Consumption"
+        formula: "max(0, solar_production - sensor.syn2_solar_analytics_solar_export)"  # Mixed: variable + direct synthetic sensor reference
+        variables:
+          solar_production: "sensor.span_panel_solar_inverter_instant_power"
+          # sensor.syn2_solar_analytics_solar_export is direct reference to own sensor
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"
+      - id: "grid_vs_solar_comparison"
+        name: "Grid vs Solar Comparison"
+        formula: "sensor.span_panel_current_power - sensor.span_panel_solar_inverter_instant_power + backup_battery"  # Mixed: direct + variable
+        variables:
+          backup_battery: "sensor.battery_power"
+          # Both sensor.span_panel_* are direct references
+        unit_of_measurement: "W"
+        device_class: "power"
+        state_class: "measurement"

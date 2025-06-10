@@ -1,48 +1,38 @@
-# Hierarchical Calculations Example - Based on Feature Planning Document
+# Hierarchical Calculations Test - Converting from v1.0 to v2.0
 version: "1.0"
 global_settings:
-  domain_prefix: "syn2"  # Creates sensor.syn2_* entities
+  domain_prefix: "syn2"
 
 sensors:
-  # Child sensors - base calculations
-  - unique_id: "hvac_total_power"                      # REQUIRED: Unique ID
-    name: "HVAC Total Power"                           # OPTIONAL: Display name
-    formulas:
-      - id: "hvac_total"                               # REQUIRED: Formula ID
-        name: "Total HVAC Power"                       # OPTIONAL: Display name
-        formula: "heating_power + cooling_power"
-        variables:
-          heating_power: "sensor.span_panel_circuit_5_power"
-          cooling_power: "sensor.span_panel_circuit_6_power"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+  hvac_total_power:                      # Sensor key becomes the unique_id
+    name: "HVAC Total Power"             # OPTIONAL: Display name
+    formula: "hvac_heat + hvac_cool + hvac_fan"
+    variables:
+      hvac_heat: "sensor.hvac_heating_power"
+      hvac_cool: "sensor.hvac_cooling_power"
+      hvac_fan: "sensor.hvac_fan_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
 
-  - unique_id: "lighting_total_power"                  # REQUIRED: Unique ID
-    name: "Lighting Total Power"                       # OPTIONAL: Display name
-    formulas:
-      - id: "lighting_total"                           # REQUIRED: Formula ID
-        name: "Total Lighting Power"                   # OPTIONAL: Display name
-        formula: "living_room + kitchen + bedroom"
-        variables:
-          living_room: "sensor.span_panel_circuit_10_power"
-          kitchen: "sensor.span_panel_circuit_11_power"
-          bedroom: "sensor.span_panel_circuit_12_power"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+  lighting_total_power:                  # Sensor key becomes the unique_id
+    name: "Lighting Total Power"         # OPTIONAL: Display name
+    formula: "living_room_lights + kitchen_lights + bedroom_lights"
+    variables:
+      living_room_lights: "sensor.living_room_light_power"
+      kitchen_lights: "sensor.kitchen_light_power"
+      bedroom_lights: "sensor.bedroom_light_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
 
-  # Parent sensor - references other synthetic sensors by entity ID
-  - unique_id: "total_home_consumption"                # REQUIRED: Unique ID
-    name: "Total Home Consumption"                     # OPTIONAL: Display name
-    formulas:
-      - id: "home_total"                               # REQUIRED: Formula ID
-        name: "Total Home Power"                       # OPTIONAL: Display name
-        formula: "hvac + lighting + appliances"
-        variables:
-          hvac: "sensor.syn2_hvac_total_power_hvac_total"        # Entity ID reference
-          lighting: "sensor.syn2_lighting_total_power_lighting_total"  # Entity ID reference
-          appliances: "sensor.major_appliances_power"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+  total_home_consumption:                # Sensor key becomes the unique_id
+    name: "Total Home Power Consumption" # OPTIONAL: Display name
+    formula: "hvac_total + lighting_total + other_loads"
+    variables:
+      hvac_total: "sensor.syn2_hvac_total_power"        # References other synthetic sensor
+      lighting_total: "sensor.syn2_lighting_total_power" # References other synthetic sensor
+      other_loads: "sensor.other_electrical_loads"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "total_increasing"

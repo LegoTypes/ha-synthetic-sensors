@@ -45,17 +45,16 @@ class TestYamlConfigurationLoading:
         assert "sensors" in config
         assert len(config["sensors"]) == 2
 
-        # Verify first sensor (solar_sold_positive)
-        first_sensor = config["sensors"][0]
-        assert first_sensor["unique_id"] == "solar_sold_positive"
+        # Verify first sensor (solar_sold_positive) - now using dict format
+        sensors = config["sensors"]
+        assert "solar_sold_positive" in sensors
+        first_sensor = sensors["solar_sold_positive"]
         assert first_sensor["name"] == "Solar Sold (Positive Value)"
-        assert len(first_sensor["formulas"]) == 1
-
-        formula = first_sensor["formulas"][0]
-        assert formula["id"] == "solar_sold"
-        assert formula["formula"] == "abs(min(grid_power, 0))"
-        assert "grid_power" in formula["variables"]
-        assert formula["variables"]["grid_power"] == "sensor.span_panel_current_power"
+        assert first_sensor["formula"] == "abs(min(grid_power, 0))"
+        assert "grid_power" in first_sensor["variables"]
+        assert (
+            first_sensor["variables"]["grid_power"] == "sensor.span_panel_current_power"
+        )
 
     def test_load_hierarchical_calculations_yaml(self, hierarchical_calculations_yaml):
         """Test loading hierarchical calculations YAML configuration."""
@@ -66,19 +65,17 @@ class TestYamlConfigurationLoading:
         assert len(config["sensors"]) == 3
 
         # Find the parent sensor that references other synthetic sensors
-        parent_sensor = next(
-            s for s in config["sensors"] if s["unique_id"] == "total_home_consumption"
-        )
+        sensors = config["sensors"]
+        assert "total_home_consumption" in sensors
+        parent_sensor = sensors["total_home_consumption"]
         assert parent_sensor is not None
 
-        formula = parent_sensor["formulas"][0]
-        variables = formula["variables"]
+        variables = parent_sensor["variables"]
 
-        # Verify it references other synthetic sensors by entity ID
-        assert variables["hvac"] == "sensor.syn2_hvac_total_power_hvac_total"
-        assert (
-            variables["lighting"] == "sensor.syn2_lighting_total_power_lighting_total"
-        )
+        # Verify it references other synthetic sensors by entity ID (simplified v2.0
+        # format)
+        assert variables["hvac_total"] == "sensor.syn2_hvac_total_power"
+        assert variables["lighting_total"] == "sensor.syn2_lighting_total_power"
 
     def test_load_cost_analysis_yaml(self, cost_analysis_yaml):
         """Test loading cost analysis YAML configuration."""
@@ -88,27 +85,25 @@ class TestYamlConfigurationLoading:
         assert config["version"] == "1.0"
         assert len(config["sensors"]) == 1
 
-        sensor = config["sensors"][0]
-        assert sensor["unique_id"] == "current_energy_cost_rate"
-
-        formula = sensor["formulas"][0]
-        assert formula["id"] == "cost_rate"
-        assert formula["device_class"] == "monetary"
-        assert formula["unit_of_measurement"] == "¢/h"
+        sensors = config["sensors"]
+        assert "current_energy_cost_rate" in sensors
+        sensor = sensors["current_energy_cost_rate"]
+        assert sensor["device_class"] == "monetary"
+        assert sensor["unit_of_measurement"] == "$/h"
 
     def test_load_simple_test_yaml(self, simple_test_yaml):
         """Test loading simple test YAML configuration."""
         config = simple_test_yaml
 
-        # Verify structure
+        # Verify structure (v2.0 format)
         assert config["version"] == "1.0"
         assert len(config["sensors"]) == 2
 
-        # Test basic formula
-        basic_sensor = config["sensors"][0]
-        assert basic_sensor["unique_id"] == "simple_test_sensor"
-        formula = basic_sensor["formulas"][0]
-        assert formula["formula"] == "var_a + var_b"
+        # Test basic formula (v2.0 format with dict sensors)
+        sensors = config["sensors"]
+        assert "simple_test_sensor" in sensors
+        basic_sensor = sensors["simple_test_sensor"]
+        assert basic_sensor["formula"] == "var_a + var_b"
 
     def test_yaml_to_service_integration(self, mock_hass, solar_analytics_yaml):
         """Test that YAML configuration can be used with service layer."""
@@ -128,10 +123,10 @@ class TestYamlConfigurationLoading:
             assert config is not None
             assert len(config.sensors) == 2
 
-            # Verify sensor IDs match the entity_id focused approach
-            sensor_configs = config.sensors
-            assert sensor_configs[0].unique_id == "solar_sold_positive"
-            assert sensor_configs[1].unique_id == "solar_self_consumption_rate"
+            # Verify sensor IDs match the entity_id focused approach (order may vary)
+            sensor_unique_ids = {sensor.unique_id for sensor in config.sensors}
+            assert "solar_sold_positive" in sensor_unique_ids
+            assert "solar_self_consumption_rate" in sensor_unique_ids
 
         finally:
             Path(temp_path).unlink()
@@ -259,7 +254,7 @@ class TestEntityFactory:
         sensor_config = {
             "unique_id": "test_sensor",
             "name": "Test Sensor",
-            "formulas": [{"id": "test_formula", "formula": "A + B"}],
+            "formula": "A + B",
         }
 
         result = entity_factory.create_sensor_entity(sensor_config)
@@ -274,23 +269,24 @@ class TestEntityFactory:
 
     def test_validate_entity_configuration(self, entity_factory):
         """Test entity configuration validation."""
-        # Valid configuration
+        # Valid configuration (v2.0 format)
         valid_config = {
             "unique_id": "test_sensor",
-            "formulas": [{"id": "test_formula", "formula": "A + B"}],
+            "formula": "A + B",
         }
 
         result = entity_factory.validate_entity_configuration(valid_config)
         assert result["is_valid"]
         assert len(result["errors"]) == 0
 
-        # Invalid configuration (missing unique_id and formulas)
+        # Invalid configuration (missing unique_id and formula)
         invalid_config = {}
 
         result = entity_factory.validate_entity_configuration(invalid_config)
         assert not result["is_valid"]
         assert len(result["errors"]) > 0
         assert any("unique_id" in error for error in result["errors"])
+        assert any("formula" in error for error in result["errors"])
 
     def test_entity_factory_with_yaml_config(
         self, entity_factory, solar_analytics_yaml
@@ -298,27 +294,25 @@ class TestEntityFactory:
         """Test EntityFactory with real YAML configuration."""
         config = solar_analytics_yaml
 
-        for sensor_config in config["sensors"]:
-            for formula_config in sensor_config["formulas"]:
-                # Test entity description creation
-                description = entity_factory.create_entity_description(
-                    sensor_config, formula_config
+        # Iterate over sensors dict (v2.0 format)
+        for sensor_key, sensor_config in config["sensors"].items():
+            # Test entity description creation (no formula config since it's inline)
+            description = entity_factory.create_entity_description(
+                {"unique_id": sensor_key, **sensor_config}
+            )
+
+            # Verify the generated IDs follow the simplified v2.0 pattern
+            expected_unique_id = f"syn2_{sensor_key}"
+            expected_entity_id = f"sensor.{expected_unique_id}"
+
+            assert description.unique_id == expected_unique_id
+            assert description.entity_id == expected_entity_id
+
+            # Verify metadata is preserved
+            if sensor_config.get("unit_of_measurement"):
+                assert (
+                    description.unit_of_measurement
+                    == sensor_config["unit_of_measurement"]
                 )
-
-                # Verify the generated IDs follow the expected pattern
-                expected_unique_id = (
-                    f"syn2_{sensor_config['unique_id']}_{formula_config['id']}"
-                )
-                expected_entity_id = f"sensor.{expected_unique_id}"
-
-                assert description.unique_id == expected_unique_id
-                assert description.entity_id == expected_entity_id
-
-                # Verify metadata is preserved
-                if formula_config.get("unit_of_measurement"):
-                    assert (
-                        description.unit_of_measurement
-                        == formula_config["unit_of_measurement"]
-                    )
-                if formula_config.get("device_class"):
-                    assert description.device_class == formula_config["device_class"]
+            if sensor_config.get("device_class"):
+                assert description.device_class == sensor_config["device_class"]

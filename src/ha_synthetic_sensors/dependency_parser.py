@@ -118,6 +118,11 @@ class DependencyParser:
         # Get all entities first
         entities = self.extract_entity_references(formula)
 
+        # Create a set of all parts of entity IDs to exclude
+        entity_id_parts = set()
+        for entity_id in entities:
+            entity_id_parts.update(entity_id.split("."))
+
         # Get all potential variables
         variables = set()
         variable_matches = self._variable_pattern.findall(formula)
@@ -127,6 +132,8 @@ class DependencyParser:
                 var not in self._excluded_terms
                 and not keyword.iskeyword(var)
                 and var not in entities
+                and var not in entity_id_parts  # Exclude parts of entity IDs
+                and "." not in var  # Skip dotted references
             ):
                 variables.add(var)
 

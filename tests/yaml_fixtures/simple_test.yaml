@@ -4,28 +4,24 @@ global_settings:
   domain_prefix: "syn2"
 
 sensors:
-  - unique_id: "simple_test_sensor"
+  # Single formula sensor (v2.0 format)
+  simple_test_sensor:
     name: "Simple Test Sensor"
-    formulas:
-      - id: "basic_formula"
-        name: "Basic Addition"
-        formula: "var_a + var_b"
-        variables:
-          var_a: "sensor.test_value_a"
-          var_b: "sensor.test_value_b"
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+    formula: "var_a + var_b"
+    variables:
+      var_a: "sensor.test_value_a"
+      var_b: "sensor.test_value_b"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
 
-  - unique_id: "complex_test_sensor"
+  # Single formula sensor with complex math
+  complex_test_sensor:
     name: "Complex Test Sensor"
-    formulas:
-      - id: "complex_formula"
-        name: "Complex Math"
-        formula: "max(var_a, 0) + min(var_b, 1000) / 2 + abs(var_c)"
-        variables:
-          var_a: "sensor.test_value_a"
-          var_b: "sensor.test_value_b"
-          var_c: "sensor.test_value_c"
-        unit_of_measurement: "units"
-        state_class: "measurement"
+    formula: "max(var_a, 0) + min(var_b, 1000) / 2 + abs(var_c)"
+    variables:
+      var_a: "sensor.test_value_a"
+      var_b: "sensor.test_value_b"
+      var_c: "sensor.test_value_c"
+    unit_of_measurement: "units"
+    state_class: "measurement"
