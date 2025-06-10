@@ -638,7 +638,11 @@ class ServiceLayer:
         """Automatically reload configuration if file has been modified."""
         if self._config_manager.is_config_modified():
             _LOGGER.info("Configuration file modified, automatically reloading")
-            await self._async_reload_config(None)
+            # Create a dummy ServiceCall for internal reload
+            from homeassistant.core import ServiceCall
+
+            dummy_call = ServiceCall(self._hass, self._domain, "reload_config", {})
+            await self._async_reload_config(dummy_call)
 
     async def async_unregister_services(self) -> None:
         """Unregister all services from Home Assistant."""

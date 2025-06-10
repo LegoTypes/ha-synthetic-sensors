@@ -48,13 +48,40 @@ class MockState:
 class MockSensorEntity:
     """Mock SensorEntity base class."""
 
-    pass
+    def __init__(self):
+        self._attr_unique_id = None
+        self._attr_name = None
+        self._attr_native_value = None
+        self._attr_available = True
+        self._attr_native_unit_of_measurement = None
+        self._attr_unit_of_measurement = None
+        self._attr_device_class = None
+        self._attr_state_class = None
+        self._attr_icon = None
+        self._attr_extra_state_attributes = {}
+
+    @property
+    def entity_id(self):
+        """Generate entity_id from unique_id like Home Assistant does."""
+        if self._attr_unique_id:
+            return f"sensor.{self._attr_unique_id}"
+        return "sensor.mock_entity"
+
+    def async_write_ha_state(self):
+        """Mock async_write_ha_state method."""
+        pass
 
 
 class MockRestoreEntity:
     """Mock RestoreEntity base class."""
 
-    pass
+    async def async_added_to_hass(self):
+        """Mock async_added_to_hass method."""
+        pass
+
+    async def async_get_last_state(self):
+        """Mock async_get_last_state method."""
+        return None
 
 
 class HomeAssistantMockFinder:
@@ -69,6 +96,12 @@ class HomeAssistantMockFinder:
             if fullname == "homeassistant.core":
                 mock_module.HomeAssistant = MockHomeAssistant
                 mock_module.State = MockState
+
+                # Mock the callback decorator to be a passthrough
+                def callback_decorator(func):
+                    return func
+
+                mock_module.callback = callback_decorator
             elif fullname == "homeassistant.exceptions":
                 mock_module.ConfigEntryError = MockConfigEntryError
             elif fullname == "homeassistant.config_entries":
@@ -81,6 +114,15 @@ class HomeAssistantMockFinder:
                 mock_module.async_track_state_change_event = MagicMock
             elif fullname == "homeassistant.helpers.restore_state":
                 mock_module.RestoreEntity = MockRestoreEntity
+            elif fullname == "homeassistant.const":
+                # Mock Home Assistant constants
+                mock_module.STATE_UNAVAILABLE = "unavailable"
+                mock_module.STATE_UNKNOWN = "unknown"
+            elif fullname == "homeassistant.util.dt":
+                # Mock datetime utilities
+                from datetime import datetime
+
+                mock_module.utcnow = MagicMock(return_value=datetime.now())
 
             # Install the mock in sys.modules
             sys.modules[fullname] = mock_module

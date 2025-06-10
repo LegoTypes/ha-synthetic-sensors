@@ -174,7 +174,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             _LOGGER.error("Error updating sensor %s: %s", self.entity_id, err)
             self.async_write_ha_state()
 
-    def force_update_formula(self, new_formula_config: FormulaConfig) -> None:
+    async def force_update_formula(self, new_formula_config: FormulaConfig) -> None:
         """Update the formula configuration and re-evaluate."""
         old_dependencies = self._dependencies.copy()
 
@@ -210,7 +210,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._evaluator.clear_cache()
 
         # Force re-evaluation
-        self._hass.async_create_task(self._async_update_sensor())
+        await self._async_update_sensor()
 
 
 class SensorManager:

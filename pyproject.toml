@@ -13,7 +13,7 @@ Homepage = "https://github.com/SpanPanel/ha-synthetic-sensors"
 Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
 
 [tool.poetry.dependencies]
-python = ">=3.13.2,<4.0"
+python = ">=3.13.2,<3.14"
 # Core dependencies for synthetic sensors
 pyyaml = "^6.0.0"
 simpleeval = "^1.0.2"
@@ -30,6 +30,9 @@ pre-commit = "^4.0.0"
 ruff = "^0.11.0"
 mypy = "^1.15.0"
 types-PyYAML = "^6.0.0"
+
+[tool.poetry.group.test.dependencies]
+homeassistant = ">=2025.3.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -78,6 +81,10 @@ omit = [
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
+# Add markers for our new test types
+markers = [
+    "ha_integration: marks tests as requiring real Home Assistant (deselect with '-m \"not ha_integration\"')"
+]
 
 [tool.coverage.report]
 exclude_lines = [

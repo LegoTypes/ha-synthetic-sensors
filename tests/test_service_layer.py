@@ -1,6 +1,6 @@
 """Tests for service layer functionality and Home Assistant integration."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -84,7 +84,11 @@ class TestServiceLayer:
         # Test service registration
         import asyncio
 
-        asyncio.run(service_layer.async_setup_services())
+        # Patch the problematic method reference that causes warnings
+        with patch(
+            "ha_synthetic_sensors.service_layer.ServiceLayer._async_update_sensor"
+        ):
+            asyncio.run(service_layer.async_setup_services())
 
         # Verify all expected services were registered
         expected_services = [
@@ -114,6 +118,10 @@ class TestServiceLayer:
         """Test that services are unregistered correctly."""
         # Test service unregistration
         import asyncio
+        from unittest.mock import MagicMock
+
+        # Make async_remove a regular MagicMock since it's synchronous
+        mock_hass.services.async_remove = MagicMock()
 
         asyncio.run(service_layer.async_unload_services())
 
