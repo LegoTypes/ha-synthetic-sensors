@@ -193,3 +193,91 @@ class TestNameResolver:
 
         result = resolver.resolve_name(MockNode("test_attr"))
         assert result == 100.0
+
+    def test_mixed_variable_and_direct_entity_resolution(self, mock_hass):
+        """Test combination of variable mapping and direct entity ID resolution."""
+        # Variables mapping for some entities
+        variables = {"hvac": "sensor.hvac_power", "lighting": "sensor.lighting_power"}
+        resolver = NameResolver(mock_hass, variables)
+
+        # Mock different entity states
+        def mock_get_state(entity_id):
+            state_values = {
+                "sensor.hvac_power": "150.5",  # Via variable mapping
+                "sensor.lighting_power": "75.2",  # Via variable mapping
+                "sensor.appliances_power": "89.8",  # Direct entity ID
+                "sensor.solar_power": "320.0",  # Direct entity ID
+            }
+            if entity_id in state_values:
+                mock_state = MagicMock()
+                mock_state.state = state_values[entity_id]
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = mock_get_state
+
+        class MockNode:
+            def __init__(self, name):
+                self.id = name
+
+        # Test variable mapping resolution
+        assert resolver.resolve_name(MockNode("hvac")) == 150.5
+        assert resolver.resolve_name(MockNode("lighting")) == 75.2
+
+        # Test direct entity ID resolution (no variable mapping needed)
+        assert resolver.resolve_name(MockNode("sensor.appliances_power")) == 89.8
+        assert resolver.resolve_name(MockNode("sensor.solar_power")) == 320.0
+
+        # Test error for unknown variable and invalid entity ID
+        with pytest.raises(Exception):  # Should raise NameNotDefined
+            resolver.resolve_name(MockNode("unknown_var"))
+
+        with pytest.raises(Exception):  # Should raise NameNotDefined
+            resolver.resolve_name(MockNode("invalid_entity_id"))
+
+    def test_realistic_formula_scenario_mixed_references(self, mock_hass):
+        """Test realistic scenario like: hvac + lighting + sensor.appliances_power."""
+        # This simulates a formula like: "hvac + lighting + sensor.appliances_power"
+        # Where hvac and lighting are variables, but sensor.appliances_power is direct
+
+        variables = {"hvac": "sensor.hvac_total", "lighting": "sensor.lighting_total"}
+        resolver = NameResolver(mock_hass, variables)
+
+        # Mock entity states for all references
+        def mock_get_state(entity_id):
+            state_values = {
+                "sensor.hvac_total": "200.0",  # Variable: hvac
+                "sensor.lighting_total": "85.5",  # Variable: lighting
+                "sensor.appliances_power": "150.8",  # Direct entity ID
+                "sensor.syn2_other_sensor_formula": "75.2",  # Direct syn2 reference
+            }
+            if entity_id in state_values:
+                mock_state = MagicMock()
+                mock_state.state = state_values[entity_id]
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = mock_get_state
+
+        class MockNode:
+            def __init__(self, name):
+                self.id = name
+
+        # Simulate what would happen during formula evaluation:
+        # "hvac + lighting + sensor.appliances_power + sensor.syn2_other_sensor_formula"
+
+        hvac_value = resolver.resolve_name(MockNode("hvac"))  # Variable
+        lighting_value = resolver.resolve_name(MockNode("lighting"))  # Variable
+        appliances_value = resolver.resolve_name(MockNode("sensor.appliances_power"))
+        other_syn2_value = resolver.resolve_name(
+            MockNode("sensor.syn2_other_sensor_formula")
+        )
+
+        assert hvac_value == 200.0
+        assert lighting_value == 85.5
+        assert appliances_value == 150.8
+        assert other_syn2_value == 75.2
+
+        # Total would be 511.5 in a real formula evaluation
+        total = hvac_value + lighting_value + appliances_value + other_syn2_value
+        assert total == 511.5

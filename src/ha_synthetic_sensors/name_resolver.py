@@ -118,19 +118,23 @@ class NameResolver:
         """
         variable_name = node.id
 
-        # Check if this variable is defined in our mapping
-        if variable_name not in self._variables:
+        # First check if this variable is defined in our mapping
+        if variable_name in self._variables:
+            entity_id = self._variables[variable_name]
+        # Then check if it looks like a direct entity ID (contains dot)
+        elif "." in variable_name and self._is_valid_entity_id(variable_name):
+            entity_id = variable_name
+            self._logger.debug("Using direct entity ID reference: %s", variable_name)
+        else:
             self._logger.warning(
-                "Variable '%s' not found in formula variables: %s",
+                "Variable '%s' not in variables / not a valid entity. variables: %s",
                 variable_name,
                 list(self._variables.keys()),
             )
             raise NameNotDefined(
-                variable_name, f"Variable '{variable_name}' not defined"
+                variable_name,
+                f"Variable '{variable_name}' not defined and not a valid entity ID",
             )
-
-        # Get the entity ID for this variable
-        entity_id = self._variables[variable_name]
 
         # Get the entity state from Home Assistant
         entity_state = self._hass.states.get(entity_id)
@@ -319,6 +323,68 @@ class NameResolver:
             "direct_references": direct_references,
             "total_dependencies": len(entity_ids),
         }
+
+    def _is_valid_entity_id(self, entity_id: str) -> bool:
+        """Check if a string looks like a valid Home Assistant entity ID.
+
+        Args:
+            entity_id: String to validate
+
+        Returns:
+            bool: True if it looks like a valid entity ID (domain.entity)
+        """
+        # Basic validation: should have exactly one dot, valid domain and entity parts
+        if entity_id.count(".") != 1:
+            return False
+
+        domain, entity = entity_id.split(".")
+
+        # Basic validation of domain and entity parts
+        # Domain: lowercase letters, numbers, underscores
+        # Entity: letters, numbers, underscores
+        if not (domain and entity):
+            return False
+
+        # Check domain format (common HA domains)
+        valid_domains = {
+            "sensor",
+            "binary_sensor",
+            "switch",
+            "light",
+            "fan",
+            "cover",
+            "climate",
+            "lock",
+            "vacuum",
+            "media_player",
+            "device_tracker",
+            "weather",
+            "camera",
+            "alarm_control_panel",
+            "input_number",
+            "input_boolean",
+            "input_select",
+            "input_text",
+            "input_datetime",
+            "counter",
+            "timer",
+            "number",
+            "select",
+            "button",
+            "text",
+        }
+
+        if domain not in valid_domains:
+            # Still allow it - could be a custom domain
+            pass
+
+        # Basic format check: alphanumeric and underscores
+        if not re.match(r"^[a-zA-Z0-9_]+$", domain):
+            return False
+        if not re.match(r"^[a-zA-Z0-9_]+$", entity):
+            return False
+
+        return True
 
 
 class FormulaEvaluator:
