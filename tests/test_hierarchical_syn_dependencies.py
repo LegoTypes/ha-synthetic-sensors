@@ -84,7 +84,7 @@ class TestHierarchicalSyntheticDependencies:
         )
 
     def test_level_3_parent_synthetic_sensors(self, mock_hass):
-        """Test that level 3 synthetic sensors can reference level 2 syn sensors."""
+        """Test that level 3 synthetic sensors can reference level 2 synsensors."""
         # Variables for home total sensor (level 3)
         #  - references level 2 synthetic sensors
         home_variables = {
