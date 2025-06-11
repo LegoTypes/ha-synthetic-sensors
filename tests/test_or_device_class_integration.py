@@ -259,9 +259,100 @@ class TestORDeviceClassIntegration:
         assert "sum" in functions
         assert "count" in functions
 
+    def test_quoted_and_unquoted_or_patterns(self, dependency_parser, collection_resolver):
+        """Test OR patterns with both quoted and unquoted syntax."""
+        # Test quoted OR pattern
+        quoted_query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
+        quoted_entities = collection_resolver.resolve_collection(quoted_query)
+
+        # Test unquoted OR pattern
+        unquoted_query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
+        unquoted_entities = collection_resolver.resolve_collection(unquoted_query)
+
+        # Should have same results
+        assert set(quoted_entities) == set(unquoted_entities)
+        assert len(quoted_entities) > 0  # Should find some entities
+
+    def test_direct_entity_id_device_class_or_patterns(self, dependency_parser):
+        """Test OR patterns with direct entity IDs (no variables)."""
+        # Test direct entity ID OR pattern parsing
+        formula = 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
+        parsed = dependency_parser.parse_formula_dependencies(formula, {})
+
+        assert len(parsed.dynamic_queries) == 1
+        query = parsed.dynamic_queries[0]
+        assert query.function == "count"
+        assert query.query_type == "device_class"
+        assert query.pattern == "input_select.device_type_1|input_select.device_type_2"
+
+    def test_mixed_direct_and_variable_device_class_or_patterns(self, dependency_parser):
+        """Test OR patterns mixing variables and direct entity IDs."""
+        formula = 'count("device_class:variable_type|input_select.direct_device_type")'
+        variables = {"variable_type": "input_select.variable_device_class"}
+        parsed = dependency_parser.parse_formula_dependencies(formula, variables)
+
+        assert len(parsed.dynamic_queries) == 1
+        query = parsed.dynamic_queries[0]
+        assert query.function == "count"
+        assert query.query_type == "device_class"
+        assert query.pattern == "variable_type|input_select.direct_device_type"
+
+    def test_yaml_direct_device_class_or_config(self, yaml_config_path):
+        """Test YAML configuration for direct device class OR patterns."""
+        import yaml
+
+        with open(yaml_config_path) as f:
+            yaml_fixtures = yaml.safe_load(f)
+
+        config = yaml_fixtures["sensors"]["direct_device_class_or"]
+
+        assert config["name"] == "Direct Device Class OR"
+        assert config["formula"] == 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
+        assert config["unit_of_measurement"] == "devices"
+        # Should have no variables section since it uses direct entity IDs
+        assert "variables" not in config
+
+    def test_yaml_mixed_device_class_or_config(self, yaml_config_path):
+        """Test YAML configuration for mixed device class OR patterns."""
+        import yaml
+
+        with open(yaml_config_path) as f:
+            yaml_fixtures = yaml.safe_load(f)
+
+        config = yaml_fixtures["sensors"]["mixed_device_class_or"]
+
+        assert config["name"] == "Mixed Device Class OR"
+        assert config["formula"] == 'count("device_class:variable_type|input_select.direct_device_type")'
+        assert config["unit_of_measurement"] == "devices"
+
+        # Should have variables for the variable part only
+        variables = config["variables"]
+        assert variables["variable_type"] == "input_select.variable_device_class"
+        assert len(variables) == 1  # Only one variable, not the direct entity ID
+
+    def test_yaml_direct_three_way_device_class_config(self, yaml_config_path):
+        """Test YAML configuration for direct three-way device class OR patterns."""
+        import yaml
+
+        with open(yaml_config_path) as f:
+            yaml_fixtures = yaml.safe_load(f)
+
+        config = yaml_fixtures["sensors"]["direct_three_way_device_class"]
+
+        assert config["name"] == "Direct Three-Way Device Class"
+        assert config["formula"] == 'avg("device_class:input_select.type1|input_select.type2|input_select.type3")'
+        assert config["unit_of_measurement"] == "avg"
+        # Should have no variables section
+        assert "variables" not in config
+
 
 class TestORPatternEdgeCases:
     """Test edge cases for OR pattern syntax."""
+
+    @pytest.fixture
+    def yaml_config_path(self):
+        """Path to the dynamic collection variables YAML fixture."""
+        return Path(__file__).parent / "yaml_fixtures" / "dynamic_collection_variables.yaml"
 
     @pytest.fixture
     def dependency_parser(self):
@@ -324,3 +415,75 @@ class TestORPatternEdgeCases:
         # Check if unquoted version is supported
         if len(queries2) > 0:
             assert queries2[0].pattern == "door|window"
+
+    def test_direct_entity_id_device_class_or_patterns(self, dependency_parser):
+        """Test OR patterns with direct entity IDs (no variables)."""
+        # Test direct entity ID OR pattern parsing
+        formula = 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
+        parsed = dependency_parser.parse_formula_dependencies(formula, {})
+
+        assert len(parsed.dynamic_queries) == 1
+        query = parsed.dynamic_queries[0]
+        assert query.function == "count"
+        assert query.query_type == "device_class"
+        assert query.pattern == "input_select.device_type_1|input_select.device_type_2"
+
+    def test_mixed_direct_and_variable_device_class_or_patterns(self, dependency_parser):
+        """Test OR patterns mixing variables and direct entity IDs."""
+        formula = 'count("device_class:variable_type|input_select.direct_device_type")'
+        variables = {"variable_type": "input_select.variable_device_class"}
+        parsed = dependency_parser.parse_formula_dependencies(formula, variables)
+
+        assert len(parsed.dynamic_queries) == 1
+        query = parsed.dynamic_queries[0]
+        assert query.function == "count"
+        assert query.query_type == "device_class"
+        assert query.pattern == "variable_type|input_select.direct_device_type"
+
+    def test_yaml_direct_device_class_or_config(self, yaml_config_path):
+        """Test YAML configuration for direct device class OR patterns."""
+        import yaml
+
+        with open(yaml_config_path) as f:
+            yaml_fixtures = yaml.safe_load(f)
+
+        config = yaml_fixtures["sensors"]["direct_device_class_or"]
+
+        assert config["name"] == "Direct Device Class OR"
+        assert config["formula"] == 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
+        assert config["unit_of_measurement"] == "devices"
+        # Should have no variables section since it uses direct entity IDs
+        assert "variables" not in config
+
+    def test_yaml_mixed_device_class_or_config(self, yaml_config_path):
+        """Test YAML configuration for mixed device class OR patterns."""
+        import yaml
+
+        with open(yaml_config_path) as f:
+            yaml_fixtures = yaml.safe_load(f)
+
+        config = yaml_fixtures["sensors"]["mixed_device_class_or"]
+
+        assert config["name"] == "Mixed Device Class OR"
+        assert config["formula"] == 'count("device_class:variable_type|input_select.direct_device_type")'
+        assert config["unit_of_measurement"] == "devices"
+
+        # Should have variables for the variable part only
+        variables = config["variables"]
+        assert variables["variable_type"] == "input_select.variable_device_class"
+        assert len(variables) == 1  # Only one variable, not the direct entity ID
+
+    def test_yaml_direct_three_way_device_class_config(self, yaml_config_path):
+        """Test YAML configuration for direct three-way device class OR patterns."""
+        import yaml
+
+        with open(yaml_config_path) as f:
+            yaml_fixtures = yaml.safe_load(f)
+
+        config = yaml_fixtures["sensors"]["direct_three_way_device_class"]
+
+        assert config["name"] == "Direct Three-Way Device Class"
+        assert config["formula"] == 'avg("device_class:input_select.type1|input_select.type2|input_select.type3")'
+        assert config["unit_of_measurement"] == "avg"
+        # Should have no variables section
+        assert "variables" not in config

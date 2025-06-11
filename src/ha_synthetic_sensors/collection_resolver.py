@@ -119,25 +119,30 @@ class CollectionResolver:
         """Resolve regex pattern against entity IDs.
 
         Args:
-            pattern: Regular expression pattern to match
+            pattern: Regular expression pattern to match (supports OR with pipe |)
 
         Returns:
             List of matching entity IDs
         """
-        try:
-            regex = re.compile(pattern)
-            matching_entities: list[str] = []
+        matching_entities: list[str] = []
 
-            for entity_id in self._hass.states.entity_ids():
-                if regex.match(entity_id):
-                    matching_entities.append(entity_id)
+        # Split by pipe (|) for OR logic
+        regex_patterns = [p.strip() for p in pattern.split("|")]
 
-            _LOGGER.debug("Regex pattern '%s' matched %d entities", pattern, len(matching_entities))
-            return matching_entities
+        for regex_pattern in regex_patterns:
+            try:
+                regex = re.compile(regex_pattern)
 
-        except re.error as e:
-            _LOGGER.error("Invalid regex pattern '%s': %s", pattern, e)
-            return []
+                for entity_id in self._hass.states.entity_ids():
+                    if regex.match(entity_id) and entity_id not in matching_entities:
+                        matching_entities.append(entity_id)
+
+            except re.error as e:
+                _LOGGER.error("Invalid regex pattern '%s': %s", regex_pattern, e)
+                continue
+
+        _LOGGER.debug("Regex pattern '%s' matched %d entities", pattern, len(matching_entities))
+        return matching_entities
 
     def _resolve_device_class_pattern(self, pattern: str) -> list[str]:
         """Resolve device_class pattern.
