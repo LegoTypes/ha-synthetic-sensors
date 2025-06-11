@@ -64,7 +64,6 @@ sensors:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
     unit_of_measurement: "¢/h"
-    device_class: "monetary"
     state_class: "measurement"
 
   # Another simple sensor
@@ -131,7 +130,7 @@ The package supports multiple ways to reference entities in formulas:
 | **Sensor Key Reference** | `sensor_key` | `energy_analysis` | Reference other synthetic sensors |
 | **Sensor State Alias in attrubte formulas** | `state` | `state * 24` | In attributes, reference main sensor |
 | **Attribute Dot Notation** | `entity.attribute` | `sensor1.battery_level` | Access entity attributes |
-| **Sensor Collection Functions** | `mathFunc(pattern:value)` | `sum(regex:sensor\..*_power)` | Aggregate multiple entities by pattern |
+| **Sensor Collection Functions** | `mathFunc(pattern:value)` | `sum(regex:circuit_pattern)` | Aggregate multiple entities by pattern |
 | **Device Class Collection Math** | `mathFunc(device_class:type)` | `avg(device_class:temperature)` | Aggregate by device type |
 | **Tag/Label Collection Math** | `mathFunc(tags:tag1,tag2)` | `count(tags:critical,important)` | Aggregate by entity tags |
 | **Area Collection Math** | `mathFunc(area:location)` | `sum(area:kitchen device_class:power)` | Aggregate by physical location |
@@ -174,45 +173,93 @@ Sum, average, or count entities dynamically using collection patterns:
 
 ```yaml
 sensors:
-  # Aggregate by device class
-  open_doors_windows:
+  # Static collection patterns (current implementation)
+  count_open_doors_windows:
     name: "Open Doors and Windows"
-    formula: sum(device_class:door|window)
+    formula: sum("device_class:door,window")
     unit_of_measurement: "count"
     
-  # Aggregate using regex patterns
+  # Static regex patterns
   total_circuit_power:
     name: "Total Circuit Power"
-    formula: sum(regex:sensor\.circuit_.*_power)
+    formula: sum("regex:circuit_pattern")
+    variables:
+      circuit_pattern: "input_text.circuit_regex_pattern"
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
     
-  # Aggregate by area and device class
+  # Static area and device class combination
   garage_windows:
     name: "Garage Windows Open"
-    formula: sum(area:garage device_class:window)
+    formula: sum("area:garage device_class:window")
     unit_of_measurement: "count"
     
-  # Aggregate by tags/labels
+  # Static tag-based aggregation
   critical_sensors:
     name: "Critical Sensors Active"
-    formula: count(tags:critical,important)
+    formula: count("tags:critical,important")
     unit_of_measurement: "count"
     
-  # Aggregate by attribute values
+  # Static attribute filtering
   low_battery_devices:
     name: "Low Battery Devices"
-    formula: count(attribute:battery_level<20)
+    formula: count("attribute:battery_level<20")
     unit_of_measurement: "count"
 
-  # Mixed patterns in one formula
-  comprehensive_analysis:
-    name: "Comprehensive Power Analysis"
-    formula: "base_load + sum(regex:sensor\.circuit_.*_power) + backup_power.current_power"
-    variables:
-      base_load: "sensor.main_panel_power"
+  # Mixed static patterns in one formula
+      comprehensive_analysis:
+      name: "Comprehensive Power Analysis"
+      formula: "base_load + sum(\"regex:circuit_pattern\") + backup_power.current_power"
+      variables:
+        base_load: "sensor.main_panel_power"
+        circuit_pattern: "input_text.circuit_regex_pattern"
       backup_power: "sensor.backup_generator"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+```
+
+**Aggregate Collection Patterns**
+
+```yaml
+# Aggregate device class monitoring
+sensors:
+  dynamic_device_analysis:
+    name: "Dynamic Device Analysis"
+    formula: sum("device_class:device_type")
+    variables:
+      device_type: "input_select.monitoring_device_class"  # "temperature"
+    unit_of_measurement: "°F"
+    device_class: power
+    state_class: "measurement
+ 
+  regex_based_aggregate
+    name: "Regex-Based Aggregate"
+    formula: sum("regex:pattern_name")
+    variables:
+      pattern_name: input_text.the_regex    # The regex must use an input_text to hold it's state
+    device_class: power
+    state_class: "measurement
+
+  # Use an attribute of the battery entities called battery_level
+  power_to_battery_ratio:
+    name: "Power to Battery Efficiency"
+    formula: 'sum("device_class:power_type") / count(battery_class.battery_level > min_battery)'
+    variables:
+      power_type: "input_select.power_device_class"
+      min_battery: "input_number.minimum_battery_level"
+      battery_class: "device_class:battery"
+    unit_of_measurement: W
+    device_class: power
+    state_class: "measurement
+
+  sum_regex_patterns:
+    name: "Sum Regex Patterns"
+    formula: 'sum("regex:circuit_pattern", "regex:kitchen_pattern")'
+    variables:
+      circuit_pattern: "input_text.circuit_regex_pattern"
+      kitchen_pattern: "input_text.kitchen_regex_pattern"
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
@@ -226,11 +273,16 @@ sensors:
 - `std()` / `var()` - Standard deviation/variance
 
 **Collection Patterns:**
-- `device_class:power` - Entities with specific device class
-- `regex:sensor\..*_power` - Entities matching regex pattern
-- `area:kitchen` - Entities in specific area
-- `tags:tag1,tag2` - Entities with any of the specified tags
-- `attribute:battery_level<50` - Entities with attribute conditions
+- `"device_class:power"` - Entities with specific device class
+- `"regex:input_text.pattern"` - Entities matching regex pattern from variable
+- `"area:kitchen"` - Entities in specific area
+- `"tags:tag1,tag2"` - Entities with any of the specified tags
+- `"attribute:battery_level<50"` - Entities with attribute conditions
+
+**Dynamic Patterns (Variable Substitution):**
+- `"device_class:device_type"` - Variable substitution within patterns
+- `"area:target_area"` - Dynamic area selection
+- `"regex:pattern_variable"` - Aggregate regex patterns from variables
 
 ## Formula examples
 
@@ -251,9 +303,10 @@ sensors:
 "percent(used_space, total_space)"           # Percentage calculation
 
 # Collection functions (entity aggregation)
-"sum(regex:sensor\.circuit_.*_power)"        # Sum all circuit sensors
-"avg(device_class:temperature)"              # Average all temperature sensors
-"count(tags:critical)"                       # Count entities with 'critical' tag
+sum("regex:circuit_pattern")                # Sum entities matching regex pattern from variable
+sum("regex:pattern_variable")               # Sum entities using dynamic regex from variable  
+avg("device_class:temperature")             # Average all temperature sensors (static pattern)
+count("tags:critical")                      # Count entities with 'critical' tag (static pattern)
 
 # Dot notation attribute access
 "sensor1.battery_level + sensor2.battery_level"

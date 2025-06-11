@@ -418,6 +418,8 @@ class SchemaValidator:
         # Define common patterns
         id_pattern = "^[a-z][a-z0-9_]*$"
         entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
+        # Allow entity IDs OR collection patterns (device_class:, area:, tags:, regex:, attribute:)
+        variable_value_pattern = "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$"
         var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
         icon_pattern = "^mdi:[a-z0-9-]+$"
 
@@ -429,7 +431,7 @@ class SchemaValidator:
             "properties": self._get_v1_main_properties(id_pattern, entity_pattern, var_pattern, icon_pattern),
             "required": ["sensors"],
             "additionalProperties": False,
-            "definitions": self._get_v1_schema_definitions(id_pattern, entity_pattern, var_pattern, icon_pattern),
+            "definitions": self._get_v1_schema_definitions(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
         }
 
     def _get_main_properties(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
@@ -469,11 +471,11 @@ class SchemaValidator:
             },
         }
 
-    def _get_schema_definitions(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_schema_definitions(self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the definitions section for the schema."""
         return {
             "sensor": self._get_sensor_definition(id_pattern),
-            "formula": self._get_formula_definition(id_pattern, entity_pattern, var_pattern, icon_pattern),
+            "formula": self._get_formula_definition(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
         }
 
     def _get_sensor_definition(self, id_pattern: str) -> dict[str, Any]:
@@ -522,7 +524,7 @@ class SchemaValidator:
             "additionalProperties": False,
         }
 
-    def _get_formula_definition(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_formula_definition(self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the formula definition for the schema."""
         return {
             "type": "object",
@@ -546,12 +548,12 @@ class SchemaValidator:
                 },
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities",
+                    "description": "Variable mappings to Home Assistant entities or collection patterns",
                     "patternProperties": {
                         var_pattern: {
                             "type": "string",
-                            "pattern": entity_pattern,
-                            "description": "Home Assistant entity ID",
+                            "pattern": variable_value_pattern,
+                            "description": "Home Assistant entity ID or collection pattern (device_class:, area:, etc.)",
                         }
                     },
                     "additionalProperties": False,

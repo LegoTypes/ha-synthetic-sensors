@@ -1,0 +1,172 @@
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+
+sensors:
+  # Single variable device class aggregation
+  dynamic_device_sum:
+    name: "Dynamic Device Sum"
+    formula: 'sum("device_class:device_type")'
+    variables:
+      device_type: "input_select.monitoring_device_class"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Multiple variables for area + device class filtering
+  area_device_average:
+    name: "Area Device Average"
+    formula: 'avg("area:target_area", "device_class:device_type")'
+    variables:
+      target_area: "input_select.focus_area"
+      device_type: "input_select.focus_device_class"
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+    state_class: "measurement"
+
+  # Variable threshold in attribute pattern
+  low_battery_count:
+    name: "Low Battery Device Count"
+    formula: 'count("device_class:battery" < threshold)'
+    variables:
+      threshold: "input_number.battery_alert_threshold"
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Variable regex pattern construction
+  circuit_group_power:
+    name: "Circuit Group Power"
+    formula: 'sum("regex:group_prefix")'
+    variables:
+      group_prefix: "input_text.circuit_group_name"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Complex multi-variable pattern with mathematical operations
+  efficiency_analysis:
+    name: "Efficiency Analysis"
+    formula: '(sum("device_class:primary_type") / sum("device_class:secondary_type")) * 100'
+    variables:
+      primary_type: "input_select.primary_device_type"
+      secondary_type: "input_select.secondary_device_type"
+    unit_of_measurement: "%"
+    device_class: "power_factor"
+    state_class: "measurement"
+
+  # Mixed collection and regular variables
+  enhanced_power_analysis:
+    name: "Enhanced Power Analysis"
+    formula: '(sum("device_class:device_type") * rate_multiplier) + base_consumption'
+    variables:
+      device_type: "input_select.target_device_class"
+      rate_multiplier: "input_number.power_rate_multiplier"
+      base_consumption: "sensor.always_on_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Multiple collection functions with different variables using values of an attribute
+  # "device_class:battery.battery_level resolves to the attributes of all the sensors with device class battery
+  # so the first part to get resolved is the variable "device_class:battery" and then the attribute of 
+  # those sensors is used to filter the sensors. The trick here is that the varaible should not be fully resolved
+  # to a list of states because it is a special type of variable that is further refined in the formula before 
+  # the states are read.
+  power_to_battery_ratio:
+    name: "Power to Battery Efficiency"
+    formula: 'sum("device_class:power_type") / count(battery_class.battery_level > min_battery)'
+    variables:
+      power_type: "input_select.power_device_class"
+      min_battery: "input_number.minimum_battery_level"
+      battery_class: "device_class:battery"
+    unit_of_measurement: "W/device"
+    state_class: "measurement"
+
+  # Complex area-based aggregation with multiple conditions
+  multi_area_analysis:
+    name: "Multi-Area Analysis"
+    formula: 'avg("area:primary_area", "area:secondary_area", "device_class:sensor_type")'
+    variables:
+      primary_area: "input_select.primary_area"
+      secondary_area: "input_select.secondary_area"
+      sensor_type: "input_select.monitored_device_class"
+    unit_of_measurement: "units"
+    state_class: "measurement"
+
+  # Dynamic tag-based monitoring
+  tagged_device_monitor:
+    name: "Tagged Device Monitor"
+    formula: 'count("tags:alert_tag") + count("tags:warning_tag")'
+    variables:
+      alert_tag: "input_select.alert_level_tag"
+      warning_tag: "input_select.warning_level_tag"
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Advanced attribute comparison with variable thresholds
+  temperature_range_monitor:
+    name: "Temperature Range Monitor"
+    formula: 'count(temp_sensors.temperature > min_temp and temp_sensors.temperature < max_temp)'
+    variables:
+      min_temp: "input_number.min_temperature"
+      max_temp: "input_number.max_temperature"
+      temp_sensors: "device_class:temperature"
+    unit_of_measurement: "sensors"
+    state_class: "measurement"
+
+  # Multi-formula sensor with calculated attributes using dynamic collections
+  energy_analysis_suite:
+    name: "Energy Analysis Suite"
+    formula: 'sum("device_class:primary_energy_type")'
+    attributes:
+      secondary_consumption:
+        formula: 'sum("device_class:secondary_energy_type")'
+        unit_of_measurement: "W"
+      total_consumption:
+        formula: 'state + secondary_consumption'
+        unit_of_measurement: "W"
+      efficiency_rating:
+        formula: 'state / total_consumption * 100'
+        unit_of_measurement: "%"
+      high_usage_count:
+        formula: 'count(primary_devices.current_power > alert_threshold)'
+        unit_of_measurement: "devices"
+    variables:
+      primary_energy_type: "input_select.primary_energy_class"
+      secondary_energy_type: "input_select.secondary_energy_class"
+      alert_threshold: "input_number.power_alert_level"
+      primary_devices: "device_class:power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Edge case: Empty variable handling
+  empty_collection_test:
+    name: "Empty Collection Test"
+    formula: 'count("device_class:test_type")'
+    variables:
+      test_type: "input_text.empty_device_class"
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # multiple regex patterns
+  sum_two_regex_patterns:
+    name: "Sum Two Regex Patterns"
+    formula: 'sum("regex:circuit_pattern", "regex:kitchen_pattern")'
+    variables:
+      circuit_pattern: "input_text.circuit_regex_pattern"
+      kitchen_pattern: "input_text.kitchen_regex_pattern"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # comma-separated regex patterns (string-level, like device_class)
+  comma_separated_regex:
+    name: "Comma Separated Regex"
+    formula: 'sum("regex:circuit_pattern,kitchen_pattern")'
+    variables:
+      circuit_pattern: "input_text.circuit_regex_pattern"
+      kitchen_pattern: "input_text.kitchen_regex_pattern"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"

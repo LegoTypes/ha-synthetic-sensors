@@ -224,12 +224,12 @@ class TestEvaluator:
         result1 = evaluator.evaluate_formula(config)
         assert result1["success"] is False
         assert "error" in result1
-        assert "Missing dependencies" in result1["error"]
+        assert "missing_entity" in result1["error"]
 
         result2 = evaluator.evaluate_formula(config)
         assert result2["success"] is False
         assert "error" in result2
-        assert "Missing dependencies" in result2["error"]
+        assert "missing_entity" in result2["error"]
 
         # Third evaluation should be skipped due to circuit breaker
         result3 = evaluator.evaluate_formula(config)

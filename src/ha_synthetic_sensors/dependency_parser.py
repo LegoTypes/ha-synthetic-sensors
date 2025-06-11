@@ -344,7 +344,10 @@ class DependencyParser:
                 for query_type, pattern in self.QUERY_PATTERNS.items():
                     type_match = pattern.match(query_content)
                     if type_match:
-                        queries.append(DynamicQuery(query_type=query_type, pattern=type_match.group(1).strip(), function=function_name))
+                        # Normalize spaces in pattern for consistent replacement later
+                        # Store pattern with normalized format (no space after colon)
+                        normalized_pattern = type_match.group(1).strip()
+                        queries.append(DynamicQuery(query_type=query_type, pattern=normalized_pattern, function=function_name))
                         break
 
         return queries

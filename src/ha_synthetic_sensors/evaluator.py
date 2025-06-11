@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import ast
 from dataclasses import dataclass
 import logging
 import re
@@ -180,11 +181,18 @@ class Evaluator(FormulaEvaluator):
                     "state": "ok",
                 }
 
-            # Extract dependencies using parser
-            dependencies = self.get_formula_dependencies(config.formula)
+            # Extract dependencies using enhanced method that handles variables and collection functions
+            dependencies = self._extract_formula_dependencies(config, context)
+
+            # Identify collection pattern entities that don't need numeric validation
+            parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
+            collection_pattern_entities = set()
+            for query in parsed_deps.dynamic_queries:
+                entity_refs = self._collection_resolver._entity_reference_pattern.findall(query.pattern)
+                collection_pattern_entities.update(entity_refs)
 
             # Validate dependencies are available
-            missing_deps, unavailable_deps = self._check_dependencies(dependencies, context)
+            missing_deps, unavailable_deps = self._check_dependencies(dependencies, context, collection_pattern_entities)
 
             # Handle missing entities (fatal error)
             if missing_deps:
@@ -226,11 +234,19 @@ class Evaluator(FormulaEvaluator):
             evaluator.names = eval_context
             evaluator.functions = self._math_functions.copy()
 
-            # Preprocess formula: convert entity_ids with dots to underscores for simpleeval
-            processed_formula = self._preprocess_formula_for_evaluation(config.formula)
+            # Preprocess formula: resolve variables first, then collection functions, then normalize entity_ids
+            processed_formula = self._preprocess_formula_for_evaluation(config.formula, eval_context)
 
-            # Evaluate the preprocessed formula
-            result = evaluator.eval(processed_formula)
+            # Optimization: If the formula has been completely resolved to a literal,
+            # we can evaluate it directly without needing the complex evaluation context
+            try:
+                # Check if the processed formula is a simple numeric literal
+                result = float(processed_formula)
+                # If we get here, it's a pure number - no need for complex evaluation
+
+            except ValueError:
+                # Not a literal - proceed with normal evaluation
+                result = evaluator.eval(processed_formula)
 
             # Cache the result
             self._cache.store_result(config.formula, result, filtered_context, formula_name)
@@ -258,8 +274,8 @@ class Evaluator(FormulaEvaluator):
             error_message = str(err)
             is_fatal_error = (
                 # Missing variable definitions (e.g., typos in entity names)
-                "name" in error_message.lower()
-                and "not defined" in error_message.lower()
+                "not defined"
+                in error_message.lower()
             ) or (
                 # Syntax errors in formula (e.g., malformed expressions)
                 "syntax"
@@ -280,7 +296,7 @@ class Evaluator(FormulaEvaluator):
                 "value": None,
             }
 
-    def _check_dependencies(self, dependencies: set[str], context: dict[str, ContextValue] | None = None) -> tuple[set[str], set[str]]:
+    def _check_dependencies(self, dependencies: set[str], context: dict[str, ContextValue] | None = None, collection_pattern_entities: set[str] | None = None) -> tuple[set[str], set[str]]:
         """Check which dependencies are missing or unavailable.
 
         This method is a critical part of the two-tier circuit breaker system.
@@ -307,6 +323,7 @@ class Evaluator(FormulaEvaluator):
         missing = set()
         unavailable = set()
         context = context or {}
+        collection_pattern_entities = collection_pattern_entities or set()
 
         for entity_id in dependencies:
             # First check if provided in context
@@ -321,7 +338,12 @@ class Evaluator(FormulaEvaluator):
                 # TRANSITORY ERROR: Entity exists but currently unavailable
                 unavailable.add(entity_id)
             else:
-                # Check if the state can be converted to numeric
+                # Special handling for collection pattern entities - they don't need numeric validation
+                if entity_id in collection_pattern_entities:
+                    # Collection pattern entities can have any state value (they're used as pattern sources)
+                    continue
+
+                # Check if the state can be converted to numeric (for mathematical operations)
                 try:
                     self._convert_to_numeric(state.state, entity_id)
                 except NonNumericStateError:
@@ -350,6 +372,40 @@ class Evaluator(FormulaEvaluator):
 
         # Cache the result
         self._cache.store_dependencies(formula, dependencies)
+        return dependencies
+
+    def _extract_formula_dependencies(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> set[str]:
+        """Extract dependencies from formula config, handling entity references in collection patterns.
+
+        This method extracts dependencies for the new design where entity references
+        can appear directly within collection patterns like sum("device_class: input_select.device_type").
+
+        Args:
+            config: Formula configuration with variables
+            context: Optional evaluation context
+
+        Returns:
+            Set of actual entity dependencies needed for evaluation
+        """
+        dependencies = set()
+
+        # Add variable entity references as dependencies (for backward compatibility)
+        if hasattr(config, "variables") and config.variables:
+            for _var_name, entity_id in config.variables.items():
+                dependencies.add(entity_id)
+
+        # Extract entity references from collection patterns
+        parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
+
+        for query in parsed_deps.dynamic_queries:
+            # Look for entity references within the pattern using collection resolver's pattern
+            entity_refs = self._collection_resolver._entity_reference_pattern.findall(query.pattern)
+            dependencies.update(entity_refs)
+
+        # Extract regular dependencies (non-collection function entities)
+        static_deps = self._dependency_parser.extract_entity_references(config.formula)
+        dependencies.update(static_deps)
+
         return dependencies
 
     def validate_formula_syntax(self, formula: str) -> list[str]:
@@ -759,21 +815,32 @@ class Evaluator(FormulaEvaluator):
         # For other domains, default to assuming non-numeric
         return False
 
-    def _preprocess_formula_for_evaluation(self, formula: str) -> str:
-        """Preprocess formula: resolve collection functions and normalize entity IDs.
+    def _preprocess_formula_for_evaluation(self, formula: str, eval_context: dict[str, Any] | None = None) -> str:
+        """Preprocess formula: resolve variables first, then collection functions, then normalize entity IDs.
+
+        This method now implements variable-first processing to enable dynamic collection patterns.
+        Processing order:
+        1. Resolve variables and string operations (enables dynamic pattern construction)
+        2. Resolve collection functions (with potentially variable-based patterns)
+        3. Normalize entity IDs for simpleeval compatibility
 
         Args:
             formula: Original formula string
+            eval_context: Evaluation context with variable values (optional)
 
         Returns:
-            Preprocessed formula with collection functions resolved and normalized entity_id variable names
+            Preprocessed formula with variables resolved, collection functions resolved, and normalized entity_id variable names
         """
         processed_formula = formula
 
-        # First, resolve collection functions
+        # Step 1: Resolve variables and string operations to enable dynamic collection patterns
+        if eval_context:
+            processed_formula = self._resolve_variables_and_strings(processed_formula, eval_context)
+
+        # Step 2: Resolve collection functions (now with potentially dynamic patterns)
         processed_formula = self._resolve_collection_functions(processed_formula)
 
-        # Find all entity references using dependency parser
+        # Step 3: Find all entity references using dependency parser and normalize
         entity_refs = self._dependency_parser.extract_entity_references(processed_formula)
 
         # Replace each entity_id with normalized version
@@ -785,6 +852,117 @@ class Evaluator(FormulaEvaluator):
                 processed_formula = re.sub(pattern, normalized_name, processed_formula)
 
         return processed_formula
+
+    def _resolve_variables_and_strings(self, formula: str, eval_context: dict[str, Any]) -> str:
+        """Resolve variables and string operations in formula for dynamic pattern construction.
+
+        This method performs a limited evaluation that only resolves:
+        - Variable substitution
+        - String concatenation operations
+        - Basic string operations needed for collection pattern construction
+
+        It does NOT evaluate:
+        - Mathematical operations
+        - Collection functions (those are resolved later)
+        - Complex expressions
+
+        Args:
+            formula: Formula with potential variable references and string operations
+            eval_context: Context containing variable values
+
+        Returns:
+            Formula with variables and string operations resolved
+        """
+        try:
+            # Create a limited evaluator for string operations only
+            string_evaluator = SimpleEval()
+            string_evaluator.names = eval_context.copy()
+
+            # Only allow string operations and basic functions needed for pattern construction
+            string_evaluator.functions = {
+                "str": str,
+                "float": float,
+                "int": int,
+                # Note: We don't include mathematical functions here to avoid premature evaluation
+            }
+
+            # We need to be careful here - we want to resolve string concatenation
+            # but not evaluate collection functions or mathematical expressions yet.
+            #
+            # Strategy: Look for string concatenation patterns and resolve those,
+            # but leave everything else untouched.
+
+            # For now, implement a simple approach: try to evaluate string expressions only
+            # This is a starting implementation that can be enhanced later
+
+            # Look for quoted string concatenation patterns like "device_class:" + variable
+            # Parse the formula to find string concatenation
+            try:
+                tree = ast.parse(formula, mode="eval")
+                resolved_formula = self._resolve_string_concatenations(tree, eval_context)
+                return resolved_formula
+            except (SyntaxError, ValueError):
+                # If we can't parse it, return the original formula
+                _LOGGER.debug("Could not parse formula for string resolution: %s", formula)
+                return formula
+
+        except Exception as e:
+            _LOGGER.warning("Error resolving variables and strings in formula '%s': %s", formula, e)
+            return formula
+
+    def _resolve_string_concatenations(self, node: ast.AST, eval_context: dict[str, Any]) -> str:
+        """Recursively resolve string concatenation operations in AST.
+
+        Args:
+            node: AST node to process
+            eval_context: Variable values
+
+        Returns:
+            String representation with concatenations resolved
+        """
+        if isinstance(node, ast.Expression):
+            return self._resolve_string_concatenations(node.body, eval_context)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            # Handle string concatenation
+            left = self._resolve_string_concatenations(node.left, eval_context)
+            right = self._resolve_string_concatenations(node.right, eval_context)
+
+            # If both sides are strings (quoted), concatenate them
+            if left.startswith('"') and left.endswith('"') and right.startswith('"') and right.endswith('"'):
+                return f'"{left[1:-1]}{right[1:-1]}"'
+            # If left is string and right is a resolved variable value
+            elif left.startswith('"') and left.endswith('"'):
+                return f'"{left[1:-1]}{right}"'
+            # If right is string and left is a resolved variable value
+            elif right.startswith('"') and right.endswith('"'):
+                return f'"{left}{right[1:-1]}"'
+            else:
+                # Return as concatenation expression if not both strings
+                return f"{left} + {right}"
+        elif isinstance(node, ast.Constant):
+            # String literal
+            if isinstance(node.value, str):
+                return f'"{node.value}"'
+            else:
+                return str(node.value)
+        elif isinstance(node, ast.Name):
+            # Variable reference
+            var_name = node.id
+            if var_name in eval_context:
+                value = eval_context[var_name]
+                if isinstance(value, str):
+                    return value  # Don't quote it since it's a resolved variable value
+                else:
+                    return str(value)
+            else:
+                return var_name
+        elif isinstance(node, ast.Call):
+            # Function call - don't resolve these yet, leave as-is
+            func_name = ast.unparse(node)
+            return func_name
+        else:
+            # For other node types, return the unparsed version
+            return ast.unparse(node)
 
     def _resolve_collection_functions(self, formula: str) -> str:
         r"""Resolve collection functions by replacing them with actual entity values.
@@ -815,9 +993,25 @@ class Evaluator(FormulaEvaluator):
 
                 if not entity_ids:
                     _LOGGER.warning("Collection query %s:%s matched no entities", query.query_type, query.pattern)
-                    # Replace with empty function call to avoid syntax errors
-                    original_pattern = f'{query.function}("{query.query_type}:{query.pattern}")'
-                    resolved_formula = resolved_formula.replace(original_pattern, f"{query.function}()")
+
+                    # Return appropriate default values for different functions
+                    if query.function == "sum":
+                        default_value = "0"
+                    elif query.function == "max" or query.function == "min":
+                        default_value = "0"  # or could be None/error
+                    elif query.function in ("avg", "average") or query.function == "count":
+                        default_value = "0"
+                    else:
+                        default_value = "0"  # Default fallback
+
+                    # Handle both space formats for replacement
+                    pattern_with_space = f'{query.function}("{query.query_type}: {query.pattern}")'
+                    pattern_without_space = f'{query.function}("{query.query_type}:{query.pattern}")'
+
+                    if pattern_with_space in resolved_formula:
+                        resolved_formula = resolved_formula.replace(pattern_with_space, default_value)
+                    elif pattern_without_space in resolved_formula:
+                        resolved_formula = resolved_formula.replace(pattern_without_space, default_value)
                     continue
 
                 # Get numeric values for the entities
@@ -825,15 +1019,58 @@ class Evaluator(FormulaEvaluator):
 
                 if not values:
                     _LOGGER.warning("No numeric values found for collection query %s:%s", query.query_type, query.pattern)
-                    # Replace with empty function call
-                    original_pattern = f'{query.function}("{query.query_type}:{query.pattern}")'
-                    resolved_formula = resolved_formula.replace(original_pattern, f"{query.function}()")
+
+                    # Return appropriate default values for different functions
+                    if query.function == "sum":
+                        default_value = "0"
+                    elif query.function == "max" or query.function == "min":
+                        default_value = "0"  # or could be None/error
+                    elif query.function in ("avg", "average") or query.function == "count":
+                        default_value = "0"
+                    else:
+                        default_value = "0"  # Default fallback
+
+                    # Handle both space formats for replacement
+                    pattern_with_space = f'{query.function}("{query.query_type}: {query.pattern}")'
+                    pattern_without_space = f'{query.function}("{query.query_type}:{query.pattern}")'
+
+                    if pattern_with_space in resolved_formula:
+                        resolved_formula = resolved_formula.replace(pattern_with_space, default_value)
+                    elif pattern_without_space in resolved_formula:
+                        resolved_formula = resolved_formula.replace(pattern_without_space, default_value)
                     continue
 
                 # Replace the collection function with the resolved values
-                values_str = ", ".join(str(v) for v in values)
-                original_pattern = f'{query.function}("{query.query_type}:{query.pattern}")'
-                resolved_formula = resolved_formula.replace(original_pattern, f"{query.function}({values_str})")
+                # Calculate the result directly instead of generating list literals
+                values_str = ", ".join(str(v) for v in values)  # For logging and fallback
+
+                result: float | int | str
+                if query.function == "sum":
+                    result = sum(values)
+                elif query.function == "max":
+                    result = max(values)
+                elif query.function == "min":
+                    result = min(values)
+                elif query.function == "avg" or query.function == "average":
+                    result = sum(values) / len(values) if values else 0
+                elif query.function == "count":
+                    result = len(values)
+                else:
+                    # For unknown functions, fall back to comma-separated values
+                    result = f"{query.function}({values_str})"
+
+                # Handle both space formats that users might input in YAML
+                # Try both "device_class: power" and "device_class:power" patterns
+                pattern_with_space = f'{query.function}("{query.query_type}: {query.pattern}")'
+                pattern_without_space = f'{query.function}("{query.query_type}:{query.pattern}")'
+
+                # Replace whichever pattern exists in the formula
+                if pattern_with_space in resolved_formula:
+                    resolved_formula = resolved_formula.replace(pattern_with_space, str(result))
+                elif pattern_without_space in resolved_formula:
+                    resolved_formula = resolved_formula.replace(pattern_without_space, str(result))
+                else:
+                    _LOGGER.warning("Could not find pattern to replace for %s:%s", query.query_type, query.pattern)
 
                 _LOGGER.debug("Resolved collection %s:%s to %d values: [%s]", query.query_type, query.pattern, len(values), values_str[:100])
 

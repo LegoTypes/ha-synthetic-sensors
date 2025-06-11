@@ -53,6 +53,9 @@ class CollectionResolver:
             self._device_registry = None
             self._area_registry = None
 
+        # Pattern for detecting entity references within collection patterns
+        self._entity_reference_pattern = re.compile(r"\b(?:sensor|binary_sensor|input_number|input_boolean|input_select|input_text|switch|light|climate|cover|fan|lock|alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|zone|automation|script|scene|group|timer|counter|sun)\.[a-zA-Z0-9_.]+\b")
+
     def resolve_collection(self, query: DynamicQuery) -> list[str]:
         """Resolve a dynamic query to a list of matching entity IDs.
 
@@ -64,19 +67,53 @@ class CollectionResolver:
         """
         _LOGGER.debug("Resolving collection query: %s:%s", query.query_type, query.pattern)
 
+        # First, resolve any entity references within the pattern
+        resolved_pattern = self._resolve_entity_references_in_pattern(query.pattern)
+
+        _LOGGER.debug("Pattern after entity resolution: %s", resolved_pattern)
+
         if query.query_type == "regex":
-            return self._resolve_regex_pattern(query.pattern)
+            return self._resolve_regex_pattern(resolved_pattern)
         elif query.query_type == "device_class":
-            return self._resolve_device_class_pattern(query.pattern)
+            return self._resolve_device_class_pattern(resolved_pattern)
         elif query.query_type == "tags":
-            return self._resolve_tags_pattern(query.pattern)
+            return self._resolve_tags_pattern(resolved_pattern)
         elif query.query_type == "area":
-            return self._resolve_area_pattern(query.pattern)
+            return self._resolve_area_pattern(resolved_pattern)
         elif query.query_type == "attribute":
-            return self._resolve_attribute_pattern(query.pattern)
+            return self._resolve_attribute_pattern(resolved_pattern)
         else:
             _LOGGER.warning("Unknown collection query type: %s", query.query_type)
             return []
+
+    def _resolve_entity_references_in_pattern(self, pattern: str) -> str:
+        """Resolve entity references within a collection pattern.
+
+        This method detects entity references like 'input_select.device_type' within
+        collection patterns and replaces them with their current state values.
+
+        Args:
+            pattern: Collection pattern that may contain entity references
+
+        Returns:
+            Pattern with entity references resolved to their current values
+        """
+
+        def replace_entity_ref(match: re.Match[str]) -> str:
+            """Replace an entity reference with its current state value."""
+            entity_id = match.group(0)
+            state = self._hass.states.get(entity_id)
+            if state is not None:
+                _LOGGER.debug("Resolving entity reference '%s' to value '%s'", entity_id, state.state)
+                return str(state.state)
+            else:
+                _LOGGER.warning("Entity reference '%s' not found, keeping original", entity_id)
+                return entity_id
+
+        # Replace all entity references in the pattern
+        resolved_pattern = self._entity_reference_pattern.sub(replace_entity_ref, pattern)
+
+        return resolved_pattern
 
     def _resolve_regex_pattern(self, pattern: str) -> list[str]:
         """Resolve regex pattern against entity IDs.

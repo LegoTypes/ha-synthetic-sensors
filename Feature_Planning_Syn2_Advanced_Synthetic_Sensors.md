@@ -31,7 +31,7 @@ Syn2 supports aggregation and attribute access patterns for Home Assistant entit
 
 **Planned Features:**
 
-- **JSONata Queries**: Advanced query language for complex entity selections
+- **Enhanced Variable Support**: Allow variables in collection function patterns for dynamic queries
 
 ### Key Use Cases
 
@@ -133,6 +133,7 @@ sensors:
 - No loops or conditional logic beyond ternary operators
 - Collection functions are the only iteration mechanism
 - Static formulas (no runtime formula modification)
+- Collection function patterns cannot use variables (requires implementation enhancement)
 
 ## Configuration Concepts
 
@@ -629,5 +630,111 @@ sensors:
 **Supported Aggregation Functions:**
 
 - `sum()`, `avg()`, `count()`, `min()`, `max()`, `std()`, `var()`
+
+## Dynamic Collection Variable Support
+
+### Current Implementation Status
+
+The system **fully supports both static and dynamic collection patterns** with variable substitution:
+
+```yaml
+# ✅ Static Patterns
+sensors:
+  static_device_monitoring:
+    name: "Static Device Monitoring"
+    formula: sum("device_class:temperature")
+    
+# ✅ Dynamic Patterns - IMPLEMENTED
+sensors:
+  dynamic_device_monitoring:
+    name: "Dynamic Device Monitoring" 
+    formula: sum("device_class:device_type")
+    variables:
+      device_type: "input_select.monitoring_device_type"  # resolves to "temperature"
+    # Results in: sum("device_class:temperature")
+```
+
+### Template Alternative (Optional)
+
+While variable substitution is implemented, complex dynamic logic can still use templates when needed:
+
+```yaml
+# For complex conditional pattern building
+template:
+  - sensor:
+      - name: "Complex Dynamic Pattern"
+        state: >
+          {% if states('input_boolean.advanced_mode') == 'on' %}
+            device_class:{{ states('input_select.device_type') }}
+          {% else %}
+            regex:sensor\.basic_.*
+          {% endif %}
+
+# Synthetic sensor uses template result for complex scenarios
+sensors:
+  conditional_monitoring:
+    formula: sum("pattern")
+    variables:
+      pattern: "sensor.complex_dynamic_pattern"
+```
+
+### Processing Architecture (Current)
+
+The system processes formulas in this order:
+1. **Static Pattern Recognition**: Collection functions with quoted static patterns are identified
+2. **Collection Function Resolution**: Patterns are resolved to entity lists and aggregated values
+3. **Mathematical Evaluation**: Final expression with resolved values is evaluated by simpleeval
+
+**Key Insight**: Collection functions are **pre-processed** and replaced with numeric values before mathematical evaluation, enabling seamless integration with complex formulas.
+
+### Comparison: Synthetic Sensors vs Templates vs JSONata
+
+| Capability | Current Synthetic Sensors | Templates | JSONata |
+|------------|--------------------------|-----------|---------|
+| **Static Collection Aggregation** | ✅ | ➖ | ✅ |
+| **Dynamic Collection Patterns** | 🔄 | ✅ | ✅ |
+| **Mathematical Functions** | ✅ | ➖ | ➖ |
+| **Boolean Logic in Formulas** | ✅ | ✅ | ✅ |
+| **Variable Inheritance** | ✅ | ➖ | ➖ |
+| **Persistent HA Integration** | ✅ | ✅ | ✅ |
+| **Multi-Step Analysis** | ➖ | ✅ | ✅ |
+| **Time-Based Logic** | ➖ | ✅ | ✅ |
+| **Text Manipulation** | ➖ | ✅ | ✅ |
+| **User Familiarity** | ✅ | ✅ | ❌ |
+| **Implementation Complexity** | Low | N/A | High |
+
+### Current Capabilities Summary
+
+**Synthetic Sensors Excel At:**
+- Mathematical calculations with collection aggregation
+- Dynamic entity discovery through variable substitution
+- Variable inheritance between main sensors and attributes
+- Hierarchical sensor relationships
+- Persistent sensor entities with proper HA integration
+
+**Templates Are Better For:**
+- Complex multi-step calculations with intermediate variables
+- Time-based conditional logic
+- Text formatting and string manipulation
+- Dynamic entity selection based on complex logic
+
+**Implementation Status:**
+- **Static Collection Patterns**: ✅ **IMPLEMENTED** with regex, device_class, area, tags, and attribute patterns
+- **Dynamic Collection Variables**: ✅ **IMPLEMENTED** - Variable substitution within quoted strings
+- **Mathematical Functions**: ✅ **COMPREHENSIVE** library available
+- **Variable Inheritance**: ✅ **FULL SUPPORT** in attribute formulas
+- **Template Integration**: ✅ **AVAILABLE** as alternative approach for complex dynamic logic
+
+### Future Enhancement Priorities
+
+**Medium Priority Additions:**
+- Additional mathematical functions (`median`, `percentile`, `mode`)
+- Enhanced collection pattern syntax (`state:>value`, `attribute:!=value`)
+- Time-based functions (`hours_since`, `days_since`)
+
+**Low Priority (Template Territory):**
+- Complex multi-step analysis with intermediate variables
+- Advanced text manipulation and formatting
+- Real-time conditional logic based on time/state
 
 

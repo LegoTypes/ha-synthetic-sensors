@@ -301,8 +301,8 @@ class TestFormulaPreprocessing:
         formula = 'sum("regex:sensor\\.test.*")'
         result = self.evaluator._resolve_collection_functions(formula)
 
-        # Should replace collection function with actual values
-        expected = "sum(10.0, 20.0)"
+        # Should replace collection function with calculated result (new behavior)
+        expected = "30.0"
         assert result == expected
 
     def test_resolve_collection_functions_no_matches(self):
@@ -315,8 +315,8 @@ class TestFormulaPreprocessing:
         formula = 'sum("regex:sensor\\.nonexistent.*")'
         result = self.evaluator._resolve_collection_functions(formula)
 
-        # Should replace with empty function call
-        expected = "sum()"
+        # Should replace with default value for sum (new behavior)
+        expected = "0"
         assert result == expected
 
     def test_resolve_collection_functions_no_numeric_values(self):
@@ -330,6 +330,6 @@ class TestFormulaPreprocessing:
         formula = 'sum("regex:sensor\\.test.*")'
         result = self.evaluator._resolve_collection_functions(formula)
 
-        # Should replace with empty function call
-        expected = "sum()"
+        # Should replace with default value for sum (new behavior)
+        expected = "0"
         assert result == expected

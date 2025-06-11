@@ -138,7 +138,7 @@ class TestFormulaEvaluation:
         context = cast(dict[str, ContextValue], {"A": 10})  # Missing B
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is False
-        assert result.get("error", "").find("Missing dependencies") != -1
+        assert "'B' is not defined" in result.get("error", "")
 
     def test_complex_formulas(self, mock_hass):
         """Test complex mathematical formulas."""
