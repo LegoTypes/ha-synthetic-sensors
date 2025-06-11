@@ -161,12 +161,67 @@ sensors:
     state_class: "measurement"
 
   # comma-separated regex patterns (string-level, like device_class)
-  comma_separated_regex:
-    name: "Comma Separated Regex"
-    formula: 'sum("regex:circuit_pattern,kitchen_pattern")'
+  or_separated_regex:
+    name: "OR Separated Regex"
+    formula: 'sum("regex:circuit_pattern|kitchen_pattern")'
     variables:
       circuit_pattern: "input_text.circuit_regex_pattern"
       kitchen_pattern: "input_text.kitchen_regex_pattern"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # OR-style device class tests with pipe syntax
+  door_window_count:
+    name: "Door and Window Count"
+    formula: 'count("device_class:door|window")'
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  security_device_sum:
+    name: "Security Device Status Sum"
+    formula: 'sum("device_class:door|window|lock")'
+    unit_of_measurement: "total"
+    state_class: "measurement"
+
+  climate_power_analysis:
+    name: "Climate and Power Analysis"
+    formula: 'avg("device_class:temperature|humidity") + sum("device_class:power|energy")'
+    unit_of_measurement: "mixed"
+    state_class: "measurement"
+
+  # Variable-driven OR device classes
+  dynamic_or_device_classes:
+    name: "Dynamic OR Device Classes"
+    formula: 'count("device_class:primary_class|secondary_class")'
+    variables:
+      primary_class: "input_select.primary_device_class"
+      secondary_class: "input_select.secondary_device_class"
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Complex OR pattern with mathematical operations
+  multi_device_efficiency:
+    name: "Multi-Device Efficiency"
+    formula: '(sum("device_class:power|energy") / count("device_class:temperature|humidity")) * 100'
+    unit_of_measurement: "%"
+    device_class: "power_factor"
+    state_class: "measurement"
+
+  # OR pattern in attribute formulas
+  comprehensive_device_analysis:
+    name: "Comprehensive Device Analysis"
+    formula: 'sum("device_class:power")'
+    attributes:
+      security_status:
+        formula: 'count("device_class:door|window|lock")'
+        unit_of_measurement: "devices"
+      climate_average:
+        formula: 'avg("device_class:temperature|humidity")'
+        unit_of_measurement: "avg"
+      mixed_or_count:
+        formula: 'count("device_class:motion|occupancy|presence")'
+        unit_of_measurement: "sensors"
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"

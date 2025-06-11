@@ -143,13 +143,15 @@ class CollectionResolver:
         """Resolve device_class pattern.
 
         Args:
-            pattern: Device class to match (e.g., "temperature", "power")
+            pattern: Device class to match (e.g., "temperature", "power", "door|window")
 
         Returns:
             List of matching entity IDs
         """
         matching_entities: list[str] = []
-        device_classes = [cls.strip() for cls in pattern.split(",")]
+
+        # Split by pipe (|) for OR logic
+        device_classes = [cls.strip() for cls in pattern.split("|")]
 
         for entity_id in self._hass.states.entity_ids():
             state = self._hass.states.get(entity_id)
