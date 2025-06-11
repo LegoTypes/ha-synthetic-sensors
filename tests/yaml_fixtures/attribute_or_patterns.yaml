@@ -1,0 +1,22 @@
+# Attribute and State OR Patterns Test Configuration
+# Tests OR-style logic for both attribute and state conditions using pipe (|) syntax
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+
+sensors:
+  # Test basic attribute OR pattern (searches ALL entities)
+  low_battery_or_offline:
+    name: "Low Battery or Offline Devices"
+    formula: 'count("attribute:battery_level<20|online=false")'
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Test device_class variable + attribute conditions (targeted approach)
+  targeted_battery_monitoring:
+    name: "Targeted Battery Monitoring"
+    formula: 'count("battery_devices.battery_level<20")'
+    variables:
+      battery_devices: "device_class:battery"
+    unit_of_measurement: "devices"
+    state_class: "measurement" 

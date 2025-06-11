@@ -365,7 +365,7 @@ class TestEntityManagement:
             assert manager is not None
             assert hasattr(manager, "_hass")
             assert hasattr(manager, "_name_resolver")
-            assert hasattr(manager, "_add_entities")
+            assert hasattr(manager, "_add_entities_callback")
 
         except ImportError:
             # SensorManager structure may be different - create basic test

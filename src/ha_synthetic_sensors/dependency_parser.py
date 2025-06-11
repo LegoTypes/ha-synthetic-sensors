@@ -26,7 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 class DynamicQuery:
     """Represents a dynamic query that needs runtime resolution."""
 
-    query_type: str  # 'regex', 'tags', 'device_class', 'area', 'attribute', 'jsonata'
+    query_type: str  # 'regex', 'tags', 'device_class', 'area', 'attribute', 'state'
     pattern: str  # The actual query pattern
     function: str  # The aggregation function (sum, avg, count, etc.)
 
@@ -69,7 +69,7 @@ class DependencyParser:
         "device_class": re.compile(r"^device_class:\s*(.+)$"),
         "area": re.compile(r"^area:\s*(.+)$"),
         "attribute": re.compile(r"^attribute:\s*(.+)$"),
-        "jsonata": re.compile(r"^jsonata:\s*(.+)$"),
+        "state": re.compile(r"^state:\s*(.+)$"),
     }
 
     def __init__(self) -> None:

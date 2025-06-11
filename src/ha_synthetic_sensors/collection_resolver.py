@@ -9,8 +9,10 @@ Supported collection patterns:
 - tags: Filter by entity tags/labels
 - area: Filter by area assignment
 - attribute: Filter by attribute conditions
+- state: Filter by entity state values
 
 Each pattern can be combined with aggregation functions like sum(), avg(), count(), etc.
+All patterns support OR logic using pipe (|) syntax.
 """
 
 from __future__ import annotations
@@ -82,6 +84,8 @@ class CollectionResolver:
             return self._resolve_area_pattern(resolved_pattern)
         elif query.query_type == "attribute":
             return self._resolve_attribute_pattern(resolved_pattern)
+        elif query.query_type == "state":
+            return self._resolve_state_pattern(resolved_pattern)
         else:
             _LOGGER.warning("Unknown collection query type: %s", query.query_type)
             return []
@@ -172,7 +176,7 @@ class CollectionResolver:
         """Resolve tags/labels pattern.
 
         Args:
-            pattern: Comma-separated list of tags to match
+            pattern: Tags to match using OR logic (e.g., "critical|important|warning")
 
         Returns:
             List of matching entity IDs
@@ -183,23 +187,24 @@ class CollectionResolver:
             _LOGGER.warning("Entity registry not available for tags pattern resolution")
             return matching_entities
 
-        required_tags = {tag.strip() for tag in pattern.split(",")}
+        # Split by pipe (|) for OR logic
+        target_tags = [tag.strip() for tag in pattern.split("|")]
 
         for entity_entry in self._entity_registry.entities.values():
             entity_labels = set(entity_entry.labels) if entity_entry.labels else set()
 
-            # Check if entity has all required tags
-            if required_tags.issubset(entity_labels):
+            # Check if entity has any of the target tags (OR logic)
+            if any(tag in entity_labels for tag in target_tags):
                 matching_entities.append(entity_entry.entity_id)
 
         _LOGGER.debug("Tags pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
 
     def _resolve_area_pattern(self, pattern: str) -> list[str]:
-        """Resolve area pattern with optional device class filter.
+        """Resolve area pattern with OR logic support.
 
         Args:
-            pattern: Area name or "area_name device_class:class_name"
+            pattern: Area names using OR logic (e.g., "living_room|kitchen|dining_room")
 
         Returns:
             List of matching entity IDs
@@ -210,23 +215,24 @@ class CollectionResolver:
             _LOGGER.warning("Area or entity registry not available for area pattern resolution")
             return matching_entities
 
-        # Parse pattern for area and optional device class
-        parts = pattern.split("device_class:")
-        area_name = parts[0].strip()
-        device_class_filter = parts[1].strip() if len(parts) > 1 else None
+        # Split by pipe (|) for OR logic
+        target_areas = [area_name.strip() for area_name in pattern.split("|")]
 
-        # Find area by name
-        target_area = None
-        for area in self._area_registry.areas.values():
-            if area.name.lower() == area_name.lower():
-                target_area = area
-                break
+        # Find matching area IDs
+        area_ids = set()
+        for target_area_name in target_areas:
+            # Handle device_class filter if present
+            parts = target_area_name.split("device_class:")
+            area_name = parts[0].strip()
+            device_class_filter = parts[1].strip() if len(parts) > 1 else None
 
-        if not target_area:
-            _LOGGER.warning("Area '%s' not found", area_name)
-            return []
+            # Find area by name
+            for area in self._area_registry.areas.values():
+                if area.name.lower() == area_name.lower():
+                    area_ids.add((area.id, device_class_filter))
+                    break
 
-        # Find entities in the area
+        # Find entities in any of the target areas
         for entity_entry in self._entity_registry.entities.values():
             entity_area_id = entity_entry.area_id
 
@@ -236,77 +242,148 @@ class CollectionResolver:
                 if device_entry:
                     entity_area_id = device_entry.area_id
 
-            if entity_area_id == target_area.id:
-                # Apply device class filter if specified
-                if device_class_filter:
-                    state = self._hass.states.get(entity_entry.entity_id)
-                    if state and hasattr(state, "attributes"):
-                        entity_device_class = state.attributes.get("device_class")
-                        if entity_device_class == device_class_filter:
-                            matching_entities.append(entity_entry.entity_id)
-                else:
-                    matching_entities.append(entity_entry.entity_id)
+            # Check if entity is in any of the target areas
+            for area_id, device_class_filter in area_ids:
+                if entity_area_id == area_id:
+                    # Apply device class filter if specified
+                    if device_class_filter:
+                        state = self._hass.states.get(entity_entry.entity_id)
+                        if state and hasattr(state, "attributes"):
+                            entity_device_class = state.attributes.get("device_class")
+                            if entity_device_class == device_class_filter:
+                                matching_entities.append(entity_entry.entity_id)
+                    else:
+                        matching_entities.append(entity_entry.entity_id)
+                    break  # Avoid adding the same entity multiple times
 
         _LOGGER.debug("Area pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
 
     def _resolve_attribute_pattern(self, pattern: str) -> list[str]:
-        """Resolve attribute condition pattern.
+        """Resolve attribute condition pattern with OR logic support.
 
         Args:
-            pattern: Attribute condition like "battery_level<20" or "online=true"
+            pattern: Attribute conditions using OR logic (e.g., "battery_level<20|online=false")
 
         Returns:
             List of matching entity IDs
         """
         matching_entities: list[str] = []
 
-        # Parse attribute condition
-        for op in ["<=", ">=", "!=", "<", ">", "="]:
-            if op in pattern:
-                attribute_name, value_str = pattern.split(op, 1)
-                attribute_name = attribute_name.strip()
-                value_str = value_str.strip()
+        # Split by pipe (|) for OR logic
+        attribute_conditions = [condition.strip() for condition in pattern.split("|")]
 
-                # Convert value to appropriate type
-                expected_value: bool | float | int | str
-                try:
-                    if value_str.lower() in ("true", "false"):
-                        expected_value = value_str.lower() == "true"
-                    elif "." in value_str:
-                        expected_value = float(value_str)
-                    else:
-                        expected_value = int(value_str)
-                except ValueError:
-                    expected_value = value_str  # Keep as string
+        for condition in attribute_conditions:
+            # Parse each attribute condition
+            for op in ["<=", ">=", "!=", "<", ">", "="]:
+                if op in condition:
+                    attribute_name, value_str = condition.split(op, 1)
+                    attribute_name = attribute_name.strip()
+                    value_str = value_str.strip()
 
-                # Check entities for matching attribute
-                for entity_id in self._hass.states.entity_ids():
-                    state = self._hass.states.get(entity_id)
-                    if state and hasattr(state, "attributes"):
-                        actual_value = state.attributes.get(attribute_name)
+                    # Convert value to appropriate type
+                    expected_value: bool | float | int | str
+                    try:
+                        if value_str.lower() in ("true", "false"):
+                            expected_value = value_str.lower() == "true"
+                        elif "." in value_str:
+                            expected_value = float(value_str)
+                        else:
+                            expected_value = int(value_str)
+                    except ValueError:
+                        expected_value = value_str  # Keep as string
 
-                        if actual_value is not None:
-                            # Convert actual value to same type as expected
-                            converted_value: bool | float | str
+                    # Check entities for matching attribute
+                    for entity_id in self._hass.states.entity_ids():
+                        if entity_id in matching_entities:
+                            continue  # Already matched by previous condition
+
+                        state = self._hass.states.get(entity_id)
+                        if state and hasattr(state, "attributes"):
+                            actual_value = state.attributes.get(attribute_name)
+
+                            if actual_value is not None:
+                                # Convert actual value to same type as expected
+                                converted_value: bool | float | str
+                                try:
+                                    if isinstance(expected_value, bool):
+                                        converted_value = str(actual_value).lower() == "true"
+                                    elif isinstance(expected_value, (int, float)):
+                                        converted_value = float(actual_value)
+                                    else:
+                                        converted_value = str(actual_value)
+                                except (ValueError, TypeError):
+                                    continue
+
+                                # Apply comparison
+                                if self._compare_values(converted_value, op, expected_value):
+                                    matching_entities.append(entity_id)
+                    break
+            else:
+                _LOGGER.warning("Invalid attribute condition '%s'", condition)
+
+        _LOGGER.debug("Attribute pattern '%s' matched %d entities", pattern, len(matching_entities))
+        return matching_entities
+
+    def _resolve_state_pattern(self, pattern: str) -> list[str]:
+        """Resolve state condition pattern with OR logic support.
+
+        Args:
+            pattern: State conditions using OR logic (e.g., ">100|=on|<50")
+
+        Returns:
+            List of matching entity IDs
+        """
+        matching_entities: list[str] = []
+
+        # Split by pipe (|) for OR logic
+        state_conditions = [condition.strip() for condition in pattern.split("|")]
+
+        for condition in state_conditions:
+            # Parse each state condition
+            for op in ["<=", ">=", "!=", "<", ">", "="]:
+                if op in condition:
+                    value_str = condition.replace(op, "", 1).strip()
+
+                    # Convert value to appropriate type
+                    expected_value: bool | float | int | str
+                    try:
+                        if value_str.lower() in ("true", "false"):
+                            expected_value = value_str.lower() == "true"
+                        elif "." in value_str:
+                            expected_value = float(value_str)
+                        else:
+                            expected_value = int(value_str)
+                    except ValueError:
+                        expected_value = value_str  # Keep as string
+
+                    # Check entities for matching state
+                    for entity_id in self._hass.states.entity_ids():
+                        if entity_id in matching_entities:
+                            continue  # Already matched by previous condition
+
+                        state = self._hass.states.get(entity_id)
+                        if state and state.state not in ("unknown", "unavailable", "none"):
+                            # Convert actual state to same type as expected
+                            converted_state: bool | float | str
                             try:
                                 if isinstance(expected_value, bool):
-                                    converted_value = str(actual_value).lower() == "true"
+                                    converted_state = str(state.state).lower() == "true"
                                 elif isinstance(expected_value, (int, float)):
-                                    converted_value = float(actual_value)
+                                    converted_state = float(state.state)
                                 else:
-                                    converted_value = str(actual_value)
+                                    converted_state = str(state.state)
                             except (ValueError, TypeError):
                                 continue
 
                             # Apply comparison
-                            if self._compare_values(converted_value, op, expected_value):
+                            if self._compare_values(converted_state, op, expected_value):
                                 matching_entities.append(entity_id)
-                break
-        else:
-            _LOGGER.warning("Invalid attribute pattern '%s'", pattern)
+                    break
+            else:
+                _LOGGER.warning("Invalid state condition '%s'", condition)
 
-        _LOGGER.debug("Attribute pattern '%s' matched %d entities", pattern, len(matching_entities))
+        _LOGGER.debug("State pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
 
     def _compare_values(self, actual: bool | float | str, op: str, expected: bool | float | int | str) -> bool:

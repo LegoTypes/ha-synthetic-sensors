@@ -1,56 +1,220 @@
-# Technical Implementation Plan - HA Synthetic Sensors (Version 2.0)
+# Technical Implementation Plan - HA Synthetic Sensors (Future Enhancements)
 
 ## Package Status
 
-**Current State**: Production ready foundation with clean v2.0 YAML syntax design
-**Test Results**: 138/138 tests passing (foundation components)
-**Type Safety**: Complete TypedDict implementation
-**Code Quality**: All linting checks passing
-**YAML Validation**: Clean v2.0 schema implementation
+**Current State**: Production ready with comprehensive OR pattern support and full mathematical functions
+**Test Results**: 402/402 tests passing (all features implemented)
+**Feature Coverage**: Static and dynamic collection patterns, variable inheritance, mathematical functions
+**Documentation**: Comprehensive examples and usage patterns documented
 
 ## Implementation Overview
 
-Python package providing YAML-based synthetic sensor creation for Home Assistant with clean v2.0 syntax. Features flattened single-formula sensors, calculated attributes for rich data, mathematical formula evaluation with entity references, dynamic sensor management, and service integration.
+This document outlines **future enhancements** for the HA Synthetic Sensors package. The core functionality is complete and
+production-ready. All basic features, OR pattern support, variable inheritance, and mathematical functions are fully
+implemented and tested.
 
-## Version 2.0 YAML Syntax Improvements
+## Future Enhancement Opportunities
 
-### Key Improvements
+Based on the Feature Planning document, the following areas represent potential future
+improvements beyond the current comprehensive implementation:
 
-1. **Flattened Single-Formula Sensors** (90% of use cases):
-   - Sensor key becomes unique identifier
-   - Direct `formula` key (no nested arrays)
-   - Simplified configuration for common scenarios
+### 1. Advanced Mathematical Functions (Medium Priority)
 
-2. **Calculated Attributes for Rich Data**:
-   - `state_formula` for main sensor value
-   - `attributes` section for computed attributes
-   - Reduces UI clutter while providing rich data
+**Current Status**: Comprehensive mathematical library implemented with all essential functions
+**Future Additions**:
 
-3. **Smart Cross-References**:
-   - Direct entity ID resolution: `sensor.syn2_sensor_key`
-   - No more long nested entity IDs
-   - Cleaner hierarchical references
+- **Statistical Functions**:
+  - `median()` - Median value calculations for datasets
+  - `percentile()` - Percentile calculations for distribution analysis
+  - `mode()` - Most frequent value in datasets
+  - `quartile()` - Quartile calculations for statistical analysis
 
-### Design Philosophy
+- **Advanced Mathematical Operations**:
+  - `log()`, `log10()`, `log2()` - Additional logarithmic functions
+  - `exp()` - Exponential function (e^x)
+  - `factorial()` - Factorial calculations
+  - `gcd()`, `lcm()` - Greatest common divisor and least common multiple
 
-**Clean v2.0 Syntax:**
+### 2. Enhanced Collection Pattern Syntax (Medium Priority)
+
+**Current Status**: Full OR pattern support with pipe syntax (`device_class:door|window`)
+**Future Enhancements**:
+
+- **State-based Collection Patterns**:
+
+  ```yaml
+  formula: count("state:>20")  # Entities with state greater than 20
+  formula: sum("state:!=unknown")  # Exclude unknown states
+  formula: avg("state:between:10,30")  # Values within range
+  ```
+
+- **Attribute Condition Enhancements**:
+
+  ```yaml
+  formula: count("attribute:battery_level<=20")  # Currently <20 only
+  formula: sum("attribute:temperature:range:18,25")  # Temperature ranges
+  formula: avg("attribute:humidity:!=null")  # Non-null values only
+  ```
+
+- **Complex Query Combinations**:
+
+  ```yaml
+  formula: sum("device_class:power AND area:kitchen")  # Boolean logic
+  formula: count("tags:critical OR area:security")  # Complex combinations
+  ```
+
+### 3. Time-based Functions (Low Priority)
+
+**Current Status**: Basic mathematical functions without time calculations
+**Future Additions**:
+
+- **Time Calculation Functions**:
+
+  ```yaml
+  formula: hours_since("sensor.last_motion")
+  formula: days_since("sensor.last_update") 
+  formula: time_of_day_percent()  # 0-100% through the day
+  formula: day_of_week_factor("weekend:0.8,weekday:1.0")
+  ```
+
+- **Historical Data Functions**:
+
+  ```yaml
+  formula: daily_average("sensor.power", 7)  # 7-day average
+  formula: weekly_trend("sensor.temperature")  # Trend analysis
+  formula: seasonal_adjustment("sensor.consumption")
+  ```
+
+### 4. Advanced Template Integration (Low Priority)
+
+**Current Status**: Templates can be used as inputs to synthetic sensors
+**Future Enhancements**:
+
+- **Dynamic Formula Generation**:
+  - Runtime formula modification based on conditions
+  - Template-generated collection patterns
+  - Conditional mathematical operations
+
+- **Multi-step Analysis Workflows**:
+  - Template sensors that build complex synthetic sensor configurations
+  - Dynamic sensor creation based on discovered entities
+  - Automated sensor relationship management
+
+### 5. Performance and Optimization Features (Future)
+
+**Current Status**: Efficient evaluation with caching and dependency resolution
+**Future Optimizations**:
+
+- **Advanced Caching Strategies**:
+  - Persistent cache across Home Assistant restarts
+  - Intelligent cache invalidation based on entity update patterns
+  - Cross-sensor cache sharing for common calculations
+
+- **Parallel Evaluation**:
+  - Concurrent evaluation of independent sensors
+  - Batch processing for collection functions
+  - Optimized update ordering for large sensor networks
+
+### 6. Integration Enhancements (Future)
+
+**Current Status**: Full Home Assistant integration with services and entity management
+**Future Enhancements**:
+
+- **Energy Dashboard Integration**:
+  - Automatic energy flow calculations
+  - Solar production and consumption analytics
+  - Grid import/export optimization
+
+- **Advanced Entity Management**:
+  - Automatic sensor discovery and configuration
+  - Dynamic sensor grouping and categorization
+  - Sensor health monitoring and diagnostics
+
+## Implementation Priority Assessment
+
+### Medium Priority (User-Requested Features)
+
+1. **Statistical Functions** - Would enhance data analysis capabilities
+2. **Enhanced Collection Patterns** - Would provide more flexible entity selection
+3. **State-based Filtering** - Would enable more sophisticated aggregations
+
+### Low Priority (Template Territory)
+
+1. **Time-based Functions** - Templates already handle time logic well
+2. **Complex Multi-step Analysis** - Templates are better suited for this
+3. **Dynamic Formula Generation** - Templates provide this capability
+
+### Future Considerations (Performance/Optimization)
+
+1. **Advanced Caching** - Only needed with very large sensor networks
+2. **Parallel Evaluation** - Only beneficial with hundreds of sensors
+3. **Integration Enhancements** - Dependent on user demand and use cases
+
+## Decision Framework for Future Enhancements
+
+### Implementation Criteria
+
+**High Priority Indicators**:
+
+- Multiple user requests for the feature
+- Cannot be easily achieved with existing template functionality
+- Provides significant mathematical or aggregation capability
+- Maintains the simple YAML-first design philosophy
+
+**Low Priority Indicators**:
+
+- Can be achieved with Home Assistant templates
+- Adds significant complexity to the package
+- Overlaps with existing Home Assistant functionality
+- Limited use case applicability
+
+### Current Recommendation
+
+**Focus Areas**:
+
+1. Monitor user feedback for most-requested mathematical functions
+2. Consider statistical functions if data analysis use cases emerge
+3. Evaluate enhanced collection patterns based on user complexity needs
+
+**Avoid**:
+
+1. Features that duplicate template sensor capabilities
+2. Complex time-based logic (templates handle this better)
+3. Performance optimizations until proven necessary
+
+## Conclusion
+
+The HA Synthetic Sensors package is feature-complete for its intended purpose. All core functionality including OR patterns,
+variable inheritance, mathematical functions, and Home Assistant integration is implemented and tested.
+
+Future enhancements should be driven by user demand and focus on mathematical capabilities that complement rather than
+duplicate Home Assistant's existing template functionality.
+
+The package provides a solid foundation that can be extended incrementally based on real-world usage patterns and user
+feedback.
+
+# Single formula (90% of use cases)
+
 ```yaml
-sensors:
-  # Single formula (90% of use cases)
   energy_cost_current:
     formula: "power * rate"
+```
 
-  # Rich sensor with calculated attributes
+# Rich sensor with calculated attributes
+
+```yaml
   energy_cost_analysis:
-    state_formula: "power * rate"
+    state_formula: "power *rate"
     attributes:
       daily_projected:
-        formula: "state * 24"
+        formula: "state* 24"
       monthly_projected:
-        formula: "state * 24 * 30"
+        formula: "state *24* 30"
+
 ```
 
 **Key Benefits:**
+
 - **Simplified Entity IDs**: `sensor.syn2_energy_cost_analysis`
 - **Reduced Configuration**: No nested arrays for common cases
 - **Rich Data**: Multiple calculated values in single entity
@@ -85,6 +249,7 @@ sensors:
 ### Current Status Summary
 
 **Core Functionality:**
+
 - Complete formula evaluation functionality
 - Configuration management via YAML
 - Name resolution and entity mapping
@@ -106,6 +271,7 @@ Based on current implementation review, here's the status of all components:
 **Coverage**: Full Home Assistant service integration with all required services
 
 **Implemented Services:**
+
 - Service registration/deregistration
 - YAML configuration loading via services (reload_config)
 - Configuration validation services (validate_config)
@@ -121,6 +287,7 @@ Based on current implementation review, here's the status of all components:
 #### 2. Advanced Formula Features (COMPLETE - PHASE 1 IMPLEMENTED)
 
 **Currently Supported:**
+
 - Basic arithmetic operations (A + B, temp + humidity)
 - Complex mathematical expressions with variables
 - Entity reference resolution and dependency tracking
@@ -129,6 +296,7 @@ Based on current implementation review, here's the status of all components:
 **PHASE 1 MATHEMATICAL FUNCTIONS - COMPLETE AND TESTED**
 
 **All Mathematical Functions Currently Available:**
+
 ```python
 # Basic operations
 "abs": abs,        # Absolute value
@@ -154,27 +322,32 @@ Based on current implementation review, here's the status of all components:
 Status: All Phase 1 functions implemented, tested, and passing in production code.
 
 **Statistical Functions (Phase 2):**
+
 - median - Median of sensor values
 - stdev - Standard deviation for variance analysis
 - variance - Statistical variance calculations
 - mode - Most common value in datasets
 
 **Mathematical Operations (Phase 3):**
+
 - log, log10, log2 - Logarithmic functions
 - exp - Exponential function (e^x)
 - trunc - Truncate to integer
 
 **Trigonometric Functions (Phase 4):**
+
 - sin, cos, tan - Basic trigonometry
 - asin, acos, atan, atan2 - Inverse trigonometry
 - degrees, radians - Angle conversions
 - hypot - Hypotenuse calculations
 
 **Time-Based Functions (Phase 5):**
+
 - hours_since, days_since - Time calculations
 - time_of_day_percent - Temporal percentages
 
 **Home Assistant Specific Functions (Phase 6):**
+
 - delta - Absolute difference between values
 - Custom entity reference syntax improvements
 
@@ -185,6 +358,7 @@ Status: All Phase 1 functions implemented, tested, and passing in production cod
 **Objective**: Implement clean v2.0 YAML schema validation
 
 **Implementation Steps**:
+
 1. **Schema Definition** (`schema/schema_v2.py`):
    - Clean v2.0 schema with flattened syntax
    - Support for `formula` vs `state_formula` keys
@@ -207,6 +381,7 @@ Status: All Phase 1 functions implemented, tested, and passing in production cod
 **Objective**: Implement rich sensor data through calculated attributes
 
 **Implementation Steps**:
+
 1. **EntityManager Updates** (`entity_manager.py`):
    - Add attribute calculation support to sensor entities
    - Implement `state_formula` vs regular `formula` handling
@@ -227,6 +402,7 @@ Status: All Phase 1 functions implemented, tested, and passing in production cod
 **Objective**: Implement simplified entity ID generation
 
 **Implementation Steps**:
+
 1. **Entity ID Generation** (`integration.py`):
    - Implement clean `sensor.syn2_{sensor_key}` pattern
    - Single entity per sensor with calculated attributes
@@ -247,6 +423,7 @@ Status: All Phase 1 functions implemented, tested, and passing in production cod
 **Objective**: Comprehensive testing and documentation for v2.0 implementation
 
 **Implementation Steps**:
+
 1. **Test Suite Implementation**:
    - v2.0 syntax validation tests
    - Calculated attributes functionality tests
@@ -266,6 +443,7 @@ Status: All Phase 1 functions implemented, tested, and passing in production cod
 ### Current Implementation Status
 
 **Currently Available:**
+
 - Basic entity references via variables mapping in YAML configuration
 - Direct entity ID access for Home Assistant entities
 - Mathematical expressions with variable substitution
@@ -275,14 +453,17 @@ Status: All Phase 1 functions implemented, tested, and passing in production cod
 - **Variables mapping CAN reference synthetic sensors** like any other HA entity
 
 **NOT Currently Implemented:**
+
 - entity('sensor.xyz') function syntax for direct entity access in formulas
 - Direct hierarchical references within formula expressions
 - EntityReferenceHandler component
 - HierarchicalEvaluator component
 
-**Current Limitation:** While synthetic sensors can be referenced in variables mapping, true hierarchical calculations within formulas require manual variable mapping rather than direct entity() function calls.
+**Current Limitation:** While synthetic sensors can be referenced in variables mapping, true hierarchical calculations within
+formulas require manual variable mapping rather than direct entity() function calls.
 
-These features are listed in the architecture plan as future enhancements requiring additional implementation work.
+These features are listed in the architecture plan as future enhancements requiring additional
+implementation work.
 
 #### 3. Entity Management Tests (COMPLETE - FULLY IMPLEMENTED)
 
@@ -290,6 +471,7 @@ These features are listed in the architecture plan as future enhancements requir
 **Coverage**: Full dynamic entity lifecycle management
 
 **Implemented Features:**
+
 - Dynamic sensor entity creation (test_dynamic_entity_creation)
 - Entity registry management (test_entity_registry_integration)
 - Sensor update/removal workflows (test_entity_update_workflows, test_entity_removal_cleanup)
@@ -304,6 +486,7 @@ These features are listed in the architecture plan as future enhancements requir
 **Coverage**: Advanced dependency scenarios fully tested
 
 **Implemented Features:**
+
 - Circular dependency detection (test_circular_dependency_detection)
 - Hierarchical dependency resolution (test_hierarchical_dependency_resolution)
 - Update order calculation (test_update_order_calculation, test_topological_sorting)
@@ -318,6 +501,7 @@ These features are listed in the architecture plan as future enhancements requir
 **Test Coverage**: 17 comprehensive schema validation tests passing
 
 **Core Implementation:**
+
 - SchemaValidator class with JSON Schema v4.17.0 support
 - ValidationError and ValidationResult structured data types for type-safe error handling
 - Comprehensive v1.0 schema definition covering all YAML configuration aspects
@@ -325,6 +509,7 @@ These features are listed in the architecture plan as future enhancements requir
 - Enhanced validate_config service with detailed validation results
 
 **Schema Validation Capabilities:**
+
 - Required field validation (version, sensors, unique_id, formulas)
 - Data type validation (strings, numbers, booleans, arrays, objects)
 - Pattern validation (entity ID format: domain.entity_name)
@@ -333,6 +518,7 @@ These features are listed in the architecture plan as future enhancements requir
 - Additional properties rejection
 
 **Semantic Validation:**
+
 - Duplicate unique_id detection across sensors
 - Duplicate formula id detection within sensors
 - Variable usage validation in formulas
@@ -340,6 +526,7 @@ These features are listed in the architecture plan as future enhancements requir
 - Schema version compatibility checking
 
 **Error Reporting Infrastructure:**
+
 - JSON path-based error identification (sensors[0].formulas[1].id)
 - Severity classification (error, warning, info)
 - Suggested fixes for common configuration mistakes
@@ -469,25 +656,25 @@ These features are listed in the architecture plan as future enhancements requir
 
 ## Architecture Overview
 
-### Current Core Components (✅ Implemented)
+### Current Core Components (IMPLEMENTED)
 
-```
+```text
 HA Synthetic Sensors Package
-├── Configuration Layer (✅ COMPLETE)
+├── Configuration Layer (COMPLETE)
 │   ├── ConfigManager              # YAML loading and management
 │   └── Config/SensorConfig        # Data structures
 │
-├── Formula Engine Layer (✅ COMPLETE)
+├── Formula Engine Layer (COMPLETE)
 │   ├── Evaluator                 # Math evaluation with caching
 │   └── NameResolver              # Entity resolution
 │
-└── Integration Layer (✅ BASIC)
+└── Integration Layer (BASIC)
     └── SyntheticSensorsIntegration # Basic integration
 ```
 
 ### Required Extensions (🔴 TO BE IMPLEMENTED)
 
-```
+```text
 Enhanced Architecture
 ├── Service Layer (🔴 MISSING)
 │   ├── ServiceProvider          # HA service registration
@@ -512,11 +699,12 @@ Enhanced Architecture
 
 ## Implementation Results Summary
 
-### Phase 1: Service Layer (✅ COMPLETE)
+### Phase 1: Service Layer (COMPLETE)
 
-**Implementation Status:** ✅ **COMPLETE** with comprehensive test coverage
+**Implementation Status:** **COMPLETE** with comprehensive test coverage
 
 **Test Implementation:**
+
 - **14 comprehensive test methods** covering all service operations
 - Service registration/unregistration workflows
 - Configuration management services (reload, validate)
@@ -526,6 +714,7 @@ Enhanced Architecture
 - Custom domain configuration support
 
 **Actual Services Implemented:**
+
 - `synthetic_sensors.reload_config` - Configuration reloading
 - `synthetic_sensors.update_sensor` - Dynamic sensor updates
 - `synthetic_sensors.add_variable` - Variable management
@@ -534,11 +723,12 @@ Enhanced Architecture
 - `synthetic_sensors.validate_config` - Configuration validation
 - `synthetic_sensors.get_sensor_info` - Sensor introspection
 
-### Phase 2: Entity Management (✅ TESTS IMPLEMENTED)
+### Phase 2: Entity Management (TESTS IMPLEMENTED)
 
-**Implementation Status:** ✅ **TEST INFRASTRUCTURE COMPLETE**
+**Implementation Status:** **TEST INFRASTRUCTURE COMPLETE**
 
 **Test Implementation:**
+
 - **15 comprehensive test methods** covering entity lifecycle
 - Dynamic entity creation and removal workflows
 - Entity registry integration testing
@@ -549,6 +739,7 @@ Enhanced Architecture
 - Entity factory pattern testing
 
 **Actual SensorManager Interface Tested:**
+
 ```python
 # Core lifecycle methods
 async def load_configuration(config: Config) -> None
@@ -562,11 +753,12 @@ def get_all_sensors() -> list[DynamicSensor]
 def get_sensor_statistics() -> dict[str, Any]
 ```
 
-### Phase 3: Advanced Dependencies (✅ TESTS IMPLEMENTED)
+### Phase 3: Advanced Dependencies (TESTS IMPLEMENTED)
 
-**Implementation Status:** ✅ **TEST INFRASTRUCTURE COMPLETE**
+**Implementation Status:** **TEST INFRASTRUCTURE COMPLETE**
 
 **Test Implementation:**
+
 - **15 comprehensive test methods** covering dependency scenarios
 - Circular dependency detection algorithms
 - Hierarchical dependency resolution
@@ -577,6 +769,7 @@ def get_sensor_statistics() -> dict[str, Any]
 - Dependency change management during runtime
 
 **Dependency Resolver Interface Tested:**
+
 ```python
 # Core dependency methods
 def build_dependency_graph(configs: list[SensorConfig]) -> DependencyGraph
@@ -622,6 +815,7 @@ class DependencyGraph:
 ### Test Coverage Goals
 
 **Target Coverage:**
+
 - Service Layer: 100% (new implementation)
 - Advanced Formulas: 90% (extending existing)
 - Entity Management: 100% (new implementation)
@@ -630,17 +824,17 @@ class DependencyGraph:
 ### Test Organization
 
 ```python
-# Current Test Files (✅ Complete)
+# Current Test Files (Complete)
 tests/test_config_manager.py       # 14 tests - Configuration management
 tests/test_evaluator.py   # 10 tests - Formula evaluation
 tests/test_formula_evaluation.py   # 8 tests - Mathematical expressions
 tests/test_integration.py          # 4 tests - Basic integration
 tests/test_name_resolver.py        # 14 tests - Entity resolution
 
-# Priority Test Files (✅ IMPLEMENTED)
-tests/test_service_layer.py        # ✅ 14 tests - Service infrastructure
-tests/test_entity_management.py    # ✅ 15 tests - Dynamic entity lifecycle
-tests/test_advanced_dependencies.py # ✅ 15 tests - Dependency resolution enhancement
+# Priority Test Files (IMPLEMENTED)
+tests/test_service_layer.py        # 14 tests - Service infrastructure
+tests/test_entity_management.py    # 15 tests - Dynamic entity lifecycle
+tests/test_advanced_dependencies.py # 15 tests - Dependency resolution enhancement
 
 # Future Test Files (🟡 FUTURE)
 tests/test_advanced_formulas.py    # Mathematical functions & entity refs
@@ -656,6 +850,7 @@ tests/test_advanced_formulas.py    # Mathematical functions & entity refs
 ## Example Usage After Enhancement
 
 ### Enhanced YAML Configuration
+
 ```yaml
 # Enhanced syn2_config.yaml
 version: "1.0"
@@ -692,6 +887,7 @@ sensors:
 ```
 
 ### Enhanced Service Usage
+
 ```yaml
 # Advanced service calls
 service: ha_synthetic_sensors.load_config
@@ -719,6 +915,7 @@ data:
 ## Success Metrics
 
 ### Technical Metrics
+
 1. **Service Integration** - All HA services functional and validated
 2. **Formula Capabilities** - Support for mathematical functions and entity references
 3. **Entity Management** - Dynamic creation/update/removal working seamlessly
@@ -726,6 +923,7 @@ data:
 5. **Reliability** - Error handling covers all edge cases including function errors
 
 ### User Experience Metrics
+
 1. **Service Responsiveness** - Service calls complete quickly with proper feedback
 2. **Formula Flexibility** - Users can create complex mathematical expressions
 3. **Entity Discovery** - Easy referencing of any HA entity including other Syn2 sensors
@@ -736,27 +934,32 @@ data:
 ### Advanced YAML Capabilities (Future Investigation)
 
 **Schema Validation:**
+
 - JSON Schema integration for configuration validation
 - Custom validation rules for sensor configurations
 - Automated schema generation from dataclasses
 
 **Configuration Management:**
+
 - Version-aware configuration loading
 - Migration tools for configuration updates
 - Configuration diffing and merging capabilities
 
 **Template System:**
+
 - YAML template expansion with variables
 - Reusable configuration snippets
 - Conditional configuration based on system state
 
 **Advanced YAML Features:**
+
 - YAML anchors and references for configuration reuse
 - Include files for modular configuration
 - Environment variable substitution
 - Dynamic configuration generation
 
-**Note**: These features will be evaluated based on user needs and complexity vs benefit analysis. The focus remains on supporting synthetic sensor requirements rather than implementing comprehensive YAML processing.
+**Note**: These features will be evaluated based on user needs and complexity vs benefit analysis. The focus remains on
+supporting synthetic sensor requirements rather than implementing comprehensive YAML processing.
 
 ## Recent Development Achievements (2025)
 
@@ -769,7 +972,8 @@ data:
 
 - **Smart Error Classification**: Distinguishes between fatal and transitory non-numeric state errors
   - FATAL: Fundamentally non-numeric entities (binary_sensor.door returning "on"/"off")
-  - TRANSITORY: Correctly configured entities with temporary non-numeric states (sensor.temperature showing "unknown" due to device offline)
+  - TRANSITORY: Correctly configured entities with temporary non-numeric states (sensor.temperature showing "unknown" due
+    to device offline)
 
 - **Two-Tier Circuit Breaker Pattern**:
   - Tier 1: Fatal errors trigger circuit breaker to prevent resource waste
@@ -784,6 +988,7 @@ data:
 **Test Coverage**: 6 comprehensive test methods covering all scenarios
 
 **Files Modified:**
+
 - evaluator.py - Enhanced error handling and circuit breaker logic
 - dependency_parser.py - Fixed entity ID parsing for direct references
 - test_non_numeric_states.py - Comprehensive test suite
@@ -799,15 +1004,20 @@ The package is now ready for:
 ## Type Safety and TypedDicts Plan (2024)
 
 ### Current State
+
 - The codebase currently uses `dict[str, Any]` for YAML config parsing, formula variables, attributes, and service data structures.
-- This approach is flexible but does not provide type safety or IDE support, and can lead to runtime errors if the config structure changes or is misused.
+- This approach is flexible but does not provide type safety or IDE support, and can lead to runtime errors if the config
+  structure changes or is misused.
 
 ### Requirements from Feature Planning
+
 - The YAML configuration and service schemas are strictly structured, with required and optional fields clearly defined.
-- Variables and attributes have predictable types (e.g., `dict[str, str]` for variables, `dict[str, str | float | int | bool]` for attributes).
+- Variables and attributes have predictable types (e.g., `dict[str, str]` for variables,
+  `dict[str, str | float | int | bool]` for attributes).
 - Service interfaces expect and return well-defined data structures.
 
 ### Plan for TypedDict Adoption
+
 - Introduce `TypedDict` classes for all configuration and service data structures:
   - `FormulaConfigDict`, `SensorConfigDict`, `ConfigDict` for YAML config
   - TypedDicts for service call schemas and results
@@ -817,11 +1027,13 @@ The package is now ready for:
 - Use `mypy` to enforce type safety and catch issues early.
 
 ### Rationale
+
 - TypedDicts provide static type checking for dict-like objects, improving code safety and maintainability.
 - They enable better IDE support, autocompletion, and documentation.
 - They help ensure that configuration and service data structures match the documented requirements and schemas.
 
 ### Next Steps
+
 1. Define TypedDicts for all config and service data structures in the codebase.
 2. Refactor config parsing and validation code to use these types.
 3. Update service layer and tests to use TypedDicts.
@@ -830,39 +1042,47 @@ The package is now ready for:
 
 ## Additional Type Analysis and Recommendations (2024)
 
-Based on the requirements and code review, the following areas have been identified for type improvements beyond config and service TypedDicts:
+Based on the requirements and code review, the following areas have been identified for type improvements beyond config and
+service TypedDicts:
 
 ### 1. Formula Variables and Attributes
+
 - **Current:** `dict[str, Any]` for variables and attributes.
 - **Recommendation:**
   - Use `dict[str, str]` for formula variables (mapping variable names to entity IDs).
   - Use `dict[str, str | float | int | bool]` for attributes and global_settings.
 
 ### 2. Formula Result Types
+
 - **Current:** `Any` for formula results and sensor state values.
 - **Recommendation:**
   - Use `float | int | str | None` for formula results and Home Assistant state values.
   - For state attributes, use `dict[str, str | float | int | bool | None]`.
 
 ### 3. Entity Description and Home Assistant Patterns
+
 - **Current:** Some entity attributes and descriptions use `Any` or are untyped.
 - **Recommendation:**
   - Use explicit types for `_attr_*` attributes (e.g., `_attr_native_value: float | int | str | None`).
-  - For custom entity descriptions, use dataclasses with explicit types and store direct references to custom fields in the entity class (see developer_attribute_readme.md best practices).
+  - For custom entity descriptions, use dataclasses with explicit types and store direct references to custom fields in the
+    entity class (see developer_attribute_readme.md best practices).
 
 ### 4. Service Layer and API Schemas
+
 - **Current:** Service schemas and results use `dict[str, Any]`.
 - **Recommendation:**
   - Use TypedDicts for all service call data and results.
   - Avoid `dict[str, Any]` in service interfaces.
 
 ### 5. General: Avoid `Any` in Public APIs
+
 - **Current:** `Any` is used in several public APIs and function signatures.
 - **Recommendation:**
   - Only use `Any` for truly dynamic, untyped data (e.g., raw YAML blobs before validation).
   - For all internal and public APIs, prefer explicit types, unions, or TypedDicts.
 
 ### 6. Testing and Validation
+
 - **Current:** Test fixtures and service tests use untyped dicts.
 - **Recommendation:**
   - Use the same TypedDicts in tests for config and service data.
@@ -870,6 +1090,7 @@ Based on the requirements and code review, the following areas have been identif
 ---
 
 **Refactoring Checklist:**
+
 1. TypedDicts for config and service data structures (in progress)
 2. Formula variables and attributes: use specific dict types
 3. Formula result and state types: use explicit unions
@@ -880,32 +1101,40 @@ Based on the requirements and code review, the following areas have been identif
 
 ## TypedDict Implementation Progress (2024)
 
-### Completed:
+### Completed
 
-1. **Config Structure TypedDicts** - Successfully implemented FormulaConfigDict, SensorConfigDict, and ConfigDict for YAML parsing with proper type safety
-2. **Home Assistant Mocking** - Created comprehensive mocking system for all HA imports, enabling local testing
-3. **Service Schema TypedDicts** - Added UpdateSensorData, AddVariableData, RemoveVariableData, EvaluateFormulaData, and service response types
+1. **Config Structure TypedDicts** - Successfully implemented FormulaConfigDict, SensorConfigDict, and ConfigDict for YAML
+   parsing with proper type safety
+2. **Home Assistant Mocking** - Created comprehensive mocking system for all HA imports, enabling local
+   testing
+3. **Service Schema TypedDicts** - Added UpdateSensorData, AddVariableData, RemoveVariableData, EvaluateFormulaData,
+   and service response types
 4. **Basic Type Improvements** - Updated config attributes from dict[str, Any] to dict[str, str | float | int | bool]
 5. **Evaluator Context Types** - Added ContextValue type alias and updated evaluation context to use specific types
-6. **Flexible Attribute Types** - Created AttributeValue type alias to handle complex attributes (lists, nested dicts) while maintaining type safety
-7. **Entity Factory TypedDicts** - Updated entity factory to use SensorConfigDict and FormulaConfigDict, added EntityCreationResult and ValidationResult TypedDicts
+6. **Flexible Attribute Types** - Created AttributeValue type alias to handle complex attributes (lists, nested dicts)
+   while maintaining type safety
+7. **Entity Factory TypedDicts** - Updated entity factory to use SensorConfigDict and FormulaConfigDict, added
+   EntityCreationResult and ValidationResult TypedDicts
 8. **Sensor Manager Types** - Updated sensor state types and statistics return types with proper type safety
 9. **Test Infrastructure** - All 121 tests passing with comprehensive TypedDict support and proper mock handling
 10. **Evaluator Result Types** - Implemented EvaluationResult, CacheStats, and DependencyValidation TypedDicts for formula evaluation
-11. **Service Response Types** - Added structured TypedDicts for EvaluationResponseData, ValidationResponseData, SensorInfoData, and AllSensorsInfoData
-12. **Name Resolver Types** - Implemented VariableValidationResult, EntityReference, and FormulaDependencies TypedDicts for comprehensive name resolution typing
-13. **Integration Layer Types** - Added IntegrationSetupResult, IntegrationStatus, ConfigValidationResult, AutoConfigDiscovery, and IntegrationCleanupResult TypedDicts for HA integration operations
+11. **Service Response Types** - Added structured TypedDicts for EvaluationResponseData, ValidationResponseData,
+    SensorInfoData, and AllSensorsInfoData
+12. **Name Resolver Types** - Implemented VariableValidationResult, EntityReference, and FormulaDependencies TypedDicts
+    for comprehensive name resolution typing
+13. **Integration Layer Types** - Added IntegrationSetupResult, IntegrationStatus, ConfigValidationResult, AutoConfigDiscovery,
+    and IntegrationCleanupResult TypedDicts for HA integration operations
 
-### In Progress:
+### In Progress
 
 1. **Documentation** - Finalizing comprehensive type safety documentation
 
-### Remaining Tasks:
+### Remaining Tasks
 
 1. **Type Documentation** - Update developer documentation with new TypedDict interfaces
 2. **Final Validation** - Comprehensive testing of all TypedDict implementations
 
-### Known Issues:
+### Known Issues
 
 - None currently - all tests passing with TypedDict implementations
 
@@ -913,7 +1142,8 @@ Based on the requirements and code review, the following areas have been identif
 
 ### Implementation Summary
 
-The comprehensive TypedDict implementation has successfully transformed the ha-synthetic-sensors package from loose dict[str, Any] types to strict, well-defined data structures across all major components:
+The comprehensive TypedDict implementation has successfully transformed the ha-synthetic-sensors package from loose
+dict[str, Any] types to strict, well-defined data structures across all major components:
 
 #### Core Configuration Types
 
@@ -964,7 +1194,7 @@ The comprehensive TypedDict implementation has successfully transformed the ha-s
 - Comprehensive Home Assistant mocking system enables local development
 - Backward compatibility maintained for existing integrations
 
-### Next Steps:
+### Next Steps
 
 1. Document the new typed interfaces in developer guidelines
 2. Validate with static type checking tools (mypy)

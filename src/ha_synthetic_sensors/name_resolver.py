@@ -12,15 +12,7 @@ from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-
-# Handle NameNotDefined import
-try:
-    from simpleeval import NameNotDefined  # type: ignore[import-untyped]
-except ImportError:
-    # Create a dummy exception class if simpleeval is not available
-    class NameNotDefined(Exception):  # type: ignore[no-redef]
-        """Dummy exception for when simpleeval is not available."""
-
+from simpleeval import NameNotDefined
 
 _LOGGER = logging.getLogger(__name__)
 

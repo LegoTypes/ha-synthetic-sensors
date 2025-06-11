@@ -179,9 +179,9 @@ class TestSensorManager:
         """Test SensorManager initialization."""
         assert sensor_manager._hass == mock_hass
         assert sensor_manager._name_resolver == mock_name_resolver
-        assert sensor_manager._add_entities == mock_add_entities
+        assert sensor_manager._add_entities_callback == mock_add_entities
         assert isinstance(sensor_manager._evaluator, Evaluator)
-        assert sensor_manager._sensors == {}
+        assert sensor_manager._sensors_by_unique_id == {}
         assert sensor_manager._sensors_by_entity_id == {}
         assert sensor_manager._sensor_states == {}
         assert sensor_manager._current_config is None
@@ -189,14 +189,14 @@ class TestSensorManager:
     def test_managed_sensors_property(self, sensor_manager):
         """Test managed_sensors property."""
         # Add some test data
-        sensor_manager._sensors["test"] = MagicMock()
+        sensor_manager._sensors_by_unique_id["test"] = MagicMock()
 
         result = sensor_manager.managed_sensors
         assert "test" in result
 
         # Ensure it's a copy - v2.0 returns dict[str, DynamicSensor] not dict[str, list]
         result["test"] = "modified"
-        assert sensor_manager._sensors["test"] != "modified"
+        assert sensor_manager._sensors_by_unique_id["test"] != "modified"
 
     def test_get_sensor_by_entity_id(self, sensor_manager):
         """Test get_sensor_by_entity_id method."""
@@ -248,7 +248,10 @@ class TestSensorManager:
     async def test_remove_sensor(self, sensor_manager):
         """Test remove_sensor method."""
         # Add a sensor
-        sensor_manager._sensors["test_sensor"] = MagicMock()
+        mock_sensor = MagicMock()
+        mock_sensor.entity_id = "sensor.syn2_test_sensor"
+        sensor_manager._sensors_by_unique_id["test_sensor"] = mock_sensor
+        sensor_manager._sensors_by_entity_id["sensor.syn2_test_sensor"] = mock_sensor
         sensor_manager._sensor_states["test_sensor"] = SensorState(
             sensor_name="test_sensor",
             main_value=42.0,
@@ -259,7 +262,8 @@ class TestSensorManager:
         result = await sensor_manager.remove_sensor("test_sensor")
 
         assert result is True
-        assert "test_sensor" not in sensor_manager._sensors
+        assert "test_sensor" not in sensor_manager._sensors_by_unique_id
+        assert "sensor.syn2_test_sensor" not in sensor_manager._sensors_by_entity_id
         assert "test_sensor" not in sensor_manager._sensor_states
 
     def test_on_sensor_updated_new_sensor(self, sensor_manager):
@@ -735,7 +739,7 @@ class TestSensorManagerExtended:
 
         # Set up existing sensor
         mock_existing_sensor = MagicMock()
-        sensor_manager._sensors["existing"] = mock_existing_sensor
+        sensor_manager._sensors_by_unique_id["existing"] = mock_existing_sensor
 
         with (
             patch.object(sensor_manager, "_create_sensor_entity") as mock_create,
@@ -753,8 +757,8 @@ class TestSensorManagerExtended:
     async def test_remove_all_sensors(self, sensor_manager):
         """Test _remove_all_sensors method."""
         # Add some sensors and states
-        sensor_manager._sensors["sensor1"] = MagicMock()
-        sensor_manager._sensors["sensor2"] = MagicMock()
+        sensor_manager._sensors_by_unique_id["sensor1"] = MagicMock()
+        sensor_manager._sensors_by_unique_id["sensor2"] = MagicMock()
         sensor_manager._sensor_states["sensor1"] = SensorState(
             sensor_name="sensor1",
             main_value=1.0,
@@ -770,7 +774,7 @@ class TestSensorManagerExtended:
 
         await sensor_manager._remove_all_sensors()
 
-        assert len(sensor_manager._sensors) == 0
+        assert len(sensor_manager._sensors_by_unique_id) == 0
         assert len(sensor_manager._sensor_states) == 0
 
     def test_get_all_sensor_entities(self, sensor_manager):
@@ -778,8 +782,8 @@ class TestSensorManagerExtended:
         # Add some sensors
         sensor1 = MagicMock()
         sensor2 = MagicMock()
-        sensor_manager._sensors["config1"] = sensor1
-        sensor_manager._sensors["config2"] = sensor2
+        sensor_manager._sensors_by_unique_id["config1"] = sensor1
+        sensor_manager._sensors_by_unique_id["config2"] = sensor2
 
         result = sensor_manager.get_all_sensor_entities()
 
@@ -859,7 +863,7 @@ class TestSensorManagerExtended:
         sensor2 = MagicMock()
         sensor2._async_update_sensor = AsyncMock()
 
-        sensor_manager._sensors = {"sensor1": sensor1, "sensor2": sensor2}
+        sensor_manager._sensors_by_unique_id = {"sensor1": sensor1, "sensor2": sensor2}
 
         await sensor_manager.async_update_sensors()
 
@@ -880,7 +884,7 @@ class TestSensorManagerExtended:
         sensor2 = MagicMock()
         sensor2._async_update_sensor = AsyncMock()
 
-        sensor_manager._sensors = {"sensor1": sensor1, "sensor2": sensor2}
+        sensor_manager._sensors_by_unique_id = {"sensor1": sensor1, "sensor2": sensor2}
 
         await sensor_manager.async_update_sensors([config1])
 
@@ -892,7 +896,9 @@ class TestSensorManagerExtended:
     async def test_remove_sensor_success(self, sensor_manager):
         """Test remove_sensor with existing sensor."""
         # Add sensor and state
-        sensor_manager._sensors["test_sensor"] = MagicMock()
+        mock_sensor = MagicMock()
+        mock_sensor.entity_id = "sensor.syn2_test_sensor"
+        sensor_manager._sensors_by_unique_id["test_sensor"] = mock_sensor
         sensor_manager._sensor_states["test_sensor"] = SensorState(
             sensor_name="test_sensor",
             main_value=1.0,
@@ -903,7 +909,7 @@ class TestSensorManagerExtended:
         result = await sensor_manager.remove_sensor("test_sensor")
 
         assert result is True
-        assert "test_sensor" not in sensor_manager._sensors
+        assert "test_sensor" not in sensor_manager._sensors_by_unique_id
         assert "test_sensor" not in sensor_manager._sensor_states
 
     @pytest.mark.asyncio
@@ -966,5 +972,6 @@ class TestSensorManagerExtended:
                 sensor_config,
                 sensor_manager._evaluator,
                 sensor_manager,
+                sensor_manager._manager_config,
             )
             assert result == mock_sensor

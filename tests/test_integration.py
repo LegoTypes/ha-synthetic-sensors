@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from ha_synthetic_sensors.evaluator import ContextValue
+from ha_synthetic_sensors.exceptions import IntegrationNotInitializedError
 from ha_synthetic_sensors.integration import (
     SyntheticSensorsIntegration,
     async_reload_integration,
@@ -172,7 +173,7 @@ class TestSyntheticSensorsIntegration:
     @pytest.mark.asyncio
     async def test_load_configuration_file_not_initialized(self, integration):
         """Test load_configuration_file when not initialized."""
-        with pytest.raises(RuntimeError, match="not initialized"):
+        with pytest.raises(IntegrationNotInitializedError):
             await integration.load_configuration_file("/test/config.yaml")
 
     @pytest.mark.asyncio
@@ -181,7 +182,7 @@ class TestSyntheticSensorsIntegration:
         integration._initialized = True
         integration._sensor_manager = None
 
-        with pytest.raises(RuntimeError, match="Sensor manager not initialized"):
+        with pytest.raises(IntegrationNotInitializedError):
             await integration.load_configuration_file("/test/config.yaml")
 
     @pytest.mark.asyncio

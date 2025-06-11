@@ -14,12 +14,14 @@ from typing import Any, NotRequired, TypedDict
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .config_manager import ConfigManager
+from .evaluator import Evaluator
+from .exceptions import IntegrationNotInitializedError, IntegrationSetupError
 from .name_resolver import NameResolver
-from .sensor_manager import SensorManager
+from .sensor_manager import SensorManager, SensorManagerConfig
 from .service_layer import ServiceLayer
 
 _LOGGER = logging.getLogger(__name__)
@@ -101,8 +103,6 @@ class SyntheticSensorsIntegration:
             self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback)
 
             # Initialize enhanced evaluator
-            from .evaluator import Evaluator
-
             evaluator = Evaluator(self._hass)
 
             # Initialize service manager
@@ -127,7 +127,7 @@ class SyntheticSensorsIntegration:
         except Exception as err:
             _LOGGER.error(f"Failed to setup synthetic sensors integration: {err}")
             await self._cleanup()
-            raise ConfigEntryError(f"Synthetic sensors setup failed: {err}") from err
+            raise IntegrationSetupError(str(err)) from err
 
     async def async_unload(self) -> bool:
         """Unload the synthetic sensors integration."""
@@ -185,10 +185,10 @@ class SyntheticSensorsIntegration:
     async def load_configuration_file(self, config_path: str) -> bool:
         """Load a configuration file and create sensors."""
         if not self._initialized:
-            raise RuntimeError("Synthetic sensors integration not initialized")
+            raise IntegrationNotInitializedError()
 
         if not self._sensor_manager:
-            raise RuntimeError("Sensor manager not initialized")
+            raise IntegrationNotInitializedError("sensor_manager")
 
         try:
             # Load and validate configuration
@@ -303,6 +303,68 @@ class SyntheticSensorsIntegration:
             "errors": errors,
         }
 
+    async def create_managed_sensor_manager(
+        self,
+        add_entities_callback: AddEntitiesCallback,
+        device_info: DeviceInfo | None = None,
+        entity_prefix: str = "syn2",
+        lifecycle_managed_externally: bool = True,
+        # Additional HA dependencies that parent can provide
+        hass_override: HomeAssistant | None = None,
+        config_manager_override: ConfigManager | None = None,
+        evaluator_override: Evaluator | None = None,
+        name_resolver_override: NameResolver | None = None,
+    ) -> SensorManager:
+        """Create a SensorManager for external integration use.
+
+        This method allows custom integrations to create their own SensorManager
+        with their device info, naming conventions, and HA dependencies.
+
+        Args:
+            add_entities_callback: Callback to add entities to HA
+            device_info: Device info for the parent integration
+            entity_prefix: Prefix for entity IDs and unique IDs
+            lifecycle_managed_externally: Whether lifecycle is managed by parent integration
+            hass_override: Custom HomeAssistant instance (optional)
+            config_manager_override: Custom ConfigManager instance (optional)
+            evaluator_override: Custom Evaluator instance (optional)
+            name_resolver_override: Custom NameResolver instance (optional)
+
+        Returns:
+            SensorManager: Configured sensor manager for external use
+        """
+        if not self._initialized:
+            raise RuntimeError("Synthetic sensors integration not initialized")
+
+        # Use parent-provided HA instance or default
+        effective_hass = hass_override or self._hass
+
+        # Create manager config for external integration
+        manager_config = SensorManagerConfig(
+            device_info=device_info,
+            entity_id_prefix=entity_prefix,
+            unique_id_prefix=entity_prefix,
+            lifecycle_managed_externally=lifecycle_managed_externally,
+            hass_instance=effective_hass,
+            config_manager=config_manager_override,
+            evaluator=evaluator_override,
+            name_resolver=name_resolver_override,
+        )
+
+        # Create default name resolver if not provided
+        default_name_resolver = name_resolver_override or NameResolver(effective_hass, {})
+
+        # Create and return sensor manager
+        sensor_manager = SensorManager(
+            effective_hass,
+            default_name_resolver,
+            add_entities_callback,
+            manager_config,
+        )
+
+        _LOGGER.info(f"Created managed sensor manager with prefix '{entity_prefix}' for external integration")
+        return sensor_manager
+
 
 # Global instance management for integration with existing components
 _integrations: dict[str, SyntheticSensorsIntegration] = {}
@@ -367,7 +429,7 @@ def validate_yaml_content(yaml_content: str) -> ConfigValidationResult:
     try:
         # Create a temporary manager for validation
         # Note: This is for validation only, not for actual use
-        temp_hass = type("TempHass", (), {"config": type("Config", (), {"config_dir": "."})()})()
+        temp_hass: Any = type("TempHass", (), {"config": type("Config", (), {"config_dir": "."})()})()
         manager = ConfigManager(temp_hass)
 
         config = manager.load_from_yaml(yaml_content)

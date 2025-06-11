@@ -1,0 +1,121 @@
+# Tags OR Patterns Test Configuration
+# Tests OR-style logic for multiple tags using pipe (|) syntax
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+
+sensors:
+  # Test basic OR pattern with two tags
+  critical_important_count:
+    name: "Critical and Important Count"
+    formula: 'count("tags:critical|important")'
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Test OR pattern with three tags
+  alert_status_sum:
+    name: "Alert Status Sum"
+    formula: 'sum("tags:critical|important|warning")'
+    unit_of_measurement: "count"
+    state_class: "measurement"
+
+  # Test OR pattern with avg function
+  priority_average:
+    name: "Priority Average"
+    formula: 'avg("tags:high_priority|medium_priority")'
+    unit_of_measurement: "units"
+    state_class: "measurement"
+
+  # Test OR pattern with monitoring-related tags
+  monitoring_total:
+    name: "Monitoring Total"
+    formula: 'sum("tags:monitor|alert")'
+    unit_of_measurement: "count"
+    state_class: "measurement"
+
+  # Test OR pattern with quoted syntax (should also work)
+  quoted_or_pattern:
+    name: "Quoted OR Pattern"
+    formula: 'max("tags:emergency|urgent")'
+    unit_of_measurement: "count"
+    state_class: "measurement"
+
+  # Test complex formula with OR pattern
+  alert_efficiency:
+    name: "Alert Efficiency"
+    formula: 'count("tags:critical|important") / total_devices * 100'
+    variables:
+      total_devices: "input_number.total_devices"
+    unit_of_measurement: "%"
+    state_class: "measurement"
+
+  # Test multiple OR patterns in same formula
+  comprehensive_tag_monitoring:
+    name: "Comprehensive Tag Monitoring"
+    formula: 'sum("tags:monitor|alert") + count("tags:critical|important|warning")'
+    unit_of_measurement: "units"
+    state_class: "measurement"
+
+  # Test OR pattern with more than 3 tags
+  multi_status_average:
+    name: "Multi-Status Average"
+    formula: 'avg("tags:critical|important|warning|info")'
+    unit_of_measurement: "units"
+    state_class: "measurement"
+
+  # Test with attributes - calculated attributes using OR patterns
+  advanced_tag_analysis:
+    name: "Advanced Tag Analysis"
+    formula: 'count("tags:critical|important|warning")'
+    attributes:
+      active_alerts:
+        formula: 'count("tags:critical|important" > 0)'
+        unit_of_measurement: "devices"
+      alert_percentage:
+        formula: 'state / 10 * 100'
+        unit_of_measurement: "%"
+      daily_average:
+        formula: 'state * 24'
+        unit_of_measurement: "tag-hours"
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Test variable-driven OR tags
+  dynamic_or_tags:
+    name: "Dynamic OR Tags"
+    formula: 'count("tags:primary_tag|secondary_tag")'
+    variables:
+      primary_tag: "input_select.primary_tag"
+      secondary_tag: "input_select.secondary_tag"
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Test complex OR pattern with mathematical operations
+  multi_tag_efficiency:
+    name: "Multi-Tag Efficiency"
+    formula: '(sum("tags:monitor|alert") / count("tags:critical|important")) * 100'
+    unit_of_measurement: "%"
+    state_class: "measurement"
+
+  # Test direct entity ID OR patterns (no variables)
+  direct_tag_or_config:
+    name: "Direct Tag OR Config"
+    formula: 'count("tags:input_select.tag_type_1|input_select.tag_type_2")'
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Test mixed variable and direct entity ID OR patterns
+  mixed_tag_or_config:
+    name: "Mixed Tag OR Config"
+    formula: 'count("tags:variable_tag|input_select.direct_tag")'
+    variables:
+      variable_tag: "input_select.variable_tag_type"
+    unit_of_measurement: "devices"
+    state_class: "measurement"
+
+  # Test direct three-way tag OR pattern
+  direct_three_way_tag_config:
+    name: "Direct Three-Way Tag Config"
+    formula: 'avg("tags:input_select.tag1|input_select.tag2|input_select.tag3")'
+    unit_of_measurement: "units"
+    state_class: "measurement" 

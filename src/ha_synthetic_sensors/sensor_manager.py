@@ -11,11 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -25,7 +26,25 @@ from .config_manager import AttributeValue, Config, FormulaConfig, SensorConfig
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
 
+if TYPE_CHECKING:
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class SensorManagerConfig:
+    """Configuration for SensorManager with device integration support."""
+
+    device_info: DeviceInfo | None = None
+    entity_id_prefix: str = "syn2"
+    unique_id_prefix: str = "syn2"
+    lifecycle_managed_externally: bool = False
+    # Additional HA dependencies that parent integration can provide
+    hass_instance: HomeAssistant | None = None  # Allow parent to override hass
+    config_manager: Any | None = None  # Parent can provide its own config manager
+    evaluator: Any | None = None  # Parent can provide custom evaluator
+    name_resolver: Any | None = None  # Parent can provide custom name resolver
 
 
 @dataclass
@@ -49,16 +68,23 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         config: SensorConfig,
         evaluator: Evaluator,
         sensor_manager: SensorManager,
+        manager_config: SensorManagerConfig | None = None,
     ) -> None:
         """Initialize the dynamic sensor."""
         self._hass = hass
         self._config = config
         self._evaluator = evaluator
         self._sensor_manager = sensor_manager
+        self._manager_config = manager_config or SensorManagerConfig()
 
-        # Generate unique entity ID
-        self._attr_unique_id = f"syn2_{config.unique_id}"
+        # Generate unique entity ID using configurable prefix
+        prefix = self._manager_config.unique_id_prefix
+        self._attr_unique_id = f"{prefix}_{config.unique_id}"
         self._attr_name = config.name or config.unique_id
+
+        # Set device info if provided by parent integration
+        if self._manager_config.device_info:
+            self._attr_device_info = self._manager_config.device_info
 
         # Find the main formula (first formula is always the main state)
         if not config.formulas:
@@ -262,26 +288,42 @@ class SensorManager:
         hass: HomeAssistant,
         name_resolver: NameResolver,
         add_entities_callback: AddEntitiesCallback,
+        manager_config: SensorManagerConfig | None = None,
     ):
-        """Initialize the sensor manager."""
-        self._hass = hass
-        self._name_resolver = name_resolver
-        self._add_entities = add_entities_callback
-        self._logger = _LOGGER.getChild(self.__class__.__name__)
+        """Initialize the sensor manager.
 
-        # Initialize components
-        self._evaluator = Evaluator(hass)
+        Args:
+            hass: Home Assistant instance (can be overridden by manager_config.hass_instance)
+            name_resolver: Name resolver for entity dependencies (can be overridden by manager_config.name_resolver)
+            add_entities_callback: Callback to add entities to HA
+            manager_config: Configuration for device integration support
+        """
+        self._manager_config = manager_config or SensorManagerConfig()
 
-        # State tracking - one entity per sensor
-        self._sensors: dict[str, DynamicSensor] = {}  # unique_id -> sensor
+        # Use dependencies from parent integration if provided, otherwise use defaults
+        self._hass = self._manager_config.hass_instance or hass
+        self._name_resolver = self._manager_config.name_resolver or name_resolver
+        self._add_entities_callback = add_entities_callback
+
+        # Sensor tracking
+        self._sensors_by_unique_id: dict[str, DynamicSensor] = {}  # unique_id -> sensor
         self._sensors_by_entity_id: dict[str, DynamicSensor] = {}  # entity_id -> sensor
         self._sensor_states: dict[str, SensorState] = {}  # unique_id -> state
+
+        # Configuration tracking
         self._current_config: Config | None = None
+
+        # Initialize components - use parent-provided instances if available
+        self._evaluator = self._manager_config.evaluator or Evaluator(self._hass)
+        self._config_manager = self._manager_config.config_manager
+        self._logger = _LOGGER.getChild(self.__class__.__name__)
+
+        _LOGGER.debug("SensorManager initialized with device integration support")
 
     @property
     def managed_sensors(self) -> dict[str, DynamicSensor]:
         """Get all managed sensors."""
-        return self._sensors.copy()
+        return self._sensors_by_unique_id.copy()
 
     @property
     def sensor_states(self) -> dict[str, SensorState]:
@@ -294,7 +336,7 @@ class SensorManager:
 
     def get_all_sensor_entities(self) -> list[DynamicSensor]:
         """Get all sensor entities."""
-        return list(self._sensors.values())
+        return list(self._sensors_by_unique_id.values())
 
     async def load_configuration(self, config: Config) -> None:
         """Load a new configuration and update sensors accordingly."""
@@ -331,13 +373,13 @@ class SensorManager:
 
     async def remove_sensor(self, sensor_unique_id: str) -> bool:
         """Remove a specific sensor."""
-        if sensor_unique_id not in self._sensors:
+        if sensor_unique_id not in self._sensors_by_unique_id:
             return False
 
-        sensor = self._sensors[sensor_unique_id]
+        sensor = self._sensors_by_unique_id[sensor_unique_id]
 
         # Clean up our tracking
-        del self._sensors[sensor_unique_id]
+        del self._sensors_by_unique_id[sensor_unique_id]
         self._sensors_by_entity_id.pop(sensor.entity_id, None)
         self._sensor_states.pop(sensor_unique_id, None)
 
@@ -346,8 +388,8 @@ class SensorManager:
 
     def get_sensor_statistics(self) -> dict[str, Any]:
         """Get statistics about managed sensors."""
-        total_sensors = len(self._sensors)
-        active_sensors = sum(1 for sensor in self._sensors.values() if sensor.available)
+        total_sensors = len(self._sensors_by_unique_id)
+        active_sensors = sum(1 for sensor in self._sensors_by_unique_id.values() if sensor.available)
 
         return {
             "total_sensors": total_sensors,
@@ -394,18 +436,17 @@ class SensorManager:
             if sensor_config.enabled:
                 sensor = await self._create_sensor_entity(sensor_config)
                 new_entities.append(sensor)
-                self._sensors[sensor_config.unique_id] = sensor
+                self._sensors_by_unique_id[sensor_config.unique_id] = sensor
                 self._sensors_by_entity_id[sensor.entity_id] = sensor
 
         # Add entities to Home Assistant
         if new_entities:
-            self._add_entities(new_entities)
+            self._add_entities_callback(new_entities)
             _LOGGER.info(f"Created {len(new_entities)} sensor entities")
 
     async def _create_sensor_entity(self, sensor_config: SensorConfig) -> DynamicSensor:
-        """Create a single entity for a sensor configuration."""
-        entity = DynamicSensor(self._hass, sensor_config, self._evaluator, self)
-        return entity
+        """Create a sensor entity from configuration."""
+        return DynamicSensor(self._hass, sensor_config, self._evaluator, self, self._manager_config)
 
     async def _update_existing_sensors(self, old_config: Config, new_config: Config) -> None:
         """Update existing sensors based on configuration changes."""
@@ -425,7 +466,7 @@ class SensorManager:
             if sensor_config.enabled:
                 sensor = await self._create_sensor_entity(sensor_config)
                 new_entities.append(sensor)
-                self._sensors[sensor_unique_id] = sensor
+                self._sensors_by_unique_id[sensor_config.unique_id] = sensor
                 self._sensors_by_entity_id[sensor.entity_id] = sensor
 
         # Find sensors to update
@@ -437,26 +478,26 @@ class SensorManager:
 
         # Add new entities
         if new_entities:
-            self._add_entities(new_entities)
+            self._add_entities_callback(new_entities)
             _LOGGER.info(f"Added {len(new_entities)} new sensor entities")
 
     async def _update_sensor_config(self, old_config: SensorConfig, new_config: SensorConfig) -> None:
         """Update an existing sensor with new configuration."""
         # Simplified approach - remove and recreate if changes exist
-        existing_sensor = self._sensors.get(old_config.unique_id)
+        existing_sensor = self._sensors_by_unique_id.get(old_config.unique_id)
 
         if existing_sensor:
             await self.remove_sensor(old_config.unique_id)
 
             if new_config.enabled:
                 new_sensor = await self._create_sensor_entity(new_config)
-                self._sensors[new_config.unique_id] = new_sensor
+                self._sensors_by_unique_id[new_config.unique_id] = new_sensor
                 self._sensors_by_entity_id[new_sensor.entity_id] = new_sensor
-                self._add_entities([new_sensor])
+                self._add_entities_callback([new_sensor])
 
     async def _remove_all_sensors(self) -> None:
         """Remove all managed sensors."""
-        sensor_unique_ids = list(self._sensors.keys())
+        sensor_unique_ids = list(self._sensors_by_unique_id.keys())
         for sensor_unique_id in sensor_unique_ids:
             await self.remove_sensor(sensor_unique_id)
 
@@ -471,7 +512,7 @@ class SensorManager:
             if sensor_config.enabled:
                 sensor = await self._create_sensor_entity(sensor_config)
                 all_created_sensors.append(sensor)
-                self._sensors[sensor_config.unique_id] = sensor
+                self._sensors_by_unique_id[sensor_config.unique_id] = sensor
                 self._sensors_by_entity_id[sensor.entity_id] = sensor
 
         _LOGGER.info(f"Created {len(all_created_sensors)} sensor entities")
@@ -503,13 +544,13 @@ class SensorManager:
         """Asynchronously update sensors based on configurations."""
         if sensor_configs is None:
             # Update all managed sensors
-            for sensor in self._sensors.values():
+            for sensor in self._sensors_by_unique_id.values():
                 await sensor._async_update_sensor()
         else:
             # Update specific sensors
             for config in sensor_configs:
-                if config.unique_id in self._sensors:
-                    sensor = self._sensors[config.unique_id]
+                if config.unique_id in self._sensors_by_unique_id:
+                    sensor = self._sensors_by_unique_id[config.unique_id]
                     await sensor._async_update_sensor()
 
         self._logger.debug("Completed async sensor updates")

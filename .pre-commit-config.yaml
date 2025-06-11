@@ -49,6 +49,14 @@ repos:
         args: ['--config-file=pyproject.toml']
         exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
 
+  # Markdownlint for markdown files
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.14.0
+    hooks:
+      - id: markdownlint-cli2
+        args: ['--fix', '--config', '.markdownlint-cli2.jsonc']
+        exclude: '\..*_cache/.*|dist/.*|venv/.*|\.venv/.*|node_modules/.*|htmlcov/.*'
+
   # Check for common security issues
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.10

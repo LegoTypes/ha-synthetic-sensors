@@ -10,24 +10,25 @@ import re
 from typing import Any, Callable, NotRequired, TypedDict, Union
 
 from homeassistant.core import HomeAssistant
-from simpleeval import SimpleEval  # type: ignore[import-untyped]
+from simpleeval import SimpleEval
 
 from .cache import CacheConfig, FormulaCache
 from .collection_resolver import CollectionResolver
 from .config_manager import FormulaConfig
 from .dependency_parser import DependencyParser
+from .exceptions import (
+    FormulaSyntaxError,
+    MissingDependencyError,
+    NonNumericStateError,
+    is_fatal_error,
+    is_retriable_error,
+)
 from .math_functions import MathFunctions
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class NonNumericStateError(Exception):
-    """Raised when an entity state cannot be converted to a numeric value."""
-
-    def __init__(self, entity_id: str, state_value: str):
-        self.entity_id = entity_id
-        self.state_value = state_value
-        super().__init__(f"Entity '{entity_id}' has non-numeric state '{state_value}'")
+# NonNumericStateError is now imported from exceptions module
 
 
 # Type alias for evaluation context values
@@ -198,10 +199,12 @@ class Evaluator(FormulaEvaluator):
             if missing_deps:
                 # TIER 1 FATAL ERROR: Increment fatal error counter
                 # Missing entities indicate permanent configuration issues
+                error = MissingDependencyError(", ".join(missing_deps), formula_name)
                 self._increment_error_count(formula_name)
+                _LOGGER.error("Missing dependencies in formula '%s': %s", formula_name, missing_deps)
                 return {
                     "success": False,
-                    "error": f"Missing dependencies: {missing_deps}",
+                    "error": str(error),
                     "value": None,
                     "state": "unavailable",
                     "missing_dependencies": list(missing_deps),
@@ -266,35 +269,65 @@ class Evaluator(FormulaEvaluator):
             }
 
         except Exception as err:
-            # TWO-TIER ERROR CLASSIFICATION:
+            # TWO-TIER ERROR CLASSIFICATION following HA coordinator patterns:
             # We analyze the exception to determine whether it represents a fatal
             # error (configuration/syntax issues) or a transitory error (temporary
             # runtime issues that might resolve themselves).
 
-            error_message = str(err)
-            is_fatal_error = (
-                # Missing variable definitions (e.g., typos in entity names)
-                "not defined"
-                in error_message.lower()
-            ) or (
-                # Syntax errors in formula (e.g., malformed expressions)
-                "syntax"
-                in error_message.lower()
-            )
-
-            if is_fatal_error:
-                # TIER 1: Fatal errors
+            if is_fatal_error(err):
+                # TIER 1: Fatal errors - permanent configuration issues
                 self._increment_error_count(formula_name)
-            else:
-                # TIER 2: Transitory errors
+                _LOGGER.error("Fatal error in formula '%s': %s", formula_name, err)
+
+                # For fatal errors, we could raise UpdateFailed to trigger coordinator retry logic
+                # but for now we return error state to allow graceful degradation
+                return {
+                    "success": False,
+                    "error": f"Fatal error in formula '{formula_name}': {err}",
+                    "value": None,
+                    "state": "unavailable",
+                }
+            elif is_retriable_error(err):
+                # TIER 2: Transitory errors - temporary issues that might resolve
                 if self._circuit_breaker_config.track_transitory_errors:
                     self._increment_transitory_error_count(formula_name)
+                _LOGGER.warning("Transitory error in formula '%s': %s", formula_name, err)
 
-            return {
-                "success": False,
-                "error": f"Formula evaluation failed for '{formula_name}': {err}",
-                "value": None,
-            }
+                return {
+                    "success": True,  # Not a failure, just temporarily unavailable
+                    "value": None,
+                    "state": "unknown",
+                    "error": f"Transitory error: {err}",
+                }
+            else:
+                # Unknown error type - treat as fatal for safety
+                error_message = str(err)
+                is_syntax_error = "not defined" in error_message.lower() or "syntax" in error_message.lower()
+
+                if is_syntax_error:
+                    # Wrap in our exception type for better error handling
+                    syntax_error = FormulaSyntaxError(config.formula, str(err))
+                    self._increment_error_count(formula_name)
+                    _LOGGER.error("Syntax error in formula '%s': %s", formula_name, syntax_error)
+
+                    return {
+                        "success": False,
+                        "error": str(syntax_error),
+                        "value": None,
+                        "state": "unavailable",
+                    }
+                else:
+                    # Unknown error - treat as transitory for graceful degradation
+                    if self._circuit_breaker_config.track_transitory_errors:
+                        self._increment_transitory_error_count(formula_name)
+                    _LOGGER.warning("Unknown error in formula '%s': %s", formula_name, err)
+
+                    return {
+                        "success": False,
+                        "error": f"Unknown error in formula '{formula_name}': {err}",
+                        "value": None,
+                        "state": "unknown",
+                    }
 
     def _check_dependencies(self, dependencies: set[str], context: dict[str, ContextValue] | None = None, collection_pattern_entities: set[str] | None = None) -> tuple[set[str], set[str]]:
         """Check which dependencies are missing or unavailable.
