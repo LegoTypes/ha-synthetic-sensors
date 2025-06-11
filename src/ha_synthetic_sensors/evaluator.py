@@ -787,7 +787,12 @@ class Evaluator(FormulaEvaluator):
         return processed_formula
 
     def _resolve_collection_functions(self, formula: str) -> str:
-        """Resolve collection functions by replacing them with actual entity values.
+        r"""Resolve collection functions by replacing them with actual entity values.
+
+        Collections, unlike single entities use literal value replacement, not runtime variables.
+        Collection patterns like sum("regex:sensor\.circuit_.*") are resolved fresh on each
+        evaluation to actual values: sum(150.5, 225.3, 89.2). This eliminates cache staleness
+        issues when entities are added/removed and ensures dynamic discovery works correctly.
 
         Args:
             formula: Formula containing collection functions
