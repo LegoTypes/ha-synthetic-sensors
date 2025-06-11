@@ -11,6 +11,9 @@ A Python package for creating formula-based sensors in Home Assistant integratio
 - Provides Home Assistant services for configuration management
 - Tracks dependencies between sensors
 - Caches formula results
+- Variable inheritance in attribute formulas
+- Dynamic entity aggregation (regex, tags, device_class patterns)
+- Dot notation for entity attribute access
 
 ## Installation
 
@@ -85,13 +88,13 @@ sensors:
     formula: "current_power * electricity_rate / 1000"
     attributes:
       daily_projected:
-        formula: "state * 24"
+        formula: "state * 24"                       # by main state alias
         unit_of_measurement: "¢"
       monthly_projected:
-        formula: "state * 24 * 30"
+        formula: "energy_cost_analysis * 24 * 30"   # by main sensor key
         unit_of_measurement: "¢"
       annual_projected:
-        formula: "state * 24 * 365"
+        formula: "sensor_syn2_energy_cost_analysis * 24 * 365"  # by entity_id (underscores)
         unit_of_measurement: "¢"
       efficiency:
         formula: "state / sensor.max_power_capacity * 100"
@@ -111,6 +114,149 @@ sensors:
 - `state` always refers to the fresh main sensor calculation
 - Attributes can also reference other entities normally (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
+
+## Advanced Entity References
+
+### Variable Inheritance in Attributes
+
+Attribute formulas automatically inherit all variables from their parent sensor:
+
+```yaml
+sensors:
+  energy_analysis:
+    name: "Energy Analysis"
+    formula: "grid_power + solar_power"
+    variables:
+      grid_power: "sensor.grid_meter"
+      solar_power: "sensor.solar_inverter" 
+      efficiency_factor: "input_number.base_efficiency"
+    attributes:
+      # Inherits all parent variables (grid_power, solar_power, efficiency_factor)
+      daily_projection:
+        formula: "energy_analysis * 24"          # References main sensor by key
+      
+      efficiency_percent:
+        formula: "solar_power / (grid_power + solar_power) * 100"  # Uses inherited variables
+      
+      # Attributes can add new variables or override parent ones
+      cost_analysis:
+        formula: "grid_power * electricity_rate / 1000"
+        variables:
+          electricity_rate: "input_number.current_rate"  # New variable
+      
+      custom_efficiency:
+        formula: "solar_power * efficiency_factor"
+        variables:
+          efficiency_factor: "input_number.custom_efficiency"  # Overrides parent
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+```
+
+### Direct Entity References
+
+You can reference entities directly in formulas without variables:
+
+```yaml
+sensors:
+  simple_calculation:
+    name: "Simple Calculation"
+    formula: "sensor.power_meter + sensor.backup_generator"  # Direct entity_ids
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+```
+
+### Dot Notation for Attributes
+
+Access entity attributes using dot notation:
+
+```yaml
+sensors:
+  battery_analysis:
+    name: "Battery Analysis"
+    formula: "sensor1.battery_level + sensor2.battery_level"  # Shortcut
+    # Equivalent to: sensor1.attributes.battery_level + sensor2.attributes.battery_level
+    unit_of_measurement: "%"
+    device_class: "battery"
+    state_class: "measurement"
+    
+  temperature_comfort:
+    name: "Temperature Comfort"
+    formula: "clamp(temp_sensor.temperature, 18, 26)"
+    variables:
+      temp_sensor: "climate.living_room"
+```
+
+### Dynamic Entity Aggregation
+
+Sum, average, or count entities dynamically using patterns:
+
+```yaml
+sensors:
+  # Aggregate by device class
+  open_doors_windows:
+    name: "Open Doors and Windows"
+    formula: sum(device_class:door|window)
+    unit_of_measurement: "count"
+    
+  # Aggregate using regex patterns
+  total_circuit_power:
+    name: "Total Circuit Power"
+    formula: sum(regex:sensor\.circuit_.*_power)
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    
+  # Aggregate by area and device class
+  garage_windows:
+    name: "Garage Windows Open"
+    formula: sum(area:garage device_class:window)
+    unit_of_measurement: "count"
+    
+  # Aggregate by tags/labels
+  critical_sensors:
+    name: "Critical Sensors Active"
+    formula: count(tags:critical,important)
+    unit_of_measurement: "count"
+    
+  # Aggregate by attribute values
+  low_battery_devices:
+    name: "Low Battery Devices"
+    formula: count(attribute:battery_level<20)
+    unit_of_measurement: "count"
+```
+
+**Aggregation Functions Available:**
+- `sum()` - Sum all matching entity values
+- `avg()` / `mean()` - Average of all matching entities
+- `count()` - Count of matching entities
+- `min()` / `max()` - Minimum/maximum value
+- `std()` / `var()` - Standard deviation/variance
+
+**Query Patterns:**
+- `device_class:power` - Entities with specific device class
+- `regex:sensor\..*_power` - Entities matching regex pattern
+- `area:kitchen` - Entities in specific area
+- `tags:tag1,tag2` - Entities with any of the specified tags
+- `attribute:battery_level<50` - Entities with attribute conditions
+
+### Mixed Reference Types
+
+You can combine different reference types in the same formula:
+
+```yaml
+sensors:
+  comprehensive_analysis:
+    name: "Comprehensive Power Analysis"
+    formula: "base_load + sum(regex:sensor\.circuit_.*_power) + backup_power.current_power"
+    variables:
+      base_load: "sensor.main_panel_power"
+      backup_power: "sensor.backup_generator"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+```
 
 ## Variable mapping
 
@@ -135,13 +281,33 @@ name_resolver = NameResolver(hass, variables=variables)
 # Conditional logic
 "net_power * buy_rate / 1000 if net_power > 0 else abs(net_power) * sell_rate / 1000"
 
-# Math functions
-"abs(min(grid_power, 0))"
-"max(heating_power, cooling_power)"
+# Mathematical functions
+"abs(min(grid_power, 0))"                    # Absolute value, min/max
+"sqrt(power_a**2 + power_b**2)"              # Square root, exponents
+"round(temperature, 1)"                      # Rounding
+"clamp(efficiency, 0, 100)"                  # Constrain to range
+"map(brightness, 0, 255, 0, 100)"            # Map from one range to another
+"avg(temp1, temp2, temp3)"                   # Average of values
+"percent(used_space, total_space)"           # Percentage calculation
+
+# Dynamic aggregation
+"sum(regex:sensor\.circuit_.*_power)"        # Sum all circuit sensors
+"avg(device_class:temperature)"              # Average all temperature sensors
+"count(tags:critical)"                       # Count entities with 'critical' tag
+
+# Dot notation attribute access
+"sensor1.battery_level + sensor2.battery_level"
+"climate.living_room.current_temperature"
 
 # Sensor references (by entity ID)
-"sensor.syn2_hvac_total_power_hvac_total + sensor.syn2_lighting_total_power_lighting_total"
+"sensor.syn2_hvac_total_power + sensor.syn2_lighting_total_power"
 ```
+
+**Available Mathematical Functions:**
+- Basic: `abs()`, `round()`, `floor()`, `ceil()`
+- Math: `sqrt()`, `pow()`, `sin()`, `cos()`, `tan()`, `log()`, `exp()`
+- Statistics: `min()`, `max()`, `avg()`, `mean()`, `sum()`
+- Utilities: `clamp(value, min, max)`, `map(value, in_min, in_max, out_min, out_max)`, `percent(part, whole)`
 
 ## Why use this instead of templates?
 

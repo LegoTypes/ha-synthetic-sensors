@@ -219,13 +219,16 @@ class Evaluator(FormulaEvaluator):
             # Build evaluation context
             eval_context = self._build_evaluation_context(dependencies, context)
 
-            # Create evaluator with mathematical functions
+            # Create evaluator with proper separation of names and functions
             evaluator = SimpleEval()
             evaluator.names = eval_context
             evaluator.functions = self._math_functions.copy()
 
-            # Evaluate the formula
-            result = evaluator.eval(config.formula)
+            # Preprocess formula: convert entity_ids with dots to underscores for simpleeval
+            processed_formula = self._preprocess_formula_for_evaluation(config.formula)
+
+            # Evaluate the preprocessed formula
+            result = evaluator.eval(processed_formula)
 
             # Cache the result
             self._cache.store_result(config.formula, result, filtered_context, formula_name)
@@ -478,36 +481,43 @@ class Evaluator(FormulaEvaluator):
         self._retry_config = config
 
     def _build_evaluation_context(self, dependencies: set[str], context: dict[str, ContextValue] | None = None) -> dict[str, Any]:
-        """Build context for formula evaluation.
-
-        This method should only be called after dependencies have been validated
-        by _check_dependencies, so all entities should have numeric states.
-        If we encounter non-numeric states here, it indicates a logic error.
-        """
+        """Build the evaluation context with entity states and dynamic query resolution."""
         eval_context = {}
-        context = context or {}
-        for var in dependencies:
-            if var in context:
-                eval_context[var] = context[var]
-            else:
-                # Try to resolve as Home Assistant entity_id
-                state = self._hass.states.get(var)
-                if state:
-                    try:
-                        eval_context[var] = self._convert_to_numeric(state.state, var)
-                    except NonNumericStateError:
-                        # This should not happen if _check_dependencies was called first
-                        _LOGGER.warning(
-                            "Unexpected non-numeric state for '%s': '%s'. " "Dependencies should have been validated first.",
-                            var,
-                            state.state,
-                        )
-                        eval_context[var] = 0.0
 
-        # Add mathematical functions
-        from .math_functions import MathFunctions
+        # Add provided context (this includes variables resolved by formula config)
+        if context:
+            eval_context.update(context)
 
-        eval_context.update(MathFunctions.get_builtin_functions())
+        # Resolve dependencies that are entity_ids (not already in context)
+        for entity_id in dependencies:
+            # Skip if already provided in context (variable resolution)
+            if entity_id in eval_context:
+                continue
+
+            state = self._hass.states.get(entity_id)
+            if state is not None:
+                try:
+                    # Try to get numeric state value
+                    numeric_value = self._get_numeric_state(state)
+
+                    # For entity_ids with dots, add both original and normalized forms to support
+                    # both "sensor.entity_name" and "sensor_entity_name" variable access
+                    eval_context[entity_id] = numeric_value
+                    if "." in entity_id:
+                        normalized_name = entity_id.replace(".", "_")
+                        eval_context[normalized_name] = numeric_value
+
+                    # Add state object for attribute access
+                    eval_context[f"{entity_id}_state"] = state
+
+                except (ValueError, TypeError, NonNumericStateError):
+                    # For non-numeric states, keep as string
+                    eval_context[entity_id] = state.state
+                    if "." in entity_id:
+                        normalized_name = entity_id.replace(".", "_")
+                        eval_context[normalized_name] = state.state
+                    eval_context[f"{entity_id}_state"] = state
+
         return eval_context
 
     def _increment_transitory_error_count(self, formula_name: str) -> None:
@@ -746,6 +756,30 @@ class Evaluator(FormulaEvaluator):
 
         # For other domains, default to assuming non-numeric
         return False
+
+    def _preprocess_formula_for_evaluation(self, formula: str) -> str:
+        """Preprocess formula: convert entity_ids with dots to underscores for simpleeval.
+
+        Args:
+            formula: Original formula string
+
+        Returns:
+            Preprocessed formula with normalized entity_id variable names
+        """
+        processed_formula = formula
+
+        # Find all entity references using dependency parser
+        entity_refs = self._dependency_parser.extract_entity_references(formula)
+
+        # Replace each entity_id with normalized version
+        for entity_id in entity_refs:
+            if "." in entity_id:
+                normalized_name = entity_id.replace(".", "_")
+                # Use word boundaries to ensure we only replace complete entity_ids
+                pattern = r"\b" + re.escape(entity_id) + r"\b"
+                processed_formula = re.sub(pattern, normalized_name, processed_formula)
+
+        return processed_formula
 
 
 @dataclass

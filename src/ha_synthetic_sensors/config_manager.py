@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
+from .dependency_parser import DependencyParser
 from .schema_validator import validate_yaml_config
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class AttributeConfigDict(TypedDict, total=False):
     device_class: DeviceClassType
     state_class: StateClassType
     icon: str
+    variables: dict[str, str]  # Allow attributes to define additional variables
 
 
 class SensorConfigDict(TypedDict, total=False):
@@ -75,6 +77,7 @@ class FormulaConfig:
     icon: str | None = None
     attributes: dict[str, AttributeValue] = field(default_factory=dict)
     dependencies: set[str] = field(default_factory=set)
+    variables: dict[str, str] = field(default_factory=dict)  # Variable name -> entity_id mappings
 
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""
@@ -82,14 +85,20 @@ class FormulaConfig:
             self.dependencies = self._extract_dependencies()
 
     def _extract_dependencies(self) -> set[str]:
-        """Extract entity dependencies from the formula string."""
-        # This will be enhanced to properly parse entity references
-        # For now, simple regex-based extraction
-        import re
+        """Extract entity dependencies from the formula string and variables."""
+        # Use enhanced dependency parser that handles:
+        # - Variable references
+        # - Direct entity_ids
+        # - Dot notation (sensor1.battery_level)
+        # - Dynamic queries (regex:, tags:, device_class:, etc.)
+        parser = DependencyParser()
 
-        pattern = r'entity\(["\']([^"\']+)["\']\)'
-        matches = re.findall(pattern, self.formula)
-        return set(matches)
+        # Extract static dependencies (direct entity references and variables)
+        static_deps = parser.extract_static_dependencies(self.formula, self.variables)
+
+        # Note: Dynamic query patterns are extracted but resolved at runtime by evaluator
+        # Dynamic dependencies cannot be pre-computed as they depend on HA state
+        return static_deps
 
 
 @dataclass
@@ -333,6 +342,13 @@ class ConfigManager:
         if not formula_str:
             raise ValueError(f"Single formula sensor '{sensor_key}' must have 'formula' field")
 
+        # Get explicit variables from config
+        variables = sensor_data.get("variables", {}).copy()
+
+        # AUTO-INJECT MISSING ENTITY REFERENCES AS VARIABLES
+        # Parse formula to find entity references that aren't explicitly defined as variables
+        variables = self._auto_inject_entity_variables(formula_str, variables)
+
         return FormulaConfig(
             id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
             name=sensor_data.get("name"),
@@ -342,6 +358,7 @@ class ConfigManager:
             state_class=sensor_data.get("state_class"),
             icon=sensor_data.get("icon"),
             attributes=sensor_data.get("extra_attributes", {}),
+            variables=variables,
         )
 
     def _parse_attribute_formula(
@@ -366,6 +383,21 @@ class ConfigManager:
         if not attr_formula:
             raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have " f"'formula' field")
 
+        # Merge parent sensor variables with attribute-specific variables
+        # Attribute variables take precedence for overrides
+        merged_variables = sensor_data.get("variables", {}).copy()
+        attr_variables = attr_config.get("variables", {})
+        merged_variables.update(attr_variables)
+
+        # Add the parent sensor's main state as a variable reference
+        # This allows attributes to reference the main sensor by key
+        parent_entity_id = f"sensor.syn2_{sensor_key}"
+        merged_variables[sensor_key] = parent_entity_id
+
+        # AUTO-INJECT MISSING ENTITY REFERENCES AS VARIABLES
+        # Parse formula to find entity references that aren't explicitly defined as variables
+        merged_variables = self._auto_inject_entity_variables(attr_formula, merged_variables)
+
         return FormulaConfig(
             id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
             name=f"{sensor_data.get('name', sensor_key)} - {attr_name}",
@@ -375,6 +407,7 @@ class ConfigManager:
             state_class=None,  # Attributes don't typically have state classes
             icon=attr_config.get("icon"),
             attributes={},
+            variables=merged_variables,
         )
 
     def reload_config(self) -> Config:
@@ -831,3 +864,23 @@ class ConfigManager:
                 "schema_version": "unknown",
                 "file_path": str(path),
             }
+
+    def _auto_inject_entity_variables(self, formula: str, variables: dict[str, str]) -> dict[str, str]:
+        """Auto-inject missing entity references as variables.
+
+        Args:
+            formula: Formula string to analyze
+            variables: Existing variables dict
+
+        Returns:
+            Updated variables dict with auto-injected entity references
+        """
+        parser = DependencyParser()
+        static_deps = parser.extract_static_dependencies(formula, variables)
+
+        # Add missing entity_ids as self-referencing variables
+        for entity_id in static_deps:
+            if entity_id not in variables:
+                variables[entity_id] = entity_id
+
+        return variables
