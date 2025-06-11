@@ -84,22 +84,16 @@ class TestSyntheticSensorsIntegration:
         with patch.object(integration, "_check_auto_configuration") as mock_check:
             mock_check.return_value = AsyncMock()
 
-            with patch(
-                "ha_synthetic_sensors.integration.SensorManager"
-            ) as MockSensorManager:
+            with patch("ha_synthetic_sensors.integration.SensorManager") as MockSensorManager:
                 mock_sensor_manager = MagicMock()
                 MockSensorManager.return_value = mock_sensor_manager
 
-                with patch(
-                    "ha_synthetic_sensors.integration.ServiceLayer"
-                ) as MockServiceLayer:
+                with patch("ha_synthetic_sensors.integration.ServiceLayer") as MockServiceLayer:
                     mock_service_layer = MagicMock()
                     mock_service_layer.async_setup_services = AsyncMock()
                     MockServiceLayer.return_value = mock_service_layer
 
-                    with patch(
-                        "ha_synthetic_sensors.evaluator.Evaluator"
-                    ) as MockEvaluator:
+                    with patch("ha_synthetic_sensors.evaluator.Evaluator") as MockEvaluator:
                         mock_evaluator = MagicMock()
                         MockEvaluator.return_value = mock_evaluator
 
@@ -119,15 +113,13 @@ class TestSyntheticSensorsIntegration:
     @pytest.mark.asyncio
     async def test_async_setup_failure(self, integration, mock_add_entities):
         """Test async_setup with failure."""
-        with patch(
-            "ha_synthetic_sensors.integration.SensorManager"
-        ) as MockSensorManager:
+        with patch("ha_synthetic_sensors.integration.SensorManager") as MockSensorManager:
             MockSensorManager.side_effect = Exception("Setup failed")
 
             with patch.object(integration, "_cleanup") as mock_cleanup:
                 mock_cleanup.return_value = AsyncMock(return_value=True)
 
-                with pytest.raises(Exception):
+                with pytest.raises((RuntimeError, Exception)):
                     await integration.async_setup(mock_add_entities)
 
                 assert integration._initialized is False
@@ -247,23 +239,17 @@ class TestSyntheticSensorsIntegration:
         """Test _check_auto_configuration when file is found."""
         mock_hass.config.config_dir = "/config"
 
-        with patch("pathlib.Path.exists") as mock_exists:
-            with patch("pathlib.Path.is_file") as mock_is_file:
-                # First path exists
-                mock_exists.side_effect = [True, False, False, False]
-                mock_is_file.return_value = True
+        with patch("pathlib.Path.exists") as mock_exists, patch("pathlib.Path.is_file") as mock_is_file:
+            mock_exists.side_effect = [True, False, False, False]
+            mock_is_file.return_value = True
 
-                with patch.object(integration, "load_configuration_file") as mock_load:
-                    mock_load.return_value = True
+            with patch.object(integration, "load_configuration_file") as mock_load:
+                mock_load.return_value = True
 
-                    await integration._check_auto_configuration()
+                await integration._check_auto_configuration()
 
-                    assert integration._auto_config_path == Path(
-                        "/config/synthetic_sensors_config.yaml"
-                    )
-                    mock_load.assert_called_once_with(
-                        "/config/synthetic_sensors_config.yaml"
-                    )
+                assert integration._auto_config_path == Path("/config/synthetic_sensors_config.yaml")
+                mock_load.assert_called_once_with("/config/synthetic_sensors_config.yaml")
 
     @pytest.mark.asyncio
     async def test_check_auto_configuration_not_found(self, integration, mock_hass):
@@ -282,21 +268,18 @@ class TestSyntheticSensorsIntegration:
         """Test _check_auto_configuration when file is found but load fails."""
         mock_hass.config.config_dir = "/config"
 
-        with patch("pathlib.Path.exists") as mock_exists:
-            with patch("pathlib.Path.is_file") as mock_is_file:
-                mock_exists.side_effect = [True, False, False, False]
-                mock_is_file.return_value = True
+        with patch("pathlib.Path.exists") as mock_exists, patch("pathlib.Path.is_file") as mock_is_file:
+            mock_exists.side_effect = [True, False, False, False]
+            mock_is_file.return_value = True
 
-                with patch.object(integration, "load_configuration_file") as mock_load:
-                    mock_load.side_effect = Exception("Load failed")
+            with patch.object(integration, "load_configuration_file") as mock_load:
+                mock_load.side_effect = Exception("Load failed")
 
-                    await integration._check_auto_configuration()
+                await integration._check_auto_configuration()
 
-                    # Path is still set even when loading fails (as it continues
-                    # to next file)
-                    assert integration._auto_config_path == Path(
-                        "/config/synthetic_sensors_config.yaml"
-                    )
+                # Path is still set even when loading fails (as it continues
+                # to next file)
+                assert integration._auto_config_path == Path("/config/synthetic_sensors_config.yaml")
 
     @pytest.mark.asyncio
     async def test_cleanup_success(self, integration):
@@ -318,9 +301,7 @@ class TestSyntheticSensorsIntegration:
     async def test_cleanup_with_failure(self, integration):
         """Test _cleanup method with failure."""
         mock_service_manager = MagicMock()
-        mock_service_manager.async_unload_services = AsyncMock(
-            side_effect=Exception("Unload failed")
-        )
+        mock_service_manager.async_unload_services = AsyncMock(side_effect=Exception("Unload failed"))
         integration._service_manager = mock_service_manager
 
         result = await integration._cleanup()
@@ -349,9 +330,7 @@ class TestSyntheticSensorsIntegration:
     async def test_async_cleanup_detailed_with_errors(self, integration):
         """Test async_cleanup_detailed method with errors."""
         mock_service_manager = MagicMock()
-        mock_service_manager.async_unload_services = AsyncMock(
-            side_effect=Exception("Service error")
-        )
+        mock_service_manager.async_unload_services = AsyncMock(side_effect=Exception("Service error"))
         integration._service_manager = mock_service_manager
 
         result = await integration.async_cleanup_detailed()
@@ -405,63 +384,43 @@ class TestIntegrationFunctions:
         return MagicMock()
 
     @pytest.mark.asyncio
-    async def test_async_setup_integration_success(
-        self, mock_hass, mock_config_entry, mock_add_entities
-    ):
+    async def test_async_setup_integration_success(self, mock_hass, mock_config_entry, mock_add_entities):
         """Test async_setup_integration with success."""
-        with patch(
-            "ha_synthetic_sensors.integration.SyntheticSensorsIntegration"
-        ) as MockIntegration:
+        with patch("ha_synthetic_sensors.integration.SyntheticSensorsIntegration") as MockIntegration:
             mock_integration = MagicMock()
             mock_integration.async_setup = AsyncMock(return_value=True)
             MockIntegration.return_value = mock_integration
 
-            result = await async_setup_integration(
-                mock_hass, mock_config_entry, mock_add_entities
-            )
+            result = await async_setup_integration(mock_hass, mock_config_entry, mock_add_entities)
 
             assert result is True
             MockIntegration.assert_called_once_with(mock_hass, mock_config_entry)
             mock_integration.async_setup.assert_called_once_with(mock_add_entities)
 
     @pytest.mark.asyncio
-    async def test_async_setup_integration_already_exists(
-        self, mock_hass, mock_config_entry, mock_add_entities
-    ):
+    async def test_async_setup_integration_already_exists(self, mock_hass, mock_config_entry, mock_add_entities):
         """Test async_setup_integration when integration already exists."""
         # Mock an existing integration
-        with patch(
-            "ha_synthetic_sensors.integration._integrations"
-        ) as mock_integrations:
+        with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
             mock_integrations.__contains__ = MagicMock(return_value=True)
 
-            result = await async_setup_integration(
-                mock_hass, mock_config_entry, mock_add_entities
-            )
+            result = await async_setup_integration(mock_hass, mock_config_entry, mock_add_entities)
 
             assert result is True
 
     @pytest.mark.asyncio
-    async def test_async_setup_integration_failure(
-        self, mock_hass, mock_config_entry, mock_add_entities
-    ):
+    async def test_async_setup_integration_failure(self, mock_hass, mock_config_entry, mock_add_entities):
         """Test async_setup_integration with setup failure."""
-        with patch(
-            "ha_synthetic_sensors.integration.SyntheticSensorsIntegration"
-        ) as MockIntegration:
+        with patch("ha_synthetic_sensors.integration.SyntheticSensorsIntegration") as MockIntegration:
             mock_integration = MagicMock()
             mock_integration.async_setup = AsyncMock(return_value=False)
             MockIntegration.return_value = mock_integration
 
             # Ensure the integration doesn't already exist
-            with patch(
-                "ha_synthetic_sensors.integration._integrations"
-            ) as mock_integrations:
+            with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
                 mock_integrations.__contains__ = MagicMock(return_value=False)
 
-                result = await async_setup_integration(
-                    mock_hass, mock_config_entry, mock_add_entities
-                )
+                result = await async_setup_integration(mock_hass, mock_config_entry, mock_add_entities)
 
                 assert result is False
 
@@ -471,9 +430,7 @@ class TestIntegrationFunctions:
         mock_integration = MagicMock()
         mock_integration.async_unload = AsyncMock(return_value=True)
 
-        with patch(
-            "ha_synthetic_sensors.integration._integrations"
-        ) as mock_integrations:
+        with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
             mock_integrations.__contains__ = MagicMock(return_value=True)
             mock_integrations.__getitem__ = MagicMock(return_value=mock_integration)
             mock_integrations.__delitem__ = MagicMock()
@@ -486,9 +443,7 @@ class TestIntegrationFunctions:
     @pytest.mark.asyncio
     async def test_async_unload_integration_not_found(self, mock_config_entry):
         """Test async_unload_integration when integration not found."""
-        with patch(
-            "ha_synthetic_sensors.integration._integrations"
-        ) as mock_integrations:
+        with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
             mock_integrations.__contains__ = MagicMock(return_value=False)
 
             result = await async_unload_integration(mock_config_entry)
@@ -496,57 +451,39 @@ class TestIntegrationFunctions:
             assert result is True
 
     @pytest.mark.asyncio
-    async def test_async_reload_integration_existing(
-        self, mock_config_entry, mock_add_entities
-    ):
+    async def test_async_reload_integration_existing(self, mock_hass, mock_config_entry, mock_add_entities):
         """Test async_reload_integration with existing integration."""
         mock_integration = MagicMock()
         mock_integration.async_reload = AsyncMock(return_value=True)
 
-        with patch(
-            "ha_synthetic_sensors.integration._integrations"
-        ) as mock_integrations:
+        with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
             mock_integrations.__contains__ = MagicMock(return_value=True)
             mock_integrations.__getitem__ = MagicMock(return_value=mock_integration)
 
-            result = await async_reload_integration(
-                mock_config_entry, mock_add_entities
-            )
+            result = await async_reload_integration(mock_hass, mock_config_entry, mock_add_entities)
 
             assert result is True
             mock_integration.async_reload.assert_called_once_with(mock_add_entities)
 
     @pytest.mark.asyncio
-    async def test_async_reload_integration_new(
-        self, mock_config_entry, mock_add_entities
-    ):
+    async def test_async_reload_integration_new(self, mock_hass, mock_config_entry, mock_add_entities):
         """Test async_reload_integration with new integration."""
-        with patch(
-            "ha_synthetic_sensors.integration._integrations"
-        ) as mock_integrations:
+        with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
             mock_integrations.__contains__ = MagicMock(return_value=False)
 
-            with patch(
-                "ha_synthetic_sensors.integration.async_setup_integration"
-            ) as mock_setup:
+            with patch("ha_synthetic_sensors.integration.async_setup_integration") as mock_setup:
                 mock_setup.return_value = True
 
-                result = await async_reload_integration(
-                    mock_config_entry, mock_add_entities
-                )
+                result = await async_reload_integration(mock_hass, mock_config_entry, mock_add_entities)
 
                 assert result is True
-                mock_setup.assert_called_once_with(
-                    mock_config_entry.hass, mock_config_entry, mock_add_entities
-                )
+                mock_setup.assert_called_once_with(mock_hass, mock_config_entry, mock_add_entities)
 
     def test_get_integration_found(self, mock_config_entry):
         """Test get_integration when integration is found."""
         mock_integration = MagicMock()
 
-        with patch(
-            "ha_synthetic_sensors.integration._integrations"
-        ) as mock_integrations:
+        with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
             mock_integrations.get = MagicMock(return_value=mock_integration)
 
             result = get_integration(mock_config_entry)
@@ -556,9 +493,7 @@ class TestIntegrationFunctions:
 
     def test_get_integration_not_found(self, mock_config_entry):
         """Test get_integration when integration is not found."""
-        with patch(
-            "ha_synthetic_sensors.integration._integrations"
-        ) as mock_integrations:
+        with patch("ha_synthetic_sensors.integration._integrations") as mock_integrations:
             mock_integrations.get = MagicMock(return_value=None)
 
             result = get_integration(mock_config_entry)
@@ -576,9 +511,7 @@ sensors:
         formula: "1 + 1"
 """
 
-        with patch(
-            "ha_synthetic_sensors.integration.ConfigManager"
-        ) as MockConfigManager:
+        with patch("ha_synthetic_sensors.integration.ConfigManager") as MockConfigManager:
             mock_manager = MagicMock()
             mock_manager.load_from_yaml.return_value = MagicMock()
             MockConfigManager.return_value = mock_manager
@@ -592,9 +525,7 @@ sensors:
         """Test validate_yaml_content with invalid YAML."""
         yaml_content = "invalid: yaml: content:"
 
-        with patch(
-            "ha_synthetic_sensors.integration.ConfigManager"
-        ) as MockConfigManager:
+        with patch("ha_synthetic_sensors.integration.ConfigManager") as MockConfigManager:
             mock_manager = MagicMock()
             mock_manager.load_from_yaml.side_effect = Exception("Parse error")
             MockConfigManager.return_value = mock_manager
@@ -665,9 +596,7 @@ class TestIntegration:
             name="total_power",
             formula="hvac_upstairs + hvac_downstairs",
         )
-        sensor = SensorConfig(
-            unique_id="test_sensor", name="test_sensor", formulas=[formula]
-        )
+        sensor = SensorConfig(unique_id="test_sensor", name="test_sensor", formulas=[formula])
         config.sensors.append(sensor)
 
         # Verify sensor was added
@@ -687,19 +616,11 @@ class TestIntegration:
         config = Config()
 
         # Test invalid configuration (duplicate sensor names)
-        formula1 = FormulaConfig(
-            id="test_formula", name="test_formula", formula="A + B"
-        )
-        formula2 = FormulaConfig(
-            id="test_formula2", name="test_formula2", formula="C + D"
-        )
+        formula1 = FormulaConfig(id="test_formula", name="test_formula", formula="A + B")
+        formula2 = FormulaConfig(id="test_formula2", name="test_formula2", formula="C + D")
 
-        sensor1 = SensorConfig(
-            unique_id="unique_id_1", name="unique_name_1", formulas=[formula1]
-        )
-        sensor2 = SensorConfig(
-            unique_id="unique_id_2", name="unique_name_2", formulas=[formula2]
-        )
+        sensor1 = SensorConfig(unique_id="unique_id_1", name="unique_name_1", formulas=[formula1])
+        sensor2 = SensorConfig(unique_id="unique_id_2", name="unique_name_2", formulas=[formula2])
 
         config.sensors = [sensor1, sensor2]
 
@@ -719,9 +640,7 @@ class TestIntegration:
         NameResolver(mock_hass, variables)
 
         # Test integrated workflow
-        formula_config = FormulaConfig(
-            id="comfort_index", name="comfort_index", formula="temp + humidity"
-        )
+        formula_config = FormulaConfig(id="comfort_index", name="comfort_index", formula="temp + humidity")
 
         # Test evaluation with context
         context = cast(dict[str, ContextValue], {"temp": 22.5, "humidity": 45.0})

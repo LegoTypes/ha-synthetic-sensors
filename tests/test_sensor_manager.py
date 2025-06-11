@@ -7,9 +7,9 @@ the creation, updating, and removal of synthetic sensors.
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import STATE_UNAVAILABLE
+import pytest
 
 from ha_synthetic_sensors.config_manager import Config, FormulaConfig, SensorConfig
 from ha_synthetic_sensors.evaluator import Evaluator
@@ -175,9 +175,7 @@ class TestSensorManager:
 
         return Config(sensors=[sensor_config])
 
-    def test_sensor_manager_initialization(
-        self, sensor_manager, mock_hass, mock_name_resolver, mock_add_entities
-    ):
+    def test_sensor_manager_initialization(self, sensor_manager, mock_hass, mock_name_resolver, mock_add_entities):
         """Test SensorManager initialization."""
         assert sensor_manager._hass == mock_hass
         assert sensor_manager._name_resolver == mock_name_resolver
@@ -219,9 +217,7 @@ class TestSensorManager:
         """Test _create_sensor_entity method."""
         sensor_config = test_config.sensors[0]
 
-        with patch(
-            "ha_synthetic_sensors.sensor_manager.DynamicSensor"
-        ) as MockDynamicSensor:
+        with patch("ha_synthetic_sensors.sensor_manager.DynamicSensor") as MockDynamicSensor:
             mock_sensor = MagicMock()
             mock_sensor.entity_id = "sensor.syn2_test_sensor"
             MockDynamicSensor.return_value = mock_sensor
@@ -362,9 +358,7 @@ class TestDynamicSensorExtended:
         sensor.entity_id = f"sensor.{sensor._attr_unique_id}"
         return sensor
 
-    def test_dynamic_sensor_initialization_no_name(
-        self, mock_hass, mock_evaluator, mock_sensor_manager
-    ):
+    def test_dynamic_sensor_initialization_no_name(self, mock_hass, mock_evaluator, mock_sensor_manager):
         """Test DynamicSensor initialization with no sensor name."""
         formula_config = FormulaConfig(id="test_formula", formula="1 + 1")
         sensor_config = SensorConfig(unique_id="test_sensor", formulas=[formula_config])
@@ -384,14 +378,10 @@ class TestDynamicSensorExtended:
         # Should use unique_id when sensor name is empty
         assert sensor._attr_name == "test_sensor"
 
-    def test_dynamic_sensor_initialization_no_formula_name(
-        self, mock_hass, mock_evaluator, mock_sensor_manager
-    ):
+    def test_dynamic_sensor_initialization_no_formula_name(self, mock_hass, mock_evaluator, mock_sensor_manager):
         """Test DynamicSensor initialization with no formula name."""
         formula_config = FormulaConfig(id="test_formula", formula="1 + 1")  # No name
-        sensor_config = SensorConfig(
-            unique_id="test_sensor", name="Test Sensor", formulas=[formula_config]
-        )
+        sensor_config = SensorConfig(unique_id="test_sensor", name="Test Sensor", formulas=[formula_config])
 
         sensor = DynamicSensor(
             mock_hass,
@@ -412,9 +402,10 @@ class TestDynamicSensorExtended:
     async def test_async_added_to_hass_with_dependencies(self, dynamic_sensor):
         """Test async_added_to_hass with dependencies."""
         # Mock the async_track_state_change_event
-        with patch(
-            "ha_synthetic_sensors.sensor_manager.async_track_state_change_event"
-        ) as mock_track, patch.object(dynamic_sensor, "async_write_ha_state"):
+        with (
+            patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track,
+            patch.object(dynamic_sensor, "async_write_ha_state"),
+        ):
             mock_track.return_value = MagicMock()
 
             await dynamic_sensor.async_added_to_hass()
@@ -428,18 +419,12 @@ class TestDynamicSensorExtended:
             assert len(dynamic_sensor._update_listeners) == 1
 
     @pytest.mark.asyncio
-    async def test_async_added_to_hass_no_dependencies(
-        self, mock_hass, mock_evaluator, mock_sensor_manager
-    ):
+    async def test_async_added_to_hass_no_dependencies(self, mock_hass, mock_evaluator, mock_sensor_manager):
         """Test async_added_to_hass with no dependencies."""
         formula_config = FormulaConfig(id="test_formula", formula="1 + 1")
-        sensor_config = SensorConfig(
-            unique_id="test_sensor", name="Test Sensor", formulas=[formula_config]
-        )
+        sensor_config = SensorConfig(unique_id="test_sensor", name="Test Sensor", formulas=[formula_config])
 
-        sensor = DynamicSensor(
-            mock_hass, sensor_config, mock_evaluator, mock_sensor_manager
-        )
+        sensor = DynamicSensor(mock_hass, sensor_config, mock_evaluator, mock_sensor_manager)
         # Set the hass attribute to ensure entity is properly initialized
         sensor.hass = mock_hass
         # Set entity_id manually for testing since it's not registered through
@@ -447,9 +432,10 @@ class TestDynamicSensorExtended:
         sensor.entity_id = f"sensor.{sensor._attr_unique_id}"
 
         # No dependencies should not set up state change tracking
-        with patch(
-            "ha_synthetic_sensors.sensor_manager.async_track_state_change_event"
-        ) as mock_track, patch.object(sensor, "async_write_ha_state"):
+        with (
+            patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track,
+            patch.object(sensor, "async_write_ha_state"),
+        ):
             await sensor.async_added_to_hass()
             mock_track.assert_not_called()
             assert len(sensor._update_listeners) == 0
@@ -470,9 +456,7 @@ class TestDynamicSensorExtended:
         assert len(dynamic_sensor._update_listeners) == 0
 
     @pytest.mark.asyncio
-    async def test_handle_dependency_change_functionality(
-        self, dynamic_sensor, mock_evaluator
-    ):
+    async def test_handle_dependency_change_functionality(self, dynamic_sensor, mock_evaluator):
         """Test _handle_dependency_change functionality."""
         # Mock the evaluator to return a successful result
         mock_evaluator.evaluate_formula.return_value = {
@@ -484,9 +468,7 @@ class TestDynamicSensorExtended:
         mock_event = MagicMock()
 
         # Patch the _async_update_sensor method to verify it's called
-        with patch.object(
-            dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock
-        ) as mock_update:
+        with patch.object(dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock) as mock_update:
             await dynamic_sensor._handle_dependency_change(mock_event)
             mock_update.assert_called_once()
 
@@ -514,9 +496,7 @@ class TestDynamicSensorExtended:
             dynamic_sensor._sensor_manager._on_sensor_updated.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_async_update_sensor_evaluation_failure(
-        self, dynamic_sensor, mock_evaluator
-    ):
+    async def test_async_update_sensor_evaluation_failure(self, dynamic_sensor, mock_evaluator):
         """Test _async_update_sensor with evaluation failure."""
         # Mock failed evaluation
         mock_evaluator.evaluate_formula.return_value = {
@@ -557,9 +537,7 @@ class TestDynamicSensorExtended:
         assert "sensor_category" in attrs
 
     @pytest.mark.asyncio
-    async def test_force_update_formula_same_dependencies(
-        self, dynamic_sensor, mock_evaluator
-    ):
+    async def test_force_update_formula_same_dependencies(self, dynamic_sensor, mock_evaluator):
         """Test force_update_formula with same dependencies."""
         old_deps = dynamic_sensor._dependencies.copy()
 
@@ -584,9 +562,7 @@ class TestDynamicSensorExtended:
             assert dynamic_sensor._dependencies == old_deps
 
     @pytest.mark.asyncio
-    async def test_force_update_formula_different_dependencies(
-        self, dynamic_sensor, mock_evaluator
-    ):
+    async def test_force_update_formula_different_dependencies(self, dynamic_sensor, mock_evaluator):
         """Test force_update_formula with different dependencies."""
         # Create new formula with different dependencies
         new_deps = {"sensor.new_dep1", "sensor.new_dep2"}
@@ -605,9 +581,7 @@ class TestDynamicSensorExtended:
         old_listener = MagicMock()
         dynamic_sensor._update_listeners = [old_listener]
 
-        with patch(
-            "ha_synthetic_sensors.sensor_manager.async_track_state_change_event"
-        ) as mock_track:
+        with patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track:
             new_listener = MagicMock()
             mock_track.return_value = new_listener
 
@@ -637,13 +611,13 @@ class TestDynamicSensorExtended:
         mock_last_state.state = "42.5"
         mock_last_state.attributes = {"test_attr": "test_value"}
 
-        with patch(
-            "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
-            return_value=mock_last_state,
-        ), patch(
-            "ha_synthetic_sensors.sensor_manager.async_track_state_change_event"
-        ) as mock_track, patch.object(
-            dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock
+        with (
+            patch(
+                "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
+                return_value=mock_last_state,
+            ),
+            patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track,
+            patch.object(dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock),
         ):
             mock_track.return_value = MagicMock()
 
@@ -660,13 +634,13 @@ class TestDynamicSensorExtended:
         mock_last_state = MagicMock()
         mock_last_state.state = "invalid_number"
 
-        with patch(
-            "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
-            return_value=mock_last_state,
-        ), patch(
-            "ha_synthetic_sensors.sensor_manager.async_track_state_change_event"
-        ) as mock_track, patch.object(
-            dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock
+        with (
+            patch(
+                "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
+                return_value=mock_last_state,
+            ),
+            patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track,
+            patch.object(dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock),
         ):
             mock_track.return_value = MagicMock()
 
@@ -682,13 +656,13 @@ class TestDynamicSensorExtended:
         mock_last_state = MagicMock()
         mock_last_state.state = STATE_UNAVAILABLE
 
-        with patch(
-            "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
-            return_value=mock_last_state,
-        ), patch(
-            "ha_synthetic_sensors.sensor_manager.async_track_state_change_event"
-        ) as mock_track, patch.object(
-            dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock
+        with (
+            patch(
+                "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
+                return_value=mock_last_state,
+            ),
+            patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track,
+            patch.object(dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock),
         ):
             mock_track.return_value = MagicMock()
 
@@ -729,23 +703,15 @@ class TestSensorManagerExtended:
         formula1 = FormulaConfig(id="formula1", formula="1 + 1")
         formula2 = FormulaConfig(id="formula2", formula="2 + 2")
 
-        sensor1 = SensorConfig(
-            unique_id="sensor1", name="Sensor 1", enabled=True, formulas=[formula1]
-        )
-        sensor2 = SensorConfig(
-            unique_id="sensor2", name="Sensor 2", enabled=False, formulas=[formula2]
-        )
+        sensor1 = SensorConfig(unique_id="sensor1", name="Sensor 1", enabled=True, formulas=[formula1])
+        sensor2 = SensorConfig(unique_id="sensor2", name="Sensor 2", enabled=False, formulas=[formula2])
 
         return Config(sensors=[sensor1, sensor2])
 
     @pytest.mark.asyncio
-    async def test_create_all_sensors_with_disabled_sensor(
-        self, sensor_manager, test_config
-    ):
+    async def test_create_all_sensors_with_disabled_sensor(self, sensor_manager, test_config):
         """Test _create_all_sensors skips disabled sensors."""
-        with patch.object(
-            sensor_manager, "_create_sensor_entity"
-        ) as mock_create_entity:
+        with patch.object(sensor_manager, "_create_sensor_entity") as mock_create_entity:
             await sensor_manager._create_all_sensors(test_config)
 
             # Should only create entity for enabled sensor
@@ -758,30 +724,23 @@ class TestSensorManagerExtended:
         """Test _update_existing_sensors with add, remove, and update operations."""
         # Set up old configuration
         old_formula = FormulaConfig(id="old_formula", formula="old")
-        old_sensor = SensorConfig(
-            unique_id="existing", formulas=[old_formula], enabled=True
-        )
+        old_sensor = SensorConfig(unique_id="existing", formulas=[old_formula], enabled=True)
         old_config = Config(sensors=[old_sensor])
 
         # Set up new configuration
         new_formula = FormulaConfig(id="new_formula", formula="new")
-        updated_sensor = SensorConfig(
-            unique_id="existing", formulas=[new_formula], enabled=True
-        )
-        new_sensor = SensorConfig(
-            unique_id="new_sensor", formulas=[new_formula], enabled=True
-        )
+        updated_sensor = SensorConfig(unique_id="existing", formulas=[new_formula], enabled=True)
+        new_sensor = SensorConfig(unique_id="new_sensor", formulas=[new_formula], enabled=True)
         new_config = Config(sensors=[updated_sensor, new_sensor])
 
         # Set up existing sensor
         mock_existing_sensor = MagicMock()
         sensor_manager._sensors["existing"] = mock_existing_sensor
 
-        with patch.object(
-            sensor_manager, "_create_sensor_entity"
-        ) as mock_create, patch.object(
-            sensor_manager, "_update_sensor_config"
-        ) as mock_update:
+        with (
+            patch.object(sensor_manager, "_create_sensor_entity") as mock_create,
+            patch.object(sensor_manager, "_update_sensor_config") as mock_update,
+        ):
             await sensor_manager._update_existing_sensors(old_config, new_config)
 
             # Should update existing sensor
@@ -993,13 +952,9 @@ class TestSensorManagerExtended:
         main_formula = FormulaConfig(id="main", formula="main_formula")
         attr_formula = FormulaConfig(id="attr", formula="attr_formula")
 
-        sensor_config = SensorConfig(
-            unique_id="multi_sensor", formulas=[main_formula, attr_formula]
-        )
+        sensor_config = SensorConfig(unique_id="multi_sensor", formulas=[main_formula, attr_formula])
 
-        with patch(
-            "ha_synthetic_sensors.sensor_manager.DynamicSensor"
-        ) as MockDynamicSensor:
+        with patch("ha_synthetic_sensors.sensor_manager.DynamicSensor") as MockDynamicSensor:
             mock_sensor = MagicMock()
             MockDynamicSensor.return_value = mock_sensor
 

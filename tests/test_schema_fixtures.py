@@ -58,10 +58,7 @@ class TestSchemaFixtures:
                 invalid_files.append(f"{yaml_file.name}:\n" + "\n".join(error_details))
 
         if invalid_files:
-            pytest.fail(
-                f"Schema validation failed for {len(invalid_files)} fixtures:\n\n"
-                + "\n\n".join(invalid_files)
-            )
+            pytest.fail(f"Schema validation failed for {len(invalid_files)} fixtures:\n\n" + "\n\n".join(invalid_files))
 
     @pytest.mark.parametrize(
         "fixture_name",
@@ -78,9 +75,7 @@ class TestSchemaFixtures:
             "syn2_sample_config.yaml",
         ],
     )
-    def test_individual_fixture_validation(
-        self, config_manager, fixtures_dir, fixture_name
-    ):
+    def test_individual_fixture_validation(self, config_manager, fixtures_dir, fixture_name):
         """Test each fixture individually for detailed error reporting."""
         fixture_path = fixtures_dir / fixture_name
 
@@ -108,7 +103,4 @@ class TestSchemaFixtures:
                         msg += f" → {error['suggested_fix']}"
                 error_messages.append(msg)
 
-            pytest.fail(
-                f"Schema validation failed for {fixture_name}:\n"
-                + "\n".join(f"  - {msg}" for msg in error_messages)
-            )
+            pytest.fail(f"Schema validation failed for {fixture_name}:\n" + "\n".join(f"  - {msg}" for msg in error_messages))

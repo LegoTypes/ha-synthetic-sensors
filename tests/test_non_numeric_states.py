@@ -33,9 +33,7 @@ class TestNonNumericStateHandling:
         mock_state.attributes = {}
         mock_hass.states.get.return_value = mock_state
 
-        config = FormulaConfig(
-            id="test_non_numeric", name="test", formula="switch.test + 1"
-        )
+        config = FormulaConfig(id="test_non_numeric", name="test", formula="switch.test + 1")
 
         # Should detect non-numeric state and return unknown
         result = evaluator.evaluate_formula(config)
@@ -87,9 +85,7 @@ class TestNonNumericStateHandling:
 
         mock_hass.states.get.side_effect = mock_states_get
 
-        config = FormulaConfig(
-            id="mixed_test", name="mixed", formula="sensor.numeric + sensor.non_numeric"
-        )
+        config = FormulaConfig(id="mixed_test", name="mixed", formula="sensor.numeric + sensor.non_numeric")
 
         # Should return unknown due to non-numeric dependency
         result = evaluator.evaluate_formula(config)
@@ -99,9 +95,7 @@ class TestNonNumericStateHandling:
 
     def test_circuit_breaker_for_non_numeric_states(self, mock_hass):
         """Test that non-numeric states are treated as transitory errors."""
-        cb_config = CircuitBreakerConfig(
-            max_fatal_errors=2, track_transitory_errors=True
-        )
+        cb_config = CircuitBreakerConfig(max_fatal_errors=2, track_transitory_errors=True)
         evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config)
 
         # Mock entity that should be numeric but isn't
@@ -111,12 +105,10 @@ class TestNonNumericStateHandling:
         mock_state.attributes = {"device_class": "temperature"}
         mock_hass.states.get.return_value = mock_state
 
-        config = FormulaConfig(
-            id="temp_test", name="temp", formula="sensor.temperature + 10"
-        )
+        config = FormulaConfig(id="temp_test", name="temp", formula="sensor.temperature + 10")
 
         # Should continue trying even after many attempts (transitory error)
-        for i in range(10):
+        for _i in range(10):
             result = evaluator.evaluate_formula(config)
             assert result["success"] is True
             assert result.get("state") == "unknown"
@@ -154,9 +146,7 @@ class TestNonNumericStateHandling:
         mock_hass.states.get.side_effect = mock_states_get
 
         # Test missing entity (should be fatal)
-        missing_config = FormulaConfig(
-            id="missing_test", name="missing", formula="sensor.missing + 1"
-        )
+        missing_config = FormulaConfig(id="missing_test", name="missing", formula="sensor.missing + 1")
 
         result1 = evaluator.evaluate_formula(missing_config)
         assert result1["success"] is False
@@ -171,12 +161,10 @@ class TestNonNumericStateHandling:
         assert "Skipping formula" in result3.get("error", "")
 
         # Test non-numeric entity (should be transitory)
-        non_numeric_config = FormulaConfig(
-            id="non_numeric_test", name="non_numeric", formula="sensor.non_numeric + 1"
-        )
+        non_numeric_config = FormulaConfig(id="non_numeric_test", name="non_numeric", formula="sensor.non_numeric + 1")
 
         # Should continue evaluating even after many attempts
-        for i in range(10):
+        for _i in range(10):
             result = evaluator.evaluate_formula(non_numeric_config)
             assert result["success"] is True
             assert result.get("state") == "unknown"

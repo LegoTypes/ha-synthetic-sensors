@@ -21,11 +21,7 @@ class TestMixedVariableAndDirectPatterns:
     @pytest.fixture
     def mixed_patterns_config(self):
         """Load the mixed patterns example config file."""
-        config_path = (
-            Path(__file__).parent.parent
-            / "examples"
-            / "mixed_variable_and_direct_config.yaml"
-        )
+        config_path = Path(__file__).parent.parent / "examples" / "mixed_variable_and_direct_config.yaml"
 
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -55,10 +51,7 @@ class TestMixedVariableAndDirectPatterns:
                 # Look for patterns like "sensor.something", "input_number.something"
                 import re
 
-                entity_pattern = (
-                    r"\b(sensor|input_number|climate|switch|binary_sensor|button|"
-                    r"device_tracker)\.[\w_]+\b"
-                )
+                entity_pattern = r"\b(sensor|input_number|climate|switch|binary_sensor|button|" r"device_tracker)\.[\w_]+\b"
                 found_entities = re.findall(entity_pattern, formula)
                 for match in found_entities:
                     # Reconstruct the full entity ID from the regex match
@@ -193,12 +186,12 @@ class TestMixedVariableAndDirectPatterns:
             entity_refs = parser.extract_entity_references(formula)
 
             # Should find variables but no direct entity references
-            for var_name in variables.keys():
+            for var_name in variables:
                 assert var_name in extracted_variables
             assert len(entity_refs) == 0  # No direct entity IDs in formula
 
             # Dependencies should include the variables
-            for var_name in variables.keys():
+            for var_name in variables:
                 assert var_name in dependencies
 
     def test_pattern_2_pure_direct_entity_references(self, parser, pattern_test_cases):
@@ -216,18 +209,14 @@ class TestMixedVariableAndDirectPatterns:
             entity_refs = parser.extract_entity_references(formula)
 
             # Should find entity references but no variables (no variables defined)
-            assert len(extracted_variables) == 0 or all(
-                var not in variables for var in extracted_variables
-            )
+            assert len(extracted_variables) == 0 or all(var not in variables for var in extracted_variables)
             assert len(entity_refs) > 0  # Should have direct entity references
 
             # Dependencies should include the entity IDs
             for entity_id in entity_refs:
                 assert entity_id in dependencies
 
-    def test_pattern_3_mixed_variables_and_direct_entities(
-        self, parser, pattern_test_cases
-    ):
+    def test_pattern_3_mixed_variables_and_direct_entities(self, parser, pattern_test_cases):
         """Test Pattern 3: Mixed variables and direct entity IDs in same formula."""
         mixed_cases = pattern_test_cases.get("mixed", [])
         assert len(mixed_cases) > 0, "No mixed cases found in config"
@@ -242,12 +231,12 @@ class TestMixedVariableAndDirectPatterns:
             entity_refs = parser.extract_entity_references(formula)
 
             # Should find both variables and direct entity references
-            for var_name in variables.keys():
+            for var_name in variables:
                 assert var_name in extracted_variables
             assert len(entity_refs) > 0  # Should have direct entity references
 
             # Dependencies should include everything
-            for var_name in variables.keys():
+            for var_name in variables:
                 assert var_name in dependencies
             for entity_id in entity_refs:
                 assert entity_id in dependencies
@@ -273,18 +262,12 @@ class TestMixedVariableAndDirectPatterns:
             # Test that all variables can be resolved
             for var_name, entity_id in variables.items():
                 resolved_value = resolver.resolve_name(MockNode(var_name))
-                assert resolved_value is not None, (
-                    f"Could not resolve variable '{var_name}' -> '{entity_id}' "
-                    f"in sensor {sensor_id}"
-                )
+                assert resolved_value is not None, f"Could not resolve variable '{var_name}' -> '{entity_id}' " f"in sensor {sensor_id}"
 
     def test_dependency_parser_extract_all_entities_comprehensive(self, parser):
         """Test that dependency parser can extract all entity types from formula."""
         # Test with a formula that includes multiple entity domains
-        formula = (
-            "sensor.power + input_number.rate + climate.thermostat + "
-            "switch.pump + binary_sensor.door"
-        )
+        formula = "sensor.power + input_number.rate + climate.thermostat + " "switch.pump + binary_sensor.door"
 
         entity_refs = parser.extract_entity_references(formula)
 
@@ -299,16 +282,13 @@ class TestMixedVariableAndDirectPatterns:
 
         assert expected_entities.issubset(entity_refs)
 
-    def test_realistic_yaml_formula_simulation(
-        self, parser, mock_hass, mixed_patterns_config
-    ):
+    def test_realistic_yaml_formula_simulation(self, parser, mock_hass, mixed_patterns_config):
         """Test simulation of realistic YAML formulas from the actual example config."""
 
         sensors = mixed_patterns_config["sensors"]
 
         # Test each sensor from the actual config file
         for sensor_id, sensor_config in sensors.items():
-            print(f"\nTesting sensor: {sensor_id}")
 
             formula = sensor_config["formula"]
             variables = sensor_config.get("variables", {})
@@ -318,10 +298,8 @@ class TestMixedVariableAndDirectPatterns:
             dependencies = parser.extract_dependencies(formula)
 
             # Verify that variables defined in config are found in formula
-            for var_name in variables.keys():
-                assert (
-                    var_name in extracted_variables
-                ), f"Variable '{var_name}' defined in config but not found in formula"
+            for var_name in variables:
+                assert var_name in extracted_variables, f"Variable '{var_name}' defined in config but not found in formula"
 
             # Test name resolver with the actual config
             resolver = NameResolver(mock_hass, variables)
@@ -332,6 +310,4 @@ class TestMixedVariableAndDirectPatterns:
             assert "entity_ids" in deps
 
             # Test that dependency extraction works
-            assert (
-                len(dependencies) > 0
-            ), f"No dependencies found for {sensor_id}: {formula}"
+            assert len(dependencies) > 0, f"No dependencies found for {sensor_id}: {formula}"

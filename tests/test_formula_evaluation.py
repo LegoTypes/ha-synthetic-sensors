@@ -38,9 +38,7 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 150
 
-    def test_enhanced_evaluator_with_entity_data(
-        self, mock_hass, mock_entities_with_dependencies
-    ):
+    def test_enhanced_evaluator_with_entity_data(self, mock_hass, mock_entities_with_dependencies):
         """Test formula evaluation with real entity data."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -76,9 +74,7 @@ class TestFormulaEvaluation:
         assert dependencies == {"A", "B", "C"}
 
         # Test complex formula dependencies
-        dependencies = evaluator.get_formula_dependencies(
-            "(HVAC_Upstairs + HVAC_Downstairs) / Total_Power"
-        )
+        dependencies = evaluator.get_formula_dependencies("(HVAC_Upstairs + HVAC_Downstairs) / Total_Power")
         assert dependencies == {"HVAC_Upstairs", "HVAC_Downstairs", "Total_Power"}
 
     def test_caching_mechanism(self, mock_hass):
@@ -110,9 +106,7 @@ class TestFormulaEvaluation:
 
         # Test valid formulas
         errors = evaluator.validate_formula_syntax("A + B")
-        assert (
-            "Formula does not reference any entities" in errors
-        )  # This formula doesn't use entity() syntax
+        assert "Formula does not reference any entities" in errors  # This formula doesn't use entity() syntax
 
         # Test invalid formulas
         errors = evaluator.validate_formula_syntax("A + B + )")
@@ -131,9 +125,7 @@ class TestFormulaEvaluation:
         evaluator = Evaluator(mock_hass)
 
         # Test division by zero
-        config = FormulaConfig(
-            id="division_test", name="division_test", formula="A / B"
-        )
+        config = FormulaConfig(id="division_test", name="division_test", formula="A / B")
         context = cast(dict[str, ContextValue], {"A": 10, "B": 0})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is False
@@ -142,9 +134,7 @@ class TestFormulaEvaluation:
         # Test missing dependencies
         config = FormulaConfig(id="missing_deps", name="missing_deps", formula="A + B")
         # Only A is present in context, B is missing
-        mock_hass.states.get.side_effect = lambda entity_id: (
-            None if entity_id == "B" else MagicMock(state=10)
-        )
+        mock_hass.states.get.side_effect = lambda entity_id: (None if entity_id == "B" else MagicMock(state=10))
         context = cast(dict[str, ContextValue], {"A": 10})  # Missing B
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is False
@@ -158,18 +148,14 @@ class TestFormulaEvaluation:
         evaluator = Evaluator(mock_hass)
 
         # Test mathematical functions
-        config = FormulaConfig(
-            id="math_test", name="math_test", formula="max(A, B) + min(C, D)"
-        )
+        config = FormulaConfig(id="math_test", name="math_test", formula="max(A, B) + min(C, D)")
         variables = cast(dict[str, ContextValue], {"A": 10, "B": 20, "C": 30, "D": 5})
         result = evaluator.evaluate_formula(config, variables)
         assert result["success"] is True
         assert result["value"] == 25  # max(10, 20) + min(30, 5) = 20 + 5 = 25
 
         # Test absolute value
-        config = FormulaConfig(
-            id="abs_test", name="abs_test", formula="abs(A) + abs(B)"
-        )
+        config = FormulaConfig(id="abs_test", name="abs_test", formula="abs(A) + abs(B)")
         variables = cast(dict[str, ContextValue], {"A": -10, "B": 15})
         result = evaluator.evaluate_formula(config, variables)
         assert result["success"] is True
@@ -213,18 +199,14 @@ class TestFormulaEvaluation:
         assert result["value"] == 8.0
 
         # Test floor and ceil functions
-        config = FormulaConfig(
-            id="floor_test", name="floor_test", formula="floor(A) + ceil(B)"
-        )
+        config = FormulaConfig(id="floor_test", name="floor_test", formula="floor(A) + ceil(B)")
         context = cast(dict[str, ContextValue], {"A": 3.7, "B": 2.3})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
         assert result["value"] == 6.0  # floor(3.7) + ceil(2.3) = 3 + 3 = 6
 
         # Test clamp function
-        config = FormulaConfig(
-            id="clamp_test", name="clamp_test", formula="clamp(A, 10, 50)"
-        )
+        config = FormulaConfig(id="clamp_test", name="clamp_test", formula="clamp(A, 10, 50)")
         context = cast(dict[str, ContextValue], {"A": 75})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
@@ -248,27 +230,21 @@ class TestFormulaEvaluation:
         evaluator = Evaluator(mock_hass)
 
         # Test mapping 0-100 to 0-255 (common use case)
-        config = FormulaConfig(
-            id="map_test", name="map_test", formula="map(A, 0, 100, 0, 255)"
-        )
+        config = FormulaConfig(id="map_test", name="map_test", formula="map(A, 0, 100, 0, 255)")
         context = cast(dict[str, ContextValue], {"A": 50})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
         assert result["value"] == 127.5  # 50% of 255
 
         # Test mapping with different ranges
-        config = FormulaConfig(
-            id="map_test2", name="map_test2", formula="map(A, 20, 80, 0, 10)"
-        )
+        config = FormulaConfig(id="map_test2", name="map_test2", formula="map(A, 20, 80, 0, 10)")
         context = cast(dict[str, ContextValue], {"A": 50})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
         assert result["value"] == 5.0  # Middle of range maps to middle
 
         # Test edge case: identical input range
-        config = FormulaConfig(
-            id="map_edge", name="map_edge", formula="map(A, 10, 10, 0, 100)"
-        )
+        config = FormulaConfig(id="map_edge", name="map_edge", formula="map(A, 10, 10, 0, 100)")
         context = cast(dict[str, ContextValue], {"A": 10})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
@@ -282,9 +258,7 @@ class TestFormulaEvaluation:
         evaluator = Evaluator(mock_hass)
 
         # Test basic percentage
-        config = FormulaConfig(
-            id="percent_test", name="percent_test", formula="percent(A, B)"
-        )
+        config = FormulaConfig(id="percent_test", name="percent_test", formula="percent(A, B)")
         context = cast(dict[str, ContextValue], {"A": 25, "B": 100})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
@@ -317,9 +291,7 @@ class TestFormulaEvaluation:
         assert result["value"] == 20.0
 
         # Test mean function (should be identical to avg)
-        config = FormulaConfig(
-            id="mean_test", name="mean_test", formula="mean(A, B, C, D)"
-        )
+        config = FormulaConfig(id="mean_test", name="mean_test", formula="mean(A, B, C, D)")
         context = cast(dict[str, ContextValue], {"A": 5, "B": 10, "C": 15, "D": 20})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True

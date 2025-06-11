@@ -1,8 +1,8 @@
 """Test configuration and fixtures for ha-synthetic-sensors."""
 
 import importlib.util
-import sys
 from pathlib import Path
+import sys
 from typing import Any, Optional
 from unittest.mock import MagicMock, Mock
 
@@ -59,9 +59,7 @@ class MockConfigEntryError(Exception):
 class MockState:
     """Mock State object for testing."""
 
-    def __init__(
-        self, entity_id: str, state: str, attributes: Optional[dict[str, Any]] = None
-    ):
+    def __init__(self, entity_id: str, state: str, attributes: Optional[dict[str, Any]] = None):
         self.entity_id = entity_id
         self.state = state
         self.attributes = attributes if attributes is not None else {}
@@ -209,9 +207,7 @@ def mock_hass():
 def mock_state():
     """Factory for creating mock state objects."""
 
-    def _create_state(
-        entity_id: str, state: str, attributes: Optional[dict[str, Any]] = None
-    ):
+    def _create_state(entity_id: str, state: str, attributes: Optional[dict[str, Any]] = None):
         return MockState(entity_id, state, attributes if attributes is not None else {})
 
     return _create_state

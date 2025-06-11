@@ -7,15 +7,15 @@ for YAML-based synthetic sensor configuration.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 from typing import Any, TypeAlias, TypedDict, Union
 
-import yaml  # type: ignore[import-untyped]
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
+import yaml
 
 from .schema_validator import validate_yaml_config
 
@@ -25,12 +25,8 @@ _LOGGER = logging.getLogger(__name__)
 AttributeValue = Union[str, float, int, bool, list[str], dict[str, Any]]
 
 # Type aliases for Home Assistant constants - use the actual enum types
-DeviceClassType: TypeAlias = (
-    SensorDeviceClass | str
-)  # str for YAML parsing, enum for runtime
-StateClassType: TypeAlias = (
-    SensorStateClass | str
-)  # str for YAML parsing, enum for runtime
+DeviceClassType: TypeAlias = SensorDeviceClass | str  # str for YAML parsing, enum for runtime
+StateClassType: TypeAlias = SensorStateClass | str  # str for YAML parsing, enum for runtime
 
 
 # TypedDicts for v2.0 YAML config structures
@@ -80,7 +76,7 @@ class FormulaConfig:
     attributes: dict[str, AttributeValue] = field(default_factory=dict)
     dependencies: set[str] = field(default_factory=set)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""
         if not self.dependencies:
             self.dependencies = self._extract_dependencies()
@@ -181,9 +177,7 @@ class Config:
 class ConfigManager:
     """Manages loading, validation, and access to synthetic sensor configurations."""
 
-    def __init__(
-        self, hass: HomeAssistant, config_path: str | Path | None = None
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, config_path: str | Path | None = None) -> None:
         """Initialize the configuration manager.
 
         Args:
@@ -233,9 +227,7 @@ class ConfigManager:
 
             # Log warnings
             for warning in schema_result["warnings"]:
-                self._logger.warning(
-                    "Config warning at %s: %s", warning.path, warning.message
-                )
+                self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
                 if warning.suggested_fix:
                     self._logger.warning("Suggested fix: %s", warning.suggested_fix)
 
@@ -248,10 +240,7 @@ class ConfigManager:
                         msg += f" (Suggested fix: {error.suggested_fix})"
                     error_messages.append(msg)
 
-                error_msg = (
-                    f"Configuration schema validation failed: "
-                    f"{'; '.join(error_messages)}"
-                )
+                error_msg = f"Configuration schema validation failed: " f"{'; '.join(error_messages)}"
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
 
@@ -299,9 +288,7 @@ class ConfigManager:
 
         return config
 
-    def _parse_sensor_config(
-        self, sensor_key: str, sensor_data: SensorConfigDict
-    ) -> SensorConfig:
+    def _parse_sensor_config(self, sensor_key: str, sensor_data: SensorConfigDict) -> SensorConfig:
         """Parse sensor configuration from v2.0 dict format.
 
         Args:
@@ -327,16 +314,12 @@ class ConfigManager:
         # Parse calculated attributes if present
         attributes_data = sensor_data.get("attributes", {})
         for attr_name, attr_config in attributes_data.items():
-            attr_formula = self._parse_attribute_formula(
-                sensor_key, attr_name, attr_config, sensor_data
-            )
+            attr_formula = self._parse_attribute_formula(sensor_key, attr_name, attr_config, sensor_data)
             sensor.formulas.append(attr_formula)
 
         return sensor
 
-    def _parse_single_formula(
-        self, sensor_key: str, sensor_data: SensorConfigDict
-    ) -> FormulaConfig:
+    def _parse_single_formula(self, sensor_key: str, sensor_data: SensorConfigDict) -> FormulaConfig:
         """Parse a single formula sensor configuration (v2.0 format).
 
         Args:
@@ -348,9 +331,7 @@ class ConfigManager:
         """
         formula_str = sensor_data.get("formula")
         if not formula_str:
-            raise ValueError(
-                f"Single formula sensor '{sensor_key}' must have 'formula' field"
-            )
+            raise ValueError(f"Single formula sensor '{sensor_key}' must have 'formula' field")
 
         return FormulaConfig(
             id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
@@ -383,10 +364,7 @@ class ConfigManager:
         """
         attr_formula = attr_config.get("formula")
         if not attr_formula:
-            raise ValueError(
-                f"Attribute '{attr_name}' in sensor '{sensor_key}' must have "
-                f"'formula' field"
-            )
+            raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have " f"'formula' field")
 
         return FormulaConfig(
             id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
@@ -640,8 +618,7 @@ class ConfigManager:
             self._config = Config()
 
         if "variables" not in self._config.global_settings:
-            # Variables is a special case - it's a nested dict[str, str]
-            self._config.global_settings["variables"] = dict()  # type: ignore[assignment]
+            self._config.global_settings["variables"] = {}
 
         variables = self._config.global_settings["variables"]
         if isinstance(variables, dict):

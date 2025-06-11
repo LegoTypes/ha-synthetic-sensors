@@ -5,8 +5,8 @@ types of synthetic sensor entities with proper unique ID generation
 and entity descriptions.
 """
 
-import logging
 from dataclasses import dataclass
+import logging
 from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
@@ -124,24 +124,16 @@ class EntityFactory:
             name = unique_id
 
         # Extract entity metadata from formula config (v1.0) or sensor config (v2.0)
-        icon_val = (
-            formula_config.get("icon") if formula_config else None
-        ) or sensor_config.get("icon")
+        icon_val = (formula_config.get("icon") if formula_config else None) or sensor_config.get("icon")
         icon = str(icon_val) if icon_val else None
 
-        device_class_val = (
-            formula_config.get("device_class") if formula_config else None
-        ) or sensor_config.get("device_class")
+        device_class_val = (formula_config.get("device_class") if formula_config else None) or sensor_config.get("device_class")
         device_class = str(device_class_val) if device_class_val else None
 
-        unit_val = (
-            formula_config.get("unit_of_measurement") if formula_config else None
-        ) or sensor_config.get("unit_of_measurement")
+        unit_val = (formula_config.get("unit_of_measurement") if formula_config else None) or sensor_config.get("unit_of_measurement")
         unit_of_measurement = str(unit_val) if unit_val else None
 
-        state_class_val = (
-            formula_config.get("state_class") if formula_config else None
-        ) or sensor_config.get("state_class")
+        state_class_val = (formula_config.get("state_class") if formula_config else None) or sensor_config.get("state_class")
         state_class = str(state_class_val) if state_class_val else None
 
         return EntityDescription(
@@ -154,9 +146,7 @@ class EntityFactory:
             state_class=state_class,
         )
 
-    def create_sensor_entity(
-        self, sensor_config: SensorConfigDict
-    ) -> EntityCreationResult:
+    def create_sensor_entity(self, sensor_config: SensorConfigDict) -> EntityCreationResult:
         """Create a sensor entity from configuration.
 
         This is a factory method that would create the actual sensor entity object.
@@ -183,9 +173,7 @@ class EntityFactory:
         except Exception as e:
             return {"success": False, "entity": None, "errors": [str(e)]}
 
-    def validate_entity_configuration(
-        self, sensor_config: SensorConfigDict
-    ) -> ValidationResult:
+    def validate_entity_configuration(self, sensor_config: SensorConfigDict) -> ValidationResult:
         """Validate entity configuration for completeness and correctness.
 
         Args:

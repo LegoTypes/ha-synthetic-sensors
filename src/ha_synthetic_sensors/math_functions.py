@@ -6,8 +6,8 @@ that can be used in formula evaluation, making them easily testable and maintain
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable
+import math
 from typing import Any, Callable, Union
 
 # Type alias for numeric values (excluding complex since it doesn't work with float())
@@ -70,7 +70,7 @@ class MathFunctions:
         return (part / whole) * 100 if whole != 0 else 0
 
     @staticmethod
-    def avg(*values: NumericValue) -> float:
+    def avg(*values: Any) -> float:
         """Calculate the average (mean) of values.
 
         Args:
@@ -83,12 +83,8 @@ class MathFunctions:
             return 0.0
 
         # Handle case where a single iterable is passed
-        if (
-            len(values) == 1
-            and hasattr(values[0], "__iter__")
-            and not isinstance(values[0], str)
-        ):
-            values = tuple(values[0])  # type: ignore[arg-type]
+        if len(values) == 1 and hasattr(values[0], "__iter__") and not isinstance(values[0], str):
+            values = tuple(values[0])
 
         if not values:
             return 0.0
@@ -96,14 +92,12 @@ class MathFunctions:
         return sum(float(v) for v in values) / len(values)
 
     @staticmethod
-    def mean(*values: NumericValue) -> float:
+    def mean(*values: Any) -> float:
         """Alias for avg function."""
         return MathFunctions.avg(*values)
 
     @staticmethod
-    def safe_divide(
-        numerator: float, denominator: float, fallback: float = 0.0
-    ) -> float:
+    def safe_divide(numerator: float, denominator: float, fallback: float = 0.0) -> float:
         """Safely divide two numbers, returning fallback if denominator is zero.
 
         Args:

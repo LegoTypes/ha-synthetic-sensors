@@ -27,10 +27,10 @@ __all__ = [
     "SensorManager",
     "ServiceLayer",
     "SyntheticSensorsIntegration",
+    "async_reload_integration",
     "async_setup_integration",
     "async_unload_integration",
-    "async_reload_integration",
+    "get_example_config",
     "get_integration",
     "validate_yaml_content",
-    "get_example_config",
 ]

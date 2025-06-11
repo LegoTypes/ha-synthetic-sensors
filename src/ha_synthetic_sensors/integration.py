@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -77,7 +77,7 @@ class IntegrationCleanupResult(TypedDict):
 class SyntheticSensorsIntegration:
     """Main integration class for synthetic sensors."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry[Any]):
         """Initialize the synthetic sensors integration."""
         self._hass = hass
         self._config_entry = config_entry
@@ -98,9 +98,7 @@ class SyntheticSensorsIntegration:
             _LOGGER.info("Setting up synthetic sensor integration")
 
             # Initialize sensor manager
-            self._sensor_manager = SensorManager(
-                self._hass, self._name_resolver, add_entities_callback
-            )
+            self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback)
 
             # Initialize enhanced evaluator
             from .evaluator import Evaluator
@@ -178,9 +176,7 @@ class SyntheticSensorsIntegration:
         return {
             "initialized": self._initialized,
             "has_config_file": self._auto_config_path is not None,
-            "config_file_path": (
-                str(self._auto_config_path) if self._auto_config_path else None
-            ),
+            "config_file_path": (str(self._auto_config_path) if self._auto_config_path else None),
             "sensors_count": sensors_count,
             "services_registered": self._service_manager is not None,
             "last_error": None,  # Could be enhanced to track last error
@@ -201,17 +197,11 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.info(
-                f"Successfully loaded synthetic sensors configuration from "
-                f"{config_path}"
-            )
+            _LOGGER.info(f"Successfully loaded synthetic sensors configuration from " f"{config_path}")
             return True
 
         except Exception as err:
-            _LOGGER.error(
-                f"Failed to load synthetic sensors configuration from "
-                f"{config_path}: {err}"
-            )
+            _LOGGER.error(f"Failed to load synthetic sensors configuration from " f"{config_path}: {err}")
             return False
 
     async def load_configuration_content(self, yaml_content: str) -> bool:
@@ -229,16 +219,11 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.info(
-                "Successfully loaded synthetic sensors configuration from "
-                "provided content"
-            )
+            _LOGGER.info("Successfully loaded synthetic sensors configuration from " "provided content")
             return True
 
         except Exception as err:
-            _LOGGER.error(
-                f"Failed to load synthetic sensors configuration from content: {err}"
-            )
+            _LOGGER.error(f"Failed to load synthetic sensors configuration from content: {err}")
             return False
 
     async def _check_auto_configuration(self) -> None:
@@ -262,9 +247,7 @@ class SyntheticSensorsIntegration:
                     _LOGGER.info(f"Successfully loaded auto-configuration from {path}")
                     break
                 except Exception as err:
-                    _LOGGER.warning(
-                        f"Failed to load auto-configuration from {path}: {err}"
-                    )
+                    _LOGGER.warning(f"Failed to load auto-configuration from {path}: {err}")
                     continue
         else:
             _LOGGER.debug("No auto-configuration file found")
@@ -327,16 +310,14 @@ _integrations: dict[str, SyntheticSensorsIntegration] = {}
 
 async def async_setup_integration(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: ConfigEntry[Any],
     add_entities_callback: AddEntitiesCallback,
 ) -> bool:
     """Set up synthetic sensors integration for a config entry."""
     entry_id = config_entry.entry_id
 
     if entry_id in _integrations:
-        _LOGGER.warning(
-            f"Synthetic sensors integration already exists for entry {entry_id}"
-        )
+        _LOGGER.warning(f"Synthetic sensors integration already exists for entry {entry_id}")
         return True
 
     integration = SyntheticSensorsIntegration(hass, config_entry)
@@ -348,7 +329,7 @@ async def async_setup_integration(
     return success
 
 
-async def async_unload_integration(config_entry: ConfigEntry) -> bool:
+async def async_unload_integration(config_entry: ConfigEntry[Any]) -> bool:
     """Unload synthetic sensors integration for a config entry."""
     entry_id = config_entry.entry_id
 
@@ -364,22 +345,18 @@ async def async_unload_integration(config_entry: ConfigEntry) -> bool:
     return success
 
 
-async def async_reload_integration(
-    config_entry: ConfigEntry, add_entities_callback: AddEntitiesCallback
-) -> bool:
+async def async_reload_integration(hass: HomeAssistant, config_entry: ConfigEntry[Any], add_entities_callback: AddEntitiesCallback) -> bool:
     """Reload synthetic sensors integration for a config entry."""
     entry_id = config_entry.entry_id
 
     if entry_id not in _integrations:
-        return await async_setup_integration(
-            config_entry.hass, config_entry, add_entities_callback
-        )
+        return await async_setup_integration(hass, config_entry, add_entities_callback)
 
     integration = _integrations[entry_id]
     return await integration.async_reload(add_entities_callback)
 
 
-def get_integration(config_entry: ConfigEntry) -> SyntheticSensorsIntegration | None:
+def get_integration(config_entry: ConfigEntry[Any]) -> SyntheticSensorsIntegration | None:
     """Get the synthetic sensors integration instance for a config entry."""
     return _integrations.get(config_entry.entry_id)
 
@@ -390,9 +367,7 @@ def validate_yaml_content(yaml_content: str) -> ConfigValidationResult:
     try:
         # Create a temporary manager for validation
         # Note: This is for validation only, not for actual use
-        temp_hass = type(
-            "TempHass", (), {"config": type("Config", (), {"config_dir": "."})()}
-        )()
+        temp_hass = type("TempHass", (), {"config": type("Config", (), {"config_dir": "."})()})()
         manager = ConfigManager(temp_hass)
 
         config = manager.load_from_yaml(yaml_content)
@@ -400,9 +375,7 @@ def validate_yaml_content(yaml_content: str) -> ConfigValidationResult:
 
         # Count sensors and formulas
         sensors_count = len(config.sensors) if config else 0
-        formulas_count = (
-            sum(len(sensor.formulas) for sensor in config.sensors) if config else 0
-        )
+        formulas_count = sum(len(sensor.formulas) for sensor in config.sensors) if config else 0
 
         return {
             "is_valid": len(errors) == 0,

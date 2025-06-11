@@ -362,37 +362,77 @@ The implementation uses **simpleeval** for safe mathematical expression evaluati
 - **Flexibility**: Supports custom functions and variables
 - **Maintenance**: Actively maintained modern Python library
 
-### Supported Operations
+### State Class and Device Class Validation
+
+The schema validator now includes intelligent validation of Home Assistant sensor attributes to prevent runtime errors and ensure optimal sensor behavior:
+
+#### HA Standards Compliance
+
+**State Class Validation**: Uses Home Assistant's official `DEVICE_CLASS_STATE_CLASSES` mapping to validate compatible combinations:
 
 ```python
-# Basic arithmetic with ID-based variable references
-{
-    "unique_id": "solar_analytics",
-    "formulas": [
-        {
-            "id": "solar_sold",
-            "formula": "abs(solar_power)",                           # Absolute value
-            "variables": {"solar_power": "sensor.solar_inverter_power"}
-        },
-        {
-            "id": "circuit_total",
-            "formula": "circuit_1_power + circuit_2_power",          # Addition
-            "variables": {
-                "circuit_1_power": "sensor.circuit_1",
-                "circuit_2_power": "sensor.circuit_2"
-            }
-        },
-        {
-            "id": "hvac_efficiency",
-            "formula": "max(circuit_1_power, circuit_2_power)",      # Functions
-            "variables": {
-                "circuit_1_power": "sensor.heating",
-                "circuit_2_power": "sensor.cooling"
-            }
-        }
-    ]
+# Examples of HA-validated combinations
+DEVICE_CLASS_STATE_CLASSES = {
+    SensorDeviceClass.ENERGY: {SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING},
+    SensorDeviceClass.POWER: {SensorStateClass.MEASUREMENT},
+    SensorDeviceClass.BATTERY: {SensorStateClass.MEASUREMENT},
+    SensorDeviceClass.GAS: {SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING},
 }
 ```
+
+**Validation Behavior**:
+- **Warnings**: When device_class + state_class combinations don't match HA recommendations
+- **Guidance**: Suggests appropriate state_class values for each device_class
+- **Integration-Friendly**: Allows flexibility for specialized use cases
+
+#### State Class Constraints
+
+**Understanding State Class Behavior**:
+- `measurement`: Values can increase/decrease freely (power, temperature, battery)
+- `total`: Cumulative values that can reset to zero (monthly energy usage)
+- `total_increasing`: Strictly increasing values (lifetime energy production)
+
+**Validation Examples**:
+
+```yaml
+# ✅ GOOD: Power sensors with measurement state class
+sensors:
+  solar_power:
+    formula: "abs(solar_inverter_power)"
+    device_class: "power"      # Typically measurement
+    state_class: "measurement"  # Correct for power readings
+
+# ⚠️ WARNING: Battery with total_increasing (will cause HA errors)
+sensors:
+  battery_level:
+    formula: "state('sensor.phone_battery')"
+    device_class: "battery"         # Battery levels go up and down
+    state_class: "total_increasing"  # This will fail in HA!
+    # Validator suggests: "measurement"
+
+# ✅ GOOD: Energy sensor with appropriate state class
+sensors:
+  total_energy_consumed:
+    formula: "energy_meter_reading"
+    device_class: "energy"
+    state_class: "total_increasing"  # Perfect for cumulative energy
+```
+
+#### Integration Context Awareness
+
+**Domain-Specific Intelligence**: Different integrations have different patterns:
+
+- **Span Integration**: Automatically creates power → energy sensor pairs, so users don't need to worry about energy state classes
+- **Generic Usage**: Users might not know whether they want cumulative vs instantaneous sensors
+- **Blood Glucose/Temperature**: No energy equivalents, so cumulative state classes make no sense
+
+**Design Philosophy**:
+1. **Prevent HA Runtime Errors**: Validate against official HA compatibility matrix
+2. **Guide Users**: Suggest appropriate alternatives without being overly restrictive
+3. **Integration Flexibility**: Allow specialized use cases while warning about potential issues
+4. **Context Matters**: Let integrations (like Span) handle domain-specific sensor creation patterns
+
+This validation ensures synthetic sensors integrate seamlessly with Home Assistant's statistics, long-term storage, and energy dashboard while providing helpful guidance for optimal sensor configuration.
 
 ## Service Interface Details
 

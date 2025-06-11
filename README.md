@@ -47,7 +47,7 @@ async def async_setup_entry(
 
 ## YAML configuration
 
-### Simple sensors (flattened syntax)
+### Simple calculated sensors
 
 ```yaml
 version: "1.0"
@@ -72,6 +72,7 @@ sensors:
       grid_power: "sensor.span_panel_current_power"
     unit_of_measurement: "W"
     device_class: "power"
+    state_class: "measurement"
 ```
 
 ### Rich sensors with calculated attributes
@@ -100,15 +101,16 @@ sensors:
       electricity_rate: "input_number.electricity_rate_cents_kwh"
     unit_of_measurement: "¢/h"
     device_class: "monetary"
+    state_class: "measurement"
 ```
 
 **How attributes work:**
+
 - Main sensor state is calculated first using the `formula`
 - Attributes are calculated second and have access to the `state` variable
 - `state` always refers to the fresh main sensor calculation
 - Attributes can also reference other entities normally (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
-```
 
 ## Variable mapping
 

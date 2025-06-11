@@ -4,14 +4,13 @@ This module focuses on testing the missing lines and edge cases
 that are not covered by the existing test_config_manager.py.
 """
 
-import pprint
-import tempfile
 from pathlib import Path
+import tempfile
 from unittest.mock import MagicMock, patch
 
+from homeassistant.exceptions import ConfigEntryError
 import pytest
 import yaml
-from homeassistant.exceptions import ConfigEntryError
 
 from ha_synthetic_sensors.config_manager import (
     Config,
@@ -45,12 +44,9 @@ class TestConfigManager:
             temp_path = f.name
 
         try:
-            with open(temp_path) as debug_f:
-                print("YAML file contents:")
-                print(debug_f.read())
+            with open(temp_path):
+                pass
             config = manager.load_config(temp_path)
-            print("Parsed config object:")
-            pprint.pprint(config)
             assert config is not None
             assert isinstance(config, Config)
 
@@ -73,7 +69,7 @@ class TestConfigManager:
             temp_path = f.name
 
         try:
-            with pytest.raises(Exception):  # Should raise ConfigEntryError
+            with pytest.raises(ConfigEntryError):
                 manager.load_config(temp_path)
 
         finally:
@@ -124,9 +120,7 @@ class TestConfigManager:
         manager = ConfigManager(mock_hass)
         config = manager.load_config()  # Load empty config
 
-        formula = FormulaConfig(
-            id="test_formula2", name="test_formula2", formula="C + D"
-        )
+        formula = FormulaConfig(id="test_formula2", name="test_formula2", formula="C + D")
         sensor_config = SensorConfig(
             unique_id="test_sensor",  # REQUIRED: Unique identifier
             name="Test Sensor",  # OPTIONAL: Display name
@@ -154,9 +148,7 @@ class TestConfigManager:
         config = manager.load_config()  # Load empty config
 
         # Add initial sensor
-        formula = FormulaConfig(
-            id="test_formula3", name="test_formula3", formula="E + F"
-        )
+        formula = FormulaConfig(id="test_formula3", name="test_formula3", formula="E + F")
         sensor_config = SensorConfig(
             unique_id="test_sensor",  # REQUIRED: Unique identifier
             name="Test Sensor",  # OPTIONAL: Display name
@@ -175,9 +167,7 @@ class TestConfigManager:
         config = manager.load_config()  # Load empty config
 
         # Add sensor
-        formula = FormulaConfig(
-            id="test_formula4", name="test_formula4", formula="G + H"
-        )
+        formula = FormulaConfig(id="test_formula4", name="test_formula4", formula="G + H")
         sensor_config = SensorConfig(
             unique_id="test_sensor",  # REQUIRED: Unique identifier
             name="Test Sensor",  # OPTIONAL: Display name
@@ -223,9 +213,7 @@ class TestConfigManager:
         config = manager.load_config()  # Load empty config
 
         # Add duplicate sensor unique_ids (should be error)
-        formula = FormulaConfig(
-            id="test_formula5", name="test_formula5", formula="I + J"
-        )
+        formula = FormulaConfig(id="test_formula5", name="test_formula5", formula="I + J")
         sensor_config = SensorConfig(
             unique_id="duplicate_id",  # REQUIRED: Unique identifier
             name="Duplicate Sensor",  # OPTIONAL: Display name
@@ -309,9 +297,7 @@ class TestConfigManagerExtended:
 
         try:
             # Mock schema validation to return warnings
-            with patch(
-                "ha_synthetic_sensors.config_manager.validate_yaml_config"
-            ) as mock_validate:
+            with patch("ha_synthetic_sensors.config_manager.validate_yaml_config") as mock_validate:
                 mock_warning = MagicMock()
                 mock_warning.path = "sensors[0]"
                 mock_warning.message = "Test warning"
@@ -347,9 +333,7 @@ class TestConfigManagerExtended:
 
         try:
             # Mock schema validation to return errors
-            with patch(
-                "ha_synthetic_sensors.config_manager.validate_yaml_config"
-            ) as mock_validate:
+            with patch("ha_synthetic_sensors.config_manager.validate_yaml_config") as mock_validate:
                 mock_error = MagicMock()
                 mock_error.path = "sensors[0]"
                 mock_error.message = "'unique_id' is a required property"
@@ -402,14 +386,9 @@ class TestConfigManagerExtended:
         # Test with permission error
         # ConfigManager returns empty config for missing files
         # So we need to patch Path.exists to return True first
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch(
-                "builtins.open", side_effect=PermissionError("Permission denied")
-            ):
-                with pytest.raises(ConfigEntryError) as exc_info:
-                    config_manager.load_config("/test/path.yaml")
-
-                assert "failed to load configuration" in str(exc_info.value).lower()
+        with patch("pathlib.Path.exists", return_value=True), patch("builtins.open", side_effect=PermissionError("Permission denied")), pytest.raises(ConfigEntryError) as exc_info:
+            config_manager.load_config("/test/path.yaml")
+            assert "failed to load configuration" in str(exc_info.value).lower()
 
     def test_load_config_with_yaml_error(self, config_manager):
         """Test load_config when YAML parsing fails."""
@@ -463,9 +442,7 @@ class TestConfigManagerExtended:
             formula="temp + humidity",
             dependencies={"sensor.temperature", "sensor.humidity"},
         )
-        sensor = SensorConfig(
-            unique_id="test_sensor", name="Test Sensor", formulas=[formula]
-        )
+        sensor = SensorConfig(unique_id="test_sensor", name="Test Sensor", formulas=[formula])
         config.sensors.append(sensor)
         config_manager._config = config
 
@@ -526,12 +503,9 @@ class TestConfigManagerExtended:
     def test_load_from_file_with_error(self, config_manager):
         """Test load_from_file when file operations fail."""
         # ConfigManager returns empty config for missing files, so test permission error
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("builtins.open", side_effect=PermissionError("Access denied")):
-                with pytest.raises(ConfigEntryError) as exc_info:
-                    config_manager.load_from_file("/protected/path.yaml")
-
-                assert "failed to load configuration" in str(exc_info.value).lower()
+        with patch("pathlib.Path.exists", return_value=True), patch("builtins.open", side_effect=PermissionError("Access denied")), pytest.raises(ConfigEntryError) as exc_info:
+            config_manager.load_from_file("/protected/path.yaml")
+            assert "failed to load configuration" in str(exc_info.value).lower()
 
     def test_load_from_yaml_empty_content(self, config_manager):
         """Test load_from_yaml with empty YAML content."""
@@ -885,12 +859,8 @@ class TestConfigValidation:
 
     def test_config_get_all_dependencies(self):
         """Test Config.get_all_dependencies aggregates from all sensors."""
-        formula1 = FormulaConfig(
-            id="f1", name="f1", formula="temp", dependencies={"sensor.temperature"}
-        )
-        formula2 = FormulaConfig(
-            id="f2", name="f2", formula="humidity", dependencies={"sensor.humidity"}
-        )
+        formula1 = FormulaConfig(id="f1", name="f1", formula="temp", dependencies={"sensor.temperature"})
+        formula2 = FormulaConfig(id="f2", name="f2", formula="humidity", dependencies={"sensor.humidity"})
         sensor1 = SensorConfig(unique_id="s1", formulas=[formula1])
         sensor2 = SensorConfig(unique_id="s2", formulas=[formula2])
         config = Config(sensors=[sensor1, sensor2])

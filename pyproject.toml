@@ -27,9 +27,12 @@ pytest-cov = "^6.0.0"
 bandit = "^1.8.0"
 twine = "^6.0.1"
 pre-commit = "^4.0.0"
+black = "^25.1.0"
 ruff = "^0.11.0"
 mypy = "^1.15.0"
 types-PyYAML = "^6.0.0"
+types-jsonschema = "^4.0.0"
+homeassistant-stubs = "*"
 
 [tool.poetry.group.test.dependencies]
 homeassistant = ">=2025.3.0"
@@ -39,7 +42,6 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
-line-length = 88
 exclude = [
     ".*_cache/",
     "dist/",
@@ -48,7 +50,32 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["F", "I", "UP", "E", "W"]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "T20",    # flake8-print
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+]
+
+ignore = [
+    "E501",   # line too long - following Home Assistant's approach
+    # May conflict with the formatter
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+split-on-trailing-comma = false
 
 [tool.mypy]
 exclude = [
@@ -59,16 +86,26 @@ exclude = [
     "venv/",
     ".venv/",
 ]
-ignore_missing_imports = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-check_untyped_defs = false
-disallow_untyped_decorators = false
-warn_return_any = false
-warn_unused_ignores = false
-no_implicit_optional = false
-strict_optional = false
 python_version = "3.13"
+# Strong typing configuration
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+# Allow some flexibility for existing untyped modules
+ignore_missing_imports = false
 
 [tool.coverage.run]
 source = ["src/ha_synthetic_sensors"]
@@ -106,3 +143,6 @@ exclude_lines = [
 
 [tool.bandit]
 exclude_dirs = ["tests"]
+
+[tool.black]
+line-length = 999  # Effectively disable line length restrictions (following HA approach)

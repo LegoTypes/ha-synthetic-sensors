@@ -1,7 +1,7 @@
 """Tests for YAML-based configuration loading and EntityFactory functionality."""
 
-import tempfile
 from pathlib import Path
+import tempfile
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,12 +26,8 @@ class TestYamlConfigurationLoading:
     def mock_name_resolver(self):
         """Create a mock name resolver."""
         name_resolver = MagicMock()
-        name_resolver.resolve_entity_id = MagicMock(
-            return_value="sensor.resolved_entity"
-        )
-        name_resolver.normalize_name = MagicMock(
-            side_effect=lambda x: x.lower().replace(" ", "_")
-        )
+        name_resolver.resolve_entity_id = MagicMock(return_value="sensor.resolved_entity")
+        name_resolver.normalize_name = MagicMock(side_effect=lambda x: x.lower().replace(" ", "_"))
         return name_resolver
 
     def test_load_solar_analytics_yaml(self, solar_analytics_yaml):
@@ -52,9 +48,7 @@ class TestYamlConfigurationLoading:
         assert first_sensor["name"] == "Solar Sold (Positive Value)"
         assert first_sensor["formula"] == "abs(min(grid_power, 0))"
         assert "grid_power" in first_sensor["variables"]
-        assert (
-            first_sensor["variables"]["grid_power"] == "sensor.span_panel_current_power"
-        )
+        assert first_sensor["variables"]["grid_power"] == "sensor.span_panel_current_power"
 
     def test_load_hierarchical_calculations_yaml(self, hierarchical_calculations_yaml):
         """Test loading hierarchical calculations YAML configuration."""
@@ -158,12 +152,8 @@ class TestEntityFactory:
     def mock_name_resolver(self):
         """Create a mock name resolver."""
         name_resolver = MagicMock()
-        name_resolver.resolve_entity_id = MagicMock(
-            return_value="sensor.resolved_entity"
-        )
-        name_resolver.normalize_name = MagicMock(
-            side_effect=lambda x: x.lower().replace(" ", "_")
-        )
+        name_resolver.resolve_entity_id = MagicMock(return_value="sensor.resolved_entity")
+        name_resolver.normalize_name = MagicMock(side_effect=lambda x: x.lower().replace(" ", "_"))
         return name_resolver
 
     @pytest.fixture
@@ -184,9 +174,7 @@ class TestEntityFactory:
         assert unique_id == "syn2_solar_sold_positive"
 
         # Test sensor with formula ID
-        unique_id = entity_factory.generate_unique_id(
-            "solar_sold_positive", "solar_sold"
-        )
+        unique_id = entity_factory.generate_unique_id("solar_sold_positive", "solar_sold")
         assert unique_id == "syn2_solar_sold_positive_solar_sold"
 
     def test_generate_entity_id(self, entity_factory):
@@ -196,9 +184,7 @@ class TestEntityFactory:
         assert entity_id == "sensor.syn2_solar_sold_positive"
 
         # Test sensor with formula
-        entity_id = entity_factory.generate_entity_id(
-            "solar_sold_positive", "solar_sold"
-        )
+        entity_id = entity_factory.generate_entity_id("solar_sold_positive", "solar_sold")
         assert entity_id == "sensor.syn2_solar_sold_positive_solar_sold"
 
     def test_create_entity_description(self, entity_factory):
@@ -214,9 +200,7 @@ class TestEntityFactory:
             "icon": "mdi:flash",
         }
 
-        description = entity_factory.create_entity_description(
-            sensor_config, formula_config
-        )
+        description = entity_factory.create_entity_description(sensor_config, formula_config)
 
         assert isinstance(description, EntityDescription)
         assert description.unique_id == "syn2_test_sensor_test_formula"
@@ -234,20 +218,14 @@ class TestEntityFactory:
 
         formula_config = {"id": "test_formula", "unit_of_measurement": "W"}
 
-        description = entity_factory.create_entity_description(
-            sensor_config, formula_config
-        )
+        description = entity_factory.create_entity_description(sensor_config, formula_config)
         assert description.name == "Test Sensor"  # Falls back to sensor name
 
         # Test with unique_id only (no names)
         sensor_config = {"unique_id": "test_sensor"}
 
-        description = entity_factory.create_entity_description(
-            sensor_config, formula_config
-        )
-        assert (
-            description.name == "syn2_test_sensor_test_formula"
-        )  # Falls back to unique_id
+        description = entity_factory.create_entity_description(sensor_config, formula_config)
+        assert description.name == "syn2_test_sensor_test_formula"  # Falls back to unique_id
 
     def test_create_sensor_entity(self, entity_factory):
         """Test creating sensor entities."""
@@ -288,18 +266,14 @@ class TestEntityFactory:
         assert any("unique_id" in error for error in result["errors"])
         assert any("formula" in error for error in result["errors"])
 
-    def test_entity_factory_with_yaml_config(
-        self, entity_factory, solar_analytics_yaml
-    ):
+    def test_entity_factory_with_yaml_config(self, entity_factory, solar_analytics_yaml):
         """Test EntityFactory with real YAML configuration."""
         config = solar_analytics_yaml
 
         # Iterate over sensors dict (v2.0 format)
         for sensor_key, sensor_config in config["sensors"].items():
             # Test entity description creation (no formula config since it's inline)
-            description = entity_factory.create_entity_description(
-                {"unique_id": sensor_key, **sensor_config}
-            )
+            description = entity_factory.create_entity_description({"unique_id": sensor_key, **sensor_config})
 
             # Verify the generated IDs follow the simplified v2.0 pattern
             expected_unique_id = f"syn2_{sensor_key}"
@@ -310,9 +284,6 @@ class TestEntityFactory:
 
             # Verify metadata is preserved
             if sensor_config.get("unit_of_measurement"):
-                assert (
-                    description.unit_of_measurement
-                    == sensor_config["unit_of_measurement"]
-                )
+                assert description.unit_of_measurement == sensor_config["unit_of_measurement"]
             if sensor_config.get("device_class"):
                 assert description.device_class == sensor_config["device_class"]

@@ -16,7 +16,7 @@ from .math_functions import MathFunctions
 class DependencyParser:
     """High-performance parser for extracting formula dependencies."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the parser with compiled regex patterns."""
         # Compile patterns once for better performance
         self._entity_patterns: list[Pattern[str]] = [
@@ -26,14 +26,10 @@ class DependencyParser:
         ]
 
         # Pattern for states.domain.entity format
-        self._states_pattern = re.compile(
-            r"states\.([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)"
-        )
+        self._states_pattern = re.compile(r"states\.([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)")
 
         # Pattern for direct entity ID references (domain.entity_name)
-        self._direct_entity_pattern = re.compile(
-            r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)\b"
-        )
+        self._direct_entity_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)\b")
 
         # Pattern for variable names (after entity IDs are extracted)
         self._variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
@@ -72,13 +68,7 @@ class DependencyParser:
 
         variable_matches = self._variable_pattern.findall(formula)
         for var in variable_matches:
-            if (
-                var not in self._excluded_terms
-                and not keyword.iskeyword(var)
-                and var not in all_entity_ids
-                and var not in entity_id_parts  # Skip parts of entity IDs
-                and "." not in var  # Skip parts of entity IDs
-            ):
+            if var not in self._excluded_terms and not keyword.iskeyword(var) and var not in all_entity_ids and var not in entity_id_parts and "." not in var:  # Skip parts of entity IDs  # Skip parts of entity IDs
                 dependencies.add(var)
 
         return dependencies
@@ -128,13 +118,7 @@ class DependencyParser:
         variable_matches = self._variable_pattern.findall(formula)
 
         for var in variable_matches:
-            if (
-                var not in self._excluded_terms
-                and not keyword.iskeyword(var)
-                and var not in entities
-                and var not in entity_id_parts  # Exclude parts of entity IDs
-                and "." not in var  # Skip dotted references
-            ):
+            if var not in self._excluded_terms and not keyword.iskeyword(var) and var not in entities and var not in entity_id_parts and "." not in var:  # Exclude parts of entity IDs  # Skip dotted references
                 variables.add(var)
 
         return variables
@@ -197,10 +181,7 @@ class DependencyParser:
             return True
 
         # Check direct entity ID references
-        if self._direct_entity_pattern.search(formula):
-            return True
-
-        return False
+        return bool(self._direct_entity_pattern.search(formula))
 
     def _build_excluded_terms(self) -> set[str]:
         """Build set of terms to exclude from variable extraction.

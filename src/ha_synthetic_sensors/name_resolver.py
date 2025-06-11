@@ -18,7 +18,7 @@ try:
     from simpleeval import NameNotDefined  # type: ignore[import-untyped]
 except ImportError:
     # Create a dummy exception class if simpleeval is not available
-    class NameNotDefined(Exception):  # type: ignore[misc,no-redef]
+    class NameNotDefined(Exception):  # type: ignore[no-redef]
         """Dummy exception for when simpleeval is not available."""
 
 
@@ -153,9 +153,7 @@ class NameResolver:
                 entity_id,
                 variable_name,
             )
-            raise HomeAssistantError(
-                f"Entity '{entity_id}' for variable '{variable_name}' not found"
-            )
+            raise HomeAssistantError(f"Entity '{entity_id}' for variable '{variable_name}' not found")
 
         # Handle unavailable/unknown states
         if entity_state.state in ("unavailable", "unknown", "none", None):
@@ -165,9 +163,7 @@ class NameResolver:
                 variable_name,
                 entity_state.state,
             )
-            raise HomeAssistantError(
-                f"Entity '{entity_id}' for variable '{variable_name}' is unavailable"
-            )
+            raise HomeAssistantError(f"Entity '{entity_id}' for variable '{variable_name}' is unavailable")
 
         # Convert state to numeric value
         try:
@@ -183,17 +179,13 @@ class NameResolver:
 
         except (ValueError, TypeError) as exc:
             self._logger.error(
-                "Cannot convert entity '%s' state '%s' to number "
-                "for variable '%s': %s",
+                "Cannot convert entity '%s' state '%s' to number for variable '%s': %s",
                 entity_id,
                 entity_state.state,
                 variable_name,
                 exc,
             )
-            raise HomeAssistantError(
-                f"Entity '{entity_id}' state '{entity_state.state}' "
-                f"cannot be converted to number"
-            ) from exc
+            raise HomeAssistantError(f"Entity '{entity_id}' state '{entity_state.state}' " f"cannot be converted to number") from exc
 
     def get_static_names(self) -> dict[str, float]:
         """Get all current variable values as a static dictionary.
@@ -209,7 +201,7 @@ class NameResolver:
         """
         static_names = {}
 
-        for variable_name, entity_id in self._variables.items():
+        for variable_name, _entity_id in self._variables.items():
             # Create a mock node for the resolve_name method
             class MockNode:
                 def __init__(self, name: str):
@@ -218,9 +210,7 @@ class NameResolver:
             try:
                 static_names[variable_name] = self.resolve_name(MockNode(variable_name))
             except (NameNotDefined, HomeAssistantError) as exc:
-                self._logger.error(
-                    "Failed to resolve variable '%s': %s", variable_name, exc
-                )
+                self._logger.error("Failed to resolve variable '%s': %s", variable_name, exc)
                 raise
 
         return static_names
@@ -238,9 +228,7 @@ class NameResolver:
         for var_name, entity_id in self._variables.items():
             state = self._hass.states.get(entity_id)
             if not state:
-                errors.append(
-                    f"Entity '{entity_id}' for variable '{var_name}' not found"
-                )
+                errors.append(f"Entity '{entity_id}' for variable '{var_name}' not found")
                 missing_entities.append(entity_id)
             else:
                 valid_variables.append(var_name)
@@ -389,10 +377,7 @@ class NameResolver:
         # Basic format check: alphanumeric and underscores
         if not re.match(r"^[a-zA-Z0-9_]+$", domain):
             return False
-        if not re.match(r"^[a-zA-Z0-9_]+$", entity):
-            return False
-
-        return True
+        return bool(re.match(r"^[a-zA-Z0-9_]+$", entity))
 
 
 class FormulaEvaluator:
@@ -448,9 +433,7 @@ class FormulaEvaluator:
             # Use the name resolver function for dynamic entity state lookup
             result = simple_eval(self._formula, names=self._name_resolver.resolve_name)
 
-            self._logger.debug(
-                "Formula evaluation successful: '%s' = %s", self._formula, result
-            )
+            self._logger.debug("Formula evaluation successful: '%s' = %s", self._formula, result)
 
             return float(result)
 
@@ -493,7 +476,7 @@ class FormulaEvaluator:
             from simpleeval import simple_eval
 
             # Create dummy values for syntax testing
-            dummy_names = {var: 1.0 for var in self._variables.keys()}
+            dummy_names = dict.fromkeys(self._variables.keys(), 1.0)
             simple_eval(self._formula, names=dummy_names)
 
         except ImportError:

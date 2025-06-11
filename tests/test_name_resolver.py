@@ -2,7 +2,9 @@
 
 from unittest.mock import MagicMock
 
+from homeassistant.exceptions import HomeAssistantError
 import pytest
+from simpleeval import NameNotDefined
 
 from ha_synthetic_sensors.name_resolver import NameResolver
 
@@ -99,7 +101,7 @@ class TestNameResolver:
             def __init__(self, name):
                 self.id = name
 
-        with pytest.raises(Exception):  # Should raise NameNotDefined
+        with pytest.raises(NameNotDefined):
             resolver.resolve_name(MockNode("unknown_var"))
 
     def test_convert_state_value(self, mock_hass, sample_variables):
@@ -120,7 +122,7 @@ class TestNameResolver:
 
         # Test unavailable state
         mock_state.state = "unavailable"
-        with pytest.raises(Exception):  # Should raise HomeAssistantError
+        with pytest.raises(HomeAssistantError):
             resolver.resolve_name(MockNode("temp"))
 
     def test_fuzzy_match_entity(self, mock_hass):
@@ -146,18 +148,12 @@ class TestNameResolver:
         resolver = NameResolver(mock_hass, sample_variables)
 
         # Mock existing entities
-        mock_hass.states.get.side_effect = lambda entity_id: (
-            MagicMock(state="42.0")
-            if entity_id in ["sensor.temperature", "sensor.humidity"]
-            else None
-        )
+        mock_hass.states.get.side_effect = lambda entity_id: (MagicMock(state="42.0") if entity_id in ["sensor.temperature", "sensor.humidity"] else None)
 
         validation_result = resolver.validate_variables()
         # Should have error for missing power entity
         assert not validation_result["is_valid"]
-        assert any(
-            "sensor.power_meter" in error for error in validation_result["errors"]
-        )
+        assert any("sensor.power_meter" in error for error in validation_result["errors"])
 
     def test_suggest_mappings(self, mock_hass):
         """Test mapping suggestions functionality."""
@@ -229,10 +225,10 @@ class TestNameResolver:
         assert resolver.resolve_name(MockNode("sensor.solar_power")) == 320.0
 
         # Test error for unknown variable and invalid entity ID
-        with pytest.raises(Exception):  # Should raise NameNotDefined
+        with pytest.raises(NameNotDefined):
             resolver.resolve_name(MockNode("unknown_var"))
 
-        with pytest.raises(Exception):  # Should raise NameNotDefined
+        with pytest.raises(NameNotDefined):
             resolver.resolve_name(MockNode("invalid_entity_id"))
 
     def test_realistic_formula_scenario_mixed_references(self, mock_hass):
@@ -269,9 +265,7 @@ class TestNameResolver:
         hvac_value = resolver.resolve_name(MockNode("hvac"))  # Variable
         lighting_value = resolver.resolve_name(MockNode("lighting"))  # Variable
         appliances_value = resolver.resolve_name(MockNode("sensor.appliances_power"))
-        other_syn2_value = resolver.resolve_name(
-            MockNode("sensor.syn2_other_sensor_formula")
-        )
+        other_syn2_value = resolver.resolve_name(MockNode("sensor.syn2_other_sensor_formula"))
 
         assert hvac_value == 200.0
         assert lighting_value == 85.5

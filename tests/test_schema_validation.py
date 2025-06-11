@@ -103,9 +103,7 @@ class TestSchemaValidation:
                     "formula": "1 + 1",
                     "attributes": {
                         "attr1": {"formula": "2 + 2"},
-                        "attr2": {
-                            "formula": "3 + 3"
-                        },  # Changed to different key to avoid duplication
+                        "attr2": {"formula": "3 + 3"},  # Changed to different key to avoid duplication
                     },
                 }
             },
@@ -201,9 +199,7 @@ class TestSchemaValidation:
         }
 
         result = validate_yaml_config(config_data)
-        assert (
-            result["valid"] is False
-        )  # Empty dict should be invalid (minProperties: 1)
+        assert result["valid"] is False  # Empty dict should be invalid (minProperties: 1)
 
     def test_additional_properties_rejected(self):
         """Test that additional properties are rejected."""
@@ -309,3 +305,114 @@ sensors:
 
         assert result["valid"] is True
         assert len(result["errors"]) == 0
+
+    def test_state_class_device_class_compatibility_warning(self):
+        """Test validation warns about incompatible state_class + device_class combinations."""
+        config_data = {
+            "version": "1.0",
+            "sensors": {
+                "battery_sensor": {
+                    "formula": "battery_level",
+                    "variables": {"battery_level": "sensor.phone_battery"},
+                    "device_class": "battery",
+                    "state_class": "total_increasing",  # Bad: battery levels go up/down
+                    "unit_of_measurement": "%",
+                }
+            },
+        }
+
+        result = validate_yaml_config(config_data)
+        assert result["valid"] is True  # Should be valid but with warnings
+        assert len(result.get("warnings", [])) > 0
+
+        warnings = result["warnings"]
+        warning_messages = [str(w.message) for w in warnings]
+        assert any("total_increasing" in msg and "battery" in msg for msg in warning_messages)
+
+    def test_unit_device_class_compatibility_error(self):
+        """Test validation errors for incompatible unit_of_measurement + device_class."""
+        config_data = {
+            "version": "1.0",
+            "sensors": {
+                "power_sensor": {
+                    "formula": "hvac_power",
+                    "variables": {"hvac_power": "sensor.hvac"},
+                    "device_class": "power",
+                    "unit_of_measurement": "¢",  # Wrong unit for power
+                    "state_class": "measurement",
+                }
+            },
+        }
+
+        result = validate_yaml_config(config_data)
+        assert result["valid"] is False  # Should be invalid due to unit error
+        assert len(result["errors"]) > 0
+
+        errors = result["errors"]
+        error_messages = [str(e.message) for e in errors]
+        assert any("invalid unit" in msg.lower() and "power" in msg for msg in error_messages)
+
+    def test_unit_validation_punting_monetary(self):
+        """Test that unit validation punts on monetary device_class (allows any currency)."""
+        config_data = {
+            "version": "1.0",
+            "sensors": {
+                "cost_sensor": {
+                    "formula": "energy_cost",
+                    "variables": {"energy_cost": "sensor.energy_cost"},
+                    "device_class": "monetary",
+                    "unit_of_measurement": "JPY",  # Should be allowed (currency code)
+                    "state_class": "measurement",
+                }
+            },
+        }
+
+        result = validate_yaml_config(config_data)
+        assert result["valid"] is True  # Should punt and allow currency codes
+        assert len(result["errors"]) == 0
+
+    def test_unit_validation_punting_date(self):
+        """Test that unit validation punts on date device_class (allows ISO8601 formats)."""
+        config_data = {
+            "version": "1.0",
+            "sensors": {
+                "date_sensor": {
+                    "formula": "last_update",
+                    "variables": {"last_update": "sensor.last_update"},
+                    "device_class": "date",
+                    "unit_of_measurement": "2024-01-01",  # Should be allowed (date format)
+                }
+            },
+        }
+
+        result = validate_yaml_config(config_data)
+        assert result["valid"] is True  # Should punt and allow date formats
+        assert len(result["errors"]) == 0
+
+    def test_valid_power_unit_combinations(self):
+        """Test that valid power + unit combinations pass validation."""
+        valid_configs = [
+            ("W", "power"),
+            ("kW", "power"),
+            ("MW", "power"),
+            ("%", "battery"),
+            ("°C", "temperature"),
+        ]
+
+        for unit, device_class in valid_configs:
+            config_data = {
+                "version": "1.0",
+                "sensors": {
+                    "test_sensor": {
+                        "formula": "test_var",
+                        "variables": {"test_var": "sensor.test"},
+                        "device_class": device_class,
+                        "unit_of_measurement": unit,
+                        "state_class": "measurement",
+                    }
+                },
+            }
+
+            result = validate_yaml_config(config_data)
+            assert result["valid"] is True, f"Valid combination {unit} + {device_class} should pass"
+            assert len(result["errors"]) == 0

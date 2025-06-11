@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import hashlib
+import logging
 from typing import TypedDict, Union
 
 _LOGGER = logging.getLogger(__name__)
@@ -158,11 +158,7 @@ class FormulaCache:
         formula_hash = self._hash_formula(formula)
 
         # Remove evaluation results
-        keys_to_remove = [
-            key
-            for key, entry in self._cache.items()
-            if entry["formula_hash"] == formula_hash
-        ]
+        keys_to_remove = [key for key, entry in self._cache.items() if entry["formula_hash"] == formula_hash]
 
         for key in keys_to_remove:
             del self._cache[key]
@@ -188,11 +184,7 @@ class FormulaCache:
         hit_rate = (self._hits / total_requests) if total_requests > 0 else 0.0
 
         now = datetime.now()
-        valid_entries = sum(
-            1
-            for entry in self._cache.values()
-            if not self._is_entry_expired(entry, now)
-        )
+        valid_entries = sum(1 for entry in self._cache.values() if not self._is_entry_expired(entry, now))
 
         return {
             "total_entries": len(self._cache),
@@ -231,9 +223,7 @@ class FormulaCache:
         # Create stable context hash
         context_items = sorted(context.items())
         context_str = "&".join(f"{k}={v}" for k, v in context_items)
-        context_hash = hashlib.md5(
-            context_str.encode(), usedforsecurity=False
-        ).hexdigest()[:8]
+        context_hash = hashlib.md5(context_str.encode(), usedforsecurity=False).hexdigest()[:8]
 
         return f"{base_key}:{context_hash}"
 
@@ -277,11 +267,7 @@ class FormulaCache:
         now = datetime.now()
 
         # First, remove any expired entries
-        expired_keys = [
-            key
-            for key, entry in self._cache.items()
-            if self._is_entry_expired(entry, now)
-        ]
+        expired_keys = [key for key, entry in self._cache.items() if self._is_entry_expired(entry, now)]
 
         for key in expired_keys:
             del self._cache[key]
@@ -290,9 +276,7 @@ class FormulaCache:
         # If still at capacity, remove least recently used
         if len(self._cache) >= self._config.max_entries:
             # Sort by timestamp (oldest first)
-            sorted_entries = sorted(
-                self._cache.items(), key=lambda x: x[1]["timestamp"]
-            )
+            sorted_entries = sorted(self._cache.items(), key=lambda x: x[1]["timestamp"])
 
             # Remove the oldest 10% of entries
             num_to_remove = max(1, len(sorted_entries) // 10)

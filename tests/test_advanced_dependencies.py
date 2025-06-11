@@ -1,5 +1,6 @@
 """Tests for advanced dependency resolution and management."""
 
+import contextlib
 from unittest.mock import MagicMock
 
 import pytest
@@ -236,18 +237,14 @@ class TestAdvancedDependencies:
         # Verify validation was performed
         dependency_resolver.validate_dependencies.assert_called_once()
 
-    def test_dependency_change_handling(
-        self, dependency_resolver, sample_sensor_configs
-    ):
+    def test_dependency_change_handling(self, dependency_resolver, sample_sensor_configs):
         """Test handling of dependency changes during runtime."""
         # Initial dependency graph
         dependency_resolver.build_dependency_graph(sample_sensor_configs)
 
         # Modify configurations to change dependencies
         modified_configs = sample_sensor_configs.copy()
-        modified_configs[2]["formulas"][0][
-            "formula"
-        ] = "base_a * 3"  # Remove dependency on base_b
+        modified_configs[2]["formulas"][0]["formula"] = "base_a * 3"  # Remove dependency on base_b
 
         # Test updated dependency graph
         dependency_resolver.build_dependency_graph(modified_configs)
@@ -276,15 +273,11 @@ class TestAdvancedDependencies:
             },
             {
                 "name": "Composite Result",
-                "formulas": [
-                    {"name": "composite", "formula": "agg_a + agg_b + input1"}
-                ],
+                "formulas": [{"name": "composite", "formula": "agg_a + agg_b + input1"}],
             },
             {
                 "name": "Final Analysis",
-                "formulas": [
-                    {"name": "final", "formula": "composite / (agg_a + agg_b)"}
-                ],
+                "formulas": [{"name": "final", "formula": "composite / (agg_a + agg_b)"}],
             },
         ]
 
@@ -345,9 +338,7 @@ class TestAdvancedDependencies:
         # For real implementation, would verify self-reference is detected
         # as circular dependency
 
-    def test_dependency_graph_construction(
-        self, dependency_resolver, sample_sensor_configs
-    ):
+    def test_dependency_graph_construction(self, dependency_resolver, sample_sensor_configs):
         """Test construction of dependency graph data structure."""
         # Test graph construction
         dependency_resolver.build_dependency_graph(sample_sensor_configs)
@@ -405,12 +396,9 @@ class TestAdvancedDependencies:
         ]
 
         for config in edge_case_configs:
-            try:
+            with contextlib.suppress(Exception):
                 dependency_resolver.validate_dependencies(config)
                 # Should handle edge cases gracefully
-            except Exception:
-                # Expected for some edge cases
-                pass
 
     def test_performance_with_large_dependency_graphs(self, dependency_resolver):
         """Test performance with large numbers of sensors and dependencies."""
@@ -430,7 +418,7 @@ class TestAdvancedDependencies:
         for i in range(20):
             deps = f"base_{i % 10}"
             if i > 0:
-                deps += f" + base_{(i-1) % 10}"
+                deps += f" + base_{(i - 1) % 10}"
             large_config.append(
                 {
                     "name": f"Derived Sensor {i}",

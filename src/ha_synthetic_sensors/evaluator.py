@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import logging
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import logging
+import re
 from typing import Any, Callable, NotRequired, TypedDict, Union
 
 from homeassistant.core import HomeAssistant
-from simpleeval import SimpleEval
+from simpleeval import SimpleEval  # type: ignore[import-untyped]
 
 from .cache import CacheConfig, FormulaCache
 from .config_manager import FormulaConfig
@@ -78,9 +78,7 @@ class FormulaEvaluator(ABC):
     """Abstract base class for formula evaluators."""
 
     @abstractmethod
-    def evaluate_formula(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None = None
-    ) -> EvaluationResult:
+    def evaluate_formula(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> EvaluationResult:
         """Evaluate a formula configuration."""
 
     @abstractmethod
@@ -155,9 +153,7 @@ class Evaluator(FormulaEvaluator):
         # Tracks temporary issues like unknown/unavailable entity states.
         self._transitory_error_count: dict[str, int] = {}
 
-    def evaluate_formula(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None = None
-    ) -> EvaluationResult:
+    def evaluate_formula(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling."""
         # Use either name or id as formula identifier
         formula_name = config.name or config.id
@@ -167,17 +163,13 @@ class Evaluator(FormulaEvaluator):
             if self._should_skip_evaluation(formula_name):
                 return {
                     "success": False,
-                    "error": (
-                        f"Skipping formula '{formula_name}' due to repeated errors"
-                    ),
+                    "error": (f"Skipping formula '{formula_name}' due to repeated errors"),
                     "value": None,
                 }
 
             # Check cache first
             filtered_context = self._filter_context_for_cache(context)
-            cached_result = self._cache.get_result(
-                config.formula, filtered_context, formula_name
-            )
+            cached_result = self._cache.get_result(config.formula, filtered_context, formula_name)
             if cached_result is not None:
                 return {
                     "success": True,
@@ -190,9 +182,7 @@ class Evaluator(FormulaEvaluator):
             dependencies = self.get_formula_dependencies(config.formula)
 
             # Validate dependencies are available
-            missing_deps, unavailable_deps = self._check_dependencies(
-                dependencies, context
-            )
+            missing_deps, unavailable_deps = self._check_dependencies(dependencies, context)
 
             # Handle missing entities (fatal error)
             if missing_deps:
@@ -215,8 +205,7 @@ class Evaluator(FormulaEvaluator):
                 if self._circuit_breaker_config.track_transitory_errors:
                     self._increment_transitory_error_count(formula_name)
                 _LOGGER.info(
-                    "Formula '%s' has unavailable dependencies: %s. "
-                    "Setting synthetic sensor to unknown state.",
+                    "Formula '%s' has unavailable dependencies: %s. " "Setting synthetic sensor to unknown state.",
                     formula_name,
                     unavailable_deps,
                 )
@@ -239,9 +228,7 @@ class Evaluator(FormulaEvaluator):
             result = evaluator.eval(config.formula)
 
             # Cache the result
-            self._cache.store_result(
-                config.formula, result, filtered_context, formula_name
-            )
+            self._cache.store_result(config.formula, result, filtered_context, formula_name)
 
             # Reset error count on success
             # CIRCUIT BREAKER RESET: When a formula evaluates successfully,
@@ -288,9 +275,7 @@ class Evaluator(FormulaEvaluator):
                 "value": None,
             }
 
-    def _check_dependencies(
-        self, dependencies: set[str], context: dict[str, ContextValue] | None = None
-    ) -> tuple[set[str], set[str]]:
+    def _check_dependencies(self, dependencies: set[str], context: dict[str, ContextValue] | None = None) -> tuple[set[str], set[str]]:
         """Check which dependencies are missing or unavailable.
 
         This method is a critical part of the two-tier circuit breaker system.
@@ -392,11 +377,7 @@ class Evaluator(FormulaEvaluator):
             errors.append(f"Syntax error: {err}")
 
         # Check for common issues
-        if (
-            "entity(" not in formula
-            and "state(" not in formula
-            and "states." not in formula
-        ):
+        if "entity(" not in formula and "state(" not in formula and "states." not in formula:
             errors.append("Formula does not reference any entities")
 
         # Check for balanced parentheses
@@ -436,15 +417,11 @@ class Evaluator(FormulaEvaluator):
             state = self._hass.states.get(entity_id)
             if state:
                 # Add direct entity access
-                context[f"entity_{entity_id.replace('.', '_')}"] = (
-                    self._get_numeric_state(state)
-                )
+                context[f"entity_{entity_id.replace('.', '_')}"] = self._get_numeric_state(state)
 
                 # Add attribute access
                 for attr_name, attr_value in state.attributes.items():
-                    safe_attr_name = (
-                        f"{entity_id.replace('.', '_')}_{attr_name.replace('.', '_')}"
-                    )
+                    safe_attr_name = f"{entity_id.replace('.', '_')}_{attr_name.replace('.', '_')}"
                     context[safe_attr_name] = attr_value
 
         return context
@@ -500,9 +477,7 @@ class Evaluator(FormulaEvaluator):
         """
         self._retry_config = config
 
-    def _build_evaluation_context(
-        self, dependencies: set[str], context: dict[str, ContextValue] | None = None
-    ) -> dict[str, Any]:
+    def _build_evaluation_context(self, dependencies: set[str], context: dict[str, ContextValue] | None = None) -> dict[str, Any]:
         """Build context for formula evaluation.
 
         This method should only be called after dependencies have been validated
@@ -523,8 +498,7 @@ class Evaluator(FormulaEvaluator):
                     except NonNumericStateError:
                         # This should not happen if _check_dependencies was called first
                         _LOGGER.warning(
-                            "Unexpected non-numeric state for '%s': '%s'. "
-                            "Dependencies should have been validated first.",
+                            "Unexpected non-numeric state for '%s': '%s'. " "Dependencies should have been validated first.",
                             var,
                             state.state,
                         )
@@ -599,16 +573,14 @@ class Evaluator(FormulaEvaluator):
         """
         self._error_count[formula_name] = self._error_count.get(formula_name, 0) + 1
 
-    def _get_numeric_state(self, state) -> float:
+    def _get_numeric_state(self, state: Any) -> float:
         """Get numeric value from entity state, with error handling.
 
         This method now properly raises exceptions for non-numeric states
         instead of silently returning 0, which could mask configuration issues.
         """
         try:
-            return self._convert_to_numeric(
-                state.state, getattr(state, "entity_id", "unknown")
-            )
+            return self._convert_to_numeric(state.state, getattr(state, "entity_id", "unknown"))
         except NonNumericStateError:
             # For backward compatibility in contexts where we need a fallback,
             # log the issue but still return 0. The caller should handle this properly.
@@ -634,7 +606,7 @@ class Evaluator(FormulaEvaluator):
         """
         try:
             return float(state_value)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as err:
             # Try to extract numeric value from common patterns (e.g., "25.5°C")
             if isinstance(state_value, str):
                 # Remove common units and try again
@@ -646,11 +618,9 @@ class Evaluator(FormulaEvaluator):
                         pass
 
             # If we can't convert, raise an exception instead of returning 0
-            raise NonNumericStateError(entity_id, str(state_value))
+            raise NonNumericStateError(entity_id, str(state_value)) from err
 
-    def _filter_context_for_cache(
-        self, context: dict[str, ContextValue] | None
-    ) -> dict[str, str | float | int | bool] | None:
+    def _filter_context_for_cache(self, context: dict[str, ContextValue] | None) -> dict[str, str | float | int | bool] | None:
         """Filter context to only include types that can be cached.
 
         Args:
@@ -662,13 +632,9 @@ class Evaluator(FormulaEvaluator):
         if context is None:
             return None
 
-        return {
-            key: value
-            for key, value in context.items()
-            if isinstance(value, (str, float, int, bool))
-        }
+        return {key: value for key, value in context.items() if isinstance(value, (str, float, int, bool))}
 
-    def _is_entity_supposed_to_be_numeric(self, state) -> bool:
+    def _is_entity_supposed_to_be_numeric(self, state: Any) -> bool:
         """Determine if entity should be numeric based on domain and device_class.
 
         This method implements smart error classification by analyzing entity
@@ -771,11 +737,8 @@ class Evaluator(FormulaEvaluator):
                         return True
 
                     # Check for numeric patterns with units (e.g., "25.5°C")
-                    if re.search(r"\d+\.?\d*", state_value):
-                        return True
-
                     # Non-numeric descriptive states suggest non-numeric sensor
-                    return False
+                    return bool(re.search(r"\d+\.?\d*", state_value))
 
             # If we have a device_class but it's not in our non-numeric list,
             # assume it's numeric (most sensor device_classes are numeric)
@@ -851,7 +814,7 @@ class DependencyResolver:
         temp_visited = set()
         result = []
 
-        def visit(sensor: str):
+        def visit(sensor: str) -> None:
             if sensor in temp_visited:
                 # Circular dependency detected
                 return
@@ -883,7 +846,7 @@ class DependencyResolver:
         visited = set()
         rec_stack = set()
 
-        def dfs(sensor: str, path: list[str]):
+        def dfs(sensor: str, path: list[str]) -> None:
             if sensor in rec_stack:
                 # Found a cycle
                 cycle_start = path.index(sensor)
@@ -899,7 +862,7 @@ class DependencyResolver:
             deps = self.get_dependencies(sensor)
             for dep in deps:
                 if dep in self._dependency_graph:  # Only follow synthetic sensor deps
-                    dfs(dep, path + [sensor])
+                    dfs(dep, [*path, sensor])
 
             rec_stack.remove(sensor)
 
@@ -923,9 +886,7 @@ class DependencyResolver:
 
             del self._dependency_graph[sensor_name]
 
-    def evaluate(
-        self, formula: str, context: dict[str, float | int | str] | None = None
-    ) -> float:
+    def evaluate(self, formula: str, context: dict[str, float | int | str] | None = None) -> float:
         """Evaluate a formula with the given context.
 
         Args:

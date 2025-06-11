@@ -8,9 +8,9 @@ and Home Assistant sensor entities.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -48,8 +48,8 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         hass: HomeAssistant,
         config: SensorConfig,
         evaluator: Evaluator,
-        sensor_manager,  # Forward reference to avoid circular import
-    ):
+        sensor_manager: SensorManager,
+    ) -> None:
         """Initialize the dynamic sensor."""
         self._hass = hass
         self._config = config
@@ -62,14 +62,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # Find the main formula (first formula is always the main state)
         if not config.formulas:
-            raise ValueError(
-                f"Sensor '{config.unique_id}' must have at least one formula"
-            )
+            raise ValueError(f"Sensor '{config.unique_id}' must have at least one formula")
 
         self._main_formula = config.formulas[0]
-        self._attribute_formulas = (
-            config.formulas[1:] if len(config.formulas) > 1 else []
-        )
+        self._attribute_formulas = config.formulas[1:] if len(config.formulas) > 1 else []
 
         # Set entity attributes from main formula
         self._attr_native_unit_of_measurement = self._main_formula.unit_of_measurement
@@ -77,9 +73,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Convert device_class string to enum if needed
         if self._main_formula.device_class:
             try:
-                self._attr_device_class = SensorDeviceClass(
-                    self._main_formula.device_class
-                )
+                self._attr_device_class = SensorDeviceClass(self._main_formula.device_class)
             except ValueError:
                 self._attr_device_class = None
         else:
@@ -115,9 +109,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     def _update_extra_state_attributes(self) -> None:
         """Update the extra state attributes with current values."""
         # Start with main formula attributes
-        base_attributes: dict[str, AttributeValue] = (
-            self._main_formula.attributes.copy()
-        )
+        base_attributes: dict[str, AttributeValue] = self._main_formula.attributes.copy()
 
         # Add calculated attributes from other formulas
         base_attributes.update(self._calculated_attributes)
@@ -146,11 +138,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # Set up dependency tracking
         if self._dependencies:
-            self._update_listeners.append(
-                async_track_state_change_event(
-                    self._hass, list(self._dependencies), self._handle_dependency_change
-                )
-            )
+            self._update_listeners.append(async_track_state_change_event(self._hass, list(self._dependencies), self._handle_dependency_change))
 
         # Initial evaluation
         await self._async_update_sensor()
@@ -163,7 +151,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._update_listeners.clear()
 
     @callback
-    async def _handle_dependency_change(self, event) -> None:
+    async def _handle_dependency_change(self, event: Any) -> None:
         """Handle when a dependency entity changes."""
         await self._async_update_sensor()
 
@@ -199,9 +187,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             else:
                 self._attr_available = False
                 error_msg = main_result.get("error", "Unknown evaluation error")
-                _LOGGER.warning(
-                    "Formula evaluation failed for %s: %s", self.entity_id, error_msg
-                )
+                _LOGGER.warning("Formula evaluation failed for %s: %s", self.entity_id, error_msg)
 
             # Schedule entity update
             self.async_write_ha_state()
@@ -225,7 +211,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # Recalculate dependencies
         self._dependencies = set()
-        all_formulas = [self._main_formula] + self._attribute_formulas
+        all_formulas = [self._main_formula, *self._attribute_formulas]
         for formula in all_formulas:
             self._dependencies.update(formula.dependencies)
 
@@ -235,9 +221,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Convert device_class string to enum if needed
         if new_main_formula.device_class:
             try:
-                self._attr_device_class = SensorDeviceClass(
-                    new_main_formula.device_class
-                )
+                self._attr_device_class = SensorDeviceClass(new_main_formula.device_class)
             except ValueError:
                 self._attr_device_class = None
         else:
@@ -423,9 +407,7 @@ class SensorManager:
         entity = DynamicSensor(self._hass, sensor_config, self._evaluator, self)
         return entity
 
-    async def _update_existing_sensors(
-        self, old_config: Config, new_config: Config
-    ) -> None:
+    async def _update_existing_sensors(self, old_config: Config, new_config: Config) -> None:
         """Update existing sensors based on configuration changes."""
         old_sensors = {s.unique_id: s for s in old_config.sensors}
         new_sensors = {s.unique_id: s for s in new_config.sensors}
@@ -458,9 +440,7 @@ class SensorManager:
             self._add_entities(new_entities)
             _LOGGER.info(f"Added {len(new_entities)} new sensor entities")
 
-    async def _update_sensor_config(
-        self, old_config: SensorConfig, new_config: SensorConfig
-    ) -> None:
+    async def _update_sensor_config(self, old_config: SensorConfig, new_config: SensorConfig) -> None:
         """Update an existing sensor with new configuration."""
         # Simplified approach - remove and recreate if changes exist
         existing_sensor = self._sensors.get(old_config.unique_id)
@@ -482,9 +462,7 @@ class SensorManager:
 
     async def create_sensors(self, config: Config) -> list[DynamicSensor]:
         """Create sensors from configuration - public interface for testing."""
-        _LOGGER.info(
-            f"Creating sensors from config with {len(config.sensors)} sensor configs"
-        )
+        _LOGGER.info(f"Creating sensors from config with {len(config.sensors)} sensor configs")
 
         all_created_sensors = []
 
@@ -521,9 +499,7 @@ class SensorManager:
                 last_update=dt_util.utcnow(),
             )
 
-    async def async_update_sensors(
-        self, sensor_configs: list[SensorConfig] | None = None
-    ) -> None:
+    async def async_update_sensors(self, sensor_configs: list[SensorConfig] | None = None) -> None:
         """Asynchronously update sensors based on configurations."""
         if sensor_configs is None:
             # Update all managed sensors

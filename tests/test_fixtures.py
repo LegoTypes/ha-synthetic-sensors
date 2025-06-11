@@ -225,9 +225,7 @@ def invalid_config():
         "sensors": [
             {
                 # Missing required unique_id field
-                "formulas": [
-                    {"id": "test", "formula": "A + B"}  # REQUIRED: Formula identifier
-                ]
+                "formulas": [{"id": "test", "formula": "A + B"}]  # REQUIRED: Formula identifier
             }
         ],
     }

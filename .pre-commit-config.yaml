@@ -1,12 +1,8 @@
 repos:
-  # Pre-commit hooks for basic checks
+  # Pre-commit hooks for essential file checks only
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-      - id: trailing-whitespace
-        exclude: '\..*_cache/.*|dist/.*|venv/.*'
-      - id: end-of-file-fixer
-        exclude: '\..*_cache/.*|dist/.*|venv/.*'
       - id: check-yaml
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
       - id: check-toml
@@ -18,32 +14,20 @@ repos:
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
       - id: debug-statements
         exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*'
-      - id: mixed-line-ending
-        args: ['--fix=lf']
-        exclude: '\..*_cache/.*|dist/.*|venv/.*'
 
-  # Black for code formatting
+  # Black for ALL formatting (including trailing whitespace and blank lines)
   - repo: https://github.com/psf/black
     rev: 25.1.0
     hooks:
       - id: black
         language_version: python3
-        args: ['--line-length=88']
+        args: ['--line-length=999']
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
 
-  # isort for import sorting
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        args: ['--profile=black', '--line-length=88']
-        exclude: '\..*_cache/.*|dist/.*|venv/.*'
-
-  # Ruff for linting only (Black handles formatting)
+  # Ruff for linting and import sorting
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.12
     hooks:
-      # Run the linter only
       - id: ruff-check
         args: ['--fix']
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
@@ -59,7 +43,10 @@ repos:
           - voluptuous
           - pytest
           - typing-extensions
-        args: ['--ignore-missing-imports', '--config-file=pyproject.toml']
+          - types-PyYAML
+          - types-jsonschema
+          - homeassistant-stubs
+        args: ['--config-file=pyproject.toml']
         exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
 
   # Check for common security issues

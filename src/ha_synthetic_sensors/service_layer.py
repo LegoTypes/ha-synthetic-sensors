@@ -5,12 +5,12 @@ and provides integration with Home Assistant's service system.
 """
 
 import logging
-from typing import TypedDict
+from typing import TypedDict, cast
 
-import voluptuous as vol
-import yaml  # type: ignore[import-untyped]
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
+import voluptuous as vol
+import yaml
 
 from .config_manager import ConfigManager
 from .evaluator import Evaluator
@@ -265,9 +265,7 @@ class ServiceLayer:
                 self._name_resolver.add_entity_mapping(name, entity_id)
 
             # Update sensors
-            await self._sensor_manager.async_update_sensors(
-                self._config_manager.get_sensors()
-            )
+            await self._sensor_manager.async_update_sensors(self._config_manager.get_sensors())
 
             # Clear evaluator cache
             self._evaluator.clear_cache()
@@ -310,8 +308,7 @@ class ServiceLayer:
                 for key, value in call.data.items():
                     if key != "entity_id":
                         _LOGGER.info(
-                            "  Parameter %s: %s (logging only - formula updates "
-                            "require config changes)",
+                            "  Parameter %s: %s (logging only - formula updates " "require config changes)",
                             key,
                             value,
                         )
@@ -327,16 +324,12 @@ class ServiceLayer:
             variable_config = dict(call.data)
 
             # Add to configuration
-            if self._config_manager.add_variable(
-                variable_config["name"], variable_config["entity_id"]
-            ):
+            if self._config_manager.add_variable(variable_config["name"], variable_config["entity_id"]):
                 # Save configuration
                 self._config_manager.save_config()
 
                 # Add to name resolver
-                self._name_resolver.add_entity_mapping(
-                    variable_config["name"], variable_config["entity_id"]
-                )
+                self._name_resolver.add_entity_mapping(variable_config["name"], variable_config["entity_id"])
 
                 # Clear evaluator cache
                 self._evaluator.clear_cache()
@@ -385,9 +378,7 @@ class ServiceLayer:
             # Create a temporary formula config for evaluation
             from .config_manager import FormulaConfig
 
-            config = FormulaConfig(
-                id="temp_eval", name="temp_eval", formula=formula, dependencies=set()
-            )
+            config = FormulaConfig(id="temp_eval", name="temp_eval", formula=formula, dependencies=set())
 
             # Evaluate formula
             eval_result = self._evaluator.evaluate_formula(config, context)
@@ -421,9 +412,7 @@ class ServiceLayer:
         try:
             config_file = call.data.get("config_file")
             config_data = call.data.get("config_data")
-            check_entity_availability = call.data.get(
-                "check_entity_availability", False
-            )
+            check_entity_availability = call.data.get("check_entity_availability", False)
 
             validation_result = {}
 
@@ -519,9 +508,7 @@ class ServiceLayer:
             if "synthetic_sensors_validation" not in self._hass.data:
                 self._hass.data["synthetic_sensors_validation"] = {}
 
-            self._hass.data["synthetic_sensors_validation"][
-                "last_result"
-            ] = validation_result
+            self._hass.data["synthetic_sensors_validation"]["last_result"] = validation_result
 
             # Fire event with validation results
             self._hass.bus.async_fire(
@@ -530,9 +517,7 @@ class ServiceLayer:
                     "valid": validation_result["valid"],
                     "error_count": len(validation_result["errors"]),
                     "warning_count": len(validation_result["warnings"]),
-                    "schema_version": validation_result.get(
-                        "schema_version", "unknown"
-                    ),
+                    "schema_version": validation_result.get("schema_version", "unknown"),
                 },
             )
 
@@ -559,6 +544,10 @@ class ServiceLayer:
                 # Get specific sensor info by entity_id
                 sensor = self._sensor_manager.get_sensor_by_entity_id(entity_id)
                 if sensor:
+                    formula_obj = getattr(sensor, "_formula_config", getattr(sensor, "_main_formula", None))
+                    formula_str = formula_obj.formula if formula_obj else None
+                    dependencies = list(getattr(sensor, "_dependencies", []))
+
                     info = {
                         "entity_id": entity_id,
                         "unique_id": sensor._attr_unique_id,
@@ -568,8 +557,8 @@ class ServiceLayer:
                         "unit_of_measurement": sensor._attr_native_unit_of_measurement,
                         "device_class": sensor._attr_device_class,
                         "attributes": sensor._attr_extra_state_attributes,
-                        "formula": sensor._formula_config.formula,
-                        "dependencies": list(sensor._dependencies),
+                        "formula": formula_str,
+                        "dependencies": dependencies,
                     }
                     _LOGGER.info("Retrieved sensor info for entity_id: %s", entity_id)
                 else:
@@ -584,14 +573,18 @@ class ServiceLayer:
 
                 all_sensors = self._sensor_manager.get_all_sensor_entities()
                 for sensor in all_sensors:
+                    formula_obj = getattr(sensor, "_formula_config", getattr(sensor, "_main_formula", None))
+                    formula_str = formula_obj.formula if formula_obj else None
+                    dependencies = list(getattr(sensor, "_dependencies", []))
+
                     sensor_info = {
                         "entity_id": sensor.entity_id,
                         "unique_id": sensor._attr_unique_id,
                         "name": sensor._attr_name,
                         "state": sensor._attr_native_value,
                         "available": sensor._attr_available,
-                        "formula": sensor._formula_config.formula,
-                        "dependencies": list(sensor._dependencies),
+                        "formula": formula_str,
+                        "dependencies": dependencies,
                     }
                     info["sensors"].append(sensor_info)
 
@@ -614,7 +607,8 @@ class ServiceLayer:
         Returns:
             Evaluation result data or None if no evaluation performed
         """
-        return self._hass.data.get("synthetic_sensors_eval", {}).get("last_result")
+        result = self._hass.data.get("synthetic_sensors_eval", {}).get("last_result")
+        return cast(EvaluationResponseData, result) if isinstance(result, dict) else None
 
     def get_last_validation_result(self) -> ValidationResponseData | None:
         """Get the last configuration validation result.
@@ -622,9 +616,8 @@ class ServiceLayer:
         Returns:
             Validation result data or None if no validation performed
         """
-        return self._hass.data.get("synthetic_sensors_validation", {}).get(
-            "last_result"
-        )
+        result = self._hass.data.get("synthetic_sensors_validation", {}).get("last_result")
+        return cast(ValidationResponseData, result) if isinstance(result, dict) else None
 
     def get_last_sensor_info(self) -> SensorInfoData | AllSensorsInfoData | None:
         """Get the last sensor info result.
@@ -632,7 +625,8 @@ class ServiceLayer:
         Returns:
             Sensor info data or None if no info retrieved
         """
-        return self._hass.data.get("synthetic_sensors_info", {}).get("last_result")
+        result = self._hass.data.get("synthetic_sensors_info", {}).get("last_result")
+        return cast(SensorInfoData | AllSensorsInfoData, result) if isinstance(result, dict) else None
 
     async def async_auto_reload_if_needed(self) -> None:
         """Automatically reload configuration if file has been modified."""

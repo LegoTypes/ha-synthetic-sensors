@@ -1,5 +1,6 @@
 """Tests for entity management functionality and dynamic sensor lifecycle."""
 
+import contextlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,12 +27,8 @@ class TestEntityManagement:
     def mock_name_resolver(self):
         """Create a mock name resolver."""
         name_resolver = MagicMock()
-        name_resolver.resolve_entity_id = MagicMock(
-            return_value="sensor.resolved_entity"
-        )
-        name_resolver.normalize_name = MagicMock(
-            side_effect=lambda x: x.lower().replace(" ", "_")
-        )
+        name_resolver.resolve_entity_id = MagicMock(return_value="sensor.resolved_entity")
+        name_resolver.normalize_name = MagicMock(side_effect=lambda x: x.lower().replace(" ", "_"))
         return name_resolver
 
     @pytest.fixture
@@ -55,9 +52,7 @@ class TestEntityManagement:
         sensor_manager.get_sensor_statistics = MagicMock(return_value={})
         return sensor_manager
 
-    def test_dynamic_entity_creation(
-        self, sensor_manager, mock_add_entities_callback, entity_management_test_yaml
-    ):
+    def test_dynamic_entity_creation(self, sensor_manager, mock_add_entities_callback, entity_management_test_yaml):
         """Test dynamic creation of sensor entities."""
         # Test entity creation using the actual interface
         import asyncio
@@ -67,9 +62,7 @@ class TestEntityManagement:
         # Verify create_sensors was called
         sensor_manager.create_sensors.assert_called_once()
 
-    def test_entity_lifecycle_management(
-        self, sensor_manager, entity_management_test_yaml
-    ):
+    def test_entity_lifecycle_management(self, sensor_manager, entity_management_test_yaml):
         """Test complete entity lifecycle: create, update, remove."""
         import asyncio
 
@@ -249,22 +242,16 @@ class TestEntityManagement:
         }
 
         # Test that invalid config is handled gracefully
-        try:
+        with contextlib.suppress(Exception):
             asyncio.run(sensor_manager.add_sensor(invalid_config))
-        except Exception:
             # Expected to handle gracefully or raise appropriate exception
-            pass
 
         # Test removal of non-existent sensor
-        try:
+        with contextlib.suppress(Exception):
             asyncio.run(sensor_manager.remove_sensor("non_existent_sensor"))
-        except Exception:
             # Should handle gracefully
-            pass
 
-    def test_configuration_loading_integration(
-        self, sensor_manager, entity_management_test_yaml
-    ):
+    def test_configuration_loading_integration(self, sensor_manager, entity_management_test_yaml):
         """Test loading complete configuration with multiple sensors."""
         import asyncio
 
@@ -366,17 +353,13 @@ class TestEntityManagement:
             # EntityFactory not implemented yet - skip test
             pytest.skip("EntityFactory not implemented yet")
 
-    def test_sensor_manager_initialization(
-        self, mock_hass, mock_name_resolver, mock_add_entities_callback
-    ):
+    def test_sensor_manager_initialization(self, mock_hass, mock_name_resolver, mock_add_entities_callback):
         """Test sensor manager initialization and setup."""
         try:
             from ha_synthetic_sensors.sensor_manager import SensorManager
 
             # Test initialization
-            manager = SensorManager(
-                mock_hass, mock_name_resolver, mock_add_entities_callback
-            )
+            manager = SensorManager(mock_hass, mock_name_resolver, mock_add_entities_callback)
 
             # Verify initialization
             assert manager is not None

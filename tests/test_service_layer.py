@@ -54,9 +54,7 @@ class TestServiceLayer:
         """Create a mock enhanced evaluator."""
         evaluator = MagicMock()
         evaluator.clear_cache = MagicMock()
-        evaluator.evaluate_formula = MagicMock(
-            return_value={"success": True, "value": 42.0}
-        )
+        evaluator.evaluate_formula = MagicMock(return_value={"success": True, "value": 42.0})
         return evaluator
 
     @pytest.fixture
@@ -85,9 +83,7 @@ class TestServiceLayer:
         import asyncio
 
         # Patch the problematic method reference that causes warnings
-        with patch(
-            "ha_synthetic_sensors.service_layer.ServiceLayer._async_update_sensor"
-        ):
+        with patch("ha_synthetic_sensors.service_layer.ServiceLayer._async_update_sensor"):
             asyncio.run(service_layer.async_setup_services())
 
         # Verify all expected services were registered
@@ -179,9 +175,7 @@ class TestServiceLayer:
         # Verify config loading was attempted
         mock_config_manager.load_config.assert_called_once()
 
-    def test_update_sensor_service(
-        self, service_layer, mock_config_manager, mock_sensor_manager
-    ):
+    def test_update_sensor_service(self, service_layer, mock_config_manager, mock_sensor_manager):
         """Test update sensor service functionality."""
         # Mock service call with sensor data (now uses entity_id)
         call = MagicMock()
@@ -203,13 +197,9 @@ class TestServiceLayer:
         asyncio.run(service_layer._async_update_sensor(call))
 
         # Verify sensor manager was called with entity_id
-        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with(
-            "sensor.syn2_test_sensor_test_formula"
-        )
+        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with("sensor.syn2_test_sensor_test_formula")
 
-    def test_add_variable_service(
-        self, service_layer, mock_config_manager, mock_name_resolver
-    ):
+    def test_add_variable_service(self, service_layer, mock_config_manager, mock_name_resolver):
         """Test add variable service functionality."""
         # Mock service call
         call = MagicMock()
@@ -225,13 +215,9 @@ class TestServiceLayer:
         asyncio.run(service_layer._async_add_variable(call))
 
         # Verify name resolver was updated
-        mock_name_resolver.add_entity_mapping.assert_called_once_with(
-            "new_variable", "sensor.test_entity"
-        )
+        mock_name_resolver.add_entity_mapping.assert_called_once_with("new_variable", "sensor.test_entity")
 
-    def test_remove_variable_service(
-        self, service_layer, mock_config_manager, mock_name_resolver
-    ):
+    def test_remove_variable_service(self, service_layer, mock_config_manager, mock_name_resolver):
         """Test remove variable service functionality."""
         # Mock service call
         call = MagicMock()
@@ -296,9 +282,7 @@ class TestServiceLayer:
         asyncio.run(service_layer._async_get_sensor_info(call))
 
         # Verify sensor manager was called with correct method
-        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with(
-            "sensor.syn2_test_sensor_test_formula"
-        )
+        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with("sensor.syn2_test_sensor_test_formula")
 
     def test_service_error_responses(self, service_layer, mock_config_manager):
         """Test that service errors are handled gracefully."""
@@ -345,9 +329,7 @@ class TestServiceLayer:
         schema_dict = EVALUATE_FORMULA_SCHEMA.schema
         assert "formula" in str(schema_dict)  # Required field
 
-    def test_service_integration_workflow(
-        self, service_layer, mock_hass, mock_config_manager, mock_sensor_manager
-    ):
+    def test_service_integration_workflow(self, service_layer, mock_hass, mock_config_manager, mock_sensor_manager):
         """Test complete service workflow from setup to operations."""
         import asyncio
 

@@ -7,9 +7,9 @@ with detailed error reporting and support for schema versioning.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from enum import Enum
+import logging
 from typing import Any, TypedDict
 
 try:
@@ -19,9 +19,9 @@ try:
     JSONSCHEMA_AVAILABLE = True
 except ImportError:
     JSONSCHEMA_AVAILABLE = False
-    jsonschema = None
-    Draft7Validator = None
-    validators = None
+    jsonschema = None  # type: ignore[assignment]
+    Draft7Validator = None  # type: ignore[assignment,misc]
+    validators = None  # type: ignore[assignment]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,9 +91,7 @@ class SchemaValidator:
                     message=f"Unsupported schema version: {version}",
                     path="version",
                     severity=ValidationSeverity.ERROR,
-                    suggested_fix=(
-                        f"Use supported version: {', '.join(self._schemas.keys())}"
-                    ),
+                    suggested_fix=(f"Use supported version: {', '.join(self._schemas.keys())}"),
                 )
             )
             return ValidationResult(valid=False, errors=errors, warnings=warnings)
@@ -102,6 +100,8 @@ class SchemaValidator:
 
         try:
             # Create validator with custom error handling
+            if Draft7Validator is None:
+                raise ImportError("jsonschema not available")
             validator = Draft7Validator(schema)
 
             # Validate against schema
@@ -113,9 +113,7 @@ class SchemaValidator:
                     warnings.append(validation_error)
 
             # Additional semantic validations
-            semantic_errors, semantic_warnings = self._perform_semantic_validation(
-                config_data
-            )
+            semantic_errors, semantic_warnings = self._perform_semantic_validation(config_data)
             errors.extend(semantic_errors)
             warnings.extend(semantic_warnings)
 
@@ -129,9 +127,7 @@ class SchemaValidator:
                 )
             )
 
-        return ValidationResult(
-            valid=len(errors) == 0, errors=errors, warnings=warnings
-        )
+        return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
 
     def _format_validation_error(self, error: Any) -> ValidationError:
         """Format a jsonschema validation error into our ValidationError format."""
@@ -160,37 +156,109 @@ class SchemaValidator:
             suggested_fix=suggested_fix,
         )
 
-    def _perform_semantic_validation(
-        self, config_data: dict[str, Any]
-    ) -> tuple[list[ValidationError], list[ValidationError]]:
-        """Perform additional semantic validation beyond schema structure (v2.0 format).
-
-        Returns:
-            Tuple of (errors, warnings)
-        """
+    def _perform_semantic_validation(self, config_data: dict[str, Any]) -> tuple[list[ValidationError], list[ValidationError]]:
+        """Perform additional semantic validation beyond JSON schema."""
         errors: list[ValidationError] = []
         warnings: list[ValidationError] = []
 
-        sensors = config_data.get("sensors", {})
+        # Validate version compatibility
+        version = config_data.get("version", "1.0")
+        if version not in ["1.0"]:
+            errors.append(
+                ValidationError(
+                    message=f"Unsupported configuration version: {version}",
+                    path="version",
+                    severity=ValidationSeverity.ERROR,
+                )
+            )
 
-        # v2.0 format: sensors is a dict with sensor keys
-        for sensor_key, sensor_config in sensors.items():
-            self._validate_sensor_config(sensor_key, sensor_config, warnings)
+        # Validate sensors based on version
+        if version == "1.0":
+            sensors = config_data.get("sensors", {})
+            for sensor_key, sensor_config in sensors.items():
+                self._validate_sensor_config(sensor_key, sensor_config, warnings)
+                self._validate_state_class_compatibility(sensor_key, sensor_config, warnings)
+                self._validate_unit_compatibility(sensor_key, sensor_config, errors)
 
         return errors, warnings
 
-    def _validate_sensor_config(
-        self, sensor_key: str, sensor_config: dict, warnings: list[ValidationError]
+    def _validate_state_class_compatibility(self, sensor_key: str, sensor_config: dict[str, Any], warnings: list[ValidationError]) -> None:
+        """Validate state_class compatibility with device_class using HA's mappings."""
+        state_class = sensor_config.get("state_class")
+        device_class = sensor_config.get("device_class", "")
+
+        if not state_class or not device_class:
+            return
+
+        # Import HA's official device class to state class mappings
+        try:
+            from homeassistant.components.sensor import (
+                SensorDeviceClass,
+                SensorStateClass,
+            )
+            from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES
+
+            # Convert string values to enum instances for lookup
+            try:
+                device_class_enum = SensorDeviceClass(device_class)
+                state_class_enum = SensorStateClass(state_class)
+            except ValueError:
+                # Invalid enum values - will be caught by schema validation
+                return
+
+            # Check if this combination is explicitly allowed by HA
+            allowed_state_classes = DEVICE_CLASS_STATE_CLASSES.get(device_class_enum, set())
+
+            if allowed_state_classes and state_class_enum not in allowed_state_classes:
+                allowed_values = [sc.value for sc in allowed_state_classes]
+                warnings.append(
+                    ValidationError(
+                        message=(f"Sensor '{sensor_key}' uses state_class '{state_class}' with " f"device_class '{device_class}'. Home Assistant recommends " f"state_class values: {', '.join(allowed_values)} for this " "device class."),
+                        path=f"sensors.{sensor_key}.state_class",
+                        severity=ValidationSeverity.WARNING,
+                        suggested_fix=f"Consider using one of: {', '.join(allowed_values)}",
+                    )
+                )
+
+        except ImportError:
+            # Fall back to basic validation if HA constants not available
+            self._validate_state_class_fallback(sensor_key, sensor_config, device_class, state_class, warnings)
+
+    def _validate_state_class_fallback(
+        self,
+        sensor_key: str,
+        sensor_config: dict[str, Any],
+        device_class: str,
+        state_class: str,
+        warnings: list[ValidationError],
     ) -> None:
+        """Fallback validation when HA constants are not available."""
+        # Basic validation for obvious mismatches
+        if state_class == "total_increasing":
+            problematic_classes = [
+                "battery",
+                "temperature",
+                "humidity",
+                "signal_strength",
+            ]
+            if any(pattern in device_class for pattern in problematic_classes):
+                warnings.append(
+                    ValidationError(
+                        message=(f"Sensor '{sensor_key}' uses state_class 'total_increasing' with " f"device_class '{device_class}' which typically doesn't increase monotonically."),
+                        path=f"sensors.{sensor_key}.state_class",
+                        severity=ValidationSeverity.WARNING,
+                        suggested_fix="Consider using 'measurement' instead",
+                    )
+                )
+
+    def _validate_sensor_config(self, sensor_key: str, sensor_config: dict[str, Any], warnings: list[ValidationError]) -> None:
         """Validate a single sensor configuration."""
         # Single formula sensor validation
         if "formula" in sensor_config:
             formula_text = sensor_config.get("formula", "")
             variables = sensor_config.get("variables", {})
 
-            validation_result = self._validate_formula_variables(
-                formula_text, variables
-            )
+            validation_result = self._validate_formula_variables(formula_text, variables)
             for error_msg in validation_result:
                 warnings.append(
                     ValidationError(
@@ -212,25 +280,18 @@ class SchemaValidator:
                 extended_variables = variables.copy()
                 extended_variables["state"] = "main_sensor_state"
 
-                validation_result = self._validate_formula_variables(
-                    attr_formula, extended_variables
-                )
+                validation_result = self._validate_formula_variables(attr_formula, extended_variables)
                 for error_msg in validation_result:
                     warnings.append(
                         ValidationError(
                             message=error_msg,
                             path=f"sensors.{sensor_key}.attributes.{attr_name}.formula",
                             severity=ValidationSeverity.WARNING,
-                            suggested_fix=(
-                                "Define all variables used in attribute formulas "
-                                "(or use 'state' for main sensor value)"
-                            ),
+                            suggested_fix=("Define all variables used in attribute formulas " "(or use 'state' for main sensor value)"),
                         )
                     )
 
-    def _validate_formula_variables(
-        self, formula: str, variables: dict[str, str]
-    ) -> list[str]:
+    def _validate_formula_variables(self, formula: str, variables: dict[str, str]) -> list[str]:
         """Validate that formula variables are properly defined.
 
         Returns:
@@ -269,12 +330,88 @@ class SchemaValidator:
         }
 
         for var in potential_vars:
-            if var not in variables and var not in known_functions:
+            if var not in variables and var not in known_functions and not var.isdigit() and var not in ["True", "False"]:
                 # Check if it looks like it could be a variable
-                if not var.isdigit() and var not in ["True", "False"]:
-                    warnings.append(f"Potential undefined variable '{var}' in formula")
+                warnings.append(f"Potential undefined variable '{var}' in formula")
 
         return warnings
+
+    def _validate_unit_compatibility(self, sensor_key: str, sensor_config: dict[str, Any], errors: list[ValidationError]) -> None:
+        """Validate unit_of_measurement compatibility with device_class (ERROR level)."""
+        device_class = sensor_config.get("device_class")
+        unit = sensor_config.get("unit_of_measurement")
+
+        if not device_class or not unit:
+            return
+
+        # Import HA's official device class to unit mappings
+        try:
+            from homeassistant.components.sensor import SensorDeviceClass
+            from homeassistant.components.sensor.const import DEVICE_CLASS_UNITS
+
+            # Convert string to enum for lookup
+            try:
+                device_class_enum = SensorDeviceClass(device_class)
+            except ValueError:
+                # Invalid device_class - will be caught by schema validation
+                return
+
+            # Skip validation for device classes with open-ended unit requirements
+            SKIP_UNIT_VALIDATION = {
+                SensorDeviceClass.MONETARY,  # ISO4217 currency codes (180+ options)
+                SensorDeviceClass.DATE,  # ISO8601 date formats (many variations)
+                SensorDeviceClass.TIMESTAMP,  # ISO8601 timestamp formats (many variations)
+                SensorDeviceClass.ENUM,  # User-defined enumeration values
+            }
+
+            if device_class_enum in SKIP_UNIT_VALIDATION:
+                return  # Punt - too many valid options to validate reasonably
+
+            # Get allowed units for this device class
+            allowed_units_raw = DEVICE_CLASS_UNITS.get(device_class_enum, set())
+
+            # If HA doesn't define units for this device class, punt
+            if not allowed_units_raw:
+                return
+
+            # Convert enum units to string values for comparison
+            allowed_units: set[str | None] = set()
+            for unit_spec in allowed_units_raw:
+                if unit_spec is None:
+                    # None is allowed (unitless)
+                    allowed_units.add(None)
+                elif isinstance(unit_spec, str):
+                    # It's a string constant
+                    allowed_units.add(unit_spec)
+                else:
+                    # It's likely an enum like UnitOfPower.WATT
+                    try:
+                        allowed_units.add(str(unit_spec.value))
+                    except AttributeError:
+                        # If it doesn't have .value, add as string
+                        allowed_units.add(str(unit_spec))
+
+            # Check if current unit is allowed
+            if allowed_units and unit not in allowed_units:
+                # Format allowed units for display (handle None separately for sorting)
+                str_units = [u for u in allowed_units if u is not None and isinstance(u, str)]
+                has_none = None in allowed_units
+
+                unit_list = sorted(str_units)
+                if has_none:
+                    unit_list.append("None")
+                errors.append(
+                    ValidationError(
+                        message=(f"Sensor '{sensor_key}' uses invalid unit '{unit}' for " f"device_class '{device_class}'. Home Assistant will log this " f"as an error. Allowed units: {', '.join(unit_list)}"),
+                        path=f"sensors.{sensor_key}.unit_of_measurement",
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix=f"Use one of the allowed units: {', '.join(unit_list)}",
+                    )
+                )
+
+        except ImportError:
+            # Fall back if HA constants not available - no validation
+            pass
 
     def _get_v2_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
@@ -287,23 +424,15 @@ class SchemaValidator:
         return {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "title": "HA Synthetic Sensors Configuration",
-            "description": (
-                "Schema for Home Assistant Synthetic Sensors YAML configuration"
-            ),
+            "description": ("Schema for Home Assistant Synthetic Sensors YAML configuration"),
             "type": "object",
-            "properties": self._get_v1_main_properties(
-                id_pattern, entity_pattern, var_pattern, icon_pattern
-            ),
+            "properties": self._get_v1_main_properties(id_pattern, entity_pattern, var_pattern, icon_pattern),
             "required": ["sensors"],
             "additionalProperties": False,
-            "definitions": self._get_v1_schema_definitions(
-                id_pattern, entity_pattern, var_pattern, icon_pattern
-            ),
+            "definitions": self._get_v1_schema_definitions(id_pattern, entity_pattern, var_pattern, icon_pattern),
         }
 
-    def _get_main_properties(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
-    ) -> dict[str, Any]:
+    def _get_main_properties(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the main properties for the schema."""
         return {
             "version": {
@@ -322,9 +451,7 @@ class SchemaValidator:
                     },
                     "enabled": {
                         "type": "boolean",
-                        "description": (
-                            "Whether synthetic sensors are globally enabled"
-                        ),
+                        "description": ("Whether synthetic sensors are globally enabled"),
                     },
                     "update_interval": {
                         "type": "integer",
@@ -342,15 +469,11 @@ class SchemaValidator:
             },
         }
 
-    def _get_schema_definitions(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
-    ) -> dict[str, Any]:
+    def _get_schema_definitions(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the definitions section for the schema."""
         return {
             "sensor": self._get_sensor_definition(id_pattern),
-            "formula": self._get_formula_definition(
-                id_pattern, entity_pattern, var_pattern, icon_pattern
-            ),
+            "formula": self._get_formula_definition(id_pattern, entity_pattern, var_pattern, icon_pattern),
         }
 
     def _get_sensor_definition(self, id_pattern: str) -> dict[str, Any]:
@@ -399,9 +522,7 @@ class SchemaValidator:
             "additionalProperties": False,
         }
 
-    def _get_formula_definition(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
-    ) -> dict[str, Any]:
+    def _get_formula_definition(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the formula definition for the schema."""
         return {
             "type": "object",
@@ -409,9 +530,7 @@ class SchemaValidator:
             "properties": {
                 "id": {
                     "type": "string",
-                    "description": (
-                        "Unique identifier for the formula within the sensor"
-                    ),
+                    "description": ("Unique identifier for the formula within the sensor"),
                     "pattern": id_pattern,
                     "minLength": 1,
                 },
@@ -470,22 +589,15 @@ class SchemaValidator:
         """Get the list of valid device classes from Home Assistant constants."""
         from homeassistant.components.sensor import SensorDeviceClass
 
-        return [
-            device_class.value
-            for device_class in SensorDeviceClass.__members__.values()
-        ]
+        return [device_class.value for device_class in SensorDeviceClass.__members__.values()]
 
     def _get_state_class_enum(self) -> list[str]:
         """Get the list of valid state classes from Home Assistant constants."""
         from homeassistant.components.sensor import SensorStateClass
 
-        return [
-            state_class.value for state_class in SensorStateClass.__members__.values()
-        ]
+        return [state_class.value for state_class in SensorStateClass.__members__.values()]
 
-    def _get_v1_main_properties(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
-    ) -> dict[str, Any]:
+    def _get_v1_main_properties(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the main properties for the v1.0 schema."""
         return {
             "version": {
@@ -504,9 +616,7 @@ class SchemaValidator:
                     },
                     "enabled": {
                         "type": "boolean",
-                        "description": (
-                            "Whether synthetic sensors are globally enabled"
-                        ),
+                        "description": ("Whether synthetic sensors are globally enabled"),
                     },
                     "update_interval": {
                         "type": "integer",
@@ -518,9 +628,7 @@ class SchemaValidator:
             },
             "global": {
                 "type": "object",
-                "description": (
-                    "Global settings for all sensors (alias for global_settings)"
-                ),
+                "description": ("Global settings for all sensors (alias for global_settings)"),
                 "properties": {
                     "domain_prefix": {
                         "type": "string",
@@ -529,9 +637,7 @@ class SchemaValidator:
                     },
                     "enabled": {
                         "type": "boolean",
-                        "description": (
-                            "Whether synthetic sensors are globally enabled"
-                        ),
+                        "description": ("Whether synthetic sensors are globally enabled"),
                     },
                     "update_interval": {
                         "type": "integer",
@@ -554,22 +660,14 @@ class SchemaValidator:
             },
         }
 
-    def _get_v1_schema_definitions(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
-    ) -> dict[str, Any]:
+    def _get_v1_schema_definitions(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the definitions section for the v2.0 schema."""
         return {
-            "v1_sensor": self._get_v1_sensor_definition(
-                id_pattern, entity_pattern, var_pattern, icon_pattern
-            ),
-            "v1_attribute": self._get_v1_attribute_definition(
-                var_pattern, icon_pattern
-            ),
+            "v1_sensor": self._get_v1_sensor_definition(id_pattern, entity_pattern, var_pattern, icon_pattern),
+            "v1_attribute": self._get_v1_attribute_definition(var_pattern, icon_pattern),
         }
 
-    def _get_v1_sensor_definition(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
-    ) -> dict[str, Any]:
+    def _get_v1_sensor_definition(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the sensor definition for the v2.0 schema."""
         return {
             "type": "object",
@@ -607,9 +705,7 @@ class SchemaValidator:
                 "attributes": {
                     "type": "object",
                     "description": "Calculated attributes for rich sensor data",
-                    "patternProperties": {
-                        var_pattern: {"$ref": "#/definitions/v1_attribute"}
-                    },
+                    "patternProperties": {var_pattern: {"$ref": "#/definitions/v1_attribute"}},
                     "additionalProperties": False,
                 },
                 # Common properties for both syntax patterns
@@ -654,9 +750,7 @@ class SchemaValidator:
             "additionalProperties": False,
         }
 
-    def _get_v1_attribute_definition(
-        self, var_pattern: str, icon_pattern: str
-    ) -> dict[str, Any]:
+    def _get_v1_attribute_definition(self, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the calculated attribute definition for the v2.0 schema."""
         return {
             "type": "object",
@@ -664,9 +758,7 @@ class SchemaValidator:
             "properties": {
                 "formula": {
                     "type": "string",
-                    "description": (
-                        "Mathematical expression to evaluate for this attribute"
-                    ),
+                    "description": ("Mathematical expression to evaluate for this attribute"),
                     "minLength": 1,
                 },
                 "unit_of_measurement": {

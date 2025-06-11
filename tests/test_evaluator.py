@@ -36,9 +36,7 @@ class TestEvaluator:
         assert "B" in dependencies
 
         # Test entity function format
-        dependencies = evaluator.get_formula_dependencies(
-            'entity("sensor.temp") + entity("sensor.humidity")'
-        )
+        dependencies = evaluator.get_formula_dependencies('entity("sensor.temp") + entity("sensor.humidity")')
         assert "sensor.temp" in dependencies
         assert "sensor.humidity" in dependencies
 
@@ -52,9 +50,7 @@ class TestEvaluator:
         evaluator = Evaluator(mock_hass)
 
         # Test basic formula with safe functions
-        config = FormulaConfig(
-            id="safe_func", name="safe_func", formula="abs(-10) + max(5, 3) + min(1, 2)"
-        )
+        config = FormulaConfig(id="safe_func", name="safe_func", formula="abs(-10) + max(5, 3) + min(1, 2)")
 
         result = evaluator.evaluate_formula(config, {})
         assert result["success"] is True
@@ -109,9 +105,7 @@ class TestEvaluator:
         assert "humidity" in deps
 
         # Test entity reference dependencies
-        deps = evaluator.get_formula_dependencies(
-            'entity("sensor.temperature") + entity("sensor.humidity")'
-        )
+        deps = evaluator.get_formula_dependencies('entity("sensor.temperature") + entity("sensor.humidity")')
         assert "sensor.temperature" in deps
         assert "sensor.humidity" in deps
 
@@ -138,9 +132,7 @@ class TestEvaluator:
         evaluator = Evaluator(mock_hass)
 
         # Test syntax error
-        config = FormulaConfig(
-            id="error_handling", name="error_handling", formula="A / 0"
-        )
+        config = FormulaConfig(id="error_handling", name="error_handling", formula="A / 0")
 
         result = evaluator.evaluate_formula(config, {})
         assert result["success"] is False
@@ -180,9 +172,7 @@ class TestEvaluator:
             retry_on_unavailable=False,
         )
 
-        evaluator = Evaluator(
-            mock_hass, circuit_breaker_config=cb_config, retry_config=retry_config
-        )
+        evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config, retry_config=retry_config)
 
         # Verify configuration was applied
         assert evaluator.get_circuit_breaker_config().max_fatal_errors == 3
@@ -228,9 +218,7 @@ class TestEvaluator:
         # Mock a missing entity to trigger fatal errors
         mock_hass.states.get.return_value = None
 
-        config = FormulaConfig(
-            id="test_formula", name="test", formula="missing_entity + 1"
-        )
+        config = FormulaConfig(id="test_formula", name="test", formula="missing_entity + 1")
 
         # First two evaluations should attempt and fail
         result1 = evaluator.evaluate_formula(config)
