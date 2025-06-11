@@ -1,0 +1,90 @@
+# Reference Patterns Test Configuration
+# This tests the different ways to reference sensors in attribute formulas
+version: "1.0"
+global_settings:
+  domain_prefix: "syn2"
+
+sensors:
+  # Main sensor for testing attribute reference patterns
+  energy_cost_analysis:
+    name: "Energy Cost Analysis"
+    formula: "current_power * electricity_rate / 1000"
+    variables:
+      current_power: "sensor.span_panel_instantaneous_power"
+      electricity_rate: "input_number.electricity_rate_cents_kwh"
+    attributes:
+      # Pattern 1: Reference by state alias
+      daily_projected:
+        formula: "state * 24"
+        unit_of_measurement: "¢"
+      
+      # Pattern 2: Reference by sensor key
+      monthly_projected:
+        formula: "energy_cost_analysis * 24 * 30"
+        unit_of_measurement: "¢"
+      
+      # Pattern 3: Reference by entity_id
+      annual_projected:
+        formula: "sensor.syn2_energy_cost_analysis * 24 * 365"
+        unit_of_measurement: "¢"
+    unit_of_measurement: "¢/h"
+    device_class: "monetary"
+    state_class: "measurement"
+
+  # Sensor for testing entity_id references in main formulas
+  grid_dependency_analysis:
+    name: "Grid Dependency Analysis"
+    formula: "sensor.span_panel_instantaneous_power + sensor.syn2_energy_cost_analysis"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Sensor for testing sensor key references with explicit variables
+  enhanced_power_analysis:
+    name: "Enhanced Power Analysis"
+    formula: "base_power_analysis * efficiency_factor"
+    variables:
+      base_power_analysis: "sensor.syn2_base_power_analysis"
+      efficiency_factor: "input_number.electricity_rate_cents_kwh"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Sensor for testing mixed entity_id + attribute access patterns
+  power_efficiency:
+    name: "Power Efficiency Analysis"
+    formula: "current_power * device_efficiency / 100"
+    variables:
+      current_power: "sensor.span_panel_instantaneous_power"
+      device_efficiency: "input_number.efficiency_factor"
+      backup_device: "sensor.backup_power_system"
+    attributes:
+      # Mixed pattern: entity_id reference + dot notation attribute access
+      battery_adjusted:
+        formula: "sensor.syn2_energy_cost_analysis * backup_device.battery_level / 100"
+        unit_of_measurement: "W"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Combined reference pattern sensor (all three in one)
+  comprehensive_analysis:
+    name: "Comprehensive Reference Test"
+    formula: "base_power + base_efficiency"
+    variables:
+      base_power: "sensor.base_power_meter"
+      base_efficiency: "input_number.base_efficiency"
+    attributes:
+      daily_state_ref:
+        formula: "state * 24"
+        unit_of_measurement: "units"
+      
+      monthly_key_ref:
+        formula: "comprehensive_analysis * 24 * 30"
+        unit_of_measurement: "units"
+      
+      annual_entity_ref:
+        formula: "sensor.syn2_comprehensive_analysis * 24 * 365"
+        unit_of_measurement: "units"
+    unit_of_measurement: "units"
+    state_class: "measurement" 

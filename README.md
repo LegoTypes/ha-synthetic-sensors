@@ -94,8 +94,13 @@ sensors:
         formula: "energy_cost_analysis * 24 * 30"   # by main sensor key
         unit_of_measurement: "¢"
       annual_projected:
-        formula: "sensor_syn2_energy_cost_analysis * 24 * 365"  # by entity_id (underscores)
+        formula: "sensor.syn2_energy_cost_analysis * 24 * 365"  # by entity_id
         unit_of_measurement: "¢"
+      battery_efficiency:
+        formula: "current_power * device.battery_level / 100"  # by attribute access
+        variables:
+          device: "sensor.backup_device"
+        unit_of_measurement: "W"
       efficiency:
         formula: "state / sensor.max_power_capacity * 100"
         unit_of_measurement: "%"
