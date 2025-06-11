@@ -88,16 +88,16 @@ sensors:
     formula: "current_power * electricity_rate / 1000"
     attributes:
       daily_projected:
-        formula: "state * 24"                       # by main state alias
+        formula: "state * 24"                       # ref by main state alias
         unit_of_measurement: "¢"
       monthly_projected:
-        formula: "energy_cost_analysis * 24 * 30"   # by main sensor key
+        formula: "energy_cost_analysis * 24 * 30"   # ref by main sensor key
         unit_of_measurement: "¢"
       annual_projected:
-        formula: "sensor.syn2_energy_cost_analysis * 24 * 365"  # by entity_id
+        formula: "sensor.syn2_energy_cost_analysis * 24 * 365"  # ref by entity_id
         unit_of_measurement: "¢"
       battery_efficiency:
-        formula: "current_power * device.battery_level / 100"  # by attribute access
+        formula: "current_power * device.battery_level / 100"  # using attribute access
         variables:
           device: "sensor.backup_device"
         unit_of_measurement: "W"
@@ -120,9 +120,24 @@ sensors:
 - Attributes can also reference other entities normally (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
 
-## Advanced Entity References
+## Entity Reference Patterns
 
-### Variable Inheritance in Attributes
+The package supports multiple ways to reference entities in formulas:
+
+| Pattern | Syntax | Example | Use Case |
+|---------|--------|---------|----------|
+| **Direct Entity ID** | `sensor.entity_name` | `sensor.power_meter` | Quick references, cross-sensor |
+| **Reusable Variable Alias' to states** | `variable_name` | `power_meter` | Most common, clean formulas |
+| **Sensor Key Reference** | `sensor_key` | `energy_analysis` | Reference other synthetic sensors |
+| **Sensor State Alias in attrubte formulas** | `state` | `state * 24` | In attributes, reference main sensor |
+| **Attribute Dot Notation** | `entity.attribute` | `sensor1.battery_level` | Access entity attributes |
+| **Sensor Collection Functions** | `mathFunc(pattern:value)` | `sum(regex:sensor\..*_power)` | Aggregate multiple entities by pattern |
+| **Device Class Collection Math** | `mathFunc(device_class:type)` | `avg(device_class:temperature)` | Aggregate by device type |
+| **Tag/Label Collection Math** | `mathFunc(tags:tag1,tag2)` | `count(tags:critical,important)` | Aggregate by entity tags |
+| **Area Collection Math** | `mathFunc(area:location)` | `sum(area:kitchen device_class:power)` | Aggregate by physical location |
+| **Attribute Collection Math** | `mathFunc(attribute:condition)` | `count(attribute:battery_level<20)` | Aggregate by attribute values |
+
+### Variable inheritance in attributes
 
 Attribute formulas automatically inherit all variables from their parent sensor:
 
@@ -136,66 +151,26 @@ sensors:
       solar_power: "sensor.solar_inverter" 
       efficiency_factor: "input_number.base_efficiency"
     attributes:
-      # Inherits all parent variables (grid_power, solar_power, efficiency_factor)
+      # Inherits: grid_power, solar_power, efficiency_factor
       daily_projection:
         formula: "energy_analysis * 24"          # References main sensor by key
       
       efficiency_percent:
         formula: "solar_power / (grid_power + solar_power) * 100"  # Uses inherited variables
       
-      # Attributes can add new variables or override parent ones
+      # Override or add variables as needed
       cost_analysis:
         formula: "grid_power * electricity_rate / 1000"
         variables:
           electricity_rate: "input_number.current_rate"  # New variable
-      
-      custom_efficiency:
-        formula: "solar_power * efficiency_factor"
-        variables:
-          efficiency_factor: "input_number.custom_efficiency"  # Overrides parent
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
 ```
 
-### Direct Entity References
+### Collection Functions (Entity Aggregation)
 
-You can reference entities directly in formulas without variables:
-
-```yaml
-sensors:
-  simple_calculation:
-    name: "Simple Calculation"
-    formula: "sensor.power_meter + sensor.backup_generator"  # Direct entity_ids
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-```
-
-### Dot Notation for Attributes
-
-Access entity attributes using dot notation:
-
-```yaml
-sensors:
-  battery_analysis:
-    name: "Battery Analysis"
-    formula: "sensor1.battery_level + sensor2.battery_level"  # Shortcut
-    # Equivalent to: sensor1.attributes.battery_level + sensor2.attributes.battery_level
-    unit_of_measurement: "%"
-    device_class: "battery"
-    state_class: "measurement"
-    
-  temperature_comfort:
-    name: "Temperature Comfort"
-    formula: "clamp(temp_sensor.temperature, 18, 26)"
-    variables:
-      temp_sensor: "climate.living_room"
-```
-
-### Dynamic Entity Aggregation
-
-Sum, average, or count entities dynamically using patterns:
+Sum, average, or count entities dynamically using collection patterns:
 
 ```yaml
 sensors:
@@ -230,28 +205,8 @@ sensors:
     name: "Low Battery Devices"
     formula: count(attribute:battery_level<20)
     unit_of_measurement: "count"
-```
 
-**Aggregation Functions Available:**
-- `sum()` - Sum all matching entity values
-- `avg()` / `mean()` - Average of all matching entities
-- `count()` - Count of matching entities
-- `min()` / `max()` - Minimum/maximum value
-- `std()` / `var()` - Standard deviation/variance
-
-**Query Patterns:**
-- `device_class:power` - Entities with specific device class
-- `regex:sensor\..*_power` - Entities matching regex pattern
-- `area:kitchen` - Entities in specific area
-- `tags:tag1,tag2` - Entities with any of the specified tags
-- `attribute:battery_level<50` - Entities with attribute conditions
-
-### Mixed Reference Types
-
-You can combine different reference types in the same formula:
-
-```yaml
-sensors:
+  # Mixed patterns in one formula
   comprehensive_analysis:
     name: "Comprehensive Power Analysis"
     formula: "base_load + sum(regex:sensor\.circuit_.*_power) + backup_power.current_power"
@@ -263,19 +218,19 @@ sensors:
     state_class: "measurement"
 ```
 
-## Variable mapping
+**Aggregation Functions Available:**
+- `sum()` - Sum all matching entity values
+- `avg()` / `mean()` - Average of all matching entities
+- `count()` - Count of matching entities
+- `min()` / `max()` - Minimum/maximum value
+- `std()` / `var()` - Standard deviation/variance
 
-```python
-from ha_synthetic_sensors import NameResolver
-
-variables = {
-    "current_power": "sensor.span_panel_instantaneous_power",
-    "electricity_rate": "input_number.electricity_rate_cents_kwh",
-    "hvac_upstairs": "sensor.hvac_upstairs_power",
-}
-
-name_resolver = NameResolver(hass, variables=variables)
-```
+**Collection Patterns:**
+- `device_class:power` - Entities with specific device class
+- `regex:sensor\..*_power` - Entities matching regex pattern
+- `area:kitchen` - Entities in specific area
+- `tags:tag1,tag2` - Entities with any of the specified tags
+- `attribute:battery_level<50` - Entities with attribute conditions
 
 ## Formula examples
 
@@ -295,7 +250,7 @@ name_resolver = NameResolver(hass, variables=variables)
 "avg(temp1, temp2, temp3)"                   # Average of values
 "percent(used_space, total_space)"           # Percentage calculation
 
-# Dynamic aggregation
+# Collection functions (entity aggregation)
 "sum(regex:sensor\.circuit_.*_power)"        # Sum all circuit sensors
 "avg(device_class:temperature)"              # Average all temperature sensors
 "count(tags:critical)"                       # Count entities with 'critical' tag
@@ -491,18 +446,19 @@ Available TypedDict interfaces:
 ## Configuration file format
 
 Required fields:
-- `unique_id`: Unique identifier for the sensor
-- `formulas.id`: Unique identifier for each formula
-- `formulas.formula`: Mathematical expression
+- `formula`: Mathematical expression
+
+Recommended fields:
+- `name`: Display name for the sensor
+- `device_class`: Home Assistant device class
+- `state_class`: State class for statistics
+- `unit_of_measurement`: Units for the result
 
 Optional fields:
-- `name`: Display name for the sensor
-- `formulas.name`: Display name for the formula
-- `formulas.variables`: Map variable names to entity IDs
-- `formulas.unit_of_measurement`: Units for the result
-- `formulas.device_class`: Home Assistant device class
-- `formulas.state_class`: State class for statistics
-- `formulas.icon`: Icon for the entity
+- `variables`: Map variable names to entity IDs
+- `attributes`: Calculated attributes
+- `enabled`: Whether this sensor is enabled
+- `icon`: Icon for the entity
 
 ## Auto-configuration
 
@@ -517,8 +473,7 @@ The package automatically loads configuration files from these locations:
 
 Sensors create entities with predictable IDs:
 
-- Sensor entities: `sensor.syn2_{unique_id}`
-- Formula entities: `sensor.syn2_{unique_id}_{formula_id}`
+- Sensor entities: `sensor.syn2_{sensor_key}`
 
 ## Dependencies
 

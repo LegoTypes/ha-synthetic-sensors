@@ -111,6 +111,74 @@ class MathFunctions:
         return numerator / denominator if denominator != 0 else fallback
 
     @staticmethod
+    def count(*values: Any) -> int:
+        """Count the number of non-None values.
+
+        Args:
+            *values: Variable number of values or single iterable
+
+        Returns:
+            Count of non-None values
+        """
+        if not values:
+            return 0
+
+        # Handle case where a single iterable is passed
+        if len(values) == 1 and hasattr(values[0], "__iter__") and not isinstance(values[0], str):
+            values = tuple(values[0])
+
+        return len([v for v in values if v is not None])
+
+    @staticmethod
+    def std(*values: Any) -> float:
+        """Calculate standard deviation of values.
+
+        Args:
+            *values: Variable number of numeric values or single iterable
+
+        Returns:
+            Standard deviation, 0.0 if less than 2 values
+        """
+        if not values:
+            return 0.0
+
+        # Handle case where a single iterable is passed
+        if len(values) == 1 and hasattr(values[0], "__iter__") and not isinstance(values[0], str):
+            values = tuple(values[0])
+
+        if len(values) < 2:
+            return 0.0
+
+        numeric_values = [float(v) for v in values]
+        mean_val = sum(numeric_values) / len(numeric_values)
+        variance = sum((x - mean_val) ** 2 for x in numeric_values) / len(numeric_values)
+        return math.sqrt(variance)
+
+    @staticmethod
+    def var(*values: Any) -> float:
+        """Calculate variance of values.
+
+        Args:
+            *values: Variable number of numeric values or single iterable
+
+        Returns:
+            Variance, 0.0 if less than 2 values
+        """
+        if not values:
+            return 0.0
+
+        # Handle case where a single iterable is passed
+        if len(values) == 1 and hasattr(values[0], "__iter__") and not isinstance(values[0], str):
+            values = tuple(values[0])
+
+        if len(values) < 2:
+            return 0.0
+
+        numeric_values = [float(v) for v in values]
+        mean_val = sum(numeric_values) / len(numeric_values)
+        return sum((x - mean_val) ** 2 for x in numeric_values) / len(numeric_values)
+
+    @staticmethod
     def get_builtin_functions() -> dict[str, Callable[..., Any]]:
         """Get all mathematical functions available for formula evaluation.
 
@@ -150,6 +218,9 @@ class MathFunctions:
             "exp": math.exp,
             # Statistics - using our custom implementations that handle individual args
             "mean": MathFunctions.mean,
+            "count": MathFunctions.count,
+            "std": MathFunctions.std,
+            "var": MathFunctions.var,
             # Custom functions
             "clamp": MathFunctions.clamp,
             "map": MathFunctions.map_range,

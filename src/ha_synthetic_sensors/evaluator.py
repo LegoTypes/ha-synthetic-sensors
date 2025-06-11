@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from simpleeval import SimpleEval  # type: ignore[import-untyped]
 
 from .cache import CacheConfig, FormulaCache
+from .collection_resolver import CollectionResolver
 from .config_manager import FormulaConfig
 from .dependency_parser import DependencyParser
 from .math_functions import MathFunctions
@@ -139,6 +140,7 @@ class Evaluator(FormulaEvaluator):
         # Initialize components
         self._cache = FormulaCache(cache_config)
         self._dependency_parser = DependencyParser()
+        self._collection_resolver = CollectionResolver(hass)
         self._math_functions = MathFunctions.get_builtin_functions()
 
         # Initialize configuration objects
@@ -758,18 +760,21 @@ class Evaluator(FormulaEvaluator):
         return False
 
     def _preprocess_formula_for_evaluation(self, formula: str) -> str:
-        """Preprocess formula: convert entity_ids with dots to underscores for simpleeval.
+        """Preprocess formula: resolve collection functions and normalize entity IDs.
 
         Args:
             formula: Original formula string
 
         Returns:
-            Preprocessed formula with normalized entity_id variable names
+            Preprocessed formula with collection functions resolved and normalized entity_id variable names
         """
         processed_formula = formula
 
+        # First, resolve collection functions
+        processed_formula = self._resolve_collection_functions(processed_formula)
+
         # Find all entity references using dependency parser
-        entity_refs = self._dependency_parser.extract_entity_references(formula)
+        entity_refs = self._dependency_parser.extract_entity_references(processed_formula)
 
         # Replace each entity_id with normalized version
         for entity_id in entity_refs:
@@ -780,6 +785,58 @@ class Evaluator(FormulaEvaluator):
                 processed_formula = re.sub(pattern, normalized_name, processed_formula)
 
         return processed_formula
+
+    def _resolve_collection_functions(self, formula: str) -> str:
+        """Resolve collection functions by replacing them with actual entity values.
+
+        Args:
+            formula: Formula containing collection functions
+
+        Returns:
+            Formula with collection functions replaced by actual values
+        """
+        try:
+            # Extract dynamic queries from the formula
+            parsed_deps = self._dependency_parser.parse_formula_dependencies(formula, {})
+
+            if not parsed_deps.dynamic_queries:
+                return formula  # No collection functions to resolve
+
+            resolved_formula = formula
+
+            for query in parsed_deps.dynamic_queries:
+                # Resolve collection to get matching entity IDs
+                entity_ids = self._collection_resolver.resolve_collection(query)
+
+                if not entity_ids:
+                    _LOGGER.warning("Collection query %s:%s matched no entities", query.query_type, query.pattern)
+                    # Replace with empty function call to avoid syntax errors
+                    original_pattern = f'{query.function}("{query.query_type}:{query.pattern}")'
+                    resolved_formula = resolved_formula.replace(original_pattern, f"{query.function}()")
+                    continue
+
+                # Get numeric values for the entities
+                values = self._collection_resolver.get_entity_values(entity_ids)
+
+                if not values:
+                    _LOGGER.warning("No numeric values found for collection query %s:%s", query.query_type, query.pattern)
+                    # Replace with empty function call
+                    original_pattern = f'{query.function}("{query.query_type}:{query.pattern}")'
+                    resolved_formula = resolved_formula.replace(original_pattern, f"{query.function}()")
+                    continue
+
+                # Replace the collection function with the resolved values
+                values_str = ", ".join(str(v) for v in values)
+                original_pattern = f'{query.function}("{query.query_type}:{query.pattern}")'
+                resolved_formula = resolved_formula.replace(original_pattern, f"{query.function}({values_str})")
+
+                _LOGGER.debug("Resolved collection %s:%s to %d values: [%s]", query.query_type, query.pattern, len(values), values_str[:100])
+
+            return resolved_formula
+
+        except Exception as e:
+            _LOGGER.error("Error resolving collection functions in formula '%s': %s", formula, e)
+            return formula  # Return original formula if resolution fails
 
 
 @dataclass
