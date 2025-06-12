@@ -1,0 +1,33 @@
+{
+  "MD013": {
+    "line_length": 125,
+    "heading_line_length": 125,
+    "code_block_line_length": 125,
+    "tables": false
+  },
+  "MD025": false,
+  "MD033": {
+    "allowed_elements": ["br", "details", "summary"]
+  },
+  "MD046": {
+    "style": "fenced"
+  },
+  "MD024": {
+    "siblings_only": true
+  },
+  "MD022": {
+    "lines_above": 1,
+    "lines_below": 1
+  },
+  "MD026": {
+    "punctuation": ".,;:!"
+  },
+  "MD031": {
+    "list_items": true
+  },
+  "MD036": false,
+  "MD040": {
+    "allowed_languages": ["yaml", "python", "bash", "shell", "json", "toml", "markdown", "text", "console", "diff"],
+    "language_only": false
+  }
+}
