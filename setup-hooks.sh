@@ -12,14 +12,15 @@ if [[ ! -f ".deps-installed" ]] || [[ "pyproject.toml" -nt ".deps-installed" ]] 
 
     if [[ "$FORCE_UPDATE" == "true" ]]; then
         echo "Forcing update to latest versions..."
-        poetry update
+        if ! poetry update; then
+            echo "Failed to update dependencies. Please check the output above."
+            exit 1
+        fi
     else
-        poetry install --with dev
-    fi
-
-    if [[ $? -ne 0 ]]; then
-        echo "Failed to install dependencies. Please check the output above."
-        exit 1
+        if ! poetry install --with dev; then
+            echo "Failed to install dependencies. Please check the output above."
+            exit 1
+        fi
     fi
     touch .deps-installed
 fi
