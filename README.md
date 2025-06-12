@@ -17,7 +17,8 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support%20development-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/cayossarian)
 
-A Python package for creating formula-based sensors in Home Assistant integrations using YAML configuration.
+A Python package for creating synthetic, math-based, and hierarchical sensors in Home Assistant integrations
+using YAML configuration.
 
 ## What it does
 
