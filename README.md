@@ -1,5 +1,22 @@
 # HA Synthetic Sensors
 
+[![GitHub Release](https://img.shields.io/github/v/release/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://github.com/SpanPanel/ha-synthetic-sensors/releases)
+[![PyPI Version](https://img.shields.io/pypi/v/ha-synthetic-sensors?style=flat-square)](https://pypi.org/project/ha-synthetic-sensors/)
+[![Python Version](https://img.shields.io/pypi/pyversions/ha-synthetic-sensors?style=flat-square)](https://pypi.org/project/ha-synthetic-sensors/)
+[![License](https://img.shields.io/github/license/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://github.com/SpanPanel/ha-synthetic-sensors/blob/main/LICENSE)
+
+[![CI Status](https://img.shields.io/github/actions/workflow/status/SpanPanel/ha-synthetic-sensors/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/SpanPanel/ha-synthetic-sensors/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://codecov.io/gh/SpanPanel/ha-synthetic-sensors)
+[![Code Quality](https://img.shields.io/codefactor/grade/github/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://www.codefactor.io/repository/github/spanpanel/ha-synthetic-sensors)
+[![Security](https://img.shields.io/snyk/vulnerabilities/github/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://snyk.io/test/github/SpanPanel/ha-synthetic-sensors)
+
+[![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&style=flat-square)](https://github.com/pre-commit/pre-commit)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
+[![Linting: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://github.com/astral-sh/ruff)
+[![Type Checking: MyPy](https://img.shields.io/badge/type%20checking-mypy-blue?style=flat-square)](https://mypy-lang.org/)
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support%20development-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/cayossarian)
+
 A Python package for creating formula-based sensors in Home Assistant integrations using YAML configuration.
 
 ## What it does
@@ -822,13 +839,18 @@ Development dependencies:
 - `pytest` - Testing framework
 - `pytest-asyncio` - Async test support
 - `pytest-cov` - Coverage reporting
-- `ruff` - Code linting and formatting
+- `black` - Code formatting
+- `ruff` - Code linting and import sorting
 - `mypy` - Type checking
 - `bandit` - Security scanning
+- `pre-commit` - Git hook management
 
 ## Development commands
 
 ```bash
+# Install pre-commit hooks (required for all developers)
+poetry run pre-commit install
+
 # Run tests
 poetry run pytest
 
@@ -836,17 +858,37 @@ poetry run pytest
 poetry run pytest --cov=src/ha_synthetic_sensors
 
 # Format code
-poetry run ruff format .
+poetry run black --line-length 88 .
 
 # Lint code
-poetry run ruff check .
+poetry run ruff check --fix .
 
 # Type checking
 poetry run mypy src/ha_synthetic_sensors
 
 # Run all pre-commit hooks
 poetry run pre-commit run --all-files
+
+# Fix markdown files (if markdownlint fails)
+./scripts/fix-markdown.sh
 ```
+
+### Pre-commit Hooks
+
+This project uses pre-commit hooks to ensure code quality. **All developers must install them locally**:
+
+```bash
+poetry run pre-commit install
+```
+
+**Important**: The pre-commit hooks will **check** markdown files ut **not automatically fix** them.
+If markdownlint fails, you must run the fix script locally:
+
+```bash
+./scripts/fix-markdown.sh
+```
+
+This ensures that all markdown formatting is done locally before pushing to GitHub, preventing CI failures due to file modifications.
 
 ## Architecture
 
