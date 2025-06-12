@@ -269,61 +269,114 @@ class CollectionResolver:
             List of matching entity IDs
         """
         matching_entities: list[str] = []
-
-        # Split by pipe (|) for OR logic
         attribute_conditions = [condition.strip() for condition in pattern.split("|")]
 
         for condition in attribute_conditions:
-            # Parse each attribute condition
-            for op in ["<=", ">=", "!=", "<", ">", "="]:
-                if op in condition:
-                    attribute_name, value_str = condition.split(op, 1)
-                    attribute_name = attribute_name.strip()
-                    value_str = value_str.strip()
-
-                    # Convert value to appropriate type
-                    expected_value: bool | float | int | str
-                    try:
-                        if value_str.lower() in ("true", "false"):
-                            expected_value = value_str.lower() == "true"
-                        elif "." in value_str:
-                            expected_value = float(value_str)
-                        else:
-                            expected_value = int(value_str)
-                    except ValueError:
-                        expected_value = value_str  # Keep as string
-
-                    # Check entities for matching attribute
-                    for entity_id in self._hass.states.entity_ids():
-                        if entity_id in matching_entities:
-                            continue  # Already matched by previous condition
-
-                        state = self._hass.states.get(entity_id)
-                        if state and hasattr(state, "attributes"):
-                            actual_value = state.attributes.get(attribute_name)
-
-                            if actual_value is not None:
-                                # Convert actual value to same type as expected
-                                converted_value: bool | float | str
-                                try:
-                                    if isinstance(expected_value, bool):
-                                        converted_value = str(actual_value).lower() == "true"
-                                    elif isinstance(expected_value, (int, float)):
-                                        converted_value = float(actual_value)
-                                    else:
-                                        converted_value = str(actual_value)
-                                except (ValueError, TypeError):
-                                    continue
-
-                                # Apply comparison
-                                if self._compare_values(converted_value, op, expected_value):
-                                    matching_entities.append(entity_id)
-                    break
-            else:
-                _LOGGER.warning("Invalid attribute condition '%s'", condition)
+            condition_matches = self._resolve_single_attribute_condition(condition, matching_entities)
+            matching_entities.extend(condition_matches)
 
         _LOGGER.debug("Attribute pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
+
+    def _resolve_single_attribute_condition(self, condition: str, existing_matches: list[str]) -> list[str]:
+        """Resolve a single attribute condition.
+
+        Args:
+            condition: Single attribute condition (e.g., "battery_level<20")
+            existing_matches: Entities already matched to avoid duplicates
+
+        Returns:
+            List of newly matching entity IDs
+        """
+        matches: list[str] = []
+
+        # Parse the condition
+        parsed = self._parse_attribute_condition(condition)
+        if not parsed:
+            _LOGGER.warning("Invalid attribute condition '%s'", condition)
+            return matches
+
+        attribute_name, op, expected_value = parsed
+
+        # Check entities for matching attribute
+        for entity_id in self._hass.states.entity_ids():
+            if entity_id in existing_matches:
+                continue  # Already matched by previous condition
+
+            if self._entity_matches_attribute_condition(entity_id, attribute_name, op, expected_value):
+                matches.append(entity_id)
+
+        return matches
+
+    def _parse_attribute_condition(self, condition: str) -> tuple[str, str, bool | float | int | str] | None:
+        """Parse a single attribute condition into components.
+
+        Args:
+            condition: Attribute condition string
+
+        Returns:
+            Tuple of (attribute_name, operator, expected_value) or None if invalid
+        """
+        for op in ["<=", ">=", "!=", "<", ">", "="]:
+            if op in condition:
+                attribute_name, value_str = condition.split(op, 1)
+                attribute_name = attribute_name.strip()
+                value_str = value_str.strip()
+                expected_value = self._convert_value_string(value_str)
+                return attribute_name, op, expected_value
+        return None
+
+    def _entity_matches_attribute_condition(self, entity_id: str, attribute_name: str, op: str, expected_value: bool | float | int | str) -> bool:
+        """Check if an entity matches an attribute condition.
+
+        Args:
+            entity_id: Entity to check
+            attribute_name: Name of attribute to check
+            op: Comparison operator
+            expected_value: Expected value to compare against
+
+        Returns:
+            True if entity matches condition
+        """
+        state = self._hass.states.get(entity_id)
+        if not state or not hasattr(state, "attributes"):
+            return False
+
+        actual_value = state.attributes.get(attribute_name)
+        if actual_value is None:
+            return False
+
+        # Convert actual value to same type as expected
+        try:
+            if isinstance(expected_value, bool):
+                converted_value: bool | float | str = str(actual_value).lower() == "true"
+            elif isinstance(expected_value, (int, float)):
+                converted_value = float(actual_value)
+            else:
+                converted_value = str(actual_value)
+        except (ValueError, TypeError):
+            return False
+
+        return self._compare_values(converted_value, op, expected_value)
+
+    def _convert_value_string(self, value_str: str) -> bool | float | int | str:
+        """Convert a string value to appropriate type.
+
+        Args:
+            value_str: String to convert
+
+        Returns:
+            Converted value (bool, float, int, or str)
+        """
+        try:
+            if value_str.lower() in ("true", "false"):
+                return value_str.lower() == "true"
+            elif "." in value_str:
+                return float(value_str)
+            else:
+                return int(value_str)
+        except ValueError:
+            return value_str  # Keep as string
 
     def _resolve_state_pattern(self, pattern: str) -> list[str]:
         """Resolve state condition pattern with OR logic support.
@@ -335,56 +388,88 @@ class CollectionResolver:
             List of matching entity IDs
         """
         matching_entities: list[str] = []
-
-        # Split by pipe (|) for OR logic
         state_conditions = [condition.strip() for condition in pattern.split("|")]
 
         for condition in state_conditions:
-            # Parse each state condition
-            for op in ["<=", ">=", "!=", "<", ">", "="]:
-                if op in condition:
-                    value_str = condition.replace(op, "", 1).strip()
-
-                    # Convert value to appropriate type
-                    expected_value: bool | float | int | str
-                    try:
-                        if value_str.lower() in ("true", "false"):
-                            expected_value = value_str.lower() == "true"
-                        elif "." in value_str:
-                            expected_value = float(value_str)
-                        else:
-                            expected_value = int(value_str)
-                    except ValueError:
-                        expected_value = value_str  # Keep as string
-
-                    # Check entities for matching state
-                    for entity_id in self._hass.states.entity_ids():
-                        if entity_id in matching_entities:
-                            continue  # Already matched by previous condition
-
-                        state = self._hass.states.get(entity_id)
-                        if state and state.state not in ("unknown", "unavailable", "none"):
-                            # Convert actual state to same type as expected
-                            converted_state: bool | float | str
-                            try:
-                                if isinstance(expected_value, bool):
-                                    converted_state = str(state.state).lower() == "true"
-                                elif isinstance(expected_value, (int, float)):
-                                    converted_state = float(state.state)
-                                else:
-                                    converted_state = str(state.state)
-                            except (ValueError, TypeError):
-                                continue
-
-                            # Apply comparison
-                            if self._compare_values(converted_state, op, expected_value):
-                                matching_entities.append(entity_id)
-                    break
-            else:
-                _LOGGER.warning("Invalid state condition '%s'", condition)
+            condition_matches = self._resolve_single_state_condition(condition, matching_entities)
+            matching_entities.extend(condition_matches)
 
         _LOGGER.debug("State pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
+
+    def _resolve_single_state_condition(self, condition: str, existing_matches: list[str]) -> list[str]:
+        """Resolve a single state condition.
+
+        Args:
+            condition: Single state condition (e.g., ">100")
+            existing_matches: Entities already matched to avoid duplicates
+
+        Returns:
+            List of newly matching entity IDs
+        """
+        matches: list[str] = []
+
+        # Parse the condition
+        parsed = self._parse_state_condition(condition)
+        if not parsed:
+            _LOGGER.warning("Invalid state condition '%s'", condition)
+            return matches
+
+        op, expected_value = parsed
+
+        # Check entities for matching state
+        for entity_id in self._hass.states.entity_ids():
+            if entity_id in existing_matches:
+                continue  # Already matched by previous condition
+
+            if self._entity_matches_state_condition(entity_id, op, expected_value):
+                matches.append(entity_id)
+
+        return matches
+
+    def _parse_state_condition(self, condition: str) -> tuple[str, bool | float | int | str] | None:
+        """Parse a single state condition into components.
+
+        Args:
+            condition: State condition string
+
+        Returns:
+            Tuple of (operator, expected_value) or None if invalid
+        """
+        for op in ["<=", ">=", "!=", "<", ">", "="]:
+            if op in condition:
+                value_str = condition.replace(op, "", 1).strip()
+                expected_value = self._convert_value_string(value_str)
+                return op, expected_value
+        return None
+
+    def _entity_matches_state_condition(self, entity_id: str, op: str, expected_value: bool | float | int | str) -> bool:
+        """Check if an entity matches a state condition.
+
+        Args:
+            entity_id: Entity to check
+            op: Comparison operator
+            expected_value: Expected value to compare against
+
+        Returns:
+            True if entity matches condition
+        """
+        state = self._hass.states.get(entity_id)
+        if not state or state.state in ("unknown", "unavailable", "none"):
+            return False
+
+        # Convert actual state to same type as expected
+        try:
+            if isinstance(expected_value, bool):
+                converted_state: bool | float | str = str(state.state).lower() == "true"
+            elif isinstance(expected_value, (int, float)):
+                converted_state = float(state.state)
+            else:
+                converted_state = str(state.state)
+        except (ValueError, TypeError):
+            return False
+
+        return self._compare_values(converted_state, op, expected_value)
 
     def _compare_values(self, actual: bool | float | str, op: str, expected: bool | float | int | str) -> bool:
         """Compare two values using the specified operator.
