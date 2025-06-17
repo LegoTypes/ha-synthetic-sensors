@@ -160,20 +160,20 @@ class TestEntityIdSupport:
         config = config_manager._parse_yaml_config(entity_id_yaml)
         assert len(config.sensors) == 4
 
-        # Test invalid entity_id format
-        invalid_yaml = entity_id_yaml.copy()
-        invalid_yaml["sensors"]["invalid_entity_id_sensor"] = {"name": "Invalid Entity ID", "entity_id": "invalid_format_no_domain", "formula": "1 + 1"}  # Missing domain
+        # Test invalid entity_id format using schema validation (which enforces HA rules)
+        from ha_synthetic_sensors.schema_validator import validate_yaml_config
 
-        # Should either raise an error or handle gracefully
-        try:
-            invalid_config = config_manager._parse_yaml_config(invalid_yaml)
-            # If parsing succeeds, check that validation catches the error
-            errors = config_manager.validate_config(invalid_config)
-            # Should have validation errors for invalid entity_id format
-            assert len(errors) > 0
-        except Exception:
-            # If parsing fails, that's also acceptable validation
-            pass
+        invalid_yaml = entity_id_yaml.copy()
+        invalid_yaml["sensors"]["invalid_entity_id_sensor"] = {"name": "Invalid Entity ID", "entity_id": "invalid_format_no_domain", "formula": "1 + 1"}  # Missing domain - should be rejected
+
+        # Schema validation should catch the invalid entity_id format
+        result = validate_yaml_config(invalid_yaml)
+        assert result["valid"] is False
+        assert len(result["errors"]) > 0
+
+        # Check that the error is about entity_id format
+        error_messages = [error.message for error in result["errors"]]
+        assert any("invalid_format_no_domain" in msg for msg in error_messages)
 
     def test_entity_id_cross_references(self, config_manager, entity_id_yaml):
         """Test that custom entity_ids can be referenced by other sensors."""
