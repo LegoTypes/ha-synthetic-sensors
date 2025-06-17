@@ -46,6 +46,7 @@ class SensorConfigDict(TypedDict, total=False):
     enabled: bool
     update_interval: int
     category: str
+    entity_id: str  # Optional: Explicit entity ID for the sensor
     # Main formula syntax
     formula: str
     attributes: dict[str, AttributeConfigDict]
@@ -112,6 +113,7 @@ class SensorConfig:
     update_interval: int | None = None
     category: str | None = None
     description: str | None = None
+    entity_id: str | None = None  # OPTIONAL: Explicit entity ID
 
     def get_all_dependencies(self) -> set[str]:
         """Get all entity dependencies across all formulas."""
@@ -315,6 +317,7 @@ class ConfigManager:
         sensor.update_interval = sensor_data.get("update_interval")
         sensor.category = sensor_data.get("category")
         sensor.description = sensor_data.get("description")
+        sensor.entity_id = sensor_data.get("entity_id")
 
         # Parse main formula (required)
         formula = self._parse_single_formula(sensor_key, sensor_data)

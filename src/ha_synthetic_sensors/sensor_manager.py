@@ -82,6 +82,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._attr_unique_id = f"{prefix}_{config.unique_id}"
         self._attr_name = config.name or config.unique_id
 
+        # Set entity_id explicitly if provided in config - MUST be done before super().__init__()
+        if config.entity_id:
+            self.entity_id = config.entity_id
+
         # Set device info if provided by parent integration
         if self._manager_config.device_info:
             self._attr_device_info = self._manager_config.device_info
@@ -107,6 +111,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         self._attr_state_class = self._main_formula.state_class
         self._attr_icon = self._main_formula.icon
+
+        # Call parent constructors AFTER setting entity_id
+        super().__init__()
 
         # State management
         self._attr_native_value: Any = None

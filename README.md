@@ -91,6 +91,7 @@ sensors:
   # Sensor with calculated attributes
   energy_cost_analysis:
     name: "Energy Cost Analysis"
+    # entity_id: "sensor.custom_entity_id"  # Optional: override auto-generated entity_id
     formula: "current_power * electricity_rate / 1000"
     attributes:
       daily_projected:
@@ -136,6 +137,9 @@ sensors:
 | **State Alias (attributes)**   | `state`                         | `state * 24`                           | In attributes, reference main sensor   |
 | **Attribute Dot Notation**     | `entity.attribute`              | `sensor1.battery_level`                | Access entity attributes               |
 | **Collection Functions**       | `mathFunc(pattern:value)`       | `sum(device_class:temperature)`        | Aggregate entities by pattern          |
+
+**Entity ID Generation**: The sensor key serves as the unique_id. Home Assistant creates entity_ids as
+`sensor.syn2_{key}` unless overridden with the optional `entity_id` field.
 
 ### Variable Purpose and Scope
 
