@@ -248,6 +248,13 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                     main_result["value"],
                     self._calculated_attributes.copy(),
                 )
+            elif main_result["success"] and main_result.get("state") == "unknown":
+                # Handle case where evaluation succeeded but dependencies are unavailable
+                # This is not an error - just set sensor to unavailable state until dependencies are ready
+                self._attr_native_value = None
+                self._attr_available = False
+                self._last_update = dt_util.utcnow()
+                _LOGGER.debug("Sensor %s set to unavailable due to unknown dependencies", self.entity_id)
             else:
                 self._attr_available = False
                 error_msg = main_result.get("error", "Unknown evaluation error")
