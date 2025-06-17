@@ -82,9 +82,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._attr_unique_id = f"{prefix}_{config.unique_id}"
         self._attr_name = config.name or config.unique_id
 
-        # Set entity_id explicitly if provided in config
+        # Set entity_id explicitly if provided in config - MUST be set before parent __init__
         if config.entity_id:
-            self._attr_entity_id = config.entity_id
+            self.entity_id = config.entity_id
 
         # Set device info if provided by parent integration
         if self._manager_config.device_info:

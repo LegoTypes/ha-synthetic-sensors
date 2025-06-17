@@ -151,8 +151,8 @@ class TestEntityIdSupport:
 
         # Should use custom entity_id
         assert custom_dynamic.unique_id == "syn2_custom_named_sensor"
-        assert hasattr(custom_dynamic, "_attr_entity_id")
-        assert custom_dynamic._attr_entity_id == "sensor.custom_energy_monitor"
+        assert hasattr(custom_dynamic, "entity_id")
+        assert custom_dynamic.entity_id == "sensor.custom_energy_monitor"
 
     def test_entity_id_validation_in_config(self, config_manager, entity_id_yaml):
         """Test that entity_id values are validated during config parsing."""
