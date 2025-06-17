@@ -143,7 +143,7 @@ class TestEntityIdSupport:
 
         # Should use default pattern
         assert standard_dynamic.unique_id == "syn2_standard_power_sensor"
-        assert not hasattr(standard_dynamic, "entity_id") or standard_dynamic.entity_id is None
+        assert not hasattr(standard_dynamic, "_attr_entity_id")
 
         # Test custom entity_id sensor
         custom_sensor = next(s for s in config.sensors if s.unique_id == "custom_named_sensor")
@@ -151,8 +151,8 @@ class TestEntityIdSupport:
 
         # Should use custom entity_id
         assert custom_dynamic.unique_id == "syn2_custom_named_sensor"
-        assert hasattr(custom_dynamic, "entity_id")
-        assert custom_dynamic.entity_id == "sensor.custom_energy_monitor"
+        assert hasattr(custom_dynamic, "_attr_entity_id")
+        assert custom_dynamic._attr_entity_id == "sensor.custom_energy_monitor"
 
     def test_entity_id_validation_in_config(self, config_manager, entity_id_yaml):
         """Test that entity_id values are validated during config parsing."""

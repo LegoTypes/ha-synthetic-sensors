@@ -159,8 +159,11 @@ class Evaluator(FormulaEvaluator):
 
     def evaluate_formula(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling."""
-        # Use either name or id as formula identifier
+        # Use either name or id as formula identifier for display/logging
         formula_name = config.name or config.id
+        # Use config.id for cache key generation to ensure uniqueness
+        # config.name is just for display and is not guaranteed to be unique
+        cache_key_id = config.id
 
         try:
             # Check if we should bail due to too many attempts
@@ -173,7 +176,7 @@ class Evaluator(FormulaEvaluator):
 
             # Check cache first
             filtered_context = self._filter_context_for_cache(context)
-            cached_result = self._cache.get_result(config.formula, filtered_context, formula_name)
+            cached_result = self._cache.get_result(config.formula, filtered_context, cache_key_id)
             if cached_result is not None:
                 return {
                     "success": True,
@@ -252,7 +255,7 @@ class Evaluator(FormulaEvaluator):
                 result = evaluator.eval(processed_formula)
 
             # Cache the result
-            self._cache.store_result(config.formula, result, filtered_context, formula_name)
+            self._cache.store_result(config.formula, result, filtered_context, cache_key_id)
 
             # Reset error count on success
             # CIRCUIT BREAKER RESET: When a formula evaluates successfully,
