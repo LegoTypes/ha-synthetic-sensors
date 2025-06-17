@@ -239,7 +239,7 @@ class Evaluator(FormulaEvaluator):
             # return early to prevent simpleeval errors
             for var_name, var_value in eval_context.items():
                 if isinstance(var_value, str) and var_value in ("unavailable", "unknown"):
-                    _LOGGER.info("Formula '%s' has variable '%s' with unavailable value '%s'. " "Setting synthetic sensor to unknown state.", formula_name, var_name, var_value)
+                    _LOGGER.debug("Formula '%s' has variable '%s' with unavailable value '%s'. " "Setting synthetic sensor to unknown state.", formula_name, var_name, var_value)
                     return {
                         "success": True,  # Not an error, but dependency unavailable
                         "value": None,
