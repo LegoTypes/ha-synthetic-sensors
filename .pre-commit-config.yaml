@@ -66,7 +66,7 @@ repos:
         additional_dependencies: ['bandit[toml]']
         exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*'
 
-  # Poetry check for pyproject.toml validation
+  # Poetry check for pyproject.toml validation and lock file consistency
   - repo: https://github.com/python-poetry/poetry
     rev: 2.1.3
     hooks:
