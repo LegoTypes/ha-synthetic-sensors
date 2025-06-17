@@ -235,6 +235,18 @@ class Evaluator(FormulaEvaluator):
             # Build evaluation context
             eval_context = self._build_evaluation_context(dependencies, context)
 
+            # Additional safety check: if any values in the context are unavailable/unknown,
+            # return early to prevent simpleeval errors
+            for var_name, var_value in eval_context.items():
+                if isinstance(var_value, str) and var_value in ("unavailable", "unknown"):
+                    _LOGGER.info("Formula '%s' has variable '%s' with unavailable value '%s'. " "Setting synthetic sensor to unknown state.", formula_name, var_name, var_value)
+                    return {
+                        "success": True,  # Not an error, but dependency unavailable
+                        "value": None,
+                        "state": "unknown",
+                        "unavailable_dependencies": [var_name],
+                    }
+
             # Create evaluator with proper separation of names and functions
             evaluator = SimpleEval()
             evaluator.names = eval_context
