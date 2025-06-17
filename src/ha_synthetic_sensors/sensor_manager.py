@@ -82,6 +82,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._attr_unique_id = f"{prefix}_{config.unique_id}"
         self._attr_name = config.name or config.unique_id
 
+        # Set entity_id explicitly if provided in config - MUST be set before parent __init__
+        if config.entity_id:
+            self.entity_id = config.entity_id
+
         # Set device info if provided by parent integration
         if self._manager_config.device_info:
             self._attr_device_info = self._manager_config.device_info
@@ -181,11 +185,43 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         """Handle when a dependency entity changes."""
         await self._async_update_sensor()
 
+    def _build_variable_context(self, formula_config: FormulaConfig) -> dict[str, Any] | None:
+        """Build variable context from formula config for evaluation.
+
+        Args:
+            formula_config: Formula configuration with variables
+
+        Returns:
+            Dictionary mapping variable names to entity state values, or None if no variables
+        """
+        if not formula_config.variables:
+            return None
+
+        context: dict[str, Any] = {}
+        for var_name, entity_id in formula_config.variables.items():
+            state = self._hass.states.get(entity_id)
+            if state is not None:
+                try:
+                    # Try to get numeric value
+                    numeric_value = float(state.state)
+                    context[var_name] = numeric_value
+                except (ValueError, TypeError):
+                    # Fall back to string value for non-numeric states
+                    context[var_name] = state.state
+            else:
+                # Entity not found - this will cause appropriate evaluation failure
+                context[var_name] = None
+
+        return context if context else None
+
     async def _async_update_sensor(self) -> None:
         """Update the sensor value and calculated attributes by evaluating formulas."""
         try:
-            # Evaluate the main formula
-            main_result = self._evaluator.evaluate_formula(self._main_formula)
+            # Build variable context for the main formula
+            main_context = self._build_variable_context(self._main_formula)
+
+            # Evaluate the main formula with variable context
+            main_result = self._evaluator.evaluate_formula(self._main_formula, main_context)
 
             if main_result["success"] and main_result["value"] is not None:
                 self._attr_native_value = main_result["value"]
@@ -195,7 +231,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 # Evaluate calculated attributes
                 self._calculated_attributes.clear()
                 for attr_formula in self._attribute_formulas:
-                    attr_result = self._evaluator.evaluate_formula(attr_formula)
+                    # Build variable context for each attribute formula
+                    attr_context = self._build_variable_context(attr_formula)
+                    attr_result = self._evaluator.evaluate_formula(attr_formula, attr_context)
                     if attr_result["success"] and attr_result["value"] is not None:
                         # Use formula ID as the attribute name
                         attr_name = attr_formula.id
@@ -210,6 +248,13 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                     main_result["value"],
                     self._calculated_attributes.copy(),
                 )
+            elif main_result["success"] and main_result.get("state") == "unknown":
+                # Handle case where evaluation succeeded but dependencies are unavailable
+                # This is not an error - just set sensor to unavailable state until dependencies are ready
+                self._attr_native_value = None
+                self._attr_available = False
+                self._last_update = dt_util.utcnow()
+                _LOGGER.debug("Sensor %s set to unavailable due to unknown dependencies", self.entity_id)
             else:
                 self._attr_available = False
                 error_msg = main_result.get("error", "Unknown evaluation error")

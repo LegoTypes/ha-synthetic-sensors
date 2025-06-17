@@ -698,6 +698,11 @@ class SchemaValidator:
                     "type": "string",
                     "description": "Category for grouping sensors",
                 },
+                "entity_id": {
+                    "type": "string",
+                    "description": "Explicit entity ID for the sensor (optional)",
+                    "pattern": entity_pattern,
+                },
                 # Main formula for sensor calculation
                 "formula": {
                     "type": "string",
