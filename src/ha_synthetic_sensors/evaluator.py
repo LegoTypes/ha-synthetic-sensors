@@ -7,7 +7,7 @@ import ast
 from dataclasses import dataclass
 import logging
 import re
-from typing import Any, Callable, NotRequired, TypedDict, Union
+from typing import Any, Callable, NotRequired, TypedDict
 
 from homeassistant.core import HomeAssistant
 from simpleeval import SimpleEval
@@ -32,10 +32,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # Type alias for evaluation context values
-ContextValue = Union[str, float, int, bool, Callable[..., Any]]
+ContextValue = str | float | int | bool | Callable[..., Any]
 
 # Type alias for formula evaluation results
-FormulaResult = Union[float, int, str, bool, None]
+FormulaResult = float | int | str | bool | None
 
 
 # TypedDicts for evaluator results

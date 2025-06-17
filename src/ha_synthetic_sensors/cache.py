@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import logging
-from typing import TypedDict, Union
+from typing import TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
 # Type alias for formula evaluation results
-FormulaResult = Union[float, int, str, bool, None]
+FormulaResult = float | int | str | bool | None
 
 
 class CacheEntry(TypedDict):
