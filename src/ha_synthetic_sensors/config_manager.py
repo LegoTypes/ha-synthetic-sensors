@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
-from typing import Any, TypeAlias, TypedDict, Union
+from typing import Any, TypeAlias, TypedDict
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
@@ -23,7 +23,7 @@ from .schema_validator import validate_yaml_config
 _LOGGER = logging.getLogger(__name__)
 
 # Type alias for attribute values (allows complex types for formula metadata)
-AttributeValue = Union[str, float, int, bool, list[str], dict[str, Any]]
+AttributeValue = str | float | int | bool | list[str] | dict[str, Any]
 
 # Type aliases for Home Assistant constants - use the actual enum types
 DeviceClassType: TypeAlias = SensorDeviceClass | str  # str for YAML parsing, enum for runtime

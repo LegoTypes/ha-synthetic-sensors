@@ -6,13 +6,13 @@ that can be used in formula evaluation, making them easily testable and maintain
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 import math
-from typing import Any, Callable, Union
+from typing import Any
 
 # Type alias for numeric values (excluding complex since it doesn't work with float())
-NumericValue = Union[int, float]
-IterableOrValues = Union[NumericValue, Iterable[NumericValue]]
+NumericValue = int | float
+IterableOrValues = NumericValue | Iterable[NumericValue]
 
 
 class MathFunctions:

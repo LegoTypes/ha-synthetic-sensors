@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ha-synthetic-sensors"
-version = "1.0.2"
+version = "1.0.3"
 description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
 authors = ["SpanPanel"]
 readme = "README.md"
@@ -14,11 +14,11 @@ Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
 
 [tool.poetry.dependencies]
 python = ">=3.13.2,<3.14"
-# Core dependencies for synthetic sensors
-pyyaml = "^6.0.0"
-simpleeval = "^1.0.3"
-voluptuous = ">=0.15.2"
-jsonschema = "^4.17.0"
+# Core dependencies for synthetic sensors - let HA provide these
+pyyaml = "*"  # Let HA provide whatever version it needs
+simpleeval = "^1.0.3"  # Not used by HA, so we keep our own constraint
+voluptuous = "*"  # Let HA provide whatever version it needs
+jsonschema = "^4.17.0"  # Not used by HA, so we keep our own constraint
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -35,7 +35,7 @@ types-jsonschema = "^4.0.0"
 homeassistant-stubs = "*"
 
 [tool.poetry.group.test.dependencies]
-homeassistant = ">=2025.3.0"
+homeassistant = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
