@@ -1,7 +1,5 @@
 # Evaluator Test Configuration
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   evaluator_test_basic:

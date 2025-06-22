@@ -100,7 +100,7 @@ class TestMixedVariableAndDirectPatterns:
                     state_values[entity_id] = "5.0"
                 else:
                     state_values[entity_id] = "8.0"  # Default rate
-            elif entity_id.startswith("sensor.syn2_"):
+            elif entity_id.startswith("sensor."):
                 # Synthetic sensors
                 if "hvac" in entity_id:
                     state_values[entity_id] = "250.0"

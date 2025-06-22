@@ -3,7 +3,7 @@
 This tests the three reference patterns mentioned in the README:
 1. "state * 24" - by main state alias
 2. "energy_cost_analysis * 24 * 30" - by main sensor key
-3. "sensor.syn2_energy_cost_analysis * 24 * 365" - by entity_id
+3. "sensor.energy_cost_analysis * 24 * 365" - by entity_id
 """
 
 from pathlib import Path
@@ -30,10 +30,10 @@ class TestReferencePatterns:
             state_values = {
                 "sensor.span_panel_instantaneous_power": MagicMock(state="1000"),
                 "input_number.electricity_rate_cents_kwh": MagicMock(state="25"),
-                "sensor.syn2_energy_cost_analysis": MagicMock(state="25.0"),  # 1000 * 25 / 1000 = 25
+                "sensor.energy_cost_analysis": MagicMock(state="25.0"),  # 1000 * 25 / 1000 = 25
                 "input_number.efficiency_factor": MagicMock(state="95"),
                 "sensor.backup_power_system": MagicMock(state="100", attributes={"battery_level": 85}),
-                "sensor.syn2_base_power_analysis": MagicMock(state="500"),
+                "sensor.base_power_analysis": MagicMock(state="500"),
                 "sensor.base_power_meter": MagicMock(state="750"),
                 "input_number.base_efficiency": MagicMock(state="90"),
             }
@@ -94,7 +94,7 @@ class TestReferencePatterns:
 
         # Should have sensor key as variable pointing to entity_id
         assert "energy_cost_analysis" in monthly_formula.variables
-        assert monthly_formula.variables["energy_cost_analysis"] == "sensor.syn2_energy_cost_analysis"
+        assert monthly_formula.variables["energy_cost_analysis"] == "sensor.energy_cost_analysis"
 
         # Test evaluation
         context = {"current_power": 1000, "electricity_rate": 25, "energy_cost_analysis": 25.0}
@@ -140,7 +140,7 @@ class TestReferencePatterns:
             assert "base_efficiency" in formula.variables
             # All should have sensor key reference
             assert "comprehensive_analysis" in formula.variables
-            assert formula.variables["comprehensive_analysis"] == "sensor.syn2_comprehensive_analysis"
+            assert formula.variables["comprehensive_analysis"] == "sensor.comprehensive_analysis"
 
     def test_entity_id_reference_in_main_formula(self, config_manager, evaluator, reference_patterns_yaml):
         """Test entity_id reference in main formula (not just attributes)."""
@@ -152,7 +152,7 @@ class TestReferencePatterns:
 
         # Should auto-inject both entity references
         assert "sensor.span_panel_instantaneous_power" in formula_config.variables
-        assert "sensor.syn2_energy_cost_analysis" in formula_config.variables
+        assert "sensor.energy_cost_analysis" in formula_config.variables
 
         # Test evaluation
         context = None  # Let evaluator resolve from dependencies
@@ -171,10 +171,10 @@ class TestReferencePatterns:
         # Should have both explicit variables plus auto-injected entity references
         assert "base_power_analysis" in formula_config.variables
         assert "efficiency_factor" in formula_config.variables
-        assert formula_config.variables["base_power_analysis"] == "sensor.syn2_base_power_analysis"
+        assert formula_config.variables["base_power_analysis"] == "sensor.base_power_analysis"
 
         # Should also auto-inject direct entity references found in variables
-        assert "sensor.syn2_base_power_analysis" in formula_config.variables
+        assert "sensor.base_power_analysis" in formula_config.variables
         assert "input_number.electricity_rate_cents_kwh" in formula_config.variables
 
     def test_entity_id_with_attribute_access(self, config_manager, reference_patterns_yaml):
@@ -192,7 +192,7 @@ class TestReferencePatterns:
         assert "power_efficiency" in battery_formula.variables  # Main sensor reference
 
         # Should also extract the direct entity_id reference
-        assert "sensor.syn2_energy_cost_analysis" in battery_formula.variables
+        assert "sensor.energy_cost_analysis" in battery_formula.variables
 
         # The formula should parse correctly with dependency extraction
         parser = DependencyParser()
@@ -202,4 +202,4 @@ class TestReferencePatterns:
         assert "backup_device.battery_level" in parsed.dot_notation_refs
 
         # Should detect the direct entity reference as static dependency
-        assert "sensor.syn2_energy_cost_analysis" in parsed.static_dependencies
+        assert "sensor.energy_cost_analysis" in parsed.static_dependencies

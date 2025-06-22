@@ -57,7 +57,7 @@ class EntityFactory:
         self._logger = _LOGGER.getChild(self.__class__.__name__)
 
     def generate_unique_id(self, sensor_id: str, formula_id: str | None = None) -> str:
-        """Generate a unique ID for a sensor entity following syn2 patterns.
+        """Generate a unique ID for a sensor entity.
 
         Args:
             sensor_id: The sensor's unique identifier
@@ -65,15 +65,15 @@ class EntityFactory:
 
         Returns:
             str: Generated unique ID following the pattern
-            syn2_{sensor_id}[_{formula_id}]
+            {sensor_id}[_{formula_id}]
         """
-        base_id = f"syn2_{sensor_id}"
+        base_id = sensor_id
         if formula_id:
             return f"{base_id}_{formula_id}"
         return base_id
 
     def generate_entity_id(self, sensor_id: str, formula_id: str | None = None) -> str:
-        """Generate an entity ID for a sensor entity following syn2 patterns.
+        """Generate an entity ID for a sensor entity.
 
         Args:
             sensor_id: The sensor's unique identifier
@@ -81,7 +81,7 @@ class EntityFactory:
 
         Returns:
             str: Generated entity ID following the pattern
-            sensor.syn2_{sensor_id}[_{formula_id}]
+            sensor.{sensor_id}[_{formula_id}]
         """
         unique_id = self.generate_unique_id(sensor_id, formula_id)
         return f"sensor.{unique_id}"

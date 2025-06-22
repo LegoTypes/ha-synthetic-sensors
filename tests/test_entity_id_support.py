@@ -34,7 +34,7 @@ class TestEntityIdSupport:
                 "sensor.standby_power": MagicMock(state="50"),
                 "input_number.max_power_rating": MagicMock(state="1000"),
                 # Expected synthetic sensor entity_ids
-                "sensor.syn2_standard_power_sensor": MagicMock(state="1000"),
+                "sensor.standard_power_sensor": MagicMock(state="1000"),
                 "sensor.custom_energy_monitor": MagicMock(state="960"),  # 800 * 1.2
                 "sensor.special_consumption": MagicMock(state="2"),  # 48 / 24
                 "sensor.comprehensive_energy": MagicMock(state="550"),  # 500 + 50
@@ -80,8 +80,8 @@ class TestEntityIdSupport:
         mock_sensor_manager = MagicMock()
         dynamic_sensor = DynamicSensor(config_manager._hass, standard_sensor, evaluator, mock_sensor_manager, SensorManagerConfig())
 
-        # Should have the default unique_id pattern
-        assert dynamic_sensor.unique_id == "syn2_standard_power_sensor"
+        # Should have the unique_id without prefix (new behavior)
+        assert dynamic_sensor.unique_id == "standard_power_sensor"
         # Should not have explicit entity_id set (HA will auto-generate)
         assert not hasattr(dynamic_sensor, "_attr_entity_id")
 
@@ -141,16 +141,16 @@ class TestEntityIdSupport:
         mock_sensor_manager = MagicMock()
         standard_dynamic = DynamicSensor(config_manager._hass, standard_sensor, evaluator, mock_sensor_manager, SensorManagerConfig())
 
-        # Should use default pattern
-        assert standard_dynamic.unique_id == "syn2_standard_power_sensor"
+        # Should use unique_id without prefix (new behavior)
+        assert standard_dynamic.unique_id == "standard_power_sensor"
         assert not hasattr(standard_dynamic, "_attr_entity_id")
 
         # Test custom entity_id sensor
         custom_sensor = next(s for s in config.sensors if s.unique_id == "custom_named_sensor")
         custom_dynamic = DynamicSensor(config_manager._hass, custom_sensor, evaluator, mock_sensor_manager, SensorManagerConfig())
 
-        # Should use custom entity_id
-        assert custom_dynamic.unique_id == "syn2_custom_named_sensor"
+        # Should use unique_id without prefix (new behavior)
+        assert custom_dynamic.unique_id == "custom_named_sensor"
         assert hasattr(custom_dynamic, "entity_id")
         assert custom_dynamic.entity_id == "sensor.custom_energy_monitor"
 

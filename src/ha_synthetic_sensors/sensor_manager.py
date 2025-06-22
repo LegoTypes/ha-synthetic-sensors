@@ -37,8 +37,6 @@ class SensorManagerConfig:
     """Configuration for SensorManager with device integration support."""
 
     device_info: DeviceInfo | None = None
-    entity_id_prefix: str = "syn2"
-    unique_id_prefix: str = "syn2"
     lifecycle_managed_externally: bool = False
     # Additional HA dependencies that parent integration can provide
     hass_instance: HomeAssistant | None = None  # Allow parent to override hass
@@ -77,9 +75,8 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._sensor_manager = sensor_manager
         self._manager_config = manager_config or SensorManagerConfig()
 
-        # Generate unique entity ID using configurable prefix
-        prefix = self._manager_config.unique_id_prefix
-        self._attr_unique_id = f"{prefix}_{config.unique_id}"
+        # Set unique ID directly from config
+        self._attr_unique_id = config.unique_id
         self._attr_name = config.name or config.unique_id
 
         # Set entity_id explicitly if provided in config - MUST be set before parent __init__

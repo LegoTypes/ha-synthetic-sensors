@@ -1,8 +1,6 @@
 # Entity ID Support Test Configuration
 # Tests explicit entity_id field in YAML configuration
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   # Standard sensor without explicit entity_id (should use default pattern)

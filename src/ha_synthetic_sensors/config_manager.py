@@ -394,7 +394,7 @@ class ConfigManager:
 
         # Add the parent sensor's main state as a variable reference
         # This allows attributes to reference the main sensor by key
-        parent_entity_id = f"sensor.syn2_{sensor_key}"
+        parent_entity_id = f"sensor.{sensor_key}"
         merged_variables[sensor_key] = parent_entity_id
 
         # AUTO-INJECT MISSING ENTITY REFERENCES AS VARIABLES

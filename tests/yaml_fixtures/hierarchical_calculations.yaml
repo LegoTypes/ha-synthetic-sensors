@@ -1,7 +1,5 @@
 # Hierarchical Calculations Test - Converting from v1.0 to v2.0
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   hvac_total_power:                      # Sensor key becomes the unique_id
@@ -30,8 +28,8 @@ sensors:
     name: "Total Home Power Consumption" # OPTIONAL: Display name
     formula: "hvac_total + lighting_total + other_loads"
     variables:
-      hvac_total: "sensor.syn2_hvac_total_power"        # References other synthetic sensor
-      lighting_total: "sensor.syn2_lighting_total_power" # References other synthetic sensor
+      hvac_total: "sensor.hvac_total_power"        # References other synthetic sensor
+      lighting_total: "sensor.lighting_total_power" # References other synthetic sensor
       other_loads: "sensor.other_electrical_loads"
     unit_of_measurement: "W"
     device_class: "power"
