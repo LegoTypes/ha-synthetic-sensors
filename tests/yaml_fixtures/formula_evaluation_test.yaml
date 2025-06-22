@@ -1,7 +1,5 @@
 # Formula Evaluation Test Configuration
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   formula_eval_basic:

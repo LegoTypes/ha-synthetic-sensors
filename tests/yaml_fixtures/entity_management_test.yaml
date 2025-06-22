@@ -1,7 +1,4 @@
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
-  enabled: true
 
 sensors:
   test_entity_lifecycle:

@@ -52,7 +52,7 @@ poetry install --with dev
 - **Unified Device View**: Synthetic sensors appear under your integration's device in HA UI
 - **Lifecycle Control**: Parent integration controls setup, reload, and teardown
 - **Update Coordination**: Synthetic sensors update within parent's async update routines
-- **Entity Naming**: Sensors use parent integration's naming conventions and prefixes
+- **Entity Naming**: Sensors use parent integration's naming conventions
 - **Resource Sharing**: Parent can provide its own HA dependencies (hass, coordinators, etc.)
 
 ## YAML configuration
@@ -392,7 +392,6 @@ class MyCustomIntegration:
         self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
             add_entities_callback=async_add_entities,
             device_info=self.device_info,
-            entity_prefix="my_device",
             lifecycle_managed_externally=True
         )
         

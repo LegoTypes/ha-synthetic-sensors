@@ -1,7 +1,5 @@
 # Solar Analytics Example - Based on Feature Planning Document
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"  # Creates sensor.syn2_* entities
 
 sensors:
   solar_sold_positive:                    # Sensor key becomes the unique_id
@@ -18,6 +16,6 @@ sensors:
     formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
-      solar_export: "sensor.syn2_solar_sold_positive"  # References by entity ID (now simplified)
+      solar_export: "sensor.solar_sold_positive"  # References by entity ID (now simplified)
     unit_of_measurement: "%"
     state_class: "measurement"

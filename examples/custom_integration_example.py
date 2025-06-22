@@ -53,7 +53,6 @@ class MyCustomIntegration:
         self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
             add_entities_callback=add_entities,
             device_info=self.device_info,
-            entity_prefix="my_custom",  # Creates sensor.my_custom_* entities
             lifecycle_managed_externally=True,
             # Pass our own HA dependencies for full control
             hass_override=self.hass,  # Use our hass instance
@@ -65,8 +64,6 @@ class MyCustomIntegration:
         # Load synthetic sensor configuration
         yaml_config = """
 version: "1.0"
-global_settings:
-  domain_prefix: "my_custom"
 
 sensors:
   energy_efficiency:

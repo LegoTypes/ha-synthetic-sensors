@@ -245,7 +245,7 @@ class TestNameResolver:
                 "sensor.hvac_total": "200.0",  # Variable: hvac
                 "sensor.lighting_total": "85.5",  # Variable: lighting
                 "sensor.appliances_power": "150.8",  # Direct entity ID
-                "sensor.syn2_other_sensor_formula": "75.2",  # Direct syn2 reference
+                "sensor.other_sensor_formula": "75.2",  # Direct reference
             }
             if entity_id in state_values:
                 mock_state = MagicMock()
@@ -260,18 +260,18 @@ class TestNameResolver:
                 self.id = name
 
         # Simulate what would happen during formula evaluation:
-        # "hvac + lighting + sensor.appliances_power + sensor.syn2_other_sensor_formula"
+        # "hvac + lighting + sensor.appliances_power + sensor.other_sensor_formula"
 
         hvac_value = resolver.resolve_name(MockNode("hvac"))  # Variable
         lighting_value = resolver.resolve_name(MockNode("lighting"))  # Variable
         appliances_value = resolver.resolve_name(MockNode("sensor.appliances_power"))
-        other_syn2_value = resolver.resolve_name(MockNode("sensor.syn2_other_sensor_formula"))
+        other_value = resolver.resolve_name(MockNode("sensor.other_sensor_formula"))
 
         assert hvac_value == 200.0
         assert lighting_value == 85.5
         assert appliances_value == 150.8
-        assert other_syn2_value == 75.2
+        assert other_value == 75.2
 
         # Total would be 511.5 in a real formula evaluation
-        total = hvac_value + lighting_value + appliances_value + other_syn2_value
+        total = hvac_value + lighting_value + appliances_value + other_value
         assert total == 511.5

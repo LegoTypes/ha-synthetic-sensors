@@ -1,7 +1,5 @@
 # Service Layer Test Configuration
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   service_test_basic:

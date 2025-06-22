@@ -1,6 +1,4 @@
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   # Basic solar self-consumption (current formula)
@@ -9,7 +7,7 @@ sensors:
     formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
-      solar_export: "sensor.syn2_solar_sold_watts"
+      solar_export: "sensor.solar_sold_watts"
     unit: "%"
     state_class: "measurement"
 
@@ -22,7 +20,7 @@ sensors:
         0)
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
-      solar_export: "sensor.syn2_solar_sold_watts"
+      solar_export: "sensor.solar_sold_watts"
     unit: "%"
     state_class: "measurement"
 
@@ -53,7 +51,7 @@ sensors:
         unit: ""
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
-      solar_export: "sensor.syn2_solar_sold_watts"
+      solar_export: "sensor.solar_sold_watts"
     unit: "%"
     state_class: "measurement"
 
@@ -80,6 +78,6 @@ sensors:
         unit: ""
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
-      solar_export: "sensor.syn2_solar_sold_watts"
+      solar_export: "sensor.solar_sold_watts"
     unit: "W"
     device_class: "power"

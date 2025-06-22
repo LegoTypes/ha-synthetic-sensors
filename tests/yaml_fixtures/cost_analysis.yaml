@@ -1,7 +1,5 @@
 # Cost Analysis Configuration
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"  # Creates sensor.syn2_* entities
 
 sensors:
   current_energy_cost_rate:              # Sensor key becomes the unique_id

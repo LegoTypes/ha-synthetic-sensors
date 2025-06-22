@@ -1,8 +1,6 @@
 # Device Class OR Patterns Test Configuration
 # Tests OR-style logic for multiple device classes using pipe (|) syntax
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   # Test basic OR pattern with two device classes

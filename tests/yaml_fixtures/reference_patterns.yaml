@@ -1,8 +1,6 @@
 # Reference Patterns Test Configuration
 # This tests the different ways to reference sensors in attribute formulas
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   # Main sensor for testing attribute reference patterns
@@ -25,7 +23,7 @@ sensors:
       
       # Pattern 3: Reference by entity_id
       annual_projected:
-        formula: "sensor.syn2_energy_cost_analysis * 24 * 365"
+        formula: "sensor.energy_cost_analysis * 24 * 365"
         unit_of_measurement: "¢"
     unit_of_measurement: "¢/h"
     device_class: "monetary"
@@ -34,7 +32,7 @@ sensors:
   # Sensor for testing entity_id references in main formulas
   grid_dependency_analysis:
     name: "Grid Dependency Analysis"
-    formula: "sensor.span_panel_instantaneous_power + sensor.syn2_energy_cost_analysis"
+    formula: "sensor.span_panel_instantaneous_power + sensor.energy_cost_analysis"
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
@@ -44,7 +42,7 @@ sensors:
     name: "Enhanced Power Analysis"
     formula: "base_power_analysis * efficiency_factor"
     variables:
-      base_power_analysis: "sensor.syn2_base_power_analysis"
+      base_power_analysis: "sensor.base_power_analysis"
       efficiency_factor: "input_number.electricity_rate_cents_kwh"
     unit_of_measurement: "W"
     device_class: "power"
@@ -61,7 +59,7 @@ sensors:
     attributes:
       # Mixed pattern: entity_id reference + dot notation attribute access
       battery_adjusted:
-        formula: "sensor.syn2_energy_cost_analysis * backup_device.battery_level / 100"
+        formula: "sensor.energy_cost_analysis * backup_device.battery_level / 100"
         unit_of_measurement: "W"
     unit_of_measurement: "W"
     device_class: "power"
@@ -84,7 +82,7 @@ sensors:
         unit_of_measurement: "units"
       
       annual_entity_ref:
-        formula: "sensor.syn2_comprehensive_analysis * 24 * 365"
+        formula: "sensor.comprehensive_analysis * 24 * 365"
         unit_of_measurement: "units"
     unit_of_measurement: "units"
     state_class: "measurement" 

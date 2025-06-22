@@ -36,8 +36,6 @@ class TestYamlConfigurationLoading:
 
         # Verify basic structure
         assert config["version"] == "1.0"
-        assert "global_settings" in config
-        assert config["global_settings"]["domain_prefix"] == "syn2"
         assert "sensors" in config
         assert len(config["sensors"]) == 2
 
@@ -68,8 +66,8 @@ class TestYamlConfigurationLoading:
 
         # Verify it references other synthetic sensors by entity ID (simplified v2.0
         # format)
-        assert variables["hvac_total"] == "sensor.syn2_hvac_total_power"
-        assert variables["lighting_total"] == "sensor.syn2_lighting_total_power"
+        assert variables["hvac_total"] == "sensor.hvac_total_power"
+        assert variables["lighting_total"] == "sensor.lighting_total_power"
 
     def test_load_cost_analysis_yaml(self, cost_analysis_yaml):
         """Test loading cost analysis YAML configuration."""
@@ -171,21 +169,21 @@ class TestEntityFactory:
         """Test unique ID generation patterns."""
         # Test simple sensor ID
         unique_id = entity_factory.generate_unique_id("solar_sold_positive")
-        assert unique_id == "syn2_solar_sold_positive"
+        assert unique_id == "solar_sold_positive"
 
         # Test sensor with formula ID
         unique_id = entity_factory.generate_unique_id("solar_sold_positive", "solar_sold")
-        assert unique_id == "syn2_solar_sold_positive_solar_sold"
+        assert unique_id == "solar_sold_positive_solar_sold"
 
     def test_generate_entity_id(self, entity_factory):
         """Test entity ID generation patterns."""
         # Test simple sensor
         entity_id = entity_factory.generate_entity_id("solar_sold_positive")
-        assert entity_id == "sensor.syn2_solar_sold_positive"
+        assert entity_id == "sensor.solar_sold_positive"
 
         # Test sensor with formula
         entity_id = entity_factory.generate_entity_id("solar_sold_positive", "solar_sold")
-        assert entity_id == "sensor.syn2_solar_sold_positive_solar_sold"
+        assert entity_id == "sensor.solar_sold_positive_solar_sold"
 
     def test_create_entity_description(self, entity_factory):
         """Test creating entity descriptions from configuration."""
@@ -203,8 +201,8 @@ class TestEntityFactory:
         description = entity_factory.create_entity_description(sensor_config, formula_config)
 
         assert isinstance(description, EntityDescription)
-        assert description.unique_id == "syn2_test_sensor_test_formula"
-        assert description.entity_id == "sensor.syn2_test_sensor_test_formula"
+        assert description.unique_id == "test_sensor_test_formula"
+        assert description.entity_id == "sensor.test_sensor_test_formula"
         assert description.name == "Test Formula"  # Formula name takes priority
         assert description.unit_of_measurement == "W"
         assert description.device_class == "power"
@@ -225,7 +223,7 @@ class TestEntityFactory:
         sensor_config = {"unique_id": "test_sensor"}
 
         description = entity_factory.create_entity_description(sensor_config, formula_config)
-        assert description.name == "syn2_test_sensor_test_formula"  # Falls back to unique_id
+        assert description.name == "test_sensor_test_formula"  # Falls back to unique_id
 
     def test_create_sensor_entity(self, entity_factory):
         """Test creating sensor entities."""
@@ -276,7 +274,7 @@ class TestEntityFactory:
             description = entity_factory.create_entity_description({"unique_id": sensor_key, **sensor_config})
 
             # Verify the generated IDs follow the simplified v2.0 pattern
-            expected_unique_id = f"syn2_{sensor_key}"
+            expected_unique_id = f"{sensor_key}"
             expected_entity_id = f"sensor.{expected_unique_id}"
 
             assert description.unique_id == expected_unique_id

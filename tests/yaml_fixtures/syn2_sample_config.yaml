@@ -1,7 +1,5 @@
-# Sample Configuration for syn2 - From existing test_config.yaml format
+# Sample Configuration - From existing test_config.yaml format
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   comfort_index:

@@ -1,6 +1,4 @@
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   # Single variable device class aggregation

@@ -180,7 +180,7 @@ class TestServiceLayer:
         # Mock service call with sensor data (now uses entity_id)
         call = MagicMock()
         call.data = {
-            "entity_id": "sensor.syn2_test_sensor_test_formula",
+            "entity_id": "sensor.test_sensor_test_formula",
             "formula": "A + B",
             "unit_of_measurement": "W",
             "device_class": "power",
@@ -197,7 +197,7 @@ class TestServiceLayer:
         asyncio.run(service_layer._async_update_sensor(call))
 
         # Verify sensor manager was called with entity_id
-        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with("sensor.syn2_test_sensor_test_formula")
+        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with("sensor.test_sensor_test_formula")
 
     def test_add_variable_service(self, service_layer, mock_config_manager, mock_name_resolver):
         """Test add variable service functionality."""
@@ -261,11 +261,11 @@ class TestServiceLayer:
         """Test get sensor info service functionality."""
         # Mock service call (now uses entity_id)
         call = MagicMock()
-        call.data = {"entity_id": "sensor.syn2_test_sensor_test_formula"}
+        call.data = {"entity_id": "sensor.test_sensor_test_formula"}
 
         # Mock sensor - the service now calls get_sensor_by_entity_id()
         mock_sensor = MagicMock()
-        mock_sensor._attr_unique_id = "syn2_test_sensor_test_formula"
+        mock_sensor._attr_unique_id = "test_sensor_test_formula"
         mock_sensor._attr_name = "Test Sensor"
         mock_sensor._attr_native_value = 42.0
         mock_sensor._attr_available = True
@@ -282,7 +282,7 @@ class TestServiceLayer:
         asyncio.run(service_layer._async_get_sensor_info(call))
 
         # Verify sensor manager was called with correct method
-        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with("sensor.syn2_test_sensor_test_formula")
+        mock_sensor_manager.get_sensor_by_entity_id.assert_called_once_with("sensor.test_sensor_test_formula")
 
     def test_service_error_responses(self, service_layer, mock_config_manager):
         """Test that service errors are handled gracefully."""

@@ -116,7 +116,7 @@ class TestDynamicSensor:
         sensor.entity_id = f"sensor.{sensor._attr_unique_id}"
 
         # Test _attr_ properties are set correctly (v2.0 uses sensor unique_id)
-        assert sensor._attr_unique_id == "syn2_test_sensor"
+        assert sensor._attr_unique_id == "test_sensor"
         assert sensor._attr_name == "Test Sensor"
         assert sensor._attr_native_unit_of_measurement == "W"
         # Device class is converted to enum in v2.0, check the enum value
@@ -219,7 +219,7 @@ class TestSensorManager:
 
         with patch("ha_synthetic_sensors.sensor_manager.DynamicSensor") as MockDynamicSensor:
             mock_sensor = MagicMock()
-            mock_sensor.entity_id = "sensor.syn2_test_sensor"
+            mock_sensor.entity_id = "sensor.test_sensor"
             MockDynamicSensor.return_value = mock_sensor
 
             # Mock _create_sensor_entity to also update the tracking dict
@@ -232,7 +232,7 @@ class TestSensorManager:
                 assert result == mock_sensor
 
                 # Check sensor was added to entity_id lookup
-                expected_id = "sensor.syn2_test_sensor"
+                expected_id = "sensor.test_sensor"
                 assert mock_dict[expected_id] == mock_sensor
 
     @pytest.mark.asyncio
@@ -249,9 +249,9 @@ class TestSensorManager:
         """Test remove_sensor method."""
         # Add a sensor
         mock_sensor = MagicMock()
-        mock_sensor.entity_id = "sensor.syn2_test_sensor"
+        mock_sensor.entity_id = "sensor.test_sensor"
         sensor_manager._sensors_by_unique_id["test_sensor"] = mock_sensor
-        sensor_manager._sensors_by_entity_id["sensor.syn2_test_sensor"] = mock_sensor
+        sensor_manager._sensors_by_entity_id["sensor.test_sensor"] = mock_sensor
         sensor_manager._sensor_states["test_sensor"] = SensorState(
             sensor_name="test_sensor",
             main_value=42.0,
@@ -263,7 +263,7 @@ class TestSensorManager:
 
         assert result is True
         assert "test_sensor" not in sensor_manager._sensors_by_unique_id
-        assert "sensor.syn2_test_sensor" not in sensor_manager._sensors_by_entity_id
+        assert "sensor.test_sensor" not in sensor_manager._sensors_by_entity_id
         assert "test_sensor" not in sensor_manager._sensor_states
 
     def test_on_sensor_updated_new_sensor(self, sensor_manager):
@@ -897,7 +897,7 @@ class TestSensorManagerExtended:
         """Test remove_sensor with existing sensor."""
         # Add sensor and state
         mock_sensor = MagicMock()
-        mock_sensor.entity_id = "sensor.syn2_test_sensor"
+        mock_sensor.entity_id = "sensor.test_sensor"
         sensor_manager._sensors_by_unique_id["test_sensor"] = mock_sensor
         sensor_manager._sensor_states["test_sensor"] = SensorState(
             sensor_name="test_sensor",

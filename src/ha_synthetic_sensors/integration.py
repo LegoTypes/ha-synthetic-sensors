@@ -307,7 +307,6 @@ class SyntheticSensorsIntegration:
         self,
         add_entities_callback: AddEntitiesCallback,
         device_info: DeviceInfo | None = None,
-        entity_prefix: str = "syn2",
         lifecycle_managed_externally: bool = True,
         # Additional HA dependencies that parent can provide
         hass_override: HomeAssistant | None = None,
@@ -318,12 +317,11 @@ class SyntheticSensorsIntegration:
         """Create a SensorManager for external integration use.
 
         This method allows custom integrations to create their own SensorManager
-        with their device info, naming conventions, and HA dependencies.
+        with their device info and HA dependencies.
 
         Args:
             add_entities_callback: Callback to add entities to HA
             device_info: Device info for the parent integration
-            entity_prefix: Prefix for entity IDs and unique IDs
             lifecycle_managed_externally: Whether lifecycle is managed by parent integration
             hass_override: Custom HomeAssistant instance (optional)
             config_manager_override: Custom ConfigManager instance (optional)
@@ -342,8 +340,6 @@ class SyntheticSensorsIntegration:
         # Create manager config for external integration
         manager_config = SensorManagerConfig(
             device_info=device_info,
-            entity_id_prefix=entity_prefix,
-            unique_id_prefix=entity_prefix,
             lifecycle_managed_externally=lifecycle_managed_externally,
             hass_instance=effective_hass,
             config_manager=config_manager_override,
@@ -362,7 +358,7 @@ class SyntheticSensorsIntegration:
             manager_config,
         )
 
-        _LOGGER.info(f"Created managed sensor manager with prefix '{entity_prefix}' for external integration")
+        _LOGGER.info("Created managed sensor manager for external integration")
         return sensor_manager
 
 

@@ -121,9 +121,8 @@ class TestVariableInheritance:
         assert formula_config.variables["power_a"] == "sensor.meter_a"
         assert formula_config.variables["power_b"] == "sensor.meter_b"
 
-        # Should also include parent sensor reference
-        assert "test_sensor" in formula_config.variables
-        assert formula_config.variables["test_sensor"] == "sensor.syn2_test_sensor"
+        # Should auto-inject the referenced entity_id as a variable
+        assert formula_config.variables["test_sensor"] == "sensor.test_sensor"
 
     def test_attribute_variable_override(self, config_manager):
         """Test that attribute-specific variables override parent variables."""
@@ -148,7 +147,7 @@ class TestVariableInheritance:
 
         # Should include main sensor as variable
         assert "power_analysis" in formula_config.variables
-        assert formula_config.variables["power_analysis"] == "sensor.syn2_power_analysis"
+        assert formula_config.variables["power_analysis"] == "sensor.power_analysis"
 
 
 class TestComplexFormulaParsing:

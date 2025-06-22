@@ -1,8 +1,6 @@
 # Attribute and State OR Patterns Test Configuration
 # Tests OR-style logic for both attribute and state conditions using pipe (|) syntax
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   # Test basic attribute OR pattern (searches ALL entities)

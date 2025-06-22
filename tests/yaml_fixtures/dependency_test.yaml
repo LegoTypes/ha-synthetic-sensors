@@ -1,7 +1,4 @@
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
-  enabled: true
 
 sensors:
   base_sensor_a:
@@ -34,8 +31,8 @@ sensors:
     device_class: "power"
     state_class: "measurement"
     variables:
-      base_a: "sensor.syn2_base_sensor_a"
-      base_b: "sensor.syn2_base_sensor_b"
+      base_a: "sensor.base_sensor_a"
+      base_b: "sensor.base_sensor_b"
     enabled: true
 
   complex_dependent_d:
@@ -46,9 +43,9 @@ sensors:
     device_class: "power"
     state_class: "measurement"
     variables:
-      base_a: "sensor.syn2_base_sensor_a"
-      base_b: "sensor.syn2_base_sensor_b"
-      dependent_c: "sensor.syn2_dependent_sensor_c"
+      base_a: "sensor.base_sensor_a"
+      base_b: "sensor.base_sensor_b"
+      dependent_c: "sensor.dependent_sensor_c"
     enabled: true
 
   circular_test_e:
@@ -59,7 +56,7 @@ sensors:
     device_class: "power"
     state_class: "measurement"
     variables:
-      circular_f: "sensor.syn2_circular_test_f"
+      circular_f: "sensor.circular_test_f"
       external_input_1: "sensor.external_source_1"
     enabled: true
 
@@ -71,5 +68,5 @@ sensors:
     device_class: "power"
     state_class: "measurement"
     variables:
-      circular_e: "sensor.syn2_circular_test_e"
+      circular_e: "sensor.circular_test_e"
     enabled: true

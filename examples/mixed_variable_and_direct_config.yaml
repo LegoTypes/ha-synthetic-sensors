@@ -5,8 +5,6 @@
 # 3. Mixed (variables + direct entity IDs in same formula)
 
 version: "1.0"
-global_settings:
-  domain_prefix: "syn2"
 
 sensors:
   # Pattern 1: Pure Variable Mapping (Clean YAML approach)
@@ -34,8 +32,8 @@ sensors:
     name: "Home Consumption (Mixed Pattern)"
     formula: "hvac_total + lighting_total + sensor.major_appliances_power + sensor.water_heater_power"
     variables:
-      hvac_total: "sensor.syn2_hvac_total_clean"        # Variable to synthetic sensor
-      lighting_total: "sensor.syn2_lighting_total_direct"  # Variable to synthetic sensor
+      hvac_total: "sensor.hvac_total_clean"        # Variable to synthetic sensor
+      lighting_total: "sensor.lighting_total_direct"  # Variable to synthetic sensor
       # sensor.major_appliances_power and sensor.water_heater_power are direct references
     unit_of_measurement: "W"
     device_class: "power"
@@ -56,10 +54,10 @@ sensors:
   # Pattern 5: Solar Analytics with Self-Referencing
   solar_self_consumption:
     name: "Solar Self-Consumption"
-    formula: "max(0, solar_production - sensor.syn2_solar_export)"  # Mixed: variable + direct synthetic sensor reference
+    formula: "max(0, solar_production - sensor.solar_export)"  # Mixed: variable + direct synthetic sensor reference
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
-      # sensor.syn2_solar_export would be direct reference to another synthetic sensor
+      # sensor.solar_export would be direct reference to another synthetic sensor
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
