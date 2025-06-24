@@ -103,10 +103,10 @@ class TestORTagsIntegration:
         """Create a dependency parser instance."""
         return DependencyParser()
 
-    def test_yaml_fixture_loads_with_or_patterns(self, config_manager, yaml_config_path):
+    async def test_yaml_fixture_loads_with_or_patterns(self, config_manager, yaml_config_path):
         """Test that the YAML fixture loads without errors."""
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             assert config is not None
             assert len(config.sensors) > 0
@@ -241,10 +241,10 @@ class TestORTagsIntegration:
         except NotImplementedError:
             pytest.skip("Monitor|alert tags OR resolution not implemented yet")
 
-    def test_yaml_sensor_formulas_with_or_patterns(self, config_manager, yaml_config_path):
+    async def test_yaml_sensor_formulas_with_or_patterns(self, config_manager, yaml_config_path):
         """Test that YAML sensor formulas contain expected OR patterns."""
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             # Find specific sensors and check their formulas
             sensors_by_id = {sensor.unique_id: sensor for sensor in config.sensors}

@@ -23,6 +23,7 @@ class TestServiceLayer:
         """Create a mock configuration manager."""
         config_manager = MagicMock()
         config_manager.load_config = MagicMock(return_value=True)
+        config_manager.async_reload_config = AsyncMock(return_value=True)
         config_manager.get_variables = MagicMock(return_value={})
         config_manager.get_sensors = MagicMock(return_value=[])
         config_manager.get_sensor_by_name = MagicMock(return_value=None)
@@ -134,7 +135,7 @@ class TestServiceLayer:
 
         assert mock_hass.services.async_remove.call_count == len(expected_services)
 
-    def test_reload_config_service(
+    async def test_reload_config_service(
         self,
         service_layer,
         mock_config_manager,
@@ -153,19 +154,19 @@ class TestServiceLayer:
         asyncio.run(service_layer._async_reload_config(call))
 
         # Verify operations were called
-        mock_config_manager.load_config.assert_called_once()
+        mock_config_manager.async_reload_config.assert_called_once()
         mock_name_resolver.clear_mappings.assert_called_once()
         mock_sensor_manager.async_update_sensors.assert_called_once()
         mock_evaluator.clear_cache.assert_called_once()
 
-    def test_reload_config_service_failure(self, service_layer, mock_config_manager):
+    async def test_reload_config_service_failure(self, service_layer, mock_config_manager):
         """Test reload config service handles failures."""
         # Mock service call
         call = MagicMock()
         call.data = {}
 
         # Mock config loading failure
-        mock_config_manager.load_config.return_value = False
+        mock_config_manager.async_reload_config.return_value = False
 
         # Test failed reload - should not raise exception
         import asyncio
@@ -173,7 +174,7 @@ class TestServiceLayer:
         asyncio.run(service_layer._async_reload_config(call))
 
         # Verify config loading was attempted
-        mock_config_manager.load_config.assert_called_once()
+        mock_config_manager.async_reload_config.assert_called_once()
 
     def test_update_sensor_service(self, service_layer, mock_config_manager, mock_sensor_manager):
         """Test update sensor service functionality."""
@@ -291,7 +292,7 @@ class TestServiceLayer:
         call.data = {}
 
         # Mock an exception in config loading
-        mock_config_manager.load_config.side_effect = Exception("Test error")
+        mock_config_manager.async_reload_config.side_effect = Exception("Test error")
 
         # Test that error doesn't crash service
         import asyncio
@@ -341,7 +342,7 @@ class TestServiceLayer:
         call = MagicMock()
         call.data = {}
         asyncio.run(service_layer._async_reload_config(call))
-        assert mock_config_manager.load_config.called
+        assert mock_config_manager.async_reload_config.called
 
         # Test cleanup
         asyncio.run(service_layer.async_unload_services())

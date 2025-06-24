@@ -492,8 +492,8 @@ class ConfigManager:
             variables=merged_variables,
         )
 
-    def reload_config(self) -> Config:
-        """Reload configuration from the original path.
+    async def async_reload_config(self) -> Config:
+        """Reload configuration from the original path (async version).
 
         Returns:
             Config: Reloaded configuration
@@ -504,7 +504,7 @@ class ConfigManager:
         if not self._config_path:
             raise ConfigEntryError("No configuration path set for reload")
 
-        return self.load_config(self._config_path)
+        return await self.async_load_config(self._config_path)
 
     def get_sensor_configs(self, enabled_only: bool = True) -> list[SensorConfig]:
         """Get all sensor configurations.
