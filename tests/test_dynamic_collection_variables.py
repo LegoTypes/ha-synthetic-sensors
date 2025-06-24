@@ -60,10 +60,10 @@ class TestDynamicCollectionVariables:
         """Create a config manager instance."""
         return ConfigManager(mock_hass)
 
-    def test_yaml_fixture_loads_correctly(self, config_manager, yaml_config_path):
+    async def test_yaml_fixture_loads_correctly(self, config_manager, yaml_config_path):
         """Test that the YAML fixture loads without errors."""
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             assert config is not None
             assert len(config.sensors) > 0
@@ -80,11 +80,11 @@ class TestDynamicCollectionVariables:
             else:
                 raise
 
-    def test_yaml_dynamic_device_sum_sensor(self, config_manager, yaml_config_path, evaluator):
+    async def test_yaml_dynamic_device_sum_sensor(self, config_manager, yaml_config_path, evaluator):
         """Test the dynamic_device_sum sensor from YAML fixture."""
         # Load config and get the specific sensor
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             # Find the dynamic_device_sum sensor
             dynamic_sensor = None
@@ -112,10 +112,10 @@ class TestDynamicCollectionVariables:
             else:
                 raise
 
-    def test_yaml_circuit_group_power_syntax(self, config_manager, yaml_config_path):
+    async def test_yaml_circuit_group_power_syntax(self, config_manager, yaml_config_path):
         """Test the circuit_group_power sensor syntax from YAML fixture."""
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             # Find the circuit_group_power sensor
             circuit_sensor = None
@@ -140,9 +140,9 @@ class TestDynamicCollectionVariables:
             else:
                 raise
 
-    def test_yaml_dynamic_patterns_syntax_validation(self, config_manager, yaml_config_path):
+    async def test_yaml_dynamic_patterns_syntax_validation(self, config_manager, yaml_config_path):
         """Test that YAML dynamic patterns have correct syntax for future implementation."""
-        config = config_manager.load_from_file(yaml_config_path)
+        config = await config_manager.async_load_from_file(yaml_config_path)
 
         # Find the dynamic device sum sensor
         dynamic_sensor = None
@@ -159,9 +159,9 @@ class TestDynamicCollectionVariables:
         assert "device_type" in formula_config.variables
         assert formula_config.variables["device_type"] == "input_select.monitoring_device_class"
 
-    def test_yaml_mixed_patterns_syntax(self, config_manager, yaml_config_path):
+    async def test_yaml_mixed_patterns_syntax(self, config_manager, yaml_config_path):
         """Test mixed static and dynamic regex patterns in YAML."""
-        config = config_manager.load_from_file(yaml_config_path)
+        config = await config_manager.async_load_from_file(yaml_config_path)
 
         # Find the mixed regex patterns sensor
         mixed_sensor = None
@@ -179,9 +179,9 @@ class TestDynamicCollectionVariables:
         assert "circuit_pattern" in formula_config.variables
         assert "kitchen_pattern" in formula_config.variables
 
-    def test_variable_inheritance_in_yaml_attributes(self, config_manager, yaml_config_path):
+    async def test_variable_inheritance_in_yaml_attributes(self, config_manager, yaml_config_path):
         """Test that attribute formulas inherit variables correctly in YAML."""
-        config = config_manager.load_from_file(yaml_config_path)
+        config = await config_manager.async_load_from_file(yaml_config_path)
 
         # Find a sensor with calculated attributes
         energy_sensor = None

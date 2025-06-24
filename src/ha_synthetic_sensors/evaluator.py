@@ -235,10 +235,10 @@ class Evaluator(FormulaEvaluator):
             # Build evaluation context
             eval_context = self._build_evaluation_context(dependencies, context)
 
-            # Additional safety check: if any values in the context are unavailable/unknown,
+            # Additional safety check: if any values in the context are unavailable/unknown/None,
             # return early to prevent simpleeval errors
             for var_name, var_value in eval_context.items():
-                if isinstance(var_value, str) and var_value in ("unavailable", "unknown"):
+                if var_value is None or (isinstance(var_value, str) and var_value in ("unavailable", "unknown")):
                     _LOGGER.debug("Formula '%s' has variable '%s' with unavailable value '%s'. " "Setting synthetic sensor to unknown state.", formula_name, var_name, var_value)
                     return {
                         "success": True,  # Not an error, but dependency unavailable
@@ -382,8 +382,8 @@ class Evaluator(FormulaEvaluator):
             if state is None:
                 # FATAL ERROR: Entity doesn't exist in Home Assistant
                 missing.add(entity_id)
-            elif state.state in ("unavailable", "unknown"):
-                # TRANSITORY ERROR: Entity exists but currently unavailable
+            elif state.state in ("unavailable", "unknown") or state.state is None:
+                # TRANSITORY ERROR: Entity exists but currently unavailable or has None state
                 unavailable.add(entity_id)
             else:
                 # Special handling for collection pattern entities - they don't need numeric validation
@@ -623,6 +623,15 @@ class Evaluator(FormulaEvaluator):
                         normalized_name = entity_id.replace(".", "_")
                         eval_context[normalized_name] = state.state
                     eval_context[f"{entity_id}_state"] = state
+            else:
+                # Handle missing entities by providing a default value of 0 for arithmetic operations
+                # This prevents NoneType errors during formula evaluation while still allowing
+                # the dependency check to catch missing entities properly
+                _LOGGER.debug("Entity '%s' not found during context building, using default value 0", entity_id)
+                eval_context[entity_id] = 0
+                if "." in entity_id:
+                    normalized_name = entity_id.replace(".", "_")
+                    eval_context[normalized_name] = 0
 
         return eval_context
 
@@ -695,6 +704,14 @@ class Evaluator(FormulaEvaluator):
         This method now properly raises exceptions for non-numeric states
         instead of silently returning 0, which could mask configuration issues.
         """
+        # Handle None state values (can happen during startup)
+        if state.state is None:
+            _LOGGER.debug(
+                "Entity '%s' has None state (startup race condition), using 0 as fallback",
+                getattr(state, "entity_id", "unknown"),
+            )
+            return 0.0
+
         try:
             return self._convert_to_numeric(state.state, getattr(state, "entity_id", "unknown"))
         except NonNumericStateError:
@@ -720,6 +737,10 @@ class Evaluator(FormulaEvaluator):
         Raises:
             NonNumericStateError: If the state cannot be converted to numeric
         """
+        # Handle None values explicitly
+        if state_value is None:
+            raise NonNumericStateError(entity_id, "None")
+
         try:
             return float(state_value)
         except (ValueError, TypeError) as err:

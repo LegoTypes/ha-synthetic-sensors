@@ -70,10 +70,10 @@ class TestStateAndAttributeORIntegration:
         """Create a dependency parser instance."""
         return DependencyParser()
 
-    def test_yaml_fixture_loads_with_or_patterns(self, config_manager, yaml_config_path):
+    async def test_yaml_fixture_loads_with_or_patterns(self, config_manager, yaml_config_path):
         """Test that the YAML fixture loads without errors."""
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             assert config is not None
             assert len(config.sensors) > 0

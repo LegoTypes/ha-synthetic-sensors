@@ -254,7 +254,8 @@ class ServiceLayer:
         """Handle reload config service call."""
         try:
             # Reload configuration
-            if not self._config_manager.load_config():
+            config = await self._config_manager.async_reload_config()
+            if not config:
                 _LOGGER.error("Failed to reload configuration")
                 return
 

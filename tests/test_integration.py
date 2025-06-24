@@ -160,7 +160,7 @@ class TestSyntheticSensorsIntegration:
         mock_sensor_manager.load_configuration = AsyncMock()
         integration._sensor_manager = mock_sensor_manager
 
-        with patch.object(integration._config_manager, "load_from_file") as mock_load:
+        with patch.object(integration._config_manager, "async_load_from_file") as mock_load:
             mock_config = MagicMock()
             mock_load.return_value = mock_config
 
@@ -192,7 +192,7 @@ class TestSyntheticSensorsIntegration:
         mock_sensor_manager = MagicMock()
         integration._sensor_manager = mock_sensor_manager
 
-        with patch.object(integration._config_manager, "load_from_file") as mock_load:
+        with patch.object(integration._config_manager, "async_load_from_file") as mock_load:
             mock_load.side_effect = Exception("Load failed")
 
             result = await integration.load_configuration_file("/test/config.yaml")

@@ -476,7 +476,7 @@ class TestConfigManagerExtended:
         result = config_manager.validate_dependencies()
         assert result == {}  # Should be empty since sensor is disabled
 
-    def test_load_from_file_success(self, config_manager):
+    async def test_load_from_file_success(self, config_manager):
         """Test load_from_file method."""
         config_data = {
             "version": "1.0",
@@ -492,7 +492,7 @@ class TestConfigManagerExtended:
             temp_path = f.name
 
         try:
-            config = config_manager.load_from_file(temp_path)
+            config = await config_manager.async_load_from_file(temp_path)
             assert config is not None
             assert len(config.sensors) == 1
             assert config.sensors[0].unique_id == "test_sensor"
@@ -500,11 +500,11 @@ class TestConfigManagerExtended:
         finally:
             Path(temp_path).unlink()
 
-    def test_load_from_file_with_error(self, config_manager):
+    async def test_load_from_file_with_error(self, config_manager):
         """Test load_from_file when file operations fail."""
         # ConfigManager returns empty config for missing files, so test permission error
         with patch("pathlib.Path.exists", return_value=True), patch("builtins.open", side_effect=PermissionError("Access denied")), pytest.raises(ConfigEntryError) as exc_info:
-            config_manager.load_from_file("/protected/path.yaml")
+            await config_manager.async_load_from_file("/protected/path.yaml")
             assert "failed to load configuration" in str(exc_info.value).lower()
 
     def test_load_from_yaml_empty_content(self, config_manager):
@@ -564,7 +564,7 @@ sensors:
         assert len(result) > 0
         assert any("duplicate" in error.lower() for error in result)
 
-    def test_reload_config_success(self, config_manager):
+    async def test_reload_config_success(self, config_manager):
         """Test reload_config method."""
         config_data = {
             "version": "1.0",
@@ -585,17 +585,17 @@ sensors:
             config_manager.load_config(temp_path)
 
             # Reload should work
-            config2 = config_manager.reload_config()
+            config2 = await config_manager.async_reload_config()
             assert config2 is not None
             assert len(config2.sensors) == 1
 
         finally:
             Path(temp_path).unlink()
 
-    def test_reload_config_no_path(self, config_manager):
+    async def test_reload_config_no_path(self, config_manager):
         """Test reload_config when no config path is set."""
         with pytest.raises(ConfigEntryError) as exc_info:
-            config_manager.reload_config()
+            config_manager.async_reload_config()
 
         assert "no configuration path" in str(exc_info.value).lower()
 

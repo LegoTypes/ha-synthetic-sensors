@@ -80,10 +80,10 @@ class TestORDeviceClassIntegration:
         """Create a dependency parser instance."""
         return DependencyParser()
 
-    def test_yaml_fixture_loads_with_or_patterns(self, config_manager, yaml_config_path):
+    async def test_yaml_fixture_loads_with_or_patterns(self, config_manager, yaml_config_path):
         """Test that the YAML fixture loads correctly with OR patterns."""
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             assert config is not None
             assert len(config.sensors) > 0
@@ -178,10 +178,10 @@ class TestORDeviceClassIntegration:
         # assert set(temp_humidity_entities) == expected_temp_humidity
         # assert set(power_energy_entities) == expected_power_energy
 
-    def test_yaml_sensor_formulas_with_or_patterns(self, config_manager, yaml_config_path):
+    async def test_yaml_sensor_formulas_with_or_patterns(self, config_manager, yaml_config_path):
         """Test that YAML sensors with OR patterns parse correctly."""
         try:
-            config = config_manager.load_from_file(yaml_config_path)
+            config = await config_manager.async_load_from_file(yaml_config_path)
 
             # Find the door_window_count sensor
             door_window_sensor = None
