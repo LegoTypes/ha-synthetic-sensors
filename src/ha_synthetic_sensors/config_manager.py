@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
-from typing import Any, TypeAlias, TypedDict
+from typing import Any, TypeAlias, TypedDict, cast
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
@@ -277,6 +277,85 @@ class ConfigManager:
             self._logger.error(error_msg)
             raise ConfigEntryError(error_msg) from exc
 
+    async def async_load_config(self, config_path: str | Path | None = None) -> Config:
+        """Load configuration from YAML file (async version).
+
+        Args:
+            config_path: Optional path to override the default config path
+
+        Returns:
+            Config: Loaded configuration object
+
+        Raises:
+            ConfigEntryError: If configuration loading or validation fails
+        """
+        path = Path(config_path) if config_path else self._config_path
+
+        if not path or not path.exists():
+            self._logger.warning("No configuration file found, using empty config")
+            self._config = Config()
+            return self._config
+
+        try:
+
+            def _read_yaml_file() -> dict[str, Any]:
+                with open(path, encoding="utf-8") as file:
+                    result = yaml.safe_load(file)
+                    if isinstance(result, dict):
+                        return result
+                    return {}
+
+            yaml_data = await self._hass.async_add_executor_job(_read_yaml_file)
+
+            if not yaml_data:
+                self._logger.warning("Empty configuration file, using empty config")
+                self._config = Config()
+                return self._config
+
+            # Perform schema validation first
+            schema_result = validate_yaml_config(yaml_data)
+
+            # Log warnings
+            for warning in schema_result["warnings"]:
+                self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
+                if warning.suggested_fix:
+                    self._logger.warning("Suggested fix: %s", warning.suggested_fix)
+
+            # Check for schema errors
+            if not schema_result["valid"]:
+                error_messages = []
+                for error in schema_result["errors"]:
+                    msg = f"{error.path}: {error.message}"
+                    if error.suggested_fix:
+                        msg += f" (Suggested fix: {error.suggested_fix})"
+                    error_messages.append(msg)
+
+                error_msg = f"Configuration schema validation failed: " f"{'; '.join(error_messages)}"
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
+
+            self._config = self._parse_yaml_config(cast(ConfigDict, yaml_data))
+
+            # Validate the loaded configuration (additional semantic validation)
+            errors = self._config.validate()
+            if errors:
+                error_msg = f"Configuration validation failed: {', '.join(errors)}"
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
+
+            self._logger.info(
+                "Loaded configuration with %d sensors from %s",
+                len(self._config.sensors),
+                path,
+            )
+
+            return self._config
+
+        except Exception as exc:
+            error_msg = f"Failed to load configuration from {path}: {exc}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg) from exc
+
     def _parse_yaml_config(self, yaml_data: ConfigDict) -> Config:
         """Parse YAML data into Config object.
 
@@ -495,6 +574,19 @@ class ConfigManager:
             Config: Loaded configuration object
         """
         return self.load_config(file_path)
+
+    async def async_load_from_file(self, file_path: str | Path) -> Config:
+        """Load configuration from a specific file path (async version).
+
+        This is an alias for async_load_config() for backward compatibility.
+
+        Args:
+            file_path: Path to the configuration file
+
+        Returns:
+            Config: Loaded configuration object
+        """
+        return await self.async_load_config(file_path)
 
     def load_from_yaml(self, yaml_content: str) -> Config:
         """Load configuration from YAML string content.

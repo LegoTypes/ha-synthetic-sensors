@@ -192,7 +192,7 @@ class SyntheticSensorsIntegration:
 
         try:
             # Load and validate configuration
-            config = self._config_manager.load_from_file(config_path)
+            config = await self._config_manager.async_load_from_file(config_path)
 
             # Load sensors
             await self._sensor_manager.load_configuration(config)
@@ -307,6 +307,7 @@ class SyntheticSensorsIntegration:
         self,
         add_entities_callback: AddEntitiesCallback,
         device_info: DeviceInfo | None = None,
+        unique_id_prefix: str = "",
         lifecycle_managed_externally: bool = True,
         # Additional HA dependencies that parent can provide
         hass_override: HomeAssistant | None = None,
@@ -322,6 +323,7 @@ class SyntheticSensorsIntegration:
         Args:
             add_entities_callback: Callback to add entities to HA
             device_info: Device info for the parent integration
+            unique_id_prefix: Optional prefix for unique IDs (for compatibility with existing sensors)
             lifecycle_managed_externally: Whether lifecycle is managed by parent integration
             hass_override: Custom HomeAssistant instance (optional)
             config_manager_override: Custom ConfigManager instance (optional)
@@ -340,6 +342,7 @@ class SyntheticSensorsIntegration:
         # Create manager config for external integration
         manager_config = SensorManagerConfig(
             device_info=device_info,
+            unique_id_prefix=unique_id_prefix,
             lifecycle_managed_externally=lifecycle_managed_externally,
             hass_instance=effective_hass,
             config_manager=config_manager_override,
