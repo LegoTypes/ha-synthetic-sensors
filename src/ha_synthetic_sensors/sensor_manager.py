@@ -398,7 +398,7 @@ class SensorManager:
             else:
                 await self._create_all_sensors(config)
 
-            _LOGGER.info("Configuration loaded successfully")
+            _LOGGER.debug("Configuration loaded successfully")
 
         except Exception as err:
             _LOGGER.error(f"Failed to load configuration: {err}")
