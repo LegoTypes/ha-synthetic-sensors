@@ -271,7 +271,7 @@ class ServiceLayer:
             # Clear evaluator cache
             self._evaluator.clear_cache()
 
-            _LOGGER.info("Successfully reloaded synthetic sensors configuration")
+            _LOGGER.debug("Successfully reloaded synthetic sensors configuration")
 
         except Exception as e:
             _LOGGER.error("Failed to reload configuration: %s", e)
@@ -335,7 +335,7 @@ class ServiceLayer:
                 # Clear evaluator cache
                 self._evaluator.clear_cache()
 
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Successfully added variable: %s -> %s",
                     variable_config["name"],
                     variable_config["entity_id"],
@@ -362,7 +362,7 @@ class ServiceLayer:
                 # Clear evaluator cache
                 self._evaluator.clear_cache()
 
-                _LOGGER.info("Successfully removed variable: %s", name)
+                _LOGGER.debug("Successfully removed variable: %s", name)
             else:
                 _LOGGER.error("Failed to remove variable: %s", name)
 

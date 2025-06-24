@@ -97,7 +97,7 @@ class SyntheticSensorsIntegration:
     async def async_setup(self, add_entities_callback: AddEntitiesCallback) -> bool:
         """Set up the synthetic sensors integration."""
         try:
-            _LOGGER.info("Setting up synthetic sensor integration")
+            _LOGGER.debug("Setting up synthetic sensor integration")
 
             # Initialize sensor manager
             self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback)
@@ -197,7 +197,7 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.info(f"Successfully loaded synthetic sensors configuration from " f"{config_path}")
+            _LOGGER.debug(f"Successfully loaded synthetic sensors configuration from " f"{config_path}")
             return True
 
         except Exception as err:
@@ -219,7 +219,7 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.info("Successfully loaded synthetic sensors configuration from " "provided content")
+            _LOGGER.debug("Successfully loaded synthetic sensors configuration from " "provided content")
             return True
 
         except Exception as err:
@@ -244,7 +244,7 @@ class SyntheticSensorsIntegration:
 
                 try:
                     await self.load_configuration_file(str(path))
-                    _LOGGER.info(f"Successfully loaded auto-configuration from {path}")
+                    _LOGGER.debug(f"Successfully loaded auto-configuration from {path}")
                     break
                 except Exception as err:
                     _LOGGER.warning(f"Failed to load auto-configuration from {path}: {err}")
