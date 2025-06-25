@@ -1,0 +1,27 @@
+version: "1.0"
+sensors:
+  test_sensor_with_device:
+    name: "Test Sensor"
+    formula: "10 + 5"
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    device_identifier: "test_device_001"
+    device_name: "Test Device"
+    device_manufacturer: "Test Manufacturer"
+    device_model: "Test Model v1"
+    device_sw_version: "1.0.0"
+    suggested_area: "Test Area"
+
+  test_sensor_minimal_device:
+    name: "Minimal Device Sensor"
+    formula: "20 + 10"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    device_identifier: "existing_device_001"
+
+  test_sensor_no_device:
+    name: "No Device Sensor"
+    formula: "5 * 3"
+    unit_of_measurement: kWh
+    device_class: energy

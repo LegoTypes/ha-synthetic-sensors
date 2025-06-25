@@ -65,7 +65,7 @@ class SchemaValidator:
     def _load_schemas(self) -> None:
         """Load all schema definitions."""
         # Schema for version 1.0 (modernized format)
-        self._schemas["1.0"] = self._get_v2_schema()
+        self._schemas["1.0"] = self._get_v1_schema()
 
     def validate_config(self, config_data: dict[str, Any]) -> ValidationResult:
         """Validate configuration data against appropriate schema.
@@ -413,7 +413,7 @@ class SchemaValidator:
             # Fall back if HA constants not available - no validation
             pass
 
-    def _get_v2_schema(self) -> dict[str, Any]:
+    def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns
         id_pattern = "^[a-z][a-z0-9_]*$"
@@ -751,6 +751,35 @@ class SchemaValidator:
                     "type": "object",
                     "description": "Additional static attributes for the entity",
                     "additionalProperties": True,
+                },
+                # Device association properties
+                "device_identifier": {
+                    "type": "string",
+                    "description": "Unique identifier for the device this sensor belongs to",
+                },
+                "device_name": {
+                    "type": "string",
+                    "description": "Human-readable name for the device",
+                },
+                "device_manufacturer": {
+                    "type": "string",
+                    "description": "Manufacturer of the device",
+                },
+                "device_model": {
+                    "type": "string",
+                    "description": "Model of the device",
+                },
+                "device_sw_version": {
+                    "type": "string",
+                    "description": "Software version of the device",
+                },
+                "device_hw_version": {
+                    "type": "string",
+                    "description": "Hardware version of the device",
+                },
+                "suggested_area": {
+                    "type": "string",
+                    "description": "Suggested area for the device in Home Assistant",
                 },
             },
             "required": ["formula"],

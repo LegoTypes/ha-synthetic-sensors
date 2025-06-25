@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ha-synthetic-sensors"
-version = "1.0.7"
+version = "1.0.8"
 description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
 authors = ["SpanPanel"]
 readme = "README.md"
@@ -112,6 +112,7 @@ omit = [
 ]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # Add markers for our new test types
 markers = [
@@ -120,6 +121,7 @@ markers = [
 # Filter out warnings from dependencies we can't control
 filterwarnings = [
     "ignore:Inheritance class HomeAssistantApplication from web.Application is discouraged:DeprecationWarning:homeassistant.components.http",
+    "ignore:.*PytestUnhandledCoroutineWarning.*:pytest.PytestUnhandledCoroutineWarning",
 ]
 
 [tool.coverage.report]
