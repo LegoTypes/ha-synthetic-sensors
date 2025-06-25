@@ -149,9 +149,7 @@ class TestServiceLayer:
         call.data = {}
 
         # Test successful reload
-        import asyncio
-
-        asyncio.run(service_layer._async_reload_config(call))
+        await service_layer._async_reload_config(call)
 
         # Verify operations were called
         mock_config_manager.async_reload_config.assert_called_once()
@@ -169,9 +167,7 @@ class TestServiceLayer:
         mock_config_manager.async_reload_config.return_value = False
 
         # Test failed reload - should not raise exception
-        import asyncio
-
-        asyncio.run(service_layer._async_reload_config(call))
+        await service_layer._async_reload_config(call)
 
         # Verify config loading was attempted
         mock_config_manager.async_reload_config.assert_called_once()

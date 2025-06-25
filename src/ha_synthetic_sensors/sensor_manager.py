@@ -16,13 +16,14 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
-from .config_manager import AttributeValue, Config, FormulaConfig, SensorConfig
+from .config_manager import DOMAIN, AttributeValue, Config, FormulaConfig, SensorConfig
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
 
@@ -364,7 +365,42 @@ class SensorManager:
         self._config_manager = self._manager_config.config_manager
         self._logger = _LOGGER.getChild(self.__class__.__name__)
 
+        # Device registry for device association
+        self._device_registry = dr.async_get(self._hass)
+
         _LOGGER.debug("SensorManager initialized with device integration support")
+
+    def _get_existing_device_info(self, device_identifier: str) -> DeviceInfo | None:
+        """Get device info for an existing device by identifier."""
+        # Look up existing device in registry
+        device_entry = self._device_registry.async_get_device(identifiers={(DOMAIN, device_identifier)})
+
+        if device_entry:
+            return DeviceInfo(
+                identifiers={(DOMAIN, device_identifier)},
+                name=device_entry.name,
+                manufacturer=device_entry.manufacturer,
+                model=device_entry.model,
+                sw_version=device_entry.sw_version,
+                hw_version=device_entry.hw_version,
+            )
+
+        return None
+
+    def _create_new_device_info(self, sensor_config: SensorConfig) -> DeviceInfo:
+        """Create device info for a new device."""
+        if not sensor_config.device_identifier:
+            raise ValueError("device_identifier is required to create device info")
+
+        return DeviceInfo(
+            identifiers={(DOMAIN, sensor_config.device_identifier)},
+            name=sensor_config.device_name or f"Device {sensor_config.device_identifier}",
+            manufacturer=sensor_config.device_manufacturer,
+            model=sensor_config.device_model,
+            sw_version=sensor_config.device_sw_version,
+            hw_version=sensor_config.device_hw_version,
+            suggested_area=sensor_config.suggested_area,
+        )
 
     @property
     def managed_sensors(self) -> dict[str, DynamicSensor]:
@@ -386,7 +422,7 @@ class SensorManager:
 
     async def load_configuration(self, config: Config) -> None:
         """Load a new configuration and update sensors accordingly."""
-        _LOGGER.info("Loading configuration with %d sensors", len(config.sensors))
+        _LOGGER.debug("Loading configuration with %d sensors", len(config.sensors))
 
         old_config = self._current_config
         self._current_config = config
@@ -409,7 +445,7 @@ class SensorManager:
 
     async def reload_configuration(self, config: Config) -> None:
         """Reload configuration, removing old sensors and creating new ones."""
-        _LOGGER.info("Reloading configuration")
+        _LOGGER.debug("Reloading configuration")
 
         # Remove all existing sensors
         await self._remove_all_sensors()
@@ -492,7 +528,28 @@ class SensorManager:
 
     async def _create_sensor_entity(self, sensor_config: SensorConfig) -> DynamicSensor:
         """Create a sensor entity from configuration."""
-        return DynamicSensor(self._hass, sensor_config, self._evaluator, self, self._manager_config)
+        device_info = None
+
+        if sensor_config.device_identifier:
+            # First try to find existing device
+            device_info = self._get_existing_device_info(sensor_config.device_identifier)
+
+            # If device doesn't exist and we have device metadata, create it
+            if not device_info and any([sensor_config.device_name, sensor_config.device_manufacturer, sensor_config.device_model]):
+                device_info = self._create_new_device_info(sensor_config)
+
+        # Create manager config with device info
+        manager_config = SensorManagerConfig(
+            device_info=device_info,
+            unique_id_prefix=self._manager_config.unique_id_prefix,
+            lifecycle_managed_externally=self._manager_config.lifecycle_managed_externally,
+            hass_instance=self._manager_config.hass_instance,
+            config_manager=self._manager_config.config_manager,
+            evaluator=self._manager_config.evaluator,
+            name_resolver=self._manager_config.name_resolver,
+        )
+
+        return DynamicSensor(self._hass, sensor_config, self._evaluator, self, manager_config)
 
     async def _update_existing_sensors(self, old_config: Config, new_config: Config) -> None:
         """Update existing sensors based on configuration changes."""

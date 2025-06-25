@@ -1,0 +1,52 @@
+sensors:
+  # Example 1: Create a new device with full metadata
+  solar_inverter_power:
+    name: "Solar Inverter Power"
+    formula: "leg1_power + leg2_power"
+    variables:
+      leg1_power: sensor.span_panel_unmapped_tab_30_power
+      leg2_power: sensor.span_panel_unmapped_tab_32_power
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    # Device association - creates new device
+    device_identifier: "solar_inverter_001"
+    device_name: "Main Solar Inverter"
+    device_manufacturer: "SolarTech"
+    device_model: "ST-5000"
+    device_sw_version: "1.2.3"
+    suggested_area: "Garage"
+    
+  # Example 2: Associate with the same device (minimal config)
+  solar_inverter_energy:
+    name: "Solar Inverter Energy"
+    formula: "leg1_energy + leg2_energy"
+    variables:
+      leg1_energy: sensor.span_panel_unmapped_tab_30_energy
+      leg2_energy: sensor.span_panel_unmapped_tab_32_energy
+    unit_of_measurement: Wh
+    device_class: energy
+    state_class: total_increasing
+    # Only device_identifier needed - reuses existing device
+    device_identifier: "solar_inverter_001"
+    
+  # Example 3: Associate with an existing HA device
+  existing_device_sensor:
+    name: "Temperature Comfort Index"
+    formula: "(temperature - 20) * 2"
+    variables:
+      temperature: sensor.living_room_temperature
+    unit_of_measurement: "comfort"
+    # Reference existing device by identifier
+    device_identifier: "existing_thermostat_device"
+    
+  # Example 4: No device association (standalone sensor)
+  standalone_calculation:
+    name: "Daily Average Temperature"
+    formula: "(morning_temp + evening_temp) / 2"
+    variables:
+      morning_temp: sensor.morning_temperature
+      evening_temp: sensor.evening_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    # No device fields - sensor not associated with any device

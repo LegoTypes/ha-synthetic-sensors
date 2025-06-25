@@ -119,6 +119,68 @@ sensors:
     state_class: "measurement"
 ```
 
+### Device Association
+
+Associate sensors with Home Assistant devices for better organization and device-centric management:
+
+```yaml
+sensors:
+  # Sensor associated with a new device
+  solar_inverter_efficiency:
+    name: "Solar Inverter Efficiency"
+    formula: "solar_output / solar_capacity * 100"
+    variables:
+      solar_output: "sensor.solar_current_power"
+      solar_capacity: "sensor.solar_max_capacity"
+    unit_of_measurement: "%"
+    device_class: "power_factor"
+    state_class: "measurement"
+    # Device association fields
+    device_identifier: "solar_inverter_001"
+    device_name: "Solar Inverter"
+    device_manufacturer: "SolarTech"
+    device_model: "ST-5000"
+    device_sw_version: "2.1.0"
+    device_hw_version: "1.0"
+    suggested_area: "Garage"
+
+  # Sensor associated with an existing device (minimal config)
+  battery_status:
+    name: "Battery Status"
+    formula: "battery_level * battery_capacity / 100"
+    variables:
+      battery_level: "sensor.battery_percentage" 
+      battery_capacity: "sensor.battery_total_capacity"
+    unit_of_measurement: "kWh"
+    device_class: "energy_storage"
+    state_class: "measurement"
+    # Only device_identifier needed for existing devices
+    device_identifier: "solar_inverter_001"
+```
+
+**Device Association Fields:**
+
+- **`device_identifier`** *(required)*: Unique identifier for the device
+- **`device_name`** *(optional)*: Human-readable device name
+- **`device_manufacturer`** *(optional)*: Device manufacturer
+- **`device_model`** *(optional)*: Device model
+- **`device_sw_version`** *(optional)*: Software version
+- **`device_hw_version`** *(optional)*: Hardware version
+- **`suggested_area`** *(optional)*: Suggested Home Assistant area
+
+**Device Behavior:**
+
+- **New devices**: If a device with the `device_identifier` doesn't exist, it will be created with the provided information
+- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are ignored)
+- **No device association**: Sensors without `device_identifier` behave as standalone entities (default behavior)
+
+**Benefits of device association:**
+
+- Sensors appear grouped under their device in the Home Assistant UI
+- Better organization for complex setups with multiple related sensors
+- Device-level controls and automations
+- Cleaner entity management and discovery
+
 **How attributes work:**
 
 - Main sensor state is calculated first using the `formula`
@@ -129,14 +191,14 @@ sensors:
 
 ## Entity Reference Patterns
 
-| Pattern Type                   | Syntax                          | Example                                | Use Case                               |
-| ------------------------------ | ------------------------------- | -------------------------------------- | -------------------------------------- |
-| **Direct Entity ID**           | `sensor.entity_name`            | `sensor.power_meter`                   | Quick references, cross-sensor         |
-| **Variable Alias**             | `variable_name`                 | `power_meter`                          | Most common, clean formulas            |
-| **Sensor Key Reference**       | `sensor_key`                    | `energy_analysis`                      | Reference other synthetic sensors      |
-| **State Alias (attributes)**   | `state`                         | `state * 24`                           | In attributes, reference main sensor   |
-| **Attribute Dot Notation**     | `entity.attribute`              | `sensor1.battery_level`                | Access entity attributes               |
-| **Collection Functions**       | `mathFunc(pattern:value)`       | `sum(device_class:temperature)`        | Aggregate entities by pattern          |
+| Pattern Type | Syntax | Example | Use Case |
+| ------------ | ------ | ------- | -------- |
+| **Direct Entity ID** | `sensor.entity_name` | `sensor.power_meter` | Quick references, cross-sensor |
+| **Variable Alias** | `variable_name` | `power_meter` | Most common, clean formulas |
+| **Sensor Key Reference** | `sensor_key` | `energy_analysis` | Reference other synthetic sensors |
+| **State Alias (attributes)** | `state` | `state * 24` | In attributes, reference main sensor |
+| **Attribute Dot Notation** | `entity.attribute` | `sensor1.battery_level` | Access entity attributes |
+| **Collection Functions** | `mathFunc(pattern:value)` | `sum(device_class:temperature)` | Aggregate entities by pattern |
 
 **Entity ID Generation**: The sensor key serves as the unique_id. Home Assistant creates entity_ids as
 `sensor.syn2_{key}` unless overridden with the optional `entity_id` field.

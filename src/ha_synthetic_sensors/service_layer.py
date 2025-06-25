@@ -230,7 +230,7 @@ class ServiceLayer:
             schema=GET_SENSOR_INFO_SCHEMA,
         )
 
-        _LOGGER.info("Registered %s services", self._domain)
+        _LOGGER.debug("Registered %s services", self._domain)
 
     async def async_unload_services(self) -> None:
         """Unload Home Assistant services."""

@@ -22,6 +22,9 @@ from .schema_validator import validate_yaml_config
 
 _LOGGER = logging.getLogger(__name__)
 
+# Domain constant for device registry
+DOMAIN = "synthetic_sensors"
+
 # Type alias for attribute values (allows complex types for formula metadata)
 AttributeValue = str | float | int | bool | list[str] | dict[str, Any]
 
@@ -57,6 +60,14 @@ class SensorConfigDict(TypedDict, total=False):
     state_class: StateClassType
     icon: str
     extra_attributes: dict[str, AttributeValue]
+    # Device association fields
+    device_identifier: str  # Device identifier to associate with
+    device_name: str  # Optional device name override
+    device_manufacturer: str
+    device_model: str
+    device_sw_version: str
+    device_hw_version: str
+    suggested_area: str
 
 
 class ConfigDict(TypedDict, total=False):
@@ -114,6 +125,14 @@ class SensorConfig:
     category: str | None = None
     description: str | None = None
     entity_id: str | None = None  # OPTIONAL: Explicit entity ID
+    # Device association fields
+    device_identifier: str | None = None  # Device identifier to associate with
+    device_name: str | None = None  # Optional device name override
+    device_manufacturer: str | None = None
+    device_model: str | None = None
+    device_sw_version: str | None = None
+    device_hw_version: str | None = None
+    suggested_area: str | None = None
 
     def get_all_dependencies(self) -> set[str]:
         """Get all entity dependencies across all formulas."""
@@ -297,15 +316,10 @@ class ConfigManager:
             return self._config
 
         try:
-
-            def _read_yaml_file() -> dict[str, Any]:
-                with open(path, encoding="utf-8") as file:
-                    result = yaml.safe_load(file)
-                    if isinstance(result, dict):
-                        return result
-                    return {}
-
-            yaml_data = await self._hass.async_add_executor_job(_read_yaml_file)
+            with open(path, encoding="utf-8") as file:
+                yaml_data = yaml.safe_load(file)
+                if not isinstance(yaml_data, dict):
+                    yaml_data = {}
 
             if not yaml_data:
                 self._logger.warning("Empty configuration file, using empty config")
@@ -397,6 +411,15 @@ class ConfigManager:
         sensor.category = sensor_data.get("category")
         sensor.description = sensor_data.get("description")
         sensor.entity_id = sensor_data.get("entity_id")
+
+        # Copy device association fields
+        sensor.device_identifier = sensor_data.get("device_identifier")
+        sensor.device_name = sensor_data.get("device_name")
+        sensor.device_manufacturer = sensor_data.get("device_manufacturer")
+        sensor.device_model = sensor_data.get("device_model")
+        sensor.device_sw_version = sensor_data.get("device_sw_version")
+        sensor.device_hw_version = sensor_data.get("device_hw_version")
+        sensor.suggested_area = sensor_data.get("suggested_area")
 
         # Parse main formula (required)
         formula = self._parse_single_formula(sensor_key, sensor_data)

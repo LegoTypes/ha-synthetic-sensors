@@ -595,7 +595,7 @@ sensors:
     async def test_reload_config_no_path(self, config_manager):
         """Test reload_config when no config path is set."""
         with pytest.raises(ConfigEntryError) as exc_info:
-            config_manager.async_reload_config()
+            await config_manager.async_reload_config()
 
         assert "no configuration path" in str(exc_info.value).lower()
 
