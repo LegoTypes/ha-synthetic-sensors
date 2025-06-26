@@ -1,5 +1,7 @@
 """Test configuration and fixtures for ha-synthetic-sensors."""
 
+import asyncio
+from collections.abc import Generator
 import importlib.util
 from pathlib import Path
 import sys
@@ -7,6 +9,17 @@ from typing import Any, Optional
 from unittest.mock import MagicMock, Mock
 
 import pytest
+
+pytest_plugins = ["pytest_asyncio"]  # enable pytest-asyncio plugin
+
+
+@pytest.fixture
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    """Provide a fresh asyncio event loop for each test."""
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
 
 # Setup path for local package
 test_dir = Path(__file__).parent
