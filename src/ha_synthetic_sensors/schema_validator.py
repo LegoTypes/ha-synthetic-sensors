@@ -548,12 +548,20 @@ class SchemaValidator:
                 },
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities or collection patterns",
+                    "description": "Variable mappings to Home Assistant entities, collection patterns, or numeric literals",
                     "patternProperties": {
                         var_pattern: {
-                            "type": "string",
-                            "pattern": variable_value_pattern,
-                            "description": "Home Assistant entity ID or collection pattern (device_class:, area:, etc.)",
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": variable_value_pattern,
+                                    "description": "Home Assistant entity ID or collection pattern (device_class:, area:, etc.)",
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Numeric literal value",
+                                },
+                            ]
                         }
                     },
                     "additionalProperties": False,
@@ -718,12 +726,20 @@ class SchemaValidator:
                 # Common properties for both syntax patterns
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities",
+                    "description": "Variable mappings to Home Assistant entities or numeric literals",
                     "patternProperties": {
                         var_pattern: {
-                            "type": "string",
-                            "pattern": entity_pattern,
-                            "description": "Home Assistant entity ID",
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": entity_pattern,
+                                    "description": "Home Assistant entity ID",
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Numeric literal value",
+                                },
+                            ]
                         }
                     },
                     "additionalProperties": False,
@@ -788,6 +804,7 @@ class SchemaValidator:
 
     def _get_v1_attribute_definition(self, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the calculated attribute definition for the v2.0 schema."""
+        entity_pattern = r"^[a-z_][a-z0-9_]*\.[a-z0-9_]+$"
         return {
             "type": "object",
             "description": "Calculated attribute definition",
@@ -796,6 +813,26 @@ class SchemaValidator:
                     "type": "string",
                     "description": ("Mathematical expression to evaluate for this attribute"),
                     "minLength": 1,
+                },
+                "variables": {
+                    "type": "object",
+                    "description": "Variable mappings to Home Assistant entities or numeric literals",
+                    "patternProperties": {
+                        var_pattern: {
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": entity_pattern,
+                                    "description": "Home Assistant entity ID",
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Numeric literal value",
+                                },
+                            ]
+                        }
+                    },
+                    "additionalProperties": False,
                 },
                 "unit_of_measurement": {
                     "type": "string",

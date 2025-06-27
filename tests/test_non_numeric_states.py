@@ -268,20 +268,17 @@ class TestNonNumericStateHandling:
         assert result == 0.0  # Should fallback to 0.0 for None states
 
     def test_build_evaluation_context_missing_entities(self, mock_hass):
-        """Test that _build_evaluation_context handles missing entities properly."""
+        """Test that _build_evaluation_context raises error for missing entities."""
         evaluator = Evaluator(mock_hass)
 
         # Mock that no entities exist
         mock_hass.states.get.return_value = None
 
         dependencies = {"sensor.missing1", "sensor.missing2"}
-        context = evaluator._build_evaluation_context(dependencies)
 
-        # Missing entities should get default value of 0
-        assert context["sensor.missing1"] == 0
-        assert context["sensor.missing2"] == 0
-        assert context["sensor_missing1"] == 0  # Normalized form
-        assert context["sensor_missing2"] == 0  # Normalized form
+        # Missing entities should raise a ValueError
+        with pytest.raises(ValueError, match="Entity '.*' not found and is required for formula evaluation"):
+            evaluator._build_evaluation_context(dependencies)
 
     def test_unavailable_and_unknown_entity_states(self, mock_hass):
         """Test comprehensive handling of 'unavailable' and 'unknown' entity states."""

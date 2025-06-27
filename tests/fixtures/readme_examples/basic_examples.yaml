@@ -1,0 +1,32 @@
+version: "1.0"
+
+sensors:
+  # Single formula sensor (90% of use cases)
+  energy_cost_current:
+    name: "Current Energy Cost"
+    formula: "current_power * electricity_rate / conversion_factor"
+    variables:
+      current_power: "sensor.span_panel_instantaneous_power"
+      electricity_rate: "input_number.electricity_rate_cents_kwh"
+      conversion_factor: 1000                    # Literal: watts to kilowatts
+    unit_of_measurement: "¢/h"
+    state_class: "measurement"
+
+  temperature_converter:
+    name: "Temperature Converter"
+    formula: "(temp_f - freezing_f) * conversion_factor / celsius_factor"
+    variables:
+      temp_f: "sensor.outdoor_temperature_f"
+      freezing_f: 32                     # Literal: Fahrenheit freezing point
+      conversion_factor: 5               # Literal: F to C numerator
+      celsius_factor: 9                  # Literal: F to C denominator
+    unit_of_measurement: "°C"
+
+  power_efficiency:
+    name: "Power Efficiency"
+    formula: "actual_power / rated_power * percentage"
+    variables:
+      actual_power: "sensor.current_power"
+      rated_power: 1000                  # Literal: rated power in watts
+      percentage: 100                    # Literal: convert to percentage
+    unit_of_measurement: "%"

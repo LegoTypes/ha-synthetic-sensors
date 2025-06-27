@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ha_synthetic_sensors.evaluator import ContextValue
+from ha_synthetic_sensors.types import ContextValue
 
 
 class TestFormulaEvaluation:

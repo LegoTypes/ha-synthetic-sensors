@@ -282,20 +282,22 @@ class DependencyParser:
 
         return excluded
 
-    def extract_static_dependencies(self, formula: str, variables: dict[str, str]) -> set[str]:
+    def extract_static_dependencies(self, formula: str, variables: dict[str, str | int | float]) -> set[str]:
         """Extract static entity dependencies from formula and variables.
 
         Args:
             formula: The formula string to parse
-            variables: Variable name to entity_id mappings
+            variables: Variable name to entity_id mappings (or numeric literals)
 
         Returns:
             Set of entity_ids that are static dependencies
         """
         dependencies: set[str] = set()
 
-        # Add all variable entity_ids
-        dependencies.update(variables.values())
+        # Add only string variable values (entity_ids), skip numeric literals
+        for value in variables.values():
+            if isinstance(value, str):
+                dependencies.add(value)
 
         # Extract direct entity references (sensor.something, etc.)
         entity_matches = self.ENTITY_PATTERN.findall(formula)
@@ -311,8 +313,8 @@ class DependencyParser:
             entity_part = match[0]
 
             # Check if this is a variable reference
-            if entity_part in variables:
-                dependencies.add(variables[entity_part])
+            if entity_part in variables and isinstance(variables[entity_part], str):
+                dependencies.add(str(variables[entity_part]))  # Cast to ensure type safety
             # Check if this looks like an entity_id
             elif "." in entity_part and any(entity_part.startswith(domain + ".") for domain in ["sensor", "binary_sensor", "input_number", "input_boolean", "switch", "light", "climate", "cover", "fan", "lock", "alarm_control_panel"]):
                 dependencies.add(entity_part)
@@ -373,12 +375,12 @@ class DependencyParser:
 
         return used_variables
 
-    def parse_formula_dependencies(self, formula: str, variables: dict[str, str]) -> ParsedDependencies:
+    def parse_formula_dependencies(self, formula: str, variables: dict[str, str | int | float]) -> ParsedDependencies:
         """Parse all types of dependencies from a formula.
 
         Args:
             formula: The formula string to parse
-            variables: Variable name to entity_id mappings
+            variables: Variable name to entity_id mappings (or numeric literals)
 
         Returns:
             ParsedDependencies object with all dependency types

@@ -1,0 +1,90 @@
+# Numeric Literals Test Configuration
+# Tests numeric literal variables in formulas
+version: "1.0"
+
+sensors:
+  # Test basic numeric literals in variables
+  basic_literals:
+    name: "Basic Literals Test"
+    formula: "base_value + offset * multiplier"
+    variables:
+      base_value: "sensor.test_value"  # Entity reference
+      offset: 10                       # Integer literal
+      multiplier: 1.5                  # Float literal
+    unit_of_measurement: "W"
+
+  # Test all numeric literal types
+  all_numeric_types:
+    name: "All Numeric Types"
+    formula: "int_val + float_val + negative_val + zero_val"
+    variables:
+      int_val: 42
+      float_val: 3.14159
+      negative_val: -5
+      zero_val: 0
+    unit_of_measurement: "units"
+
+  # Test mixed entity references and literals
+  mixed_references:
+    name: "Mixed References"
+    formula: "(sensor_a + sensor_b) * scale_factor + offset"
+    variables:
+      sensor_a: "sensor.temperature"
+      sensor_b: "sensor.humidity"
+      scale_factor: 2.0
+      offset: 100
+    unit_of_measurement: "scaled_units"
+
+  # Test literals in attribute formulas
+  literals_in_attributes:
+    name: "Literals in Attributes"
+    formula: "base_power"
+    variables:
+      base_power: "sensor.power_meter"
+      actual_power: "sensor.power_meter"
+      rated_power: 1000        # Literal: rated power in watts
+      percentage_multiplier: 100  # Literal: convert to percentage
+      current_power: "sensor.power_meter"
+      rate_per_kwh: 0.12       # Literal: cost per kWh
+      hours_per_kwh: 1000      # Literal: conversion factor
+    unit_of_measurement: "W"
+    attributes:
+      efficiency_percent:
+        formula: "(actual_power / rated_power) * percentage_multiplier"
+        unit_of_measurement: "%"
+      cost_per_hour:
+        formula: "current_power * rate_per_kwh / hours_per_kwh"
+        unit_of_measurement: "cost"
+
+  # Test edge cases with very small and large numbers
+  edge_case_numbers:
+    name: "Edge Case Numbers"
+    formula: "very_small + very_large + scientific_notation"
+    variables:
+      very_small: 0.000001
+      very_large: 1000000
+      scientific_notation: 1.23e-4
+    unit_of_measurement: "mixed"
+
+  # Test boolean-like numeric literals (0 and 1)
+  boolean_numerics:
+    name: "Boolean Numerics"
+    formula: "base_value * enabled_flag + disabled_value * disabled_flag"
+    variables:
+      base_value: "sensor.some_value"
+      enabled_flag: 1          # Literal: boolean true as 1
+      disabled_value: 42
+      disabled_flag: 0         # Literal: boolean false as 0
+    unit_of_measurement: "conditional"
+
+  # Test complex mathematical expressions with literals
+  complex_math:
+    name: "Complex Math with Literals"
+    formula: "sqrt((x_val - x_offset)**2 + (y_val - y_offset)**2) * scale"
+    variables:
+      x_val: "sensor.x_coordinate"
+      y_val: "sensor.y_coordinate"
+      x_offset: 50.5           # Literal: X origin offset
+      y_offset: 25.0           # Literal: Y origin offset
+      scale: 2.5               # Literal: scaling factor
+    unit_of_measurement: "distance"

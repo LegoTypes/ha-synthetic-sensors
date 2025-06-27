@@ -66,19 +66,21 @@ sensors:
   # Single formula sensor (90% of use cases)
   energy_cost_current:
     name: "Current Energy Cost"
-    formula: "current_power * electricity_rate / 1000"
+    formula: "current_power * electricity_rate / conversion_factor"
     variables:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
+      conversion_factor: 1000                    # Literal: watts to kilowatts
     unit_of_measurement: "¢/h"
     state_class: "measurement"
 
-  # Another simple sensor
+  # Another simple sensor with numeric literals
   solar_sold_power:
     name: "Solar Sold Power"
-    formula: "abs(min(grid_power, 0))"
+    formula: "abs(min(grid_power, zero_threshold))"
     variables:
       grid_power: "sensor.span_panel_current_power"
+      zero_threshold: 0                         # Literal: threshold value
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
@@ -205,9 +207,18 @@ sensors:
 
 ### Variable Purpose and Scope
 
-A variable serves as a short alias for the sensor or filter that it references.
+A variable serves as a short alias for an entity ID, collection pattern, or numeric literal that it references.
 
-Once defined a variable can be used in any formula whether in the main sensor state formula or attribute formula.
+Variables can be:
+
+- **Entity IDs**: `"sensor.power_meter"` - References Home Assistant entities
+- **Numeric Literals**: `42`, `3.14`, `-5.0` - Direct numeric values for constants
+- **Collection Patterns**: `"device_class:temperature"` - Dynamic entity aggregation
+
+**Important**: All variables must be defined at the sensor level in the `variables` section. Attribute-level variable
+definitions are not supported.
+
+Once defined, a variable can be used in any formula whether in the main sensor state formula or attribute formula.
 
 Attribute formulas automatically inherit all variables from their parent sensor:
 
@@ -219,13 +230,18 @@ sensors:
     variables:
       grid_power: "sensor.grid_meter"
       solar_power: "sensor.solar_inverter"
-      efficiency_factor: "input_number.base_efficiency"
+      efficiency_factor: 0.85                    # Numeric literal: efficiency constant
+      tax_rate: 0.095                           # Numeric literal: tax percentage
       battery_devices: "device_class:battery"
     attributes:
       daily_projection:
         formula: "energy_analysis * 24" # References main sensor by key
       efficiency_percent:
-        formula: "solar_power / (grid_power + solar_power) * 100" # Uses inherited variables
+        formula: "solar_power / (grid_power + solar_power) * efficiency_factor * 100"
+        unit_of_measurement: "%"
+      cost_with_tax:
+        formula: "energy_analysis * (1 + tax_rate)"  # Uses numeric literal
+        unit_of_measurement: "¢"
       low_battery_count:
         formula: "count(battery_devices.battery_level<20)" # Uses collection variable with dot notation
         unit_of_measurement: "devices"
@@ -233,6 +249,38 @@ sensors:
     device_class: "power"
     state_class: "measurement"
 ```
+
+```yaml
+sensors:
+  # Mixed data sources - integration data + HA entities
+  power_analysis:
+    name: "Power Analysis"
+    # This formula uses both integration-provided data and HA entities
+    formula: "local_meter_power + grid_power + solar_power"
+    variables:
+      local_meter_power: "span.meter_001"  # From integration callback
+      grid_power: "sensor.grid_power"      # From Home Assistant
+      solar_power: "sensor.solar_inverter" # From Home Assistant
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    
+  # Purely integration data
+  internal_efficiency:
+    name: "Internal Efficiency"
+    formula: "internal_sensor_a / internal_sensor_b * 100"
+    variables:
+      internal_sensor_a: "span.efficiency_input"   # From integration
+      internal_sensor_b: "span.efficiency_baseline" # From integration
+    unit_of_measurement: "%"
+```
+
+**Data Source Resolution:**
+
+- If `entity_list_callback` returns entity IDs like `["span.meter_001", "span.efficiency_input", "span.efficiency_baseline"]`
+- Evaluator calls `data_provider_callback` for those entities
+- All other entities (`sensor.grid_power`, `sensor.solar_inverter`) use standard HA state queries
+- Completely transparent to YAML configuration - same syntax for both data sources
 
 ### Collection Functions (Entity Aggregation)
 
@@ -292,6 +340,11 @@ sensors:
 "circuit_1 + circuit_2 + circuit_3"
 "net_power * buy_rate / 1000 if net_power > 0 else abs(net_power) * sell_rate / 1000"
 
+# Using numeric literals in formulas
+"sensor_value * 0.85 + 100"                     # Efficiency factor and offset
+"(temperature - 32) * 5 / 9"                    # Fahrenheit to Celsius conversion
+"power * 1.0955"                                 # Tax calculation with literal rate
+
 # Mathematical functions
 "sqrt(power_a**2 + power_b**2)"              # Square root, exponents
 "round(temperature, 1)"                      # Rounding
@@ -309,6 +362,47 @@ avg("device_class:temperature|humidity")    # Average temperature OR humidity se
 # Cross-sensor references
 "sensor.syn2_hvac_total_power + sensor.syn2_lighting_total_power"
 ```
+
+### Numeric Literals in Variables
+
+Numeric literals can be used directly in variable definitions for constants, conversion factors, and thresholds:
+
+```yaml
+sensors:
+  temperature_converter:
+    name: "Temperature Converter"
+    formula: "(temp_f - freezing_f) * conversion_factor / celsius_factor"
+    variables:
+      temp_f: "sensor.outdoor_temperature_f"
+      freezing_f: 32                     # Literal: Fahrenheit freezing point
+      conversion_factor: 5               # Literal: F to C numerator
+      celsius_factor: 9                  # Literal: F to C denominator
+    unit_of_measurement: "°C"
+
+  power_efficiency:
+    name: "Power Efficiency"
+    formula: "actual_power / rated_power * percentage"
+    variables:
+      actual_power: "sensor.current_power"
+      rated_power: 1000                  # Literal: rated power in watts
+      percentage: 100                    # Literal: convert to percentage
+    unit_of_measurement: "%"
+    
+  cost_calculator:
+    name: "Energy Cost"
+    formula: "energy_kwh * rate_per_kwh * (1 + tax_rate)"
+    variables:
+      energy_kwh: "sensor.energy_usage"
+      rate_per_kwh: 0.12                 # Literal: cost per kWh
+      tax_rate: 0.085                    # Literal: tax percentage
+    unit_of_measurement: "$"
+```
+
+**Supported literal types:**
+
+- **Integers**: `42`, `-10`, `0`
+- **Floats**: `3.14159`, `-2.5`, `0.001`
+- **Scientific notation**: `1.23e-4`, `2.5e6`
 
 **Available Mathematical Functions:**
 
@@ -403,7 +497,7 @@ Uses TypedDict for all data structures providing type safety and IDE support:
 
 ```python
 from ha_synthetic_sensors.config_manager import FormulaConfigDict, SensorConfigDict
-from ha_synthetic_sensors.evaluator import EvaluationResult
+from ha_synthetic_sensors.types import EvaluationResult, DataProviderResult
 
 # Typed configuration validation
 validation_result = validate_yaml_content(yaml_content)
@@ -414,10 +508,14 @@ if validation_result["is_valid"]:
 result = evaluator.evaluate_formula(formula_config)
 if result["success"]:
     value = result["value"]
+
+# Typed data provider callback
+def my_data_provider(entity_id: str) -> DataProviderResult:
+    return {"value": get_sensor_value(entity_id), "exists": True}
 ```
 
-**Available TypedDict interfaces:** Configuration structures, evaluation results, service responses, entity creation results,
-integration management, and more.
+**Available TypedDict interfaces:** Configuration structures, evaluation results, data provider callbacks, service responses,
+entity creation results, integration management, and more.
 
 ## Configuration format
 
@@ -462,21 +560,92 @@ class MyCustomIntegration:
         await self.sensor_manager.apply_config(config)
 ```
 
+### Integration Data Provider (hybrid data access)
+
+For integrations that need to provide some sensor data directly while still using Home Assistant entities for others:
+
+**See [Integration Data Provider Documentation](docs/integration_data_provider.md) for complete setup guide.**
+
+```python
+from ha_synthetic_sensors.sensor_manager import SensorManagerConfig
+from ha_synthetic_sensors.types import DataProviderCallback, DataProviderResult
+
+class MyCustomIntegration:
+    def get_integration_data(self, entity_id: str) -> DataProviderResult:
+        """Provide data directly from integration for specific entities."""
+        if entity_id in self.local_sensors:
+            value = self.local_sensors[entity_id].current_value
+            return {"value": value, "exists": True}
+        return {"value": None, "exists": False}
+    
+    async def async_setup_sensors(self, async_add_entities):
+        # Configure sensor manager with data provider callback
+        manager_config = SensorManagerConfig(
+            device_info=self.device_info,
+            lifecycle_managed_externally=True,
+            data_provider_callback=self.get_integration_data
+        )
+        
+        synthetic_integration = SyntheticSensorsIntegration(self.hass)
+        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
+            add_entities_callback=async_add_entities,
+            manager_config=manager_config
+        )
+        
+        # Register entities that this integration can provide data for
+        self.sensor_manager.register_data_provider_entities(set(self.local_sensors.keys()))
+        
+        # Load config - evaluator will automatically use callbacks for registered entities
+        # and Home Assistant state queries for all other entities
+        config = await self.sensor_manager.load_config_from_yaml(yaml_config)
+        await self.sensor_manager.apply_config(config)
+```
+
+**Registration Methods:**
+
+- **`register_data_provider_entities(entity_ids: set[str])`**: Register entities that integration can provide data for
+- **`update_data_provider_entities(entity_ids: set[str])`**: Update the registered entity list (replaces existing)
+- **`get_registered_entities() -> set[str]`**: Get current registered entities
+
+**Data Provider Callback:**
+
+- **`DataProviderCallback`**: `(entity_id: str) -> DataProviderResult` - Returns a TypedDict with `value` and `exists` fields
+
+**Hybrid Data Access Behavior - Integration Authority Model:**
+
+- **Entity registration**: The integration **proactively registers** which entities it owns for synthetic sensor evaluation
+- **Integration entities**: All registered entities use the data provider callback exclusively
+- **Home Assistant entities**: All other entities use standard Home Assistant state queries exclusively
+- **No fallback**: Each entity uses exactly one data source - strict error handling prevents silent failures
+- **Entity state independence**: Integration-provided entities don't need to exist in Home Assistant's entity registry
+- **Seamless configuration**: YAML syntax is identical regardless of data source - the evaluator automatically routes
+  requests
+
 **Device integration benefits:** Unified device view, lifecycle control, update coordination, entity naming consistency.
+
+**For detailed implementation guide:** See [Integration Data Provider Documentation](docs/integration_data_provider.md) for
+complete examples, error handling details, and advanced usage patterns.
 
 ## Exception Handling
 
-Follows Home Assistant coordinator patterns with **two-tier error handling**:
+Follows Home Assistant coordinator patterns with **strict error handling**:
 
 **Fatal Errors** (permanent configuration issues):
 
-- Syntax errors, missing entities, invalid patterns
+- Syntax errors, missing entities, invalid patterns, undefined variables
 - Triggers circuit breaker, sensor becomes "unavailable"
+- **Missing entities**: When a variable references a non-existent entity ID, a critical error is raised
 
 **Transitory Errors** (temporary conditions):
 
-- Unavailable entities, non-numeric states, cache issues
+- Unavailable entities (temporarily), non-numeric states, cache issues
 - Allows graceful degradation, sensor becomes "unknown"
+
+**Key Behavior Changes**:
+
+- **No silent fallbacks**: Missing entities or undefined variables cause immediate errors rather than defaulting to 0
+- **Strict validation**: All entity IDs in variables must exist, or the sensor will fail to evaluate
+- **Clear error messages**: Detailed error information helps identify configuration issues
 
 **Exception Types:**
 

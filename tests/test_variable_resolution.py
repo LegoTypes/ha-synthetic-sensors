@@ -54,13 +54,12 @@ class TestVariableResolution:
         # Create a formula config similar to SPAN Panel solar sensors
         config = FormulaConfig(id="solar_power", name="Solar Inverter Power", formula="leg1_power + leg2_power", variables={"leg1_power": "sensor.span_panel_circuit_30_power", "leg2_power": "sensor.span_panel_circuit_32_power"}, unit_of_measurement="W", device_class="power", state_class="measurement")
 
-        # Test 1: Without proper variable context (current broken behavior)
-        result_without_context = evaluator.evaluate_formula(config)
-        assert result_without_context["success"] is False
-        error_msg = result_without_context.get("error", "")
-        assert "is not defined" in error_msg
+        # Test 1: Automatic variable resolution should work now
+        result_auto_resolution = evaluator.evaluate_formula(config)
+        assert result_auto_resolution["success"] is True
+        assert result_auto_resolution["value"] == 1500  # 1000 + 500
 
-        # Test 2: With variable context manually built (should work)
+        # Test 2: With variable context manually built (should also work)
         context = {}
         for var_name, entity_id in config.variables.items():
             state = mock_hass.states.get(entity_id)

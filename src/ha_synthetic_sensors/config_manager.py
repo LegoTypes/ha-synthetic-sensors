@@ -40,7 +40,7 @@ class AttributeConfigDict(TypedDict, total=False):
     device_class: DeviceClassType
     state_class: StateClassType
     icon: str
-    variables: dict[str, str]  # Allow attributes to define additional variables
+    variables: dict[str, str | int | float]  # Allow attributes to define additional variables
 
 
 class SensorConfigDict(TypedDict, total=False):
@@ -54,7 +54,7 @@ class SensorConfigDict(TypedDict, total=False):
     formula: str
     attributes: dict[str, AttributeConfigDict]
     # Common properties
-    variables: dict[str, str]
+    variables: dict[str, str | int | float]
     unit_of_measurement: str
     device_class: DeviceClassType
     state_class: StateClassType
@@ -89,7 +89,7 @@ class FormulaConfig:
     icon: str | None = None
     attributes: dict[str, AttributeValue] = field(default_factory=dict)
     dependencies: set[str] = field(default_factory=set)
-    variables: dict[str, str] = field(default_factory=dict)  # Variable name -> entity_id mappings
+    variables: dict[str, str | int | float] = field(default_factory=dict)  # Variable name -> entity_id mappings or numeric literals
 
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""
@@ -983,12 +983,12 @@ class ConfigManager:
                 "file_path": str(path),
             }
 
-    def _auto_inject_entity_variables(self, formula: str, variables: dict[str, str]) -> dict[str, str]:
+    def _auto_inject_entity_variables(self, formula: str, variables: dict[str, str | int | float]) -> dict[str, str | int | float]:
         """Auto-inject missing entity references as variables.
 
         Args:
             formula: Formula string to analyze
-            variables: Existing variables dict
+            variables: Existing variables dict (can contain entity IDs or numeric literals)
 
         Returns:
             Updated variables dict with auto-injected entity references

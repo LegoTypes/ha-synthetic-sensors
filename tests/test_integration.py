@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ha_synthetic_sensors.evaluator import ContextValue
 from ha_synthetic_sensors.exceptions import IntegrationNotInitializedError
 from ha_synthetic_sensors.integration import (
     SyntheticSensorsIntegration,
@@ -17,6 +16,7 @@ from ha_synthetic_sensors.integration import (
     get_integration,
     validate_yaml_content,
 )
+from ha_synthetic_sensors.types import ContextValue
 
 
 class TestSyntheticSensorsIntegration:

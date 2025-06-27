@@ -217,7 +217,8 @@ class FormulaCache:
         # Use formula_id if available for better key readability
         base_key = formula_id or self._hash_formula(formula)
 
-        if not context:
+        # Skip context hashing only when no context was provided
+        if context is None:
             return base_key
 
         # Create stable context hash

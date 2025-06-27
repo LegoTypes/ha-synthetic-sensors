@@ -1,0 +1,59 @@
+# Hybrid Data Access Test Configuration
+# Tests mixing integration-provided data with Home Assistant entities
+version: "1.0"
+
+sensors:
+  # Mixed data sources - integration data + HA entities  
+  hybrid_power_analysis:
+    name: "Hybrid Power Analysis"
+    formula: "local_meter_power + grid_power + solar_power"
+    variables:
+      local_meter_power: "span.meter_001"      # From integration callback
+      grid_power: "sensor.grid_power"          # From Home Assistant
+      solar_power: "sensor.solar_inverter"     # From Home Assistant
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    
+  # Purely integration data
+  internal_efficiency:
+    name: "Internal Efficiency"
+    formula: "internal_sensor_a / internal_sensor_b * 100"
+    variables:
+      internal_sensor_a: "span.efficiency_input"     # From integration
+      internal_sensor_b: "span.efficiency_baseline"  # From integration
+    unit_of_measurement: "%"
+    device_class: "power_factor"
+    state_class: "measurement"
+    
+  # Purely HA data
+  external_power_sum:
+    name: "External Power Sum"
+    formula: "house_power + workshop_power"
+    variables:
+      house_power: "sensor.house_total_power"      # From Home Assistant
+      workshop_power: "sensor.workshop_power"      # From Home Assistant
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    
+  # Complex mixed with attributes
+  comprehensive_analysis:
+    name: "Comprehensive Analysis"
+    formula: "local_data + external_data"
+    attributes:
+      efficiency_ratio:
+        formula: "local_data / (local_data + external_data) * 100"
+        unit_of_measurement: "%"
+      daily_projection:
+        formula: "state * 24"  # References main sensor state
+        unit_of_measurement: "Wh"
+      simple_mixed:
+        formula: "span.internal_temp + 5"  # Direct entity reference, no variables needed
+        unit_of_measurement: "°C"
+    variables:
+      local_data: "span.local_sensor"           # From integration
+      external_data: "sensor.external_sensor"  # From Home Assistant
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"

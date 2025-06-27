@@ -7,9 +7,8 @@ import ast
 from dataclasses import dataclass
 import logging
 import re
-from typing import Any, Callable, NotRequired, TypedDict
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from simpleeval import SimpleEval
 
 from .cache import CacheConfig, FormulaCache
@@ -24,57 +23,23 @@ from .exceptions import (
     is_retriable_error,
 )
 from .math_functions import MathFunctions
+from .types import (
+    CacheStats,
+    ContextValue,
+    DataProviderCallback,
+    DependencyValidation,
+    EntityListCallback,
+    EvaluationResult,
+)
+from .variable_resolver import (
+    ContextResolutionStrategy,
+    HomeAssistantResolutionStrategy,
+    IntegrationResolutionStrategy,
+    VariableResolutionStrategy,
+    VariableResolver,
+)
 
 _LOGGER = logging.getLogger(__name__)
-
-
-# NonNumericStateError is now imported from exceptions module
-
-
-# Type alias for evaluation context values
-ContextValue = str | float | int | bool | Callable[..., Any]
-
-# Type alias for formula evaluation results
-FormulaResult = float | int | str | bool | None
-
-
-# TypedDicts for evaluator results
-class EvaluationResult(TypedDict):
-    """Result of formula evaluation."""
-
-    success: bool
-    value: FormulaResult
-    error: NotRequired[str]
-    cached: NotRequired[bool]
-    state: NotRequired[str]  # "ok", "unknown", "unavailable"
-    unavailable_dependencies: NotRequired[list[str]]
-    missing_dependencies: NotRequired[list[str]]
-
-
-class CacheStats(TypedDict):
-    """Cache statistics for monitoring."""
-
-    total_cached_formulas: int
-    total_cached_evaluations: int
-    valid_cached_evaluations: int
-    error_counts: dict[str, int]
-    cache_ttl_seconds: float
-
-
-class DependencyValidation(TypedDict):
-    """Result of dependency validation."""
-
-    is_valid: bool
-    issues: dict[str, str]
-    missing_entities: list[str]
-    unavailable_entities: list[str]
-
-
-class EvaluationContext(TypedDict, total=False):
-    """Context for formula evaluation with entity states and functions.
-
-    Using total=False since the actual keys depend on the formula being evaluated.
-    """
 
 
 class FormulaEvaluator(ABC):
@@ -127,6 +92,8 @@ class Evaluator(FormulaEvaluator):
         cache_config: CacheConfig | None = None,
         circuit_breaker_config: CircuitBreakerConfig | None = None,
         retry_config: RetryConfig | None = None,
+        data_provider_callback: DataProviderCallback | None = None,
+        entity_list_callback: EntityListCallback | None = None,
     ):
         """Initialize the enhanced formula evaluator.
 
@@ -135,6 +102,12 @@ class Evaluator(FormulaEvaluator):
             cache_config: Optional cache configuration
             circuit_breaker_config: Optional circuit breaker configuration
             retry_config: Optional retry configuration for transitory errors
+            data_provider_callback: Optional callback for getting data directly from integrations
+                                  without requiring actual HA entities. Should return (value, exists)
+                                  where exists=True if data is available, False if not found.
+            entity_list_callback: Optional callback that returns a set of entity IDs that the
+                                integration can provide data for. Used to determine which entities
+                                should use data_provider_callback vs HA state queries.
 
         """
         self._hass = hass
@@ -156,6 +129,46 @@ class Evaluator(FormulaEvaluator):
         # TIER 2: Transitory Error Tracking (Intelligent Resilience)
         # Tracks temporary issues like unknown/unavailable entity states.
         self._transitory_error_count: dict[str, int] = {}
+
+        # Data provider callback for direct integration data access
+        self._data_provider_callback = data_provider_callback
+
+        # Entity list callback to determine which entities use integration data
+        self._entity_list_callback = entity_list_callback
+
+        # Support for push-based entity registration (new pattern)
+        self._registered_integration_entities: set[str] | None = None
+
+    def update_integration_entities(self, entity_ids: set[str]) -> None:
+        """Update the set of entities that the integration can provide (new push-based pattern).
+
+        Args:
+            entity_ids: Set of entity IDs that the integration can provide data for
+        """
+        self._registered_integration_entities = entity_ids.copy()
+        _LOGGER.debug("Updated integration entities: %d entities", len(entity_ids))
+
+    def get_integration_entities(self) -> set[str]:
+        """Get the current set of integration entities.
+
+        This method supports both the old callback pattern and new push-based pattern.
+
+        Returns:
+            Set of entity IDs that the integration can provide data for
+        """
+        # Try new push-based pattern first
+        if self._registered_integration_entities is not None:
+            return self._registered_integration_entities.copy()
+
+        # Fall back to old callback pattern for backward compatibility
+        if self._entity_list_callback:
+            try:
+                return self._entity_list_callback()
+            except Exception as e:
+                _LOGGER.warning("Error calling entity list callback: %s", e)
+                return set()
+
+        return set()
 
     def evaluate_formula(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling."""
@@ -233,7 +246,7 @@ class Evaluator(FormulaEvaluator):
                 }
 
             # Build evaluation context
-            eval_context = self._build_evaluation_context(dependencies, context)
+            eval_context = self._build_evaluation_context(dependencies, context, config)
 
             # Additional safety check: if any values in the context are unavailable/unknown/None,
             # return early to prevent simpleeval errors
@@ -368,8 +381,8 @@ class Evaluator(FormulaEvaluator):
         Returns:
             Tuple of (missing_entities, unavailable_entities)
         """
-        missing = set()
-        unavailable = set()
+        missing: set[str] = set()
+        unavailable: set[str] = set()
         context = context or {}
         collection_pattern_entities = collection_pattern_entities or set()
 
@@ -377,10 +390,40 @@ class Evaluator(FormulaEvaluator):
             # First check if provided in context
             if entity_id in context:
                 continue
+
+            # Determine if this entity should use the data provider callback
+            use_data_provider = False
+            if self._data_provider_callback:
+                integration_entities = self.get_integration_entities()
+                use_data_provider = entity_id in integration_entities
+
+            # Check if data provider callback can provide this entity
+            if use_data_provider and self._data_provider_callback:
+                try:
+                    result = self._data_provider_callback(entity_id)
+                    if result["exists"]:
+                        # Entity is available from data provider, check if it's usable
+                        value = result["value"]
+                        if value is None or (isinstance(value, str) and value in ("unavailable", "unknown")):
+                            unavailable.add(entity_id)
+                        # For data provider entities, assume they're providing the correct type
+                        continue
+                    else:
+                        # If integration claims to provide this entity but callback says it doesn't exist,
+                        # this is an error condition - treat as unavailable, don't fall back to HA
+                        _LOGGER.error("Integration claims to provide entity '%s' but data provider callback returned exists=False", entity_id)
+                        unavailable.add(entity_id)
+                        continue
+                except Exception as e:
+                    _LOGGER.warning("Error calling data provider callback for dependency check '%s': %s", entity_id, e)
+                    # If integration claims this entity but callback fails, treat as unavailable
+                    unavailable.add(entity_id)
+                    continue
+
             # Then check if it's a Home Assistant entity
             state = self._hass.states.get(entity_id)
             if state is None:
-                # FATAL ERROR: Entity doesn't exist in Home Assistant
+                # FATAL ERROR: Entity doesn't exist in Home Assistant and not provided by callback
                 missing.add(entity_id)
             elif state.state in ("unavailable", "unknown") or state.state is None:
                 # TRANSITORY ERROR: Entity exists but currently unavailable or has None state
@@ -428,19 +471,29 @@ class Evaluator(FormulaEvaluator):
         This method extracts dependencies for the new design where entity references
         can appear directly within collection patterns like sum("device_class: input_select.device_type").
 
+        Variables can be either:
+        1. Entity aliases: var: "sensor.some_entity" -> creates dependency on sensor.some_entity
+        2. Literal values: var: 1 -> no dependency, just a literal value
+
         Args:
             config: Formula configuration with variables
-            context: Optional evaluation context
+            context: Optional evaluation context with literal values
 
         Returns:
             Set of actual entity dependencies needed for evaluation
         """
-        dependencies = set()
+        dependencies: set[str] = set()
+        context = context or {}
 
         # Add variable entity references as dependencies (for backward compatibility)
+        # Only add variables that map to entity IDs (not literal values)
         if hasattr(config, "variables") and config.variables:
             for _var_name, entity_id in config.variables.items():
-                dependencies.add(entity_id)
+                # If the variable maps to a string that looks like an entity ID, it's a dependency
+                # Skip numeric literals (int/float)
+                if isinstance(entity_id, str) and "." in entity_id:
+                    dependencies.add(entity_id)
+                # If it's a literal value (number), it's not a dependency
 
         # Extract entity references from collection patterns
         parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
@@ -452,7 +505,15 @@ class Evaluator(FormulaEvaluator):
 
         # Extract regular dependencies (non-collection function entities)
         static_deps = self._dependency_parser.extract_entity_references(config.formula)
-        dependencies.update(static_deps)
+
+        # Filter out variables that are provided as literal values in context
+        # These are not entity dependencies, they're just literal values
+        for dep in static_deps:
+            if dep not in context and "." in dep:
+                # Only add as dependency if it looks like an entity ID
+                dependencies.add(dep)
+                # Single word variables (like A, B, C) without context are likely undefined variables
+                # and will cause evaluation errors, but that's the expected behavior
 
         return dependencies
 
@@ -517,9 +578,9 @@ class Evaluator(FormulaEvaluator):
             "unavailable_entities": unavailable_entities,
         }
 
-    def get_evaluation_context(self, formula_config: FormulaConfig) -> dict[str, Any]:
+    def get_evaluation_context(self, formula_config: FormulaConfig) -> dict[str, ContextValue]:
         """Build evaluation context with entity states and helper functions."""
-        context = {}
+        context: dict[str, ContextValue] = {}
 
         # Add entity-specific context
         for entity_id in formula_config.dependencies:
@@ -586,52 +647,72 @@ class Evaluator(FormulaEvaluator):
         """
         self._retry_config = config
 
-    def _build_evaluation_context(self, dependencies: set[str], context: dict[str, ContextValue] | None = None) -> dict[str, Any]:
-        """Build the evaluation context with entity states and dynamic query resolution."""
-        eval_context = {}
+    def _build_evaluation_context(self, dependencies: set[str], context: dict[str, ContextValue] | None = None, config: FormulaConfig | None = None) -> dict[str, ContextValue]:
+        """Build the evaluation context using the new polymorphic resolution system."""
+        eval_context: dict[str, ContextValue] = {}
 
-        # Add provided context (this includes variables resolved by formula config)
+        # Create resolution strategies in priority order
+        strategies: list[VariableResolutionStrategy] = []
+
+        # 1. Context strategy (highest priority - explicit values)
         if context:
-            eval_context.update(context)
+            strategies.append(ContextResolutionStrategy(context))
 
-        # Resolve dependencies that are entity_ids (not already in context)
-        for entity_id in dependencies:
-            # Skip if already provided in context (variable resolution)
-            if entity_id in eval_context:
-                continue
+        # 2. Integration strategy (if available)
+        if self._data_provider_callback:
+            strategies.append(IntegrationResolutionStrategy(self._data_provider_callback, self._entity_list_callback, evaluator=self))
 
-            state = self._hass.states.get(entity_id)
-            if state is not None:
-                try:
-                    # Try to get numeric state value
-                    numeric_value = self._get_numeric_state(state)
+        # 3. Home Assistant strategy (fallback)
+        strategies.append(HomeAssistantResolutionStrategy(self._hass))
 
-                    # For entity_ids with dots, add both original and normalized forms to support
-                    # both "sensor.entity_name" and "sensor_entity_name" variable access
-                    eval_context[entity_id] = numeric_value
-                    if "." in entity_id:
-                        normalized_name = entity_id.replace(".", "_")
-                        eval_context[normalized_name] = numeric_value
+        # Create the resolver
+        resolver = VariableResolver(strategies)
 
-                    # Add state object for attribute access
-                    eval_context[f"{entity_id}_state"] = state
+        # First, add all context variables directly to evaluation context
+        if context:
+            for var_name, value in context.items():
+                if isinstance(value, (int, float, str, bool)):
+                    eval_context[var_name] = value
 
-                except (ValueError, TypeError, NonNumericStateError):
-                    # For non-numeric states, keep as string
-                    eval_context[entity_id] = state.state
-                    if "." in entity_id:
-                        normalized_name = entity_id.replace(".", "_")
-                        eval_context[normalized_name] = state.state
-                    eval_context[f"{entity_id}_state"] = state
-            else:
-                # Handle missing entities by providing a default value of 0 for arithmetic operations
-                # This prevents NoneType errors during formula evaluation while still allowing
-                # the dependency check to catch missing entities properly
-                _LOGGER.debug("Entity '%s' not found during context building, using default value 0", entity_id)
-                eval_context[entity_id] = 0
+        # Second, resolve entity dependencies that are not in context
+        entity_vars: dict[str, str | int | float | None] = {entity_id: entity_id for entity_id in dependencies}
+        resolved_entities = resolver.resolve_variables(entity_vars)
+
+        for entity_id, (value, exists, source) in resolved_entities.items():
+            if exists and entity_id not in eval_context:  # Don't override context values
+                eval_context[entity_id] = value
+                # Add normalized form for entities with dots
                 if "." in entity_id:
                     normalized_name = entity_id.replace(".", "_")
-                    eval_context[normalized_name] = 0
+                    eval_context[normalized_name] = value
+
+                # Add state object for HA entities (for attribute access)
+                if source == "ha":
+                    state = self._hass.states.get(entity_id)
+                    if state:
+                        eval_context[f"{entity_id}_state"] = state
+            elif not exists and entity_id not in eval_context:
+                # Entity not found - this is a critical error
+                raise ValueError(f"Entity '{entity_id}' not found and is required for formula evaluation")
+
+        # Third, resolve variable mappings if config provides them
+        if config and hasattr(config, "variables") and config.variables:
+            variable_vars: dict[str, str | int | float | None] = dict(config.variables.items())
+            resolved_variables = resolver.resolve_variables(variable_vars)
+
+            for var_name, (value, exists, _source) in resolved_variables.items():
+                if exists and var_name not in eval_context:  # Don't override context values
+                    eval_context[var_name] = value
+                elif not exists and var_name not in eval_context:
+                    # Variable could not be resolved - this is a critical error for entity references
+                    # Check if the original value was an entity reference (string) vs numeric literal
+                    original_value = config.variables.get(var_name) if config and hasattr(config, "variables") else None
+                    if isinstance(original_value, str):
+                        # This was an entity reference that couldn't be resolved
+                        raise ValueError(f"Entity '{original_value}' referenced by variable '{var_name}' not found")
+                    else:
+                        # This shouldn't happen for numeric literals, but it's still a critical error
+                        raise ValueError(f"Variable '{var_name}' could not be resolved and is required for formula evaluation")
 
         return eval_context
 
@@ -698,7 +779,7 @@ class Evaluator(FormulaEvaluator):
         """
         self._error_count[formula_name] = self._error_count.get(formula_name, 0) + 1
 
-    def _get_numeric_state(self, state: Any) -> float:
+    def _get_numeric_state(self, state: State) -> float:
         """Get numeric value from entity state, with error handling.
 
         This method now properly raises exceptions for non-numeric states
@@ -724,7 +805,7 @@ class Evaluator(FormulaEvaluator):
             )
             return 0.0
 
-    def _convert_to_numeric(self, state_value: Any, entity_id: str) -> float:
+    def _convert_to_numeric(self, state_value: str | None, entity_id: str) -> float:
         """Convert a state value to numeric, raising exception if not possible.
 
         Args:
@@ -771,7 +852,7 @@ class Evaluator(FormulaEvaluator):
 
         return {key: value for key, value in context.items() if isinstance(value, (str, float, int, bool))}
 
-    def _is_entity_supposed_to_be_numeric(self, state: Any) -> bool:
+    def _is_entity_supposed_to_be_numeric(self, state: State) -> bool:
         """Determine if entity should be numeric based on domain and device_class.
 
         This method implements smart error classification by analyzing entity
@@ -884,7 +965,7 @@ class Evaluator(FormulaEvaluator):
         # For other domains, default to assuming non-numeric
         return False
 
-    def _preprocess_formula_for_evaluation(self, formula: str, eval_context: dict[str, Any] | None = None) -> str:
+    def _preprocess_formula_for_evaluation(self, formula: str, eval_context: dict[str, ContextValue] | None = None) -> str:
         """Preprocess formula: resolve variables first, then collection functions, then normalize entity IDs.
 
         This method now implements variable-first processing to enable dynamic collection patterns.
@@ -922,7 +1003,7 @@ class Evaluator(FormulaEvaluator):
 
         return processed_formula
 
-    def _resolve_variables_and_strings(self, formula: str, eval_context: dict[str, Any]) -> str:
+    def _resolve_variables_and_strings(self, formula: str, eval_context: dict[str, ContextValue]) -> str:
         """Resolve variables and string operations in formula for dynamic pattern construction.
 
         This method performs a limited evaluation that only resolves:
@@ -979,7 +1060,7 @@ class Evaluator(FormulaEvaluator):
             _LOGGER.warning("Error resolving variables and strings in formula '%s': %s", formula, e)
             return formula
 
-    def _resolve_string_concatenations(self, node: ast.AST, eval_context: dict[str, Any]) -> str:
+    def _resolve_string_concatenations(self, node: ast.AST, eval_context: dict[str, ContextValue]) -> str:
         """Recursively resolve string concatenation operations in AST.
 
         Args:
@@ -1252,7 +1333,7 @@ class DependencyResolver:
             if sensor in rec_stack:
                 # Found a cycle
                 cycle_start = path.index(sensor)
-                cycles.append(path[cycle_start:] + [sensor])
+                cycles.append([*path[cycle_start:], sensor])
                 return
 
             if sensor in visited:
