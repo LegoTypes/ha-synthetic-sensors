@@ -416,8 +416,7 @@ class SchemaValidator:
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns
-        # Very permissive pattern for unique_id - HA allows virtually any non-empty string
-        id_pattern = "^.+$"  # Any non-empty string
+        id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
         entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
         # Allow entity IDs OR collection patterns (device_class:, area:, tags:, regex:, attribute:)
         variable_value_pattern = "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$"

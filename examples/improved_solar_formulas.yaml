@@ -8,7 +8,7 @@ sensors:
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit: "%"
+    unit_of_measurement: "%"
     state_class: "measurement"
 
   # Improved solar self-consumption with edge case handling
@@ -21,7 +21,7 @@ sensors:
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit: "%"
+    unit_of_measurement: "%"
     state_class: "measurement"
 
   # Comprehensive solar analysis with multiple calculated attributes
@@ -34,25 +34,25 @@ sensors:
     attributes:
       self_consumed_power:
         formula: "max(0, solar_production - max(0, solar_export))"
-        unit: "W"
+        unit_of_measurement: "W"
       export_rate:
         formula: "if(solar_production > 0, max(0, solar_export) / solar_production * 100, 0)"
-        unit: "%"
+        unit_of_measurement: "%"
       production_status:
         formula: |
           if(solar_production > 100, "Producing",
           if(solar_production > 0, "Low Production", "No Production"))
-        unit: ""
+        unit_of_measurement: ""
       efficiency_tier:
         formula: |
           if(state >= 80, "Excellent",
           if(state >= 60, "Good",
           if(state >= 40, "Fair", "Poor")))
-        unit: ""
+        unit_of_measurement: ""
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit: "%"
+    unit_of_measurement: "%"
     state_class: "measurement"
 
   # Edge case examples with explanations
@@ -63,21 +63,21 @@ sensors:
       # Handle negative export (grid import during solar production)
       corrected_export:
         formula: "max(0, solar_export)"  # Ensure export is never negative
-        unit: "W"
+        unit_of_measurement: "W"
 
       # Handle export > production (measurement errors)
       export_ratio:
         formula: "if(solar_production > 0, solar_export / solar_production, 0)"
-        unit: "ratio"
+        unit_of_measurement: "ratio"
 
       # Detect suspicious readings
       data_quality:
         formula: |
           if(solar_export < 0, "Negative Export",
           if(solar_export > solar_production * 1.1, "Export > Production", "Normal"))
-        unit: ""
+        unit_of_measurement: ""
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit: "W"
+    unit_of_measurement: "W"
     device_class: "power"
