@@ -27,7 +27,7 @@ sensors:
   # Comprehensive solar analysis with multiple calculated attributes
   solar_consumption_analysis:
     name: "Solar Consumption Analysis"
-    state_formula: |
+    formula: |
       if(solar_production > 0,
         max(0, min(100, (solar_production - max(0, solar_export)) / solar_production * 100)),
         0)
@@ -58,7 +58,7 @@ sensors:
   # Edge case examples with explanations
   solar_edge_case_examples:
     name: "Solar Edge Cases"
-    state_formula: "solar_production"  # Just track production for comparison
+    formula: "solar_production"  # Just track production for comparison
     attributes:
       # Handle negative export (grid import during solar production)
       corrected_export:
