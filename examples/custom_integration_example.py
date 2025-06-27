@@ -3,7 +3,8 @@ Example: Custom Integration using ha-synthetic-sensors with Device Integration
 
 This example shows how a custom Home Assistant integration can use
 ha-synthetic-sensors to create synthetic sensors that appear under
-the custom integration's device in the HA UI.
+the custom integration's device in the HA UI, and how to use the
+data provider registration pattern for hybrid data sources.
 """
 
 from typing import Any
@@ -17,11 +18,12 @@ from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
 from ha_synthetic_sensors.name_resolver import NameResolver
-from ha_synthetic_sensors.sensor_manager import SensorManager
+from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
+from ha_synthetic_sensors.types import DataProviderResult
 
 
 class MyCustomIntegration:
-    """Example custom integration using synthetic sensors."""
+    """Example custom integration using synthetic sensors with data provider."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry[dict[str, Any]]):
         self.hass = hass
@@ -42,6 +44,22 @@ class MyCustomIntegration:
         self.custom_evaluator = Evaluator(hass)
         self.custom_name_resolver = NameResolver(hass, {})
 
+        # Sample internal device data that's not exposed as HA entities
+        self._internal_device_data: dict[str, float | str | bool] = {
+            "sensor.my_device_internal_temp": 23.5,
+            "sensor.my_device_efficiency": 87.2,
+            "binary_sensor.my_device_status": True,
+        }
+
+    def get_integration_data(self, entity_id: str) -> DataProviderResult:
+        """Data provider callback for integration entities."""
+        if entity_id in self._internal_device_data:
+            return {
+                "value": self._internal_device_data[entity_id],
+                "exists": True,
+            }
+        return {"value": None, "exists": False}
+
     async def async_setup(self, add_entities: AddEntitiesCallback) -> bool:
         """Set up the custom integration with synthetic sensors."""
 
@@ -50,47 +68,68 @@ class MyCustomIntegration:
         await synthetic_integration.async_setup(add_entities)
 
         # Create a managed sensor manager with our device info AND our HA dependencies
-        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
-            add_entities_callback=add_entities,
+        manager_config = SensorManagerConfig(
             device_info=self.device_info,
             lifecycle_managed_externally=True,
             # Pass our own HA dependencies for full control
-            hass_override=self.hass,  # Use our hass instance
-            config_manager_override=self.custom_config_manager,  # Use our config manager
-            evaluator_override=self.custom_evaluator,  # Use our evaluator
-            name_resolver_override=self.custom_name_resolver,  # Use our name resolver
+            hass_instance=self.hass,
+            config_manager=self.custom_config_manager,
+            evaluator=self.custom_evaluator,
+            name_resolver=self.custom_name_resolver,
+            # Register the data provider callback
+            data_provider_callback=self.get_integration_data,
         )
 
-        # Load synthetic sensor configuration
+        self.sensor_manager = SensorManager(
+            hass=self.hass,
+            name_resolver=self.custom_name_resolver,
+            add_entities_callback=add_entities,
+            manager_config=manager_config,
+        )
+
+        # Register which entities this integration can provide data for
+        self.sensor_manager.register_data_provider_entities(
+            {
+                "sensor.my_device_internal_temp",
+                "sensor.my_device_efficiency",
+                "binary_sensor.my_device_status",
+            }
+        )
+
+        # Load synthetic sensor configuration with hybrid data sources
         yaml_config = """
 version: "1.0"
 
 sensors:
-  energy_efficiency:
-    name: "Energy Efficiency"
-    formula: "solar_production / total_consumption * 100"
+  device_efficiency:
+    name: "Device Efficiency"
+    # Mix integration data with HA entities
+    formula: "internal_efficiency * solar_production / total_consumption * 100"
     variables:
-      solar_production: "sensor.solar_inverter_power"
-      total_consumption: "sensor.home_total_power"
+      internal_efficiency: "sensor.my_device_efficiency"  # From integration
+      solar_production: "sensor.solar_inverter_power"     # From HA
+      total_consumption: "sensor.home_total_power"        # From HA
     unit_of_measurement: "%"
     device_class: "energy"
     state_class: "measurement"
-  cost_savings:
-    name: "Daily Cost Savings"
-    formula: "energy_efficiency * daily_rate / 100"
-    attributes:
-      monthly_projection:
-        formula: "cost_savings * 30"
-        unit_of_measurement: "$"
-      yearly_projection:
-        formula: "cost_savings * 365"
-        unit_of_measurement: "$"
+
+  temperature_analysis:
+    name: "Temperature Analysis"
+    formula: "internal_temp - external_temp"
     variables:
-      energy_efficiency: "sensor.my_custom_energy_efficiency"
-      daily_rate: "input_number.electricity_daily_rate"
-    unit_of_measurement: "$"
-    device_class: "monetary"
-    state_class: "total"
+      internal_temp: "sensor.my_device_internal_temp"     # From integration
+      external_temp: "sensor.outdoor_temperature"        # From HA
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+    state_class: "measurement"
+    attributes:
+      temperature_ratio:
+        formula: "internal_temp / external_temp"
+        unit_of_measurement: "ratio"
+      device_status:
+        formula: "device_status"
+        variables:
+          device_status: "binary_sensor.my_device_status"  # From integration
 """
 
         # Parse and load the configuration using our custom config manager
@@ -100,12 +139,15 @@ sensors:
         await self.sensor_manager.load_configuration(config)
 
         return True
+        await self.sensor_manager.load_configuration(config)
+
+        return True
 
     async def async_unload(self) -> bool:
         """Unload the integration and clean up sensors."""
         if self.sensor_manager:
-            # Remove all sensors managed by this integration
-            await self.sensor_manager._remove_all_sensors()
+            # In a real implementation, you would remove sensors here
+            # The sensor manager handles sensor lifecycle automatically
             self.sensor_manager = None
 
         return True

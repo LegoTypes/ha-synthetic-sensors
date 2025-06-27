@@ -277,8 +277,8 @@ sensors:
 
 **Data Source Resolution:**
 
-- If `entity_list_callback` returns entity IDs like `["span.meter_001", "span.efficiency_input", "span.efficiency_baseline"]`
-- Evaluator calls `data_provider_callback` for those entities
+- If integration registers entity IDs like `["span.meter_001", "span.efficiency_input", "span.efficiency_baseline"]`
+- Evaluator calls `data_provider_callback` for those entities  
 - All other entities (`sensor.grid_power`, `sensor.solar_inverter`) use standard HA state queries
 - Completely transparent to YAML configuration - same syntax for both data sources
 

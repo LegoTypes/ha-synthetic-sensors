@@ -31,7 +31,7 @@ from homeassistant.util import dt as dt_util
 from .config_manager import DOMAIN, AttributeValue, Config, FormulaConfig, SensorConfig
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
-from .types import DataProviderCallback, EntityListCallback
+from .types import DataProviderCallback
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -52,7 +52,6 @@ class SensorManagerConfig:
     evaluator: Evaluator | None = None  # Parent can provide custom evaluator
     name_resolver: NameResolver | None = None  # Parent can provide custom name resolver
     data_provider_callback: DataProviderCallback | None = None  # Callback for integration data access
-    entity_list_callback: EntityListCallback | None = None  # Callback for entity list that integration provides
 
 
 @dataclass
@@ -365,11 +364,14 @@ class SensorManager:
         self._sensors_by_entity_id: dict[str, DynamicSensor] = {}  # entity_id -> sensor
         self._sensor_states: dict[str, SensorState] = {}  # unique_id -> state
 
+        # Integration data provider tracking
+        self._registered_entities: set[str] = set()  # entity_ids registered by integration
+
         # Configuration tracking
         self._current_config: Config | None = None
 
         # Initialize components - use parent-provided instances if available
-        self._evaluator = self._manager_config.evaluator or Evaluator(self._hass, data_provider_callback=self._manager_config.data_provider_callback, entity_list_callback=self._manager_config.entity_list_callback)
+        self._evaluator = self._manager_config.evaluator or Evaluator(self._hass, data_provider_callback=self._manager_config.data_provider_callback)
         self._config_manager = self._manager_config.config_manager
         self._logger = _LOGGER.getChild(self.__class__.__name__)
 
@@ -666,56 +668,6 @@ class SensorManager:
 
         self._logger.debug("Completed async sensor updates")
 
-    def update_integration_entity_list(self, new_entity_list: set[str]) -> None:
-        """Update the list of entities that the integration can provide.
-
-        This allows integrations to dynamically add/remove entities they can provide
-        without recreating the entire sensor manager.
-
-        Args:
-            new_entity_list: Updated set of entity IDs the integration can provide
-        """
-        if self._manager_config.entity_list_callback:
-            # Update the entity list in a thread-safe way
-            # Since we can't modify the callback function itself, we store the list
-            # and have the callback return this stored list
-            if not hasattr(self, "_integration_entity_list"):
-                self._integration_entity_list: set[str] = set()
-            self._integration_entity_list.clear()
-            self._integration_entity_list.update(new_entity_list)
-            _LOGGER.info("Updated integration entity list with %d entities", len(new_entity_list))
-
-    def add_integration_entity(self, entity_id: str) -> None:
-        """Add a single entity to the integration's entity list.
-
-        Args:
-            entity_id: Entity ID to add to the integration's list
-        """
-        if not hasattr(self, "_integration_entity_list"):
-            self._integration_entity_list = set()
-        self._integration_entity_list.add(entity_id)
-        _LOGGER.debug("Added entity '%s' to integration entity list", entity_id)
-
-    def remove_integration_entity(self, entity_id: str) -> None:
-        """Remove a single entity from the integration's entity list.
-
-        Args:
-            entity_id: Entity ID to remove from the integration's list
-        """
-        if hasattr(self, "_integration_entity_list"):
-            self._integration_entity_list.discard(entity_id)
-            _LOGGER.debug("Removed entity '%s' from integration entity list", entity_id)
-
-    def get_integration_entity_list(self) -> set[str]:
-        """Get the current list of entities the integration can provide.
-
-        Returns:
-            Set of entity IDs the integration can provide
-        """
-        if hasattr(self, "_integration_entity_list"):
-            return self._integration_entity_list.copy()
-        return set()
-
     # New push-based registration API
     def register_data_provider_entities(self, entity_ids: set[str]) -> None:
         """Register entities that the integration can provide data for.
@@ -725,8 +677,10 @@ class SensorManager:
         Args:
             entity_ids: Set of entity IDs that the integration can provide data for
         """
-        self._integration_entity_list = entity_ids.copy()
         _LOGGER.info("Registered %d entities for integration data provider", len(entity_ids))
+
+        # Store the registered entities
+        self._registered_entities = entity_ids.copy()
 
         # Update the evaluator if it has the new registration support
         if hasattr(self._evaluator, "update_integration_entities"):
@@ -746,4 +700,4 @@ class SensorManager:
         Returns:
             Set of entity IDs currently registered with the integration
         """
-        return self.get_integration_entity_list()
+        return self._registered_entities.copy()

@@ -115,7 +115,7 @@ class TestNonNumericStateHandling:
             assert "sensor.temperature" in result.get("unavailable_dependencies", [])
 
     def test_backward_compatibility_fallback(self, mock_hass):
-        """Test that _get_numeric_state still provides fallback for compatibility."""
+        """Test that _get_numeric_state properly raises exception for non-numeric states."""
         evaluator = Evaluator(mock_hass)
 
         # Mock state with non-numeric value
@@ -123,9 +123,11 @@ class TestNonNumericStateHandling:
         mock_state.state = "unavailable"
         mock_state.entity_id = "sensor.broken"
 
-        # Should return 0.0 as fallback but log warning
-        result = evaluator._get_numeric_state(mock_state)
-        assert result == 0.0
+        # Should raise NonNumericStateError instead of returning 0.0
+        with pytest.raises(NonNumericStateError) as exc_info:
+            evaluator._get_numeric_state(mock_state)
+        assert "sensor.broken" in str(exc_info.value)
+        assert "unavailable" in str(exc_info.value)
 
     def test_missing_vs_non_numeric_entities(self, mock_hass):
         """Test distinction between missing entities (fatal) and non-numeric."""
@@ -264,8 +266,11 @@ class TestNonNumericStateHandling:
         mock_state.state = None
         mock_state.entity_id = "sensor.test"
 
-        result = evaluator._get_numeric_state(mock_state)
-        assert result == 0.0  # Should fallback to 0.0 for None states
+        # Should raise NonNumericStateError instead of returning 0.0
+        with pytest.raises(NonNumericStateError) as exc_info:
+            evaluator._get_numeric_state(mock_state)
+        assert "sensor.test" in str(exc_info.value)
+        assert "None" in str(exc_info.value)
 
     def test_build_evaluation_context_missing_entities(self, mock_hass):
         """Test that _build_evaluation_context raises error for missing entities."""

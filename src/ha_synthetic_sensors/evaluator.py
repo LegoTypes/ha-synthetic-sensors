@@ -28,7 +28,6 @@ from .types import (
     ContextValue,
     DataProviderCallback,
     DependencyValidation,
-    EntityListCallback,
     EvaluationResult,
 )
 from .variable_resolver import (
@@ -93,7 +92,6 @@ class Evaluator(FormulaEvaluator):
         circuit_breaker_config: CircuitBreakerConfig | None = None,
         retry_config: RetryConfig | None = None,
         data_provider_callback: DataProviderCallback | None = None,
-        entity_list_callback: EntityListCallback | None = None,
     ):
         """Initialize the enhanced formula evaluator.
 
@@ -105,10 +103,6 @@ class Evaluator(FormulaEvaluator):
             data_provider_callback: Optional callback for getting data directly from integrations
                                   without requiring actual HA entities. Should return (value, exists)
                                   where exists=True if data is available, False if not found.
-            entity_list_callback: Optional callback that returns a set of entity IDs that the
-                                integration can provide data for. Used to determine which entities
-                                should use data_provider_callback vs HA state queries.
-
         """
         self._hass = hass
 
@@ -133,9 +127,6 @@ class Evaluator(FormulaEvaluator):
         # Data provider callback for direct integration data access
         self._data_provider_callback = data_provider_callback
 
-        # Entity list callback to determine which entities use integration data
-        self._entity_list_callback = entity_list_callback
-
         # Support for push-based entity registration (new pattern)
         self._registered_integration_entities: set[str] | None = None
 
@@ -149,24 +140,13 @@ class Evaluator(FormulaEvaluator):
         _LOGGER.debug("Updated integration entities: %d entities", len(entity_ids))
 
     def get_integration_entities(self) -> set[str]:
-        """Get the current set of integration entities.
-
-        This method supports both the old callback pattern and new push-based pattern.
+        """Get the current set of integration entities using the push-based pattern.
 
         Returns:
             Set of entity IDs that the integration can provide data for
         """
-        # Try new push-based pattern first
         if self._registered_integration_entities is not None:
             return self._registered_integration_entities.copy()
-
-        # Fall back to old callback pattern for backward compatibility
-        if self._entity_list_callback:
-            try:
-                return self._entity_list_callback()
-            except Exception as e:
-                _LOGGER.warning("Error calling entity list callback: %s", e)
-                return set()
 
         return set()
 
@@ -586,8 +566,14 @@ class Evaluator(FormulaEvaluator):
         for entity_id in formula_config.dependencies:
             state = self._hass.states.get(entity_id)
             if state:
-                # Add direct entity access
-                context[f"entity_{entity_id.replace('.', '_')}"] = self._get_numeric_state(state)
+                # Add direct entity access - only add numeric entities
+                try:
+                    numeric_value = self._get_numeric_state(state)
+                    context[f"entity_{entity_id.replace('.', '_')}"] = numeric_value
+                except NonNumericStateError:
+                    # Skip non-numeric entities in the context
+                    # They will be handled properly by the dependency checking system
+                    _LOGGER.debug("Skipping non-numeric entity '%s' in evaluation context", entity_id)
 
                 # Add attribute access
                 for attr_name, attr_value in state.attributes.items():
@@ -660,7 +646,7 @@ class Evaluator(FormulaEvaluator):
 
         # 2. Integration strategy (if available)
         if self._data_provider_callback:
-            strategies.append(IntegrationResolutionStrategy(self._data_provider_callback, self._entity_list_callback, evaluator=self))
+            strategies.append(IntegrationResolutionStrategy(self._data_provider_callback, evaluator=self))
 
         # 3. Home Assistant strategy (fallback)
         strategies.append(HomeAssistantResolutionStrategy(self._hass))
@@ -780,30 +766,21 @@ class Evaluator(FormulaEvaluator):
         self._error_count[formula_name] = self._error_count.get(formula_name, 0) + 1
 
     def _get_numeric_state(self, state: State) -> float:
-        """Get numeric value from entity state, with error handling.
+        """Get numeric value from entity state, with proper error handling.
 
-        This method now properly raises exceptions for non-numeric states
-        instead of silently returning 0, which could mask configuration issues.
+        This method raises exceptions for non-numeric states to ensure proper
+        error classification by the two-tier circuit breaker system.
         """
         # Handle None state values (can happen during startup)
         if state.state is None:
             _LOGGER.debug(
-                "Entity '%s' has None state (startup race condition), using 0 as fallback",
+                "Entity '%s' has None state (startup race condition)",
                 getattr(state, "entity_id", "unknown"),
             )
-            return 0.0
+            raise NonNumericStateError(getattr(state, "entity_id", "unknown"), "None")
 
-        try:
-            return self._convert_to_numeric(state.state, getattr(state, "entity_id", "unknown"))
-        except NonNumericStateError:
-            # For backward compatibility in contexts where we need a fallback,
-            # log the issue but still return 0. The caller should handle this properly.
-            _LOGGER.warning(
-                "Entity '%s' has non-numeric state '%s', using 0 as fallback",
-                getattr(state, "entity_id", "unknown"),
-                state.state,
-            )
-            return 0.0
+        # Convert to numeric, allowing NonNumericStateError to propagate
+        return self._convert_to_numeric(state.state, getattr(state, "entity_id", "unknown"))
 
     def _convert_to_numeric(self, state_value: str | None, entity_id: str) -> float:
         """Convert a state value to numeric, raising exception if not possible.

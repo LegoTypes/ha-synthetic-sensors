@@ -21,7 +21,7 @@ from typing import Any, cast
 from homeassistant.core import HomeAssistant, State
 
 from .exceptions import NonNumericStateError
-from .types import ContextValue, DataProviderCallback, EntityListCallback
+from .types import ContextValue, DataProviderCallback
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,48 +104,32 @@ class IntegrationResolutionStrategy(VariableResolutionStrategy):
     data without requiring actual HA entities.
     """
 
-    def __init__(self, data_provider_callback: DataProviderCallback, entity_list_callback: EntityListCallback | None = None, evaluator: Any = None):
-        """Initialize with integration callbacks and optional evaluator for new pattern."""
+    def __init__(self, data_provider_callback: DataProviderCallback, evaluator: Any = None):
+        """Initialize with integration callback and evaluator for push-based pattern."""
         self._data_provider_callback = data_provider_callback
-        self._entity_list_callback = entity_list_callback
         self._evaluator = evaluator  # For accessing new get_integration_entities method
-        self._integration_entities: set[str] | None = None
 
     def _get_integration_entities(self) -> set[str]:
-        """Get the set of entities that the integration can provide."""
-        # Try new pattern first (via evaluator)
+        """Get the set of entities that the integration can provide using push-based pattern."""
+        # Use new pattern (via evaluator)
         if self._evaluator and hasattr(self._evaluator, "get_integration_entities"):
             entities = self._evaluator.get_integration_entities()
             return cast(set[str], entities)
 
-        # Fall back to old callback pattern for backward compatibility
-        if self._integration_entities is None:
-            if self._entity_list_callback:
-                try:
-                    self._integration_entities = self._entity_list_callback()
-                except Exception as e:
-                    _LOGGER.warning("Error calling entity list callback: %s", e)
-                    self._integration_entities = set()
-            else:
-                # If no entity list callback, assume integration can provide any entity
-                self._integration_entities = set()
-        return self._integration_entities
+        # If no evaluator provided, return empty set (no integration entities available)
+        return set()
 
     def can_resolve(self, variable_name: str, entity_id: str | None = None) -> bool:
-        """Check if integration can resolve this variable."""
+        """Check if integration can resolve this variable using push-based pattern."""
         integration_entities = self._get_integration_entities()
         target_entity = entity_id or variable_name
 
-        # If we have registered entities (from new pattern or old callback), check if entity is in the list
+        # If we have registered entities (from push-based pattern), check if entity is in the list
         if integration_entities:
             return target_entity in integration_entities
 
-        # If no registered entities and no callback, can't resolve anything
-        if not self._entity_list_callback:
-            return False
-
-        # If we have a callback but no entities yet, assume we can try to resolve any entity ID
-        return entity_id is not None or "." in variable_name
+        # If no registered entities, we can't resolve anything
+        return False
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
         """Resolve variable using integration callback."""
