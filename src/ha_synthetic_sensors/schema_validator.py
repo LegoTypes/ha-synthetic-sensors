@@ -416,8 +416,8 @@ class SchemaValidator:
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns
-        # Updated to allow hyphens and uppercase letters for real-world unique IDs
-        id_pattern = "^[a-zA-Z][a-zA-Z0-9_-]*$"
+        # Very permissive pattern for unique_id - HA allows virtually any non-empty string
+        id_pattern = "^.+$"  # Any non-empty string
         entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
         # Allow entity IDs OR collection patterns (device_class:, area:, tags:, regex:, attribute:)
         variable_value_pattern = "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$"
