@@ -30,20 +30,60 @@ class TestORTagsIntegration:
 
         mock_states = {
             # Critical tag entities
-            "sensor.server_cpu": Mock(state="85", entity_id="sensor.server_cpu", attributes={"tags": ["critical", "monitor"]}),
-            "sensor.database_status": Mock(state="1", entity_id="sensor.database_status", attributes={"tags": ["critical", "alert"]}),
+            "sensor.server_cpu": Mock(
+                state="85",
+                entity_id="sensor.server_cpu",
+                attributes={"tags": ["critical", "monitor"]},
+            ),
+            "sensor.database_status": Mock(
+                state="1",
+                entity_id="sensor.database_status",
+                attributes={"tags": ["critical", "alert"]},
+            ),
             # Important tag entities
-            "sensor.backup_system": Mock(state="0", entity_id="sensor.backup_system", attributes={"tags": ["important", "monitor"]}),
-            "sensor.security_system": Mock(state="1", entity_id="sensor.security_system", attributes={"tags": ["important", "alert"]}),
+            "sensor.backup_system": Mock(
+                state="0",
+                entity_id="sensor.backup_system",
+                attributes={"tags": ["important", "monitor"]},
+            ),
+            "sensor.security_system": Mock(
+                state="1",
+                entity_id="sensor.security_system",
+                attributes={"tags": ["important", "alert"]},
+            ),
             # Warning tag entities
-            "sensor.disk_space": Mock(state="75", entity_id="sensor.disk_space", attributes={"tags": ["warning", "monitor"]}),
-            "sensor.network_latency": Mock(state="150", entity_id="sensor.network_latency", attributes={"tags": ["warning"]}),
+            "sensor.disk_space": Mock(
+                state="75",
+                entity_id="sensor.disk_space",
+                attributes={"tags": ["warning", "monitor"]},
+            ),
+            "sensor.network_latency": Mock(
+                state="150",
+                entity_id="sensor.network_latency",
+                attributes={"tags": ["warning"]},
+            ),
             # Emergency/urgent tag entities
-            "sensor.fire_alarm": Mock(state="0", entity_id="sensor.fire_alarm", attributes={"tags": ["emergency", "critical"]}),
-            "sensor.intrusion_alert": Mock(state="0", entity_id="sensor.intrusion_alert", attributes={"tags": ["urgent", "important"]}),
+            "sensor.fire_alarm": Mock(
+                state="0",
+                entity_id="sensor.fire_alarm",
+                attributes={"tags": ["emergency", "critical"]},
+            ),
+            "sensor.intrusion_alert": Mock(
+                state="0",
+                entity_id="sensor.intrusion_alert",
+                attributes={"tags": ["urgent", "important"]},
+            ),
             # Priority tag entities
-            "sensor.power_main": Mock(state="220", entity_id="sensor.power_main", attributes={"tags": ["high_priority", "critical"]}),
-            "sensor.hvac_control": Mock(state="1", entity_id="sensor.hvac_control", attributes={"tags": ["medium_priority", "important"]}),
+            "sensor.power_main": Mock(
+                state="220",
+                entity_id="sensor.power_main",
+                attributes={"tags": ["high_priority", "critical"]},
+            ),
+            "sensor.hvac_control": Mock(
+                state="1",
+                entity_id="sensor.hvac_control",
+                attributes={"tags": ["medium_priority", "important"]},
+            ),
             # Variable source entities
             "input_select.primary_tag": Mock(state="critical", entity_id="input_select.primary_tag"),
             "input_select.secondary_tag": Mock(state="important", entity_id="input_select.secondary_tag"),
@@ -85,8 +125,11 @@ class TestORTagsIntegration:
         mock_entity_registry = Mock()
         mock_entity_registry.entities = mock_entity_entries
 
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get") as mock_er, patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get"):
-
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get") as mock_er,
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+        ):
             mock_er.return_value = mock_entity_registry
             resolver = CollectionResolver(mock_hass)
             # Set the entity registry manually since the constructor might not call async_get
@@ -291,7 +334,10 @@ class TestORTagsIntegration:
     def test_variable_driven_tags_or_patterns(self, dependency_parser, mock_hass):
         """Test tags OR patterns with variable substitution."""
         formula = 'count("tags:primary_tag|secondary_tag")'
-        variables = {"primary_tag": "input_select.primary_tag", "secondary_tag": "input_select.secondary_tag"}
+        variables = {
+            "primary_tag": "input_select.primary_tag",
+            "secondary_tag": "input_select.secondary_tag",
+        }
 
         parsed = dependency_parser.parse_formula_dependencies(formula, variables)
 

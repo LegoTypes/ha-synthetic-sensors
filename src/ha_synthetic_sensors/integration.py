@@ -121,7 +121,7 @@ class SyntheticSensorsIntegration:
             await self._check_auto_configuration()
 
             self._initialized = True
-            _LOGGER.info("Synthetic sensors integration setup completed successfully")
+            _LOGGER.debug("Synthetic sensors integration setup completed successfully")
             return True
 
         except Exception as err:
@@ -131,7 +131,7 @@ class SyntheticSensorsIntegration:
 
     async def async_unload(self) -> bool:
         """Unload the synthetic sensors integration."""
-        _LOGGER.info("Unloading synthetic sensors integration")
+        _LOGGER.debug("Unloading synthetic sensors integration")
         return await self._cleanup()
 
     async def async_reload(self, add_entities_callback: AddEntitiesCallback) -> bool:
@@ -197,11 +197,11 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.debug(f"Successfully loaded synthetic sensors configuration from " f"{config_path}")
+            _LOGGER.debug(f"Successfully loaded synthetic sensors configuration from {config_path}")
             return True
 
         except Exception as err:
-            _LOGGER.error(f"Failed to load synthetic sensors configuration from " f"{config_path}: {err}")
+            _LOGGER.error(f"Failed to load synthetic sensors configuration from {config_path}: {err}")
             return False
 
     async def load_configuration_content(self, yaml_content: str) -> bool:
@@ -219,7 +219,7 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.debug("Successfully loaded synthetic sensors configuration from " "provided content")
+            _LOGGER.debug("Successfully loaded synthetic sensors configuration from provided content")
             return True
 
         except Exception as err:
@@ -239,7 +239,7 @@ class SyntheticSensorsIntegration:
 
         for path in potential_paths:
             if path.exists() and path.is_file():
-                _LOGGER.info(f"Found auto-configuration file: {path}")
+                _LOGGER.debug(f"Found auto-configuration file: {path}")
                 self._auto_config_path = path
 
                 try:
@@ -288,7 +288,7 @@ class SyntheticSensorsIntegration:
             self._initialized = False
 
             if not errors:
-                _LOGGER.info("Synthetic sensors integration cleanup completed")
+                _LOGGER.debug("Synthetic sensors integration cleanup completed")
 
         except Exception as err:
             errors.append(f"Failed to reset state: {err}")
@@ -361,7 +361,7 @@ class SyntheticSensorsIntegration:
             manager_config,
         )
 
-        _LOGGER.info("Created managed sensor manager for external integration")
+        _LOGGER.debug("Created managed sensor manager for external integration")
         return sensor_manager
 
 
@@ -406,7 +406,11 @@ async def async_unload_integration(config_entry: ConfigEntry[Any]) -> bool:
     return success
 
 
-async def async_reload_integration(hass: HomeAssistant, config_entry: ConfigEntry[Any], add_entities_callback: AddEntitiesCallback) -> bool:
+async def async_reload_integration(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry[Any],
+    add_entities_callback: AddEntitiesCallback,
+) -> bool:
     """Reload synthetic sensors integration for a config entry."""
     entry_id = config_entry.entry_id
 
@@ -417,7 +421,9 @@ async def async_reload_integration(hass: HomeAssistant, config_entry: ConfigEntr
     return await integration.async_reload(add_entities_callback)
 
 
-def get_integration(config_entry: ConfigEntry[Any]) -> SyntheticSensorsIntegration | None:
+def get_integration(
+    config_entry: ConfigEntry[Any],
+) -> SyntheticSensorsIntegration | None:
     """Get the synthetic sensors integration instance for a config entry."""
     return _integrations.get(config_entry.entry_id)
 

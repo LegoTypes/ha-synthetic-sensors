@@ -26,11 +26,19 @@ class TestDependencyParser:
     def test_extract_static_dependencies_with_variables(self, parser):
         """Test extraction of static dependencies including variables."""
         formula = "power_a + power_b * efficiency"
-        variables = {"power_a": "sensor.power_meter_a", "power_b": "sensor.power_meter_b", "efficiency": "input_number.efficiency_factor"}
+        variables = {
+            "power_a": "sensor.power_meter_a",
+            "power_b": "sensor.power_meter_b",
+            "efficiency": "input_number.efficiency_factor",
+        }
 
         deps = parser.extract_static_dependencies(formula, variables)
 
-        expected = {"sensor.power_meter_a", "sensor.power_meter_b", "input_number.efficiency_factor"}
+        expected = {
+            "sensor.power_meter_a",
+            "sensor.power_meter_b",
+            "input_number.efficiency_factor",
+        }
         assert deps == expected
 
     def test_extract_dynamic_queries_sum_regex(self, parser):
@@ -109,7 +117,12 @@ class TestVariableInheritance:
 
     def test_attribute_inherits_parent_variables(self, config_manager):
         """Test that attribute formulas inherit parent sensor variables."""
-        sensor_data = {"name": "Test Sensor", "formula": "power_a + power_b", "variables": {"power_a": "sensor.meter_a", "power_b": "sensor.meter_b"}, "attributes": {"daily_total": {"formula": "power_a * 24"}}}
+        sensor_data = {
+            "name": "Test Sensor",
+            "formula": "power_a + power_b",
+            "variables": {"power_a": "sensor.meter_a", "power_b": "sensor.meter_b"},
+            "attributes": {"daily_total": {"formula": "power_a * 24"}},
+        }
 
         # Parse the attribute formula
         attr_config = sensor_data["attributes"]["daily_total"]
@@ -126,7 +139,20 @@ class TestVariableInheritance:
 
     def test_attribute_variable_override(self, config_manager):
         """Test that attribute-specific variables override parent variables."""
-        sensor_data = {"name": "Test Sensor", "formula": "power_a + power_b", "variables": {"power_a": "sensor.meter_a", "power_b": "sensor.meter_b"}, "attributes": {"custom_calc": {"formula": "power_a * factor", "variables": {"power_a": "sensor.custom_meter", "factor": "input_number.factor"}}}}  # Override parent  # New variable
+        sensor_data = {
+            "name": "Test Sensor",
+            "formula": "power_a + power_b",
+            "variables": {"power_a": "sensor.meter_a", "power_b": "sensor.meter_b"},
+            "attributes": {
+                "custom_calc": {
+                    "formula": "power_a * factor",
+                    "variables": {
+                        "power_a": "sensor.custom_meter",
+                        "factor": "input_number.factor",
+                    },
+                }
+            },
+        }  # Override parent  # New variable
 
         attr_config = sensor_data["attributes"]["custom_calc"]
         formula_config = config_manager._parse_attribute_formula("test_sensor", "custom_calc", attr_config, sensor_data)
@@ -140,7 +166,12 @@ class TestVariableInheritance:
 
     def test_attribute_references_main_sensor(self, config_manager):
         """Test that attributes can reference the main sensor by key."""
-        sensor_data = {"name": "Power Analysis", "formula": "meter_a + meter_b", "variables": {"meter_a": "sensor.meter_a", "meter_b": "sensor.meter_b"}, "attributes": {"daily_projection": {"formula": "power_analysis * 24"}}}  # Reference main sensor by key
+        sensor_data = {
+            "name": "Power Analysis",
+            "formula": "meter_a + meter_b",
+            "variables": {"meter_a": "sensor.meter_a", "meter_b": "sensor.meter_b"},
+            "attributes": {"daily_projection": {"formula": "power_analysis * 24"}},
+        }  # Reference main sensor by key
 
         attr_config = sensor_data["attributes"]["daily_projection"]
         formula_config = config_manager._parse_attribute_formula("power_analysis", "daily_projection", attr_config, sensor_data)
@@ -160,7 +191,7 @@ class TestComplexFormulaParsing:
 
     def test_mixed_dependency_types(self, parser):
         """Test formula with static deps, dynamic queries, and dot notation."""
-        formula = "sum(regex:sensor\\.circuit_.*) + " "avg(tags:heating) + " "base_load + " "sensor1.battery_level"
+        formula = "sum(regex:sensor\\.circuit_.*) + avg(tags:heating) + base_load + sensor1.battery_level"
         variables = {"base_load": "sensor.base_power", "sensor1": "sensor.phone"}
 
         parsed = parser.parse_formula_dependencies(formula, variables)
@@ -181,7 +212,40 @@ class TestComplexFormulaParsing:
 @pytest.fixture
 def sample_config_with_attributes():
     """Sample configuration for testing."""
-    return {"version": "1.0", "sensors": {"energy_analysis": {"name": "Energy Analysis", "formula": "grid_power + solar_power", "variables": {"grid_power": "sensor.grid_meter", "solar_power": "sensor.solar_inverter"}, "unit_of_measurement": "W", "device_class": "power", "state_class": "measurement", "attributes": {"daily_projection": {"formula": "energy_analysis * 24", "unit_of_measurement": "Wh"}, "efficiency": {"formula": "solar_power / (grid_power + solar_power) * 100", "unit_of_measurement": "%"}, "custom_calc": {"formula": "power_total * efficiency_factor", "variables": {"power_total": "sensor.total_power", "efficiency_factor": "input_number.factor"}, "unit_of_measurement": "W"}}}}}  # New variable
+    return {
+        "version": "1.0",
+        "sensors": {
+            "energy_analysis": {
+                "name": "Energy Analysis",
+                "formula": "grid_power + solar_power",
+                "variables": {
+                    "grid_power": "sensor.grid_meter",
+                    "solar_power": "sensor.solar_inverter",
+                },
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+                "attributes": {
+                    "daily_projection": {
+                        "formula": "energy_analysis * 24",
+                        "unit_of_measurement": "Wh",
+                    },
+                    "efficiency": {
+                        "formula": "solar_power / (grid_power + solar_power) * 100",
+                        "unit_of_measurement": "%",
+                    },
+                    "custom_calc": {
+                        "formula": "power_total * efficiency_factor",
+                        "variables": {
+                            "power_total": "sensor.total_power",
+                            "efficiency_factor": "input_number.factor",
+                        },
+                        "unit_of_measurement": "W",
+                    },
+                },
+            }
+        },
+    }  # New variable
 
 
 class TestIntegrationScenarios:

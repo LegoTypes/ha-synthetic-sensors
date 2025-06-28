@@ -14,8 +14,10 @@ from simpleeval import SimpleEval
 from .cache import CacheConfig, FormulaCache
 from .collection_resolver import CollectionResolver
 from .config_manager import FormulaConfig
+from .data_validation import validate_data_provider_result, validate_entity_state_value
 from .dependency_parser import DependencyParser
 from .exceptions import (
+    DataValidationError,
     FormulaSyntaxError,
     MissingDependencyError,
     NonNumericStateError,
@@ -23,13 +25,7 @@ from .exceptions import (
     is_retriable_error,
 )
 from .math_functions import MathFunctions
-from .types import (
-    CacheStats,
-    ContextValue,
-    DataProviderCallback,
-    DependencyValidation,
-    EvaluationResult,
-)
+from .types import CacheStats, ContextValue, DataProviderCallback, DependencyValidation, EvaluationResult
 from .variable_resolver import (
     ContextResolutionStrategy,
     HomeAssistantResolutionStrategy,
@@ -197,7 +193,11 @@ class Evaluator(FormulaEvaluator):
                 # Missing entities indicate permanent configuration issues
                 error = MissingDependencyError(", ".join(missing_deps), formula_name)
                 self._increment_error_count(formula_name)
-                _LOGGER.error("Missing dependencies in formula '%s': %s", formula_name, missing_deps)
+                _LOGGER.error(
+                    "Missing dependencies in formula '%s': %s",
+                    formula_name,
+                    missing_deps,
+                )
                 return {
                     "success": False,
                     "error": str(error),
@@ -214,7 +214,7 @@ class Evaluator(FormulaEvaluator):
                 if self._circuit_breaker_config.track_transitory_errors:
                     self._increment_transitory_error_count(formula_name)
                 _LOGGER.info(
-                    "Formula '%s' has unavailable dependencies: %s. " "Setting synthetic sensor to unknown state.",
+                    "Formula '%s' has unavailable dependencies: %s. Setting synthetic sensor to unknown state.",
                     formula_name,
                     unavailable_deps,
                 )
@@ -229,16 +229,20 @@ class Evaluator(FormulaEvaluator):
             eval_context = self._build_evaluation_context(dependencies, context, config)
 
             # Additional safety check: if any values in the context are unavailable/unknown/None,
-            # return early to prevent simpleeval errors
+            # this is now a fatal error (no graceful handling)
             for var_name, var_value in eval_context.items():
-                if var_value is None or (isinstance(var_value, str) and var_value in ("unavailable", "unknown")):
-                    _LOGGER.debug("Formula '%s' has variable '%s' with unavailable value '%s'. " "Setting synthetic sensor to unknown state.", formula_name, var_name, var_value)
-                    return {
-                        "success": True,  # Not an error, but dependency unavailable
-                        "value": None,
-                        "state": "unknown",
-                        "unavailable_dependencies": [var_name],
-                    }
+                if var_value is None:
+                    # Use the validation helper to raise a fatal error
+                    validate_entity_state_value(var_value, f"variable '{var_name}' in formula '{formula_name}'")
+                elif isinstance(var_value, str) and var_value in (
+                    "unavailable",
+                    "unknown",
+                ):
+                    # Also treat unavailable/unknown as fatal errors
+                    raise DataValidationError(
+                        f"Variable '{var_name}' in formula '{formula_name}' has unavailable state '{var_value}'. "
+                        f"This is a fatal error - all dependencies must be available."
+                    )
 
             # Create evaluator with proper separation of names and functions
             evaluator = SimpleEval()
@@ -276,6 +280,10 @@ class Evaluator(FormulaEvaluator):
                 "state": "ok",
             }
 
+        except DataValidationError:
+            # DataValidationError should always be fatal and propagate up
+            # Don't catch or handle - let it bubble up to caller
+            raise
         except Exception as err:
             # TWO-TIER ERROR CLASSIFICATION following HA coordinator patterns:
             # We analyze the exception to determine whether it represents a fatal
@@ -337,7 +345,12 @@ class Evaluator(FormulaEvaluator):
                         "state": "unknown",
                     }
 
-    def _check_dependencies(self, dependencies: set[str], context: dict[str, ContextValue] | None = None, collection_pattern_entities: set[str] | None = None) -> tuple[set[str], set[str]]:
+    def _check_dependencies(
+        self,
+        dependencies: set[str],
+        context: dict[str, ContextValue] | None = None,
+        collection_pattern_entities: set[str] | None = None,
+    ) -> tuple[set[str], set[str]]:
         """Check which dependencies are missing or unavailable.
 
         This method is a critical part of the two-tier circuit breaker system.
@@ -380,25 +393,52 @@ class Evaluator(FormulaEvaluator):
             # Check if data provider callback can provide this entity
             if use_data_provider and self._data_provider_callback:
                 try:
-                    result = self._data_provider_callback(entity_id)
+                    raw_result = self._data_provider_callback(entity_id)
+                    # Use validation helper to ensure result is valid (raises DataValidationError for bad data)
+                    result = validate_data_provider_result(raw_result, f"dependency check for '{entity_id}'")
+
                     if result["exists"]:
                         # Entity is available from data provider, check if it's usable
                         value = result["value"]
-                        if value is None or (isinstance(value, str) and value in ("unavailable", "unknown")):
-                            unavailable.add(entity_id)
+                        # Per requirements: treat None or unavailable states as FATAL errors, not warnings
+                        if value is None:
+                            raise DataValidationError(
+                                f"Data provider returned None state value for entity '{entity_id}' - this is a fatal error. "
+                                "All data provider values must be non-None."
+                            )
+                        elif isinstance(value, str) and value in ("unavailable", "unknown"):
+                            raise DataValidationError(
+                                f"Data provider returned unavailable state '{value}' for entity '{entity_id}' - this is a fatal error. "
+                                "All data provider values must be available and valid."
+                            )
                         # For data provider entities, assume they're providing the correct type
                         continue
                     else:
                         # If integration claims to provide this entity but callback says it doesn't exist,
                         # this is an error condition - treat as unavailable, don't fall back to HA
-                        _LOGGER.error("Integration claims to provide entity '%s' but data provider callback returned exists=False", entity_id)
+                        _LOGGER.error(
+                            "Integration claims to provide entity '%s' but data provider callback returned exists=False",
+                            entity_id,
+                        )
                         unavailable.add(entity_id)
                         continue
+                except DataValidationError:
+                    # Re-raise DataValidationError as a fatal error - don't handle gracefully
+                    raise
                 except Exception as e:
-                    _LOGGER.warning("Error calling data provider callback for dependency check '%s': %s", entity_id, e)
-                    # If integration claims this entity but callback fails, treat as unavailable
-                    unavailable.add(entity_id)
-                    continue
+                    # Data provider callback failed - this is a fatal configuration error
+                    # The integration claims to provide this entity but the callback failed
+                    _LOGGER.error(
+                        "Data provider callback failed for entity '%s': %s - treating as fatal error",
+                        entity_id,
+                        e,
+                    )
+                    from .exceptions import MissingDependencyError
+
+                    raise MissingDependencyError(
+                        f"Data provider callback failed for entity '{entity_id}': {e}. "
+                        "This indicates a configuration or implementation error in the integration."
+                    ) from e
 
             # Then check if it's a Home Assistant entity
             state = self._hass.states.get(entity_id)
@@ -573,7 +613,10 @@ class Evaluator(FormulaEvaluator):
                 except NonNumericStateError:
                     # Skip non-numeric entities in the context
                     # They will be handled properly by the dependency checking system
-                    _LOGGER.debug("Skipping non-numeric entity '%s' in evaluation context", entity_id)
+                    _LOGGER.debug(
+                        "Skipping non-numeric entity '%s' in evaluation context",
+                        entity_id,
+                    )
 
                 # Add attribute access
                 for attr_name, attr_value in state.attributes.items():
@@ -633,7 +676,12 @@ class Evaluator(FormulaEvaluator):
         """
         self._retry_config = config
 
-    def _build_evaluation_context(self, dependencies: set[str], context: dict[str, ContextValue] | None = None, config: FormulaConfig | None = None) -> dict[str, ContextValue]:
+    def _build_evaluation_context(
+        self,
+        dependencies: set[str],
+        context: dict[str, ContextValue] | None = None,
+        config: FormulaConfig | None = None,
+    ) -> dict[str, ContextValue]:
         """Build the evaluation context using the new polymorphic resolution system."""
         eval_context: dict[str, ContextValue] = {}
 
@@ -665,7 +713,7 @@ class Evaluator(FormulaEvaluator):
         resolved_entities = resolver.resolve_variables(entity_vars)
 
         for entity_id, (value, exists, source) in resolved_entities.items():
-            if exists and entity_id not in eval_context:  # Don't override context values
+            if exists and value is not None and entity_id not in eval_context:  # Don't override context values
                 eval_context[entity_id] = value
                 # Add normalized form for entities with dots
                 if "." in entity_id:
@@ -677,6 +725,9 @@ class Evaluator(FormulaEvaluator):
                     state = self._hass.states.get(entity_id)
                     if state:
                         eval_context[f"{entity_id}_state"] = state
+            elif exists and value is None and entity_id not in eval_context:
+                # Entity exists but has None value - treat as unavailable dependency
+                raise MissingDependencyError(f"Entity '{entity_id}' has None value (unavailable)")
             elif not exists and entity_id not in eval_context:
                 # Entity not found - this is a critical error
                 raise ValueError(f"Entity '{entity_id}' not found and is required for formula evaluation")
@@ -687,8 +738,17 @@ class Evaluator(FormulaEvaluator):
             resolved_variables = resolver.resolve_variables(variable_vars)
 
             for var_name, (value, exists, _source) in resolved_variables.items():
-                if exists and var_name not in eval_context:  # Don't override context values
+                if exists and value is not None and var_name not in eval_context:  # Don't override context values
                     eval_context[var_name] = value
+                elif exists and value is None and var_name not in eval_context:
+                    # Entity exists but has None value - treat as unavailable dependency
+                    original_value = config.variables.get(var_name) if config and hasattr(config, "variables") else None
+                    if isinstance(original_value, str):
+                        raise MissingDependencyError(
+                            f"Entity '{original_value}' referenced by variable '{var_name}' has None value (unavailable)"
+                        )
+                    else:
+                        raise MissingDependencyError(f"Variable '{var_name}' has None value (unavailable)")
                 elif not exists and var_name not in eval_context:
                     # Variable could not be resolved - this is a critical error for entity references
                     # Check if the original value was an entity reference (string) vs numeric literal
@@ -1034,8 +1094,11 @@ class Evaluator(FormulaEvaluator):
                 return formula
 
         except Exception as e:
-            _LOGGER.warning("Error resolving variables and strings in formula '%s': %s", formula, e)
-            return formula
+            # Error resolving variables and strings - this is a fatal syntax/configuration error
+            _LOGGER.error("Error resolving variables and strings in formula '%s': %s", formula, e)
+            from .exceptions import FormulaSyntaxError
+
+            raise FormulaSyntaxError(formula, f"Error resolving variables and strings: {e}") from e
 
     def _resolve_string_concatenations(self, node: ast.AST, eval_context: dict[str, ContextValue]) -> str:
         """Recursively resolve string concatenation operations in AST.
@@ -1118,72 +1181,25 @@ class Evaluator(FormulaEvaluator):
                 # Resolve collection to get matching entity IDs
                 entity_ids = self._collection_resolver.resolve_collection(query)
 
-                if not entity_ids:
-                    _LOGGER.warning("Collection query %s:%s matched no entities", query.query_type, query.pattern)
-
-                    # Return appropriate default values for different functions
-                    if query.function == "sum":
-                        default_value = "0"
-                    elif query.function == "max" or query.function == "min":
-                        default_value = "0"  # or could be None/error
-                    elif query.function in ("avg", "average") or query.function == "count":
-                        default_value = "0"
-                    else:
-                        default_value = "0"  # Default fallback
-
-                    # Handle both space formats for replacement
-                    pattern_with_space = f'{query.function}("{query.query_type}: {query.pattern}")'
-                    pattern_without_space = f'{query.function}("{query.query_type}:{query.pattern}")'
-
-                    if pattern_with_space in resolved_formula:
-                        resolved_formula = resolved_formula.replace(pattern_with_space, default_value)
-                    elif pattern_without_space in resolved_formula:
-                        resolved_formula = resolved_formula.replace(pattern_without_space, default_value)
-                    continue
-
                 # Get numeric values for the entities
                 values = self._collection_resolver.get_entity_values(entity_ids)
 
-                if not values:
-                    _LOGGER.warning("No numeric values found for collection query %s:%s", query.query_type, query.pattern)
-
-                    # Return appropriate default values for different functions
-                    if query.function == "sum":
-                        default_value = "0"
-                    elif query.function == "max" or query.function == "min":
-                        default_value = "0"  # or could be None/error
-                    elif query.function in ("avg", "average") or query.function == "count":
-                        default_value = "0"
-                    else:
-                        default_value = "0"  # Default fallback
-
-                    # Handle both space formats for replacement
-                    pattern_with_space = f'{query.function}("{query.query_type}: {query.pattern}")'
-                    pattern_without_space = f'{query.function}("{query.query_type}:{query.pattern}")'
-
-                    if pattern_with_space in resolved_formula:
-                        resolved_formula = resolved_formula.replace(pattern_with_space, default_value)
-                    elif pattern_without_space in resolved_formula:
-                        resolved_formula = resolved_formula.replace(pattern_without_space, default_value)
-                    continue
-
-                # Replace the collection function with the resolved values
-                # Calculate the result directly instead of generating list literals
-                values_str = ", ".join(str(v) for v in values)  # For logging and fallback
-
+                # Calculate the result based on function type
+                # For empty collections, aggregation functions return 0 for robustness
                 result: float | int | str
                 if query.function == "sum":
-                    result = sum(values)
+                    result = sum(values) if values else 0
                 elif query.function == "max":
-                    result = max(values)
+                    result = max(values) if values else 0
                 elif query.function == "min":
-                    result = min(values)
+                    result = min(values) if values else 0
                 elif query.function == "avg" or query.function == "average":
                     result = sum(values) / len(values) if values else 0
                 elif query.function == "count":
                     result = len(values)
                 else:
                     # For unknown functions, fall back to comma-separated values
+                    values_str = ", ".join(str(v) for v in values)
                     result = f"{query.function}({values_str})"
 
                 # Handle both space formats that users might input in YAML
@@ -1197,9 +1213,26 @@ class Evaluator(FormulaEvaluator):
                 elif pattern_without_space in resolved_formula:
                     resolved_formula = resolved_formula.replace(pattern_without_space, str(result))
                 else:
-                    _LOGGER.warning("Could not find pattern to replace for %s:%s", query.query_type, query.pattern)
+                    # Could not find pattern to replace - this is a fatal error
+                    _LOGGER.error(
+                        "Could not find pattern to replace for %s:%s in formula",
+                        query.query_type,
+                        query.pattern,
+                    )
+                    from .exceptions import FormulaSyntaxError
 
-                _LOGGER.debug("Resolved collection %s:%s to %d values: [%s]", query.query_type, query.pattern, len(values), values_str[:100])
+                    raise FormulaSyntaxError(
+                        resolved_formula,
+                        f"Could not find collection pattern {query.query_type}:{query.pattern} to replace in formula",
+                    )
+
+                _LOGGER.debug(
+                    "Resolved collection %s:%s to %d values with result: %s",
+                    query.query_type,
+                    query.pattern,
+                    len(values),
+                    str(result)[:100],
+                )
 
             return resolved_formula
 

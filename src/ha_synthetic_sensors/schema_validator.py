@@ -182,7 +182,12 @@ class SchemaValidator:
 
         return errors, warnings
 
-    def _validate_state_class_compatibility(self, sensor_key: str, sensor_config: dict[str, Any], warnings: list[ValidationError]) -> None:
+    def _validate_state_class_compatibility(
+        self,
+        sensor_key: str,
+        sensor_config: dict[str, Any],
+        warnings: list[ValidationError],
+    ) -> None:
         """Validate state_class compatibility with device_class using HA's mappings."""
         state_class = sensor_config.get("state_class")
         device_class = sensor_config.get("device_class", "")
@@ -192,10 +197,7 @@ class SchemaValidator:
 
         # Import HA's official device class to state class mappings
         try:
-            from homeassistant.components.sensor import (
-                SensorDeviceClass,
-                SensorStateClass,
-            )
+            from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
             from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES
 
             # Convert string values to enum instances for lookup
@@ -213,7 +215,12 @@ class SchemaValidator:
                 allowed_values = [sc.value for sc in allowed_state_classes]
                 warnings.append(
                     ValidationError(
-                        message=(f"Sensor '{sensor_key}' uses state_class '{state_class}' with " f"device_class '{device_class}'. Home Assistant recommends " f"state_class values: {', '.join(allowed_values)} for this " "device class."),
+                        message=(
+                            f"Sensor '{sensor_key}' uses state_class '{state_class}' with "
+                            f"device_class '{device_class}'. Home Assistant recommends "
+                            f"state_class values: {', '.join(allowed_values)} for this "
+                            "device class."
+                        ),
                         path=f"sensors.{sensor_key}.state_class",
                         severity=ValidationSeverity.WARNING,
                         suggested_fix=f"Consider using one of: {', '.join(allowed_values)}",
@@ -244,14 +251,22 @@ class SchemaValidator:
             if any(pattern in device_class for pattern in problematic_classes):
                 warnings.append(
                     ValidationError(
-                        message=(f"Sensor '{sensor_key}' uses state_class 'total_increasing' with " f"device_class '{device_class}' which typically doesn't increase monotonically."),
+                        message=(
+                            f"Sensor '{sensor_key}' uses state_class 'total_increasing' with "
+                            f"device_class '{device_class}' which typically doesn't increase monotonically."
+                        ),
                         path=f"sensors.{sensor_key}.state_class",
                         severity=ValidationSeverity.WARNING,
                         suggested_fix="Consider using 'measurement' instead",
                     )
                 )
 
-    def _validate_sensor_config(self, sensor_key: str, sensor_config: dict[str, Any], warnings: list[ValidationError]) -> None:
+    def _validate_sensor_config(
+        self,
+        sensor_key: str,
+        sensor_config: dict[str, Any],
+        warnings: list[ValidationError],
+    ) -> None:
         """Validate a single sensor configuration."""
         # Single formula sensor validation
         if "formula" in sensor_config:
@@ -287,7 +302,9 @@ class SchemaValidator:
                             message=error_msg,
                             path=f"sensors.{sensor_key}.attributes.{attr_name}.formula",
                             severity=ValidationSeverity.WARNING,
-                            suggested_fix=("Define all variables used in attribute formulas " "(or use 'state' for main sensor value)"),
+                            suggested_fix=(
+                                "Define all variables used in attribute formulas (or use 'state' for main sensor value)"
+                            ),
                         )
                     )
 
@@ -336,7 +353,12 @@ class SchemaValidator:
 
         return warnings
 
-    def _validate_unit_compatibility(self, sensor_key: str, sensor_config: dict[str, Any], errors: list[ValidationError]) -> None:
+    def _validate_unit_compatibility(
+        self,
+        sensor_key: str,
+        sensor_config: dict[str, Any],
+        errors: list[ValidationError],
+    ) -> None:
         """Validate unit_of_measurement compatibility with device_class (ERROR level)."""
         device_class = sensor_config.get("device_class")
         unit = sensor_config.get("unit_of_measurement")
@@ -402,7 +424,11 @@ class SchemaValidator:
                     unit_list.append("None")
                 errors.append(
                     ValidationError(
-                        message=(f"Sensor '{sensor_key}' uses invalid unit '{unit}' for " f"device_class '{device_class}'. Home Assistant will log this " f"as an error. Allowed units: {', '.join(unit_list)}"),
+                        message=(
+                            f"Sensor '{sensor_key}' uses invalid unit '{unit}' for "
+                            f"device_class '{device_class}'. Home Assistant will log this "
+                            f"as an error. Allowed units: {', '.join(unit_list)}"
+                        ),
                         path=f"sensors.{sensor_key}.unit_of_measurement",
                         severity=ValidationSeverity.ERROR,
                         suggested_fix=f"Use one of the allowed units: {', '.join(unit_list)}",
@@ -419,7 +445,9 @@ class SchemaValidator:
         id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
         entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
         # Allow entity IDs OR collection patterns (device_class:, area:, tags:, regex:, attribute:)
-        variable_value_pattern = "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$"
+        variable_value_pattern = (
+            "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$"
+        )
         var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
         icon_pattern = "^mdi:[a-z0-9-]+$"
 
@@ -471,7 +499,13 @@ class SchemaValidator:
             },
         }
 
-    def _get_schema_definitions(self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_schema_definitions(
+        self,
+        id_pattern: str,
+        variable_value_pattern: str,
+        var_pattern: str,
+        icon_pattern: str,
+    ) -> dict[str, Any]:
         """Get the definitions section for the schema."""
         return {
             "sensor": self._get_sensor_definition(id_pattern),
@@ -524,7 +558,13 @@ class SchemaValidator:
             "additionalProperties": False,
         }
 
-    def _get_formula_definition(self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_formula_definition(
+        self,
+        id_pattern: str,
+        variable_value_pattern: str,
+        var_pattern: str,
+        icon_pattern: str,
+    ) -> dict[str, Any]:
         """Get the formula definition for the schema."""
         return {
             "type": "object",
@@ -607,7 +647,9 @@ class SchemaValidator:
 
         return [state_class.value for state_class in SensorStateClass.__members__.values()]
 
-    def _get_v1_main_properties(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_v1_main_properties(
+        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+    ) -> dict[str, Any]:
         """Get the main properties for the v1.0 schema."""
         return {
             "version": {
@@ -670,14 +712,18 @@ class SchemaValidator:
             },
         }
 
-    def _get_v1_schema_definitions(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_v1_schema_definitions(
+        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+    ) -> dict[str, Any]:
         """Get the definitions section for the v2.0 schema."""
         return {
             "v1_sensor": self._get_v1_sensor_definition(id_pattern, entity_pattern, var_pattern, icon_pattern),
             "v1_attribute": self._get_v1_attribute_definition(var_pattern, icon_pattern),
         }
 
-    def _get_v1_sensor_definition(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_v1_sensor_definition(
+        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+    ) -> dict[str, Any]:
         """Get the sensor definition for the v2.0 schema."""
         return {
             "type": "object",

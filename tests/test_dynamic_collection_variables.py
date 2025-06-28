@@ -25,15 +25,43 @@ class TestDynamicCollectionVariables:
 
         mock_states = {
             # Device class: power sensors
-            "sensor.circuit_main_power": Mock(state="350.5", entity_id="sensor.circuit_main_power", attributes={"device_class": "power"}),
-            "sensor.circuit_lighting_power": Mock(state="125.3", entity_id="sensor.circuit_lighting_power", attributes={"device_class": "power"}),
+            "sensor.circuit_main_power": Mock(
+                state="350.5",
+                entity_id="sensor.circuit_main_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.circuit_lighting_power": Mock(
+                state="125.3",
+                entity_id="sensor.circuit_lighting_power",
+                attributes={"device_class": "power"},
+            ),
             # Device class: temperature sensors
-            "sensor.kitchen_temperature": Mock(state="22.5", entity_id="sensor.kitchen_temperature", attributes={"device_class": "temperature"}),
-            "sensor.living_room_temperature": Mock(state="21.8", entity_id="sensor.living_room_temperature", attributes={"device_class": "temperature"}),
+            "sensor.kitchen_temperature": Mock(
+                state="22.5",
+                entity_id="sensor.kitchen_temperature",
+                attributes={"device_class": "temperature"},
+            ),
+            "sensor.living_room_temperature": Mock(
+                state="21.8",
+                entity_id="sensor.living_room_temperature",
+                attributes={"device_class": "temperature"},
+            ),
             # Battery sensors for attribute testing
-            "sensor.phone_battery": Mock(state="85", entity_id="sensor.phone_battery", attributes={"device_class": "battery", "battery_level": 85}),
-            "sensor.tablet_battery": Mock(state="15", entity_id="sensor.tablet_battery", attributes={"device_class": "battery", "battery_level": 15}),
-            "sensor.laptop_battery": Mock(state="92", entity_id="sensor.laptop_battery", attributes={"device_class": "battery", "battery_level": 92}),
+            "sensor.phone_battery": Mock(
+                state="85",
+                entity_id="sensor.phone_battery",
+                attributes={"device_class": "battery", "battery_level": 85},
+            ),
+            "sensor.tablet_battery": Mock(
+                state="15",
+                entity_id="sensor.tablet_battery",
+                attributes={"device_class": "battery", "battery_level": 15},
+            ),
+            "sensor.laptop_battery": Mock(
+                state="92",
+                entity_id="sensor.laptop_battery",
+                attributes={"device_class": "battery", "battery_level": 92},
+            ),
             # Variable source entities (for future dynamic patterns)
             "input_select.monitoring_device_class": Mock(state="power", entity_id="input_select.monitoring_device_class"),
             "input_select.focus_area": Mock(state="kitchen", entity_id="input_select.focus_area"),
@@ -52,7 +80,11 @@ class TestDynamicCollectionVariables:
     @pytest.fixture
     def evaluator(self, mock_hass):
         """Create an evaluator instance with mocked dependencies."""
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get"), patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get"):
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+        ):
             return Evaluator(mock_hass)
 
     @pytest.fixture
@@ -224,7 +256,11 @@ class TestFutureDynamicPatterns:
         from ha_synthetic_sensors.config_manager import FormulaConfig
 
         # This is the intended syntax for when variable substitution is implemented
-        config = FormulaConfig(id="future_dynamic", formula='sum("device_class:device_type")', variables={"device_type": "input_select.device_class"})
+        config = FormulaConfig(
+            id="future_dynamic",
+            formula='sum("device_class:device_type")',
+            variables={"device_type": "input_select.device_class"},
+        )
 
         # Verify the formula contains a variable reference
         assert "device_type" in config.formula

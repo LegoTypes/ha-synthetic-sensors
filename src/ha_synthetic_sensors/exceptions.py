@@ -5,12 +5,7 @@ coordinator and integration patterns, similar to how other integrations
 like Span Panel handle exceptions.
 """
 
-from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
-    ConfigEntryError,
-    ConfigEntryNotReady,
-    HomeAssistantError,
-)
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
 
 
 class SyntheticSensorsError(HomeAssistantError):
@@ -27,6 +22,10 @@ class SyntheticSensorsNotReadyError(ConfigEntryNotReady):
 
 class SyntheticSensorsAuthError(ConfigEntryAuthFailed):
     """Authentication-related errors (if applicable for future features)."""
+
+
+class DataValidationError(SyntheticSensorsError):
+    """Fatal data validation error - indicates bad data that cannot be processed."""
 
 
 # Formula evaluation errors
@@ -231,6 +230,7 @@ def is_fatal_error(error: Exception) -> bool:
         InvalidCollectionPatternError,
         SensorConfigurationError,
         SchemaValidationError,
+        DataValidationError,  # Bad data is a fatal error
     )
 
     return isinstance(error, fatal_types)

@@ -5,11 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
-from ha_synthetic_sensors.evaluator import (
-    CircuitBreakerConfig,
-    Evaluator,
-    NonNumericStateError,
-)
+from ha_synthetic_sensors.evaluator import CircuitBreakerConfig, Evaluator, NonNumericStateError
 
 
 class TestNonNumericStateHandling:
@@ -182,7 +178,11 @@ class TestNonNumericStateHandling:
         mock_state.attributes = {"device_class": "power"}
         mock_hass.states.get.return_value = mock_state
 
-        config = FormulaConfig(id="startup_race_test", name="startup_race", formula="sensor.span_panel_power + 10")
+        config = FormulaConfig(
+            id="startup_race_test",
+            name="startup_race",
+            formula="sensor.span_panel_power + 10",
+        )
 
         # Should handle None state gracefully and return unknown
         result = evaluator.evaluate_formula(config)
@@ -196,7 +196,10 @@ class TestNonNumericStateHandling:
 
         def mock_states_get(entity_id):
             """Mock state getter simulating startup race condition."""
-            if entity_id in ["sensor.span_panel_unmapped_tab_1_power", "sensor.span_panel_unmapped_tab_2_power"]:
+            if entity_id in [
+                "sensor.span_panel_unmapped_tab_1_power",
+                "sensor.span_panel_unmapped_tab_2_power",
+            ]:
                 # Entities exist but have None state (startup race condition)
                 state = MagicMock()
                 state.state = None
@@ -208,7 +211,15 @@ class TestNonNumericStateHandling:
         mock_hass.states.get.side_effect = mock_states_get
 
         # This simulates the formula that was causing "NoneType + NoneType" errors
-        config = FormulaConfig(id="solar_startup_test", name="Solar Inverter Instant Power", formula="leg1_power + leg2_power", variables={"leg1_power": "sensor.span_panel_unmapped_tab_1_power", "leg2_power": "sensor.span_panel_unmapped_tab_2_power"})
+        config = FormulaConfig(
+            id="solar_startup_test",
+            name="Solar Inverter Instant Power",
+            formula="leg1_power + leg2_power",
+            variables={
+                "leg1_power": "sensor.span_panel_unmapped_tab_1_power",
+                "leg2_power": "sensor.span_panel_unmapped_tab_2_power",
+            },
+        )
 
         # Should handle the None states gracefully and return unknown
         result = evaluator.evaluate_formula(config)
@@ -243,7 +254,15 @@ class TestNonNumericStateHandling:
 
         mock_hass.states.get.side_effect = mock_states_get
 
-        config = FormulaConfig(id="mixed_startup_test", name="Mixed Startup Test", formula="ready_entity + startup_entity", variables={"ready_entity": "sensor.ready_entity", "startup_entity": "sensor.startup_entity"})
+        config = FormulaConfig(
+            id="mixed_startup_test",
+            name="Mixed Startup Test",
+            formula="ready_entity + startup_entity",
+            variables={
+                "ready_entity": "sensor.ready_entity",
+                "startup_entity": "sensor.startup_entity",
+            },
+        )
 
         # Should handle mixed states and return unknown due to unavailable entity
         result = evaluator.evaluate_formula(config)
@@ -282,7 +301,10 @@ class TestNonNumericStateHandling:
         dependencies = {"sensor.missing1", "sensor.missing2"}
 
         # Missing entities should raise a ValueError
-        with pytest.raises(ValueError, match="Entity '.*' not found and is required for formula evaluation"):
+        with pytest.raises(
+            ValueError,
+            match="Entity '.*' not found and is required for formula evaluation",
+        ):
             evaluator._build_evaluation_context(dependencies)
 
     def test_unavailable_and_unknown_entity_states(self, mock_hass):
@@ -314,7 +336,11 @@ class TestNonNumericStateHandling:
         mock_hass.states.get.side_effect = mock_states_get
 
         # Test formula with unavailable entity
-        unavailable_config = FormulaConfig(id="unavailable_test", name="Unavailable Test", formula="sensor.unavailable_entity + 10")
+        unavailable_config = FormulaConfig(
+            id="unavailable_test",
+            name="Unavailable Test",
+            formula="sensor.unavailable_entity + 10",
+        )
 
         result = evaluator.evaluate_formula(unavailable_config)
         assert result["success"] is True
@@ -330,7 +356,15 @@ class TestNonNumericStateHandling:
         assert "sensor.unknown_entity" in result.get("unavailable_dependencies", [])
 
         # Test formula mixing valid and unavailable entities
-        mixed_config = FormulaConfig(id="mixed_unavailable_test", name="Mixed Unavailable Test", formula="valid_entity + unavailable_entity", variables={"valid_entity": "sensor.valid_entity", "unavailable_entity": "sensor.unavailable_entity"})
+        mixed_config = FormulaConfig(
+            id="mixed_unavailable_test",
+            name="Mixed Unavailable Test",
+            formula="valid_entity + unavailable_entity",
+            variables={
+                "valid_entity": "sensor.valid_entity",
+                "unavailable_entity": "sensor.unavailable_entity",
+            },
+        )
 
         result = evaluator.evaluate_formula(mixed_config)
         assert result["success"] is True
@@ -340,7 +374,15 @@ class TestNonNumericStateHandling:
         assert "sensor.valid_entity" not in result.get("unavailable_dependencies", [])
 
         # Test formula with both unknown and unavailable entities
-        both_config = FormulaConfig(id="both_unavailable_test", name="Both Unavailable Test", formula="unavailable_entity + unknown_entity", variables={"unavailable_entity": "sensor.unavailable_entity", "unknown_entity": "sensor.unknown_entity"})
+        both_config = FormulaConfig(
+            id="both_unavailable_test",
+            name="Both Unavailable Test",
+            formula="unavailable_entity + unknown_entity",
+            variables={
+                "unavailable_entity": "sensor.unavailable_entity",
+                "unknown_entity": "sensor.unknown_entity",
+            },
+        )
 
         result = evaluator.evaluate_formula(both_config)
         assert result["success"] is True
@@ -386,7 +428,17 @@ class TestNonNumericStateHandling:
         mock_hass.states.get.side_effect = mock_states_get
 
         # Test the comprehensive startup scenario with all types
-        startup_config = FormulaConfig(id="comprehensive_startup_test", name="Comprehensive Startup Test", formula="none_val + unavailable_val + unknown_val + ready_val", variables={"none_val": "sensor.none_state", "unavailable_val": "sensor.unavailable_state", "unknown_val": "sensor.unknown_state", "ready_val": "sensor.ready_entity"})
+        startup_config = FormulaConfig(
+            id="comprehensive_startup_test",
+            name="Comprehensive Startup Test",
+            formula="none_val + unavailable_val + unknown_val + ready_val",
+            variables={
+                "none_val": "sensor.none_state",
+                "unavailable_val": "sensor.unavailable_state",
+                "unknown_val": "sensor.unknown_state",
+                "ready_val": "sensor.ready_entity",
+            },
+        )
 
         result = evaluator.evaluate_formula(startup_config)
         assert result["success"] is True
@@ -401,7 +453,11 @@ class TestNonNumericStateHandling:
         assert "sensor.ready_entity" not in unavailable_deps
 
         # Test missing entity (should be fatal error)
-        missing_config = FormulaConfig(id="missing_startup_test", name="Missing Startup Test", formula="sensor.missing_entity + 10")
+        missing_config = FormulaConfig(
+            id="missing_startup_test",
+            name="Missing Startup Test",
+            formula="sensor.missing_entity + 10",
+        )
 
         result = evaluator.evaluate_formula(missing_config)
         assert result["success"] is False

@@ -148,7 +148,9 @@ class TestNameResolver:
         resolver = NameResolver(mock_hass, sample_variables)
 
         # Mock existing entities
-        mock_hass.states.get.side_effect = lambda entity_id: (MagicMock(state="42.0") if entity_id in ["sensor.temperature", "sensor.humidity"] else None)
+        mock_hass.states.get.side_effect = lambda entity_id: (
+            MagicMock(state="42.0") if entity_id in ["sensor.temperature", "sensor.humidity"] else None
+        )
 
         validation_result = resolver.validate_variables()
         # Should have error for missing power entity

@@ -15,12 +15,12 @@ sensors:
       daily_projected:
         formula: "state * 24"
         unit_of_measurement: "¢"
-      
+
       # Pattern 2: Reference by sensor key
       monthly_projected:
         formula: "energy_cost_analysis * 24 * 30"
         unit_of_measurement: "¢"
-      
+
       # Pattern 3: Reference by entity_id
       annual_projected:
         formula: "sensor.energy_cost_analysis * 24 * 365"
@@ -76,13 +76,13 @@ sensors:
       daily_state_ref:
         formula: "state * 24"
         unit_of_measurement: "units"
-      
+
       monthly_key_ref:
         formula: "comprehensive_analysis * 24 * 30"
         unit_of_measurement: "units"
-      
+
       annual_entity_ref:
         formula: "sensor.comprehensive_analysis * 24 * 365"
         unit_of_measurement: "units"
     unit_of_measurement: "units"
-    state_class: "measurement" 
+    state_class: "measurement"

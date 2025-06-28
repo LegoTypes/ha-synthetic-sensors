@@ -31,29 +31,85 @@ class TestORDeviceClassIntegration:
         # Create mock entities with various device classes for OR testing
         mock_states = {
             # Door sensors
-            "binary_sensor.front_door": Mock(state="off", entity_id="binary_sensor.front_door", attributes={"device_class": "door"}),
-            "binary_sensor.back_door": Mock(state="on", entity_id="binary_sensor.back_door", attributes={"device_class": "door"}),
+            "binary_sensor.front_door": Mock(
+                state="off",
+                entity_id="binary_sensor.front_door",
+                attributes={"device_class": "door"},
+            ),
+            "binary_sensor.back_door": Mock(
+                state="on",
+                entity_id="binary_sensor.back_door",
+                attributes={"device_class": "door"},
+            ),
             # Window sensors
-            "binary_sensor.living_room_window": Mock(state="off", entity_id="binary_sensor.living_room_window", attributes={"device_class": "window"}),
-            "binary_sensor.bedroom_window": Mock(state="off", entity_id="binary_sensor.bedroom_window", attributes={"device_class": "window"}),
+            "binary_sensor.living_room_window": Mock(
+                state="off",
+                entity_id="binary_sensor.living_room_window",
+                attributes={"device_class": "window"},
+            ),
+            "binary_sensor.bedroom_window": Mock(
+                state="off",
+                entity_id="binary_sensor.bedroom_window",
+                attributes={"device_class": "window"},
+            ),
             # Lock sensors
-            "lock.front_door_lock": Mock(state="locked", entity_id="lock.front_door_lock", attributes={"device_class": "lock"}),
+            "lock.front_door_lock": Mock(
+                state="locked",
+                entity_id="lock.front_door_lock",
+                attributes={"device_class": "lock"},
+            ),
             # Temperature sensors
-            "sensor.kitchen_temperature": Mock(state="22.5", entity_id="sensor.kitchen_temperature", attributes={"device_class": "temperature"}),
-            "sensor.living_room_temperature": Mock(state="21.8", entity_id="sensor.living_room_temperature", attributes={"device_class": "temperature"}),
+            "sensor.kitchen_temperature": Mock(
+                state="22.5",
+                entity_id="sensor.kitchen_temperature",
+                attributes={"device_class": "temperature"},
+            ),
+            "sensor.living_room_temperature": Mock(
+                state="21.8",
+                entity_id="sensor.living_room_temperature",
+                attributes={"device_class": "temperature"},
+            ),
             # Humidity sensors
-            "sensor.bathroom_humidity": Mock(state="65.0", entity_id="sensor.bathroom_humidity", attributes={"device_class": "humidity"}),
+            "sensor.bathroom_humidity": Mock(
+                state="65.0",
+                entity_id="sensor.bathroom_humidity",
+                attributes={"device_class": "humidity"},
+            ),
             # Power sensors
-            "sensor.circuit_main_power": Mock(state="350.5", entity_id="sensor.circuit_main_power", attributes={"device_class": "power"}),
-            "sensor.circuit_lighting_power": Mock(state="125.3", entity_id="sensor.circuit_lighting_power", attributes={"device_class": "power"}),
+            "sensor.circuit_main_power": Mock(
+                state="350.5",
+                entity_id="sensor.circuit_main_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.circuit_lighting_power": Mock(
+                state="125.3",
+                entity_id="sensor.circuit_lighting_power",
+                attributes={"device_class": "power"},
+            ),
             # Energy sensors
-            "sensor.daily_energy": Mock(state="45.2", entity_id="sensor.daily_energy", attributes={"device_class": "energy"}),
+            "sensor.daily_energy": Mock(
+                state="45.2",
+                entity_id="sensor.daily_energy",
+                attributes={"device_class": "energy"},
+            ),
             # Motion sensors
-            "binary_sensor.hallway_motion": Mock(state="off", entity_id="binary_sensor.hallway_motion", attributes={"device_class": "motion"}),
+            "binary_sensor.hallway_motion": Mock(
+                state="off",
+                entity_id="binary_sensor.hallway_motion",
+                attributes={"device_class": "motion"},
+            ),
             # Occupancy sensors
-            "binary_sensor.office_occupancy": Mock(state="on", entity_id="binary_sensor.office_occupancy", attributes={"device_class": "occupancy"}),
+            "binary_sensor.office_occupancy": Mock(
+                state="on",
+                entity_id="binary_sensor.office_occupancy",
+                attributes={"device_class": "occupancy"},
+            ),
             # Presence sensors
-            "device_tracker.phone_presence": Mock(state="home", entity_id="device_tracker.phone_presence", attributes={"device_class": "presence"}),
+            "device_tracker.phone_presence": Mock(
+                state="home",
+                entity_id="device_tracker.phone_presence",
+                attributes={"device_class": "presence"},
+            ),
             # Variable source entities
             "input_select.primary_device_class": Mock(state="door", entity_id="input_select.primary_device_class"),
             "input_select.secondary_device_class": Mock(state="window", entity_id="input_select.secondary_device_class"),
@@ -67,7 +123,11 @@ class TestORDeviceClassIntegration:
     @pytest.fixture
     def collection_resolver(self, mock_hass):
         """Create a collection resolver instance."""
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get"), patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get"):
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+        ):
             return CollectionResolver(mock_hass)
 
     @pytest.fixture
@@ -130,7 +190,12 @@ class TestORDeviceClassIntegration:
         entities = collection_resolver.resolve_collection(query)
 
         # Should find all door and window entities
-        expected_entities = {"binary_sensor.front_door", "binary_sensor.back_door", "binary_sensor.living_room_window", "binary_sensor.bedroom_window"}
+        expected_entities = {
+            "binary_sensor.front_door",
+            "binary_sensor.back_door",
+            "binary_sensor.living_room_window",
+            "binary_sensor.bedroom_window",
+        }
         assert set(entities) == expected_entities
 
     def test_door_window_or_resolution_implemented(self, collection_resolver):
@@ -141,7 +206,12 @@ class TestORDeviceClassIntegration:
         entities = collection_resolver.resolve_collection(query)
 
         # Expected entities with pipe support:
-        expected_entities = {"binary_sensor.front_door", "binary_sensor.back_door", "binary_sensor.living_room_window", "binary_sensor.bedroom_window"}
+        expected_entities = {
+            "binary_sensor.front_door",
+            "binary_sensor.back_door",
+            "binary_sensor.living_room_window",
+            "binary_sensor.bedroom_window",
+        }
 
         assert set(entities) == expected_entities
 
@@ -152,7 +222,13 @@ class TestORDeviceClassIntegration:
         entities = collection_resolver.resolve_collection(query)
 
         # Expected entities with pipe support:
-        expected_entities = {"binary_sensor.front_door", "binary_sensor.back_door", "binary_sensor.living_room_window", "binary_sensor.bedroom_window", "lock.front_door_lock"}
+        expected_entities = {
+            "binary_sensor.front_door",
+            "binary_sensor.back_door",
+            "binary_sensor.living_room_window",
+            "binary_sensor.bedroom_window",
+            "lock.front_door_lock",
+        }
 
         assert set(entities) == expected_entities
 
@@ -163,14 +239,22 @@ class TestORDeviceClassIntegration:
 
         temp_humidity_entities = collection_resolver.resolve_collection(temp_humidity_query)
 
-        expected_temp_humidity = {"sensor.kitchen_temperature", "sensor.living_room_temperature", "sensor.bathroom_humidity"}
+        expected_temp_humidity = {
+            "sensor.kitchen_temperature",
+            "sensor.living_room_temperature",
+            "sensor.bathroom_humidity",
+        }
 
         # Test power|energy pattern
         power_energy_query = DynamicQuery(query_type="device_class", pattern="power|energy", function="sum")
 
         power_energy_entities = collection_resolver.resolve_collection(power_energy_query)
 
-        expected_power_energy = {"sensor.circuit_main_power", "sensor.circuit_lighting_power", "sensor.daily_energy"}
+        expected_power_energy = {
+            "sensor.circuit_main_power",
+            "sensor.circuit_lighting_power",
+            "sensor.daily_energy",
+        }
 
         # Verify the patterns work correctly
         assert set(temp_humidity_entities) == expected_temp_humidity
@@ -227,7 +311,10 @@ class TestORDeviceClassIntegration:
         """Test OR patterns with variable substitution."""
         # This tests the dynamic_or_device_classes sensor pattern
         formula = 'count("device_class:primary_class|secondary_class")'
-        variables = {"primary_class": "input_select.primary_device_class", "secondary_class": "input_select.secondary_device_class"}
+        variables = {
+            "primary_class": "input_select.primary_device_class",
+            "secondary_class": "input_select.secondary_device_class",
+        }
 
         # Parse the pattern
         queries = dependency_parser.extract_dynamic_queries(formula)

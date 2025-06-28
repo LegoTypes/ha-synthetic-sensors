@@ -11,7 +11,6 @@
 [![Security](https://img.shields.io/snyk/vulnerabilities/github/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://snyk.io/test/github/SpanPanel/ha-synthetic-sensors)
 
 [![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&style=flat-square)](https://github.com/pre-commit/pre-commit)
-[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
 [![Linting: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://github.com/astral-sh/ruff)
 [![Type Checking: MyPy](https://img.shields.io/badge/type%20checking-mypy-blue?style=flat-square)](https://mypy-lang.org/)
 
@@ -151,7 +150,7 @@ sensors:
     name: "Battery Status"
     formula: "battery_level * battery_capacity / 100"
     variables:
-      battery_level: "sensor.battery_percentage" 
+      battery_level: "sensor.battery_percentage"
       battery_capacity: "sensor.battery_total_capacity"
     unit_of_measurement: "kWh"
     device_class: "energy_storage"
@@ -264,7 +263,7 @@ sensors:
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
-    
+
   # Purely integration data
   internal_efficiency:
     name: "Internal Efficiency"
@@ -278,7 +277,7 @@ sensors:
 **Data Source Resolution:**
 
 - If integration registers entity IDs like `["span.meter_001", "span.efficiency_input", "span.efficiency_baseline"]`
-- Evaluator calls `data_provider_callback` for those entities  
+- Evaluator calls `data_provider_callback` for those entities
 - All other entities (`sensor.grid_power`, `sensor.solar_inverter`) use standard HA state queries
 - Completely transparent to YAML configuration - same syntax for both data sources
 
@@ -296,12 +295,12 @@ sensors:
       circuit_pattern: "input_text.circuit_regex_pattern"
     unit_of_measurement: "W"
 
-  # OR patterns for multiple conditions  
+  # OR patterns for multiple conditions
   security_monitoring:
     name: "Security Device Count"
     formula: count("device_class:door|window|lock")
     unit_of_measurement: "devices"
-    
+
   main_floor_power:
     name: "Main Floor Power"
     formula: sum("area:living_room|kitchen|dining_room")
@@ -328,10 +327,39 @@ sensors:
 
 - `"device_class:power"` - Entities with specific device class
 - `"regex:pattern_variable"` - Entities matching regex pattern from variable
-- `"area:kitchen"` - Entities in specific area  
+- `"area:kitchen"` - Entities in specific area
 - `"tags:tag1,tag2"` - Entities with specified tags
 - `"attribute:battery_level<50"` - Entities with attribute conditions
 - `"state:>100|=on"` - Entities with state conditions (supports OR with `|`)
+
+**Empty Collection Behavior:**
+
+When a collection pattern matches no entities, the collection functions return `0` instead of making the sensor
+unavailable. This provides robust behavior for dynamic entity collections.
+
+```yaml
+# These return 0 when no entities match the pattern
+sum("device_class:nonexistent")     # Returns: 0
+avg("area:empty_room")              # Returns: 0
+count("tags:missing_tag")           # Returns: 0
+min("state:>9999")                  # Returns: 0
+max("attribute:invalid<0")          # Returns: 0
+```
+
+**Detecting Empty Collections (Advanced):**
+
+If you need to distinguish between "no matching entities" and "entities with zero values", you can use a formula like this:
+
+```yaml
+sensors:
+  smart_power_monitor:
+    name: "Smart Power Monitor"
+    formula: "count(power_pattern) > 0 ? sum(power_pattern) : null"
+    variables:
+      power_pattern: "device_class:power"
+    # This sensor will be unavailable when no power entities exist,
+    # but will show 0 when power entities exist but all have zero values
+```
 
 ## Formula examples
 
@@ -387,7 +415,7 @@ sensors:
       rated_power: 1000                  # Literal: rated power in watts
       percentage: 100                    # Literal: convert to percentage
     unit_of_measurement: "%"
-    
+
   cost_calculator:
     name: "Energy Cost"
     formula: "energy_kwh * rate_per_kwh * (1 + tax_rate)"
@@ -453,7 +481,7 @@ value_template: >
 # Reload configuration
 service: synthetic_sensors.reload_config
 
-# Get sensor information  
+# Get sensor information
 service: synthetic_sensors.get_sensor_info
 data:
   entity_id: "sensor.syn2_energy_cost_analysis"
@@ -490,6 +518,29 @@ config = config_manager.load_from_file("config.yaml")
 await sensor_manager.load_configuration(config)
 await service_layer.async_setup_services()
 ```
+
+## Update propagation behavior
+
+When synthetic sensors depend on each other, updates propagate through the dependency chain one step per
+Home Assistant update cycle. This is the expected behavior that matches Home Assistant's natural update model.
+
+**Example dependency chain:** A → B → C (where B depends on A, and C depends on B)
+
+If sensor A's value changes:
+
+- **Cycle 1**: A updates with new value, B still has old value, C still has old value
+- **Cycle 2**: B updates with A's new value, C still has old value
+- **Cycle 3**: C updates with B's new value (which reflects A's change)
+
+**Key points:**
+
+- For a dependency chain of length N, it takes N-1 update cycles for all sensors to reflect a change
+- This behavior is intentional and matches Home Assistant's update patterns
+- Use the `synthetic_sensors.update_sensor` service to manually trigger updates if needed
+- Complex dependency chains may require multiple service calls to fully propagate changes
+
+**Troubleshooting tip:** If you have long dependency chains and need immediate propagation, you can call the
+update service multiple times or restructure your sensors to reduce dependency depth.
 
 ## Type safety
 
@@ -548,13 +599,13 @@ from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
 class MyCustomIntegration:
     async def async_setup_sensors(self, async_add_entities):
         synthetic_integration = SyntheticSensorsIntegration(self.hass)
-        
+
         self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
             add_entities_callback=async_add_entities,
             device_info=self.device_info,
             lifecycle_managed_externally=True
         )
-        
+
         # Load YAML config and apply
         config = await self.sensor_manager.load_config_from_yaml(yaml_config)
         await self.sensor_manager.apply_config(config)
@@ -577,7 +628,7 @@ class MyCustomIntegration:
             value = self.local_sensors[entity_id].current_value
             return {"value": value, "exists": True}
         return {"value": None, "exists": False}
-    
+
     async def async_setup_sensors(self, async_add_entities):
         # Configure sensor manager with data provider callback
         manager_config = SensorManagerConfig(
@@ -585,16 +636,16 @@ class MyCustomIntegration:
             lifecycle_managed_externally=True,
             data_provider_callback=self.get_integration_data
         )
-        
+
         synthetic_integration = SyntheticSensorsIntegration(self.hass)
         self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
             add_entities_callback=async_add_entities,
             manager_config=manager_config
         )
-        
+
         # Register entities that this integration can provide data for
         self.sensor_manager.register_data_provider_entities(set(self.local_sensors.keys()))
-        
+
         # Load config - evaluator will automatically use callbacks for registered entities
         # and Home Assistant state queries for all other entities
         config = await self.sensor_manager.load_config_from_yaml(yaml_config)

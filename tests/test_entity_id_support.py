@@ -78,7 +78,13 @@ class TestEntityIdSupport:
         # When creating a DynamicSensor, it should use the default pattern
         evaluator = Evaluator(config_manager._hass)
         mock_sensor_manager = MagicMock()
-        dynamic_sensor = DynamicSensor(config_manager._hass, standard_sensor, evaluator, mock_sensor_manager, SensorManagerConfig())
+        dynamic_sensor = DynamicSensor(
+            config_manager._hass,
+            standard_sensor,
+            evaluator,
+            mock_sensor_manager,
+            SensorManagerConfig(),
+        )
 
         # Should have the unique_id without prefix (new behavior)
         assert dynamic_sensor.unique_id == "standard_power_sensor"
@@ -139,7 +145,13 @@ class TestEntityIdSupport:
         # Test standard sensor (no custom entity_id)
         standard_sensor = next(s for s in config.sensors if s.unique_id == "standard_power_sensor")
         mock_sensor_manager = MagicMock()
-        standard_dynamic = DynamicSensor(config_manager._hass, standard_sensor, evaluator, mock_sensor_manager, SensorManagerConfig())
+        standard_dynamic = DynamicSensor(
+            config_manager._hass,
+            standard_sensor,
+            evaluator,
+            mock_sensor_manager,
+            SensorManagerConfig(),
+        )
 
         # Should use unique_id without prefix (new behavior)
         assert standard_dynamic.unique_id == "standard_power_sensor"
@@ -147,7 +159,13 @@ class TestEntityIdSupport:
 
         # Test custom entity_id sensor
         custom_sensor = next(s for s in config.sensors if s.unique_id == "custom_named_sensor")
-        custom_dynamic = DynamicSensor(config_manager._hass, custom_sensor, evaluator, mock_sensor_manager, SensorManagerConfig())
+        custom_dynamic = DynamicSensor(
+            config_manager._hass,
+            custom_sensor,
+            evaluator,
+            mock_sensor_manager,
+            SensorManagerConfig(),
+        )
 
         # Should use unique_id without prefix (new behavior)
         assert custom_dynamic.unique_id == "custom_named_sensor"
@@ -164,7 +182,11 @@ class TestEntityIdSupport:
         from ha_synthetic_sensors.schema_validator import validate_yaml_config
 
         invalid_yaml = entity_id_yaml.copy()
-        invalid_yaml["sensors"]["invalid_entity_id_sensor"] = {"name": "Invalid Entity ID", "entity_id": "invalid_format_no_domain", "formula": "1 + 1"}  # Missing domain - should be rejected
+        invalid_yaml["sensors"]["invalid_entity_id_sensor"] = {
+            "name": "Invalid Entity ID",
+            "entity_id": "invalid_format_no_domain",
+            "formula": "1 + 1",
+        }  # Missing domain - should be rejected
 
         # Schema validation should catch the invalid entity_id format
         result = validate_yaml_config(invalid_yaml)
@@ -179,7 +201,11 @@ class TestEntityIdSupport:
         """Test that custom entity_ids can be referenced by other sensors."""
         # Add a sensor that references the custom entity_id
         test_yaml = entity_id_yaml.copy()
-        test_yaml["sensors"]["referencing_sensor"] = {"name": "Referencing Sensor", "formula": "sensor.custom_energy_monitor * 2", "unit_of_measurement": "W"}  # Reference custom entity_id
+        test_yaml["sensors"]["referencing_sensor"] = {
+            "name": "Referencing Sensor",
+            "formula": "sensor.custom_energy_monitor * 2",
+            "unit_of_measurement": "W",
+        }  # Reference custom entity_id
 
         config = config_manager._parse_yaml_config(test_yaml)
 

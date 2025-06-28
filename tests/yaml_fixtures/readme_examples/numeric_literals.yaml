@@ -19,7 +19,7 @@ sensors:
       rated_power: 1000                  # Literal: rated power in watts
       percentage: 100                    # Literal: convert to percentage
     unit_of_measurement: "%"
-    
+
   cost_calculator:
     name: "Energy Cost"
     formula: "energy_kwh * rate_per_kwh * (1 + tax_rate)"

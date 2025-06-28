@@ -139,7 +139,9 @@ class TestCacheValidation:
             result_value = result["value"]
             if isinstance(expected, float):
                 assert isinstance(result_value, (int, float)), f"Formula {formula}: expected numeric result"
-                assert abs(float(result_value) - expected) < 0.001, f"Formula {formula}: expected {expected}, got {result_value}"
+                assert abs(float(result_value) - expected) < 0.001, (
+                    f"Formula {formula}: expected {expected}, got {result_value}"
+                )
             else:
                 assert result_value == expected, f"Formula {formula}: expected {expected}, got {result_value}"
 
@@ -158,7 +160,9 @@ class TestCacheValidation:
             result_value = result["value"]
             if isinstance(expected, float):
                 assert isinstance(result_value, (int, float)), f"Cached formula {formula}: expected numeric result"
-                assert abs(float(result_value) - expected) < 0.001, f"Cached formula {formula}: expected {expected}, got {result_value}"
+                assert abs(float(result_value) - expected) < 0.001, (
+                    f"Cached formula {formula}: expected {expected}, got {result_value}"
+                )
             else:
                 assert result_value == expected, f"Cached formula {formula}: expected {expected}, got {result_value}"
 

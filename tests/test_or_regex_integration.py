@@ -33,24 +33,80 @@ class TestOrRegexIntegration:
 
         # Mock entities for regex testing
         self.mock_states = {
-            "sensor.circuit_a_power": Mock(state="150.5", entity_id="sensor.circuit_a_power", attributes={"device_class": "power"}),
-            "sensor.circuit_b_power": Mock(state="225.3", entity_id="sensor.circuit_b_power", attributes={"device_class": "power"}),
-            "sensor.kitchen_main_power": Mock(state="75.2", entity_id="sensor.kitchen_main_power", attributes={"device_class": "power"}),
-            "sensor.kitchen_outlet_power": Mock(state="45.8", entity_id="sensor.kitchen_outlet_power", attributes={"device_class": "power"}),
-            "sensor.kitchen_main_temp": Mock(state="22.5", entity_id="sensor.kitchen_main_temp", attributes={"device_class": "temperature"}),
-            "sensor.living_room_temp": Mock(state="21.8", entity_id="sensor.living_room_temp", attributes={"device_class": "temperature"}),
-            "sensor.bedroom_main_temp": Mock(state="20.1", entity_id="sensor.bedroom_main_temp", attributes={"device_class": "temperature"}),
+            "sensor.circuit_a_power": Mock(
+                state="150.5",
+                entity_id="sensor.circuit_a_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.circuit_b_power": Mock(
+                state="225.3",
+                entity_id="sensor.circuit_b_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.kitchen_main_power": Mock(
+                state="75.2",
+                entity_id="sensor.kitchen_main_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.kitchen_outlet_power": Mock(
+                state="45.8",
+                entity_id="sensor.kitchen_outlet_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.kitchen_main_temp": Mock(
+                state="22.5",
+                entity_id="sensor.kitchen_main_temp",
+                attributes={"device_class": "temperature"},
+            ),
+            "sensor.living_room_temp": Mock(
+                state="21.8",
+                entity_id="sensor.living_room_temp",
+                attributes={"device_class": "temperature"},
+            ),
+            "sensor.bedroom_main_temp": Mock(
+                state="20.1",
+                entity_id="sensor.bedroom_main_temp",
+                attributes={"device_class": "temperature"},
+            ),
             "binary_sensor.motion_detector": Mock(state="on", entity_id="binary_sensor.motion_detector", attributes={}),
             "binary_sensor.door_sensor": Mock(state="off", entity_id="binary_sensor.door_sensor", attributes={}),
             "input_number.test_value": Mock(state="100", entity_id="input_number.test_value", attributes={}),
             # Variables for regex patterns
-            "input_text.primary_regex_pattern": Mock(state=".*circuit_.*_power", entity_id="input_text.primary_regex_pattern", attributes={}),
-            "input_text.secondary_regex_pattern": Mock(state=".*kitchen_.*_power", entity_id="input_text.secondary_regex_pattern", attributes={}),
-            "input_text.circuit_power_regex": Mock(state=".*circuit_.*_power", entity_id="input_text.circuit_power_regex", attributes={}),
-            "input_text.kitchen_power_regex": Mock(state=".*kitchen_.*_power", entity_id="input_text.kitchen_power_regex", attributes={}),
-            "input_text.kitchen_temp_regex": Mock(state=".*kitchen_.*_temp", entity_id="input_text.kitchen_temp_regex", attributes={}),
-            "input_text.living_temp_regex": Mock(state=".*living_.*_temp", entity_id="input_text.living_temp_regex", attributes={}),
-            "input_text.bedroom_temp_regex": Mock(state=".*bedroom_.*_temp", entity_id="input_text.bedroom_temp_regex", attributes={}),
+            "input_text.primary_regex_pattern": Mock(
+                state=".*circuit_.*_power",
+                entity_id="input_text.primary_regex_pattern",
+                attributes={},
+            ),
+            "input_text.secondary_regex_pattern": Mock(
+                state=".*kitchen_.*_power",
+                entity_id="input_text.secondary_regex_pattern",
+                attributes={},
+            ),
+            "input_text.circuit_power_regex": Mock(
+                state=".*circuit_.*_power",
+                entity_id="input_text.circuit_power_regex",
+                attributes={},
+            ),
+            "input_text.kitchen_power_regex": Mock(
+                state=".*kitchen_.*_power",
+                entity_id="input_text.kitchen_power_regex",
+                attributes={},
+            ),
+            "input_text.kitchen_temp_regex": Mock(
+                state=".*kitchen_.*_temp",
+                entity_id="input_text.kitchen_temp_regex",
+                attributes={},
+            ),
+            "input_text.living_temp_regex": Mock(
+                state=".*living_.*_temp",
+                entity_id="input_text.living_temp_regex",
+                attributes={},
+            ),
+            "input_text.bedroom_temp_regex": Mock(
+                state=".*bedroom_.*_temp",
+                entity_id="input_text.bedroom_temp_regex",
+                attributes={},
+            ),
             "input_text.power_regex": Mock(state=".*_power", entity_id="input_text.power_regex", attributes={}),
         }
 
@@ -59,7 +115,11 @@ class TestOrRegexIntegration:
         self.mock_hass.states.get.side_effect = lambda entity_id: self.mock_states.get(entity_id)
 
         # Create collection resolver and evaluator
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get"), patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get"):
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+        ):
             self.resolver = CollectionResolver(self.mock_hass)
             self.evaluator = Evaluator(self.mock_hass)
             self.parser = DependencyParser()
@@ -67,7 +127,9 @@ class TestOrRegexIntegration:
     def _load_yaml_fixtures(self):
         """Load the YAML test fixtures."""
         try:
-            with open("/Users/bflood/projects/HA/ha-synthetic-sensors/tests/yaml_fixtures/dynamic_collection_variables.yaml") as f:
+            with open(
+                "/Users/bflood/projects/HA/ha-synthetic-sensors/tests/yaml_fixtures/dynamic_collection_variables.yaml"
+            ) as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:
             pytest.skip("YAML fixtures file not found")
@@ -120,20 +182,37 @@ class TestOrRegexIntegration:
     def test_resolve_or_regex_pattern_integration(self):
         """Test end-to-end resolution of OR regex patterns."""
         # Test basic OR pattern resolution with proper entity ID patterns
-        query = DynamicQuery(query_type="regex", pattern=".*circuit_.*_power|.*kitchen_.*_power", function="sum")
+        query = DynamicQuery(
+            query_type="regex",
+            pattern=".*circuit_.*_power|.*kitchen_.*_power",
+            function="sum",
+        )
         entities = self.resolver.resolve_collection(query)
 
         # Should match circuit and kitchen power sensors
-        expected_entities = ["sensor.circuit_a_power", "sensor.circuit_b_power", "sensor.kitchen_main_power", "sensor.kitchen_outlet_power"]
+        expected_entities = [
+            "sensor.circuit_a_power",
+            "sensor.circuit_b_power",
+            "sensor.kitchen_main_power",
+            "sensor.kitchen_outlet_power",
+        ]
         assert set(entities) == set(expected_entities)
 
     def test_resolve_three_way_or_regex_integration(self):
         """Test three-way OR regex pattern resolution."""
-        query = DynamicQuery(query_type="regex", pattern=".*kitchen_.*_temp|.*living_.*_temp|.*bedroom_.*_temp", function="avg")
+        query = DynamicQuery(
+            query_type="regex",
+            pattern=".*kitchen_.*_temp|.*living_.*_temp|.*bedroom_.*_temp",
+            function="avg",
+        )
         entities = self.resolver.resolve_collection(query)
 
         # Should match temperature sensors from all three rooms
-        expected_entities = ["sensor.kitchen_main_temp", "sensor.living_room_temp", "sensor.bedroom_main_temp"]
+        expected_entities = [
+            "sensor.kitchen_main_temp",
+            "sensor.living_room_temp",
+            "sensor.bedroom_main_temp",
+        ]
         assert set(entities) == set(expected_entities)
 
     def test_resolve_domain_or_regex_integration(self):
@@ -149,7 +228,10 @@ class TestOrRegexIntegration:
         """Test variable-driven OR regex patterns."""
         # This would test resolution with variables, but requires full evaluator integration
         formula = 'sum("regex:primary_pattern|secondary_pattern")'
-        variables = {"primary_pattern": "input_text.primary_regex_pattern", "secondary_pattern": "input_text.secondary_regex_pattern"}
+        variables = {
+            "primary_pattern": "input_text.primary_regex_pattern",
+            "secondary_pattern": "input_text.secondary_regex_pattern",
+        }
 
         parsed = self.parser.parse_formula_dependencies(formula, variables)
         assert len(parsed.dynamic_queries) == 1
@@ -237,7 +319,11 @@ class TestOrRegexIntegration:
 
     def test_escaped_characters_in_or_regex(self):
         """Test OR regex patterns with escaped characters."""
-        query = DynamicQuery(query_type="regex", pattern="sensor\\.circuit_.*|sensor\\.power_.*", function="sum")
+        query = DynamicQuery(
+            query_type="regex",
+            pattern="sensor\\.circuit_.*|sensor\\.power_.*",
+            function="sum",
+        )
         entities = self.resolver.resolve_collection(query)
 
         # Should match escaped dot patterns correctly

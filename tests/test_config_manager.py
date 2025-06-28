@@ -12,12 +12,7 @@ from homeassistant.exceptions import ConfigEntryError
 import pytest
 import yaml
 
-from ha_synthetic_sensors.config_manager import (
-    Config,
-    ConfigManager,
-    FormulaConfig,
-    SensorConfig,
-)
+from ha_synthetic_sensors.config_manager import Config, ConfigManager, FormulaConfig, SensorConfig
 
 
 class TestConfigManager:
@@ -386,7 +381,11 @@ class TestConfigManagerExtended:
         # Test with permission error
         # ConfigManager returns empty config for missing files
         # So we need to patch Path.exists to return True first
-        with patch("pathlib.Path.exists", return_value=True), patch("builtins.open", side_effect=PermissionError("Permission denied")), pytest.raises(ConfigEntryError) as exc_info:
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", side_effect=PermissionError("Permission denied")),
+            pytest.raises(ConfigEntryError) as exc_info,
+        ):
             config_manager.load_config("/test/path.yaml")
             assert "failed to load configuration" in str(exc_info.value).lower()
 
@@ -503,7 +502,11 @@ class TestConfigManagerExtended:
     async def test_load_from_file_with_error(self, config_manager):
         """Test load_from_file when file operations fail."""
         # ConfigManager returns empty config for missing files, so test permission error
-        with patch("pathlib.Path.exists", return_value=True), patch("builtins.open", side_effect=PermissionError("Access denied")), pytest.raises(ConfigEntryError) as exc_info:
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", side_effect=PermissionError("Access denied")),
+            pytest.raises(ConfigEntryError) as exc_info,
+        ):
             await config_manager.async_load_from_file("/protected/path.yaml")
             assert "failed to load configuration" in str(exc_info.value).lower()
 

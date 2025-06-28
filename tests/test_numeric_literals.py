@@ -195,7 +195,11 @@ class TestNumericLiterals:
         evaluator = Evaluator(mock_hass)
 
         # Test with valid numeric context
-        config = FormulaConfig(id="test_numeric", formula="a + b + c", variables={"a": 10, "b": 20.5, "c": -5})
+        config = FormulaConfig(
+            id="test_numeric",
+            formula="a + b + c",
+            variables={"a": 10, "b": 20.5, "c": -5},
+        )
 
         # Test evaluation
         result = evaluator.evaluate_formula(config)
@@ -212,7 +216,11 @@ class TestNumericLiterals:
         # Test with non-numeric literal (should be handled gracefully)
         # Note: We need to create FormulaConfig directly to bypass schema validation
         # In real usage, invalid literals would be caught by schema validation
-        config = FormulaConfig(id="test_invalid", formula="a + b", variables={"a": "sensor.invalid", "b": 10})  # This is valid - entity ID
+        config = FormulaConfig(
+            id="test_invalid",
+            formula="a + b",
+            variables={"a": "sensor.invalid", "b": 10},
+        )  # This is valid - entity ID
 
         # Mock the invalid entity to return a non-numeric state
         mock_hass.states.get.return_value = MagicMock(state="not_a_number")
@@ -245,7 +253,11 @@ class TestNumericLiterals:
 
         evaluator = Evaluator(mock_hass)
 
-        config = FormulaConfig(id="large_numbers_test", formula="large_int + very_large_float", variables={"large_int": 9999999999, "very_large_float": 1.23456789e10})
+        config = FormulaConfig(
+            id="large_numbers_test",
+            formula="large_int + very_large_float",
+            variables={"large_int": 9999999999, "very_large_float": 1.23456789e10},
+        )
 
         result = evaluator.evaluate_formula(config)
 

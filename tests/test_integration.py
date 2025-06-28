@@ -240,7 +240,10 @@ class TestSyntheticSensorsIntegration:
         """Test _check_auto_configuration when file is found."""
         mock_hass.config.config_dir = "/config"
 
-        with patch("pathlib.Path.exists") as mock_exists, patch("pathlib.Path.is_file") as mock_is_file:
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("pathlib.Path.is_file") as mock_is_file,
+        ):
             mock_exists.side_effect = [True, False, False, False]
             mock_is_file.return_value = True
 
@@ -269,7 +272,10 @@ class TestSyntheticSensorsIntegration:
         """Test _check_auto_configuration when file is found but load fails."""
         mock_hass.config.config_dir = "/config"
 
-        with patch("pathlib.Path.exists") as mock_exists, patch("pathlib.Path.is_file") as mock_is_file:
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("pathlib.Path.is_file") as mock_is_file,
+        ):
             mock_exists.side_effect = [True, False, False, False]
             mock_is_file.return_value = True
 
@@ -577,11 +583,7 @@ class TestIntegration:
 
     def test_yaml_to_entities_workflow(self, mock_hass, mock_config_entry):
         """Test the complete workflow from YAML config to entity processing."""
-        from ha_synthetic_sensors.config_manager import (
-            ConfigManager,
-            FormulaConfig,
-            SensorConfig,
-        )
+        from ha_synthetic_sensors.config_manager import ConfigManager, FormulaConfig, SensorConfig
         from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
 
         # Create integration instance
@@ -606,12 +608,7 @@ class TestIntegration:
 
     def test_config_validation_workflow(self, mock_hass):
         """Test configuration validation workflow."""
-        from ha_synthetic_sensors.config_manager import (
-            Config,
-            ConfigManager,
-            FormulaConfig,
-            SensorConfig,
-        )
+        from ha_synthetic_sensors.config_manager import Config, ConfigManager, FormulaConfig, SensorConfig
 
         ConfigManager(mock_hass)
         config = Config()

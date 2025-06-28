@@ -177,7 +177,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # Set up dependency tracking
         if self._dependencies:
-            self._update_listeners.append(async_track_state_change_event(self._hass, list(self._dependencies), self._handle_dependency_change))
+            self._update_listeners.append(
+                async_track_state_change_event(self._hass, list(self._dependencies), self._handle_dependency_change)
+            )
 
         # Initial evaluation
         await self._async_update_sensor()
@@ -263,11 +265,16 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 self._attr_native_value = None
                 self._attr_available = False
                 self._last_update = dt_util.utcnow()
-                _LOGGER.debug("Sensor %s set to unavailable due to unknown dependencies", self.entity_id)
+                _LOGGER.debug(
+                    "Sensor %s set to unavailable due to unknown dependencies",
+                    self.entity_id,
+                )
             else:
                 self._attr_available = False
                 error_msg = main_result.get("error", "Unknown evaluation error")
-                _LOGGER.warning("Formula evaluation failed for %s: %s", self.entity_id, error_msg)
+                # Treat formula evaluation failure as a fatal error
+                _LOGGER.error("Formula evaluation failed for %s: %s", self.entity_id, error_msg)
+                raise Exception(f"Formula evaluation failed for {self.entity_id}: {error_msg}")
 
             # Schedule entity update
             self.async_write_ha_state()
@@ -371,7 +378,10 @@ class SensorManager:
         self._current_config: Config | None = None
 
         # Initialize components - use parent-provided instances if available
-        self._evaluator = self._manager_config.evaluator or Evaluator(self._hass, data_provider_callback=self._manager_config.data_provider_callback)
+        self._evaluator = self._manager_config.evaluator or Evaluator(
+            self._hass,
+            data_provider_callback=self._manager_config.data_provider_callback,
+        )
         self._config_manager = self._manager_config.config_manager
         self._logger = _LOGGER.getChild(self.__class__.__name__)
 
@@ -475,7 +485,7 @@ class SensorManager:
         self._sensors_by_entity_id.pop(sensor.entity_id, None)
         self._sensor_states.pop(sensor_unique_id, None)
 
-        _LOGGER.info(f"Removed sensor: {sensor_unique_id}")
+        _LOGGER.debug(f"Removed sensor: {sensor_unique_id}")
         return True
 
     def get_sensor_statistics(self) -> dict[str, Any]:
@@ -534,7 +544,7 @@ class SensorManager:
         # Add entities to Home Assistant
         if new_entities:
             self._add_entities_callback(new_entities)
-            _LOGGER.info(f"Created {len(new_entities)} sensor entities")
+            _LOGGER.debug(f"Created {len(new_entities)} sensor entities")
 
     async def _create_sensor_entity(self, sensor_config: SensorConfig) -> DynamicSensor:
         """Create a sensor entity from configuration."""
@@ -545,7 +555,13 @@ class SensorManager:
             device_info = self._get_existing_device_info(sensor_config.device_identifier)
 
             # If device doesn't exist and we have device metadata, create it
-            if not device_info and any([sensor_config.device_name, sensor_config.device_manufacturer, sensor_config.device_model]):
+            if not device_info and any(
+                [
+                    sensor_config.device_name,
+                    sensor_config.device_manufacturer,
+                    sensor_config.device_model,
+                ]
+            ):
                 device_info = self._create_new_device_info(sensor_config)
 
         # Create manager config with device info
@@ -592,7 +608,7 @@ class SensorManager:
         # Add new entities
         if new_entities:
             self._add_entities_callback(new_entities)
-            _LOGGER.info(f"Added {len(new_entities)} new sensor entities")
+            _LOGGER.debug(f"Added {len(new_entities)} new sensor entities")
 
     async def _update_sensor_config(self, old_config: SensorConfig, new_config: SensorConfig) -> None:
         """Update an existing sensor with new configuration."""
@@ -616,7 +632,7 @@ class SensorManager:
 
     async def create_sensors(self, config: Config) -> list[DynamicSensor]:
         """Create sensors from configuration - public interface for testing."""
-        _LOGGER.info(f"Creating sensors from config with {len(config.sensors)} sensor configs")
+        _LOGGER.debug(f"Creating sensors from config with {len(config.sensors)} sensor configs")
 
         all_created_sensors = []
 
@@ -628,7 +644,7 @@ class SensorManager:
                 self._sensors_by_unique_id[sensor_config.unique_id] = sensor
                 self._sensors_by_entity_id[sensor.entity_id] = sensor
 
-        _LOGGER.info(f"Created {len(all_created_sensors)} sensor entities")
+        _LOGGER.debug(f"Created {len(all_created_sensors)} sensor entities")
         return all_created_sensors
 
     def update_sensor_states(
@@ -677,7 +693,7 @@ class SensorManager:
         Args:
             entity_ids: Set of entity IDs that the integration can provide data for
         """
-        _LOGGER.info("Registered %d entities for integration data provider", len(entity_ids))
+        _LOGGER.debug("Registered %d entities for integration data provider", len(entity_ids))
 
         # Store the registered entities
         self._registered_entities = entity_ids.copy()

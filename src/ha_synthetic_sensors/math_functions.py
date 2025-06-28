@@ -179,6 +179,72 @@ class MathFunctions:
         return sum((x - mean_val) ** 2 for x in numeric_values) / len(numeric_values)
 
     @staticmethod
+    def safe_sum(*values: Any) -> float:
+        """Calculate the sum of values, returning 0 for empty collections.
+
+        Args:
+            *values: Variable number of numeric values or single iterable
+
+        Returns:
+            Sum of values, 0.0 if no values provided
+        """
+        if not values:
+            return 0.0
+
+        # Handle case where a single iterable is passed
+        if len(values) == 1 and hasattr(values[0], "__iter__") and not isinstance(values[0], str):
+            values = tuple(values[0])
+
+        if not values:
+            return 0.0
+
+        return sum(float(v) for v in values)
+
+    @staticmethod
+    def safe_min(*values: Any) -> float:
+        """Calculate the minimum of values, returning 0 for empty collections.
+
+        Args:
+            *values: Variable number of numeric values or single iterable
+
+        Returns:
+            Minimum value, 0.0 if no values provided
+        """
+        if not values:
+            return 0.0
+
+        # Handle case where a single iterable is passed
+        if len(values) == 1 and hasattr(values[0], "__iter__") and not isinstance(values[0], str):
+            values = tuple(values[0])
+
+        if not values:
+            return 0.0
+
+        return min(float(v) for v in values)
+
+    @staticmethod
+    def safe_max(*values: Any) -> float:
+        """Calculate the maximum of values, returning 0 for empty collections.
+
+        Args:
+            *values: Variable number of numeric values or single iterable
+
+        Returns:
+            Maximum value, 0.0 if no values provided
+        """
+        if not values:
+            return 0.0
+
+        # Handle case where a single iterable is passed
+        if len(values) == 1 and hasattr(values[0], "__iter__") and not isinstance(values[0], str):
+            values = tuple(values[0])
+
+        if not values:
+            return 0.0
+
+        return max(float(v) for v in values)
+
+    @staticmethod
     def get_builtin_functions() -> dict[str, Callable[..., Any]]:
         """Get all mathematical functions available for formula evaluation.
 
@@ -188,10 +254,10 @@ class MathFunctions:
         return {
             # Basic math
             "abs": abs,
-            "min": min,
-            "max": max,
+            "min": MathFunctions.safe_min,
+            "max": MathFunctions.safe_max,
             "round": round,
-            "sum": sum,
+            "sum": MathFunctions.safe_sum,
             "float": float,
             "int": int,
             # Advanced math

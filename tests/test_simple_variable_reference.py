@@ -7,7 +7,17 @@ from ha_synthetic_sensors.schema_validator import SchemaValidator
 
 def test_simple_variable_reference() -> None:
     """Test that a formula can be just a simple variable reference."""
-    config: dict[str, Any] = {"version": "1.0", "sensors": {"simple_passthrough": {"name": "Simple Passthrough Sensor", "formula": "source_value", "variables": {"source_value": "sensor.original_sensor"}, "unit_of_measurement": "W"}}}  # Just the variable name
+    config: dict[str, Any] = {
+        "version": "1.0",
+        "sensors": {
+            "simple_passthrough": {
+                "name": "Simple Passthrough Sensor",
+                "formula": "source_value",
+                "variables": {"source_value": "sensor.original_sensor"},
+                "unit_of_measurement": "W",
+            }
+        },
+    }  # Just the variable name
 
     validator = SchemaValidator()
     result = validator.validate_config(config)
@@ -28,7 +38,17 @@ def test_various_simple_references() -> None:
     ]
 
     for i, config_data in enumerate(configs):
-        config: dict[str, Any] = {"version": "1.0", "sensors": {f"test_sensor_{i}": {"name": f"Test Sensor {i}", "formula": config_data["formula"], "variables": config_data["variables"], "unit_of_measurement": "test"}}}
+        config: dict[str, Any] = {
+            "version": "1.0",
+            "sensors": {
+                f"test_sensor_{i}": {
+                    "name": f"Test Sensor {i}",
+                    "formula": config_data["formula"],
+                    "variables": config_data["variables"],
+                    "unit_of_measurement": "test",
+                }
+            },
+        }
 
         validator = SchemaValidator()
         result = validator.validate_config(config)

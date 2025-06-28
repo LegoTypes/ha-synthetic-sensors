@@ -29,24 +29,68 @@ class TestStateAndAttributeORIntegration:
 
         mock_states = {
             # Entities with battery_level attributes
-            "sensor.phone_battery": Mock(state="85", entity_id="sensor.phone_battery", attributes={"battery_level": 15, "device_class": "battery"}),
-            "sensor.tablet_battery": Mock(state="25", entity_id="sensor.tablet_battery", attributes={"battery_level": 25, "device_class": "battery"}),
-            "sensor.laptop_battery": Mock(state="92", entity_id="sensor.laptop_battery", attributes={"battery_level": 92, "device_class": "battery"}),
+            "sensor.phone_battery": Mock(
+                state="85",
+                entity_id="sensor.phone_battery",
+                attributes={"battery_level": 15, "device_class": "battery"},
+            ),
+            "sensor.tablet_battery": Mock(
+                state="25",
+                entity_id="sensor.tablet_battery",
+                attributes={"battery_level": 25, "device_class": "battery"},
+            ),
+            "sensor.laptop_battery": Mock(
+                state="92",
+                entity_id="sensor.laptop_battery",
+                attributes={"battery_level": 92, "device_class": "battery"},
+            ),
             # Entities with online attributes
-            "sensor.router_status": Mock(state="connected", entity_id="sensor.router_status", attributes={"online": False}),
-            "sensor.server_status": Mock(state="active", entity_id="sensor.server_status", attributes={"online": True}),
-            "sensor.camera_status": Mock(state="offline", entity_id="sensor.camera_status", attributes={"online": False}),
+            "sensor.router_status": Mock(
+                state="connected",
+                entity_id="sensor.router_status",
+                attributes={"online": False},
+            ),
+            "sensor.server_status": Mock(
+                state="active",
+                entity_id="sensor.server_status",
+                attributes={"online": True},
+            ),
+            "sensor.camera_status": Mock(
+                state="offline",
+                entity_id="sensor.camera_status",
+                attributes={"online": False},
+            ),
             # Entities with high numeric states (for state: testing)
-            "sensor.power_meter": Mock(state="150", entity_id="sensor.power_meter", attributes={"device_class": "power"}),
-            "sensor.temperature_sensor": Mock(state="25", entity_id="sensor.temperature_sensor", attributes={"device_class": "temperature"}),
-            "sensor.humidity_sensor": Mock(state="45", entity_id="sensor.humidity_sensor", attributes={"device_class": "humidity"}),
+            "sensor.power_meter": Mock(
+                state="150",
+                entity_id="sensor.power_meter",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.temperature_sensor": Mock(
+                state="25",
+                entity_id="sensor.temperature_sensor",
+                attributes={"device_class": "temperature"},
+            ),
+            "sensor.humidity_sensor": Mock(
+                state="45",
+                entity_id="sensor.humidity_sensor",
+                attributes={"device_class": "humidity"},
+            ),
             # Entities with "on" states
             "light.living_room": Mock(state="on", entity_id="light.living_room", attributes={}),
             "switch.garden_light": Mock(state="on", entity_id="switch.garden_light", attributes={}),
             "switch.fan": Mock(state="off", entity_id="switch.fan", attributes={}),
             # Mixed entities for comprehensive testing
-            "sensor.mixed_device_1": Mock(state="120", entity_id="sensor.mixed_device_1", attributes={"battery_level": 5, "online": True}),
-            "sensor.mixed_device_2": Mock(state="on", entity_id="sensor.mixed_device_2", attributes={"battery_level": 90, "online": False}),
+            "sensor.mixed_device_1": Mock(
+                state="120",
+                entity_id="sensor.mixed_device_1",
+                attributes={"battery_level": 5, "online": True},
+            ),
+            "sensor.mixed_device_2": Mock(
+                state="on",
+                entity_id="sensor.mixed_device_2",
+                attributes={"battery_level": 90, "online": False},
+            ),
         }
 
         hass.states.entity_ids.return_value = list(mock_states.keys())
@@ -57,7 +101,11 @@ class TestStateAndAttributeORIntegration:
     @pytest.fixture
     def collection_resolver(self, mock_hass):
         """Create a collection resolver instance with mocked dependencies."""
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get"), patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get"):
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+        ):
             return CollectionResolver(mock_hass)
 
     @pytest.fixture
@@ -115,7 +163,11 @@ class TestStateAndAttributeORIntegration:
         """Test resolution of attribute OR patterns."""
         from ha_synthetic_sensors.dependency_parser import DynamicQuery
 
-        query = DynamicQuery(query_type="attribute", pattern="battery_level<20|online=false", function="count")
+        query = DynamicQuery(
+            query_type="attribute",
+            pattern="battery_level<20|online=false",
+            function="count",
+        )
 
         entities = collection_resolver.resolve_collection(query)
 
@@ -156,7 +208,11 @@ class TestStateAndAttributeORIntegration:
         from ha_synthetic_sensors.dependency_parser import DynamicQuery
 
         # Test multiple conditions
-        query = DynamicQuery(query_type="attribute", pattern="battery_level<30|battery_level>90|online=true", function="count")
+        query = DynamicQuery(
+            query_type="attribute",
+            pattern="battery_level<30|battery_level>90|online=true",
+            function="count",
+        )
 
         entities = collection_resolver.resolve_collection(query)
 

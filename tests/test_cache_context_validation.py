@@ -30,9 +30,19 @@ class TestCacheContextValidation:
         evaluator = Evaluator(mock_hass)
 
         # Two sensors with identical formula text but different variable mappings
-        config1 = FormulaConfig(id="sensor_1", name="Power Sensor A", formula="power_reading + 100", variables={"power_reading": "sensor.power_meter_a"})  # Same formula text  # Different entity
+        config1 = FormulaConfig(
+            id="sensor_1",
+            name="Power Sensor A",
+            formula="power_reading + 100",
+            variables={"power_reading": "sensor.power_meter_a"},
+        )  # Same formula text  # Different entity
 
-        config2 = FormulaConfig(id="sensor_2", name="Power Sensor B", formula="power_reading + 100", variables={"power_reading": "sensor.power_meter_b"})  # Same formula text  # Different entity
+        config2 = FormulaConfig(
+            id="sensor_2",
+            name="Power Sensor B",
+            formula="power_reading + 100",
+            variables={"power_reading": "sensor.power_meter_b"},
+        )  # Same formula text  # Different entity
 
         # Evaluate with different contexts (simulating different entity values)
         context1: dict[str, Any] = {"power_reading": 200}  # From sensor.power_meter_a
@@ -52,7 +62,15 @@ class TestCacheContextValidation:
         evaluator = Evaluator(mock_hass)
 
         # Same sensor evaluated at different times with different values
-        config = FormulaConfig(id="power_sensor", name="Power Sensor", formula="current_power * efficiency_factor", variables={"current_power": "sensor.power_meter", "efficiency_factor": "input_number.efficiency"})
+        config = FormulaConfig(
+            id="power_sensor",
+            name="Power Sensor",
+            formula="current_power * efficiency_factor",
+            variables={
+                "current_power": "sensor.power_meter",
+                "efficiency_factor": "input_number.efficiency",
+            },
+        )
 
         # First evaluation
         context1: dict[str, Any] = {"current_power": 1000, "efficiency_factor": 0.9}
@@ -129,10 +147,17 @@ class TestCacheContextValidation:
         evaluator = Evaluator(mock_hass)
 
         # Formula with variables
-        config1 = FormulaConfig(id="with_variables", name="With Variables", formula="power_input + 50", variables={"power_input": "sensor.power_meter"})
+        config1 = FormulaConfig(
+            id="with_variables",
+            name="With Variables",
+            formula="power_input + 50",
+            variables={"power_input": "sensor.power_meter"},
+        )
 
         # Formula with same resolved content but no variables
-        config2 = FormulaConfig(id="resolved_formula", name="Resolved Formula", formula="100 + 50")  # Equivalent to power_input=100 + 50
+        config2 = FormulaConfig(
+            id="resolved_formula", name="Resolved Formula", formula="100 + 50"
+        )  # Equivalent to power_input=100 + 50
 
         # Evaluate first with context
         context: dict[str, Any] = {"power_input": 100}

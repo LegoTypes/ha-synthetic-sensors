@@ -22,11 +22,7 @@ import operator
 import re
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import (
-    area_registry as ar,
-    device_registry as dr,
-    entity_registry as er,
-)
+from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 
 from .dependency_parser import DynamicQuery
 
@@ -56,7 +52,9 @@ class CollectionResolver:
             self._area_registry = None
 
         # Pattern for detecting entity references within collection patterns
-        self._entity_reference_pattern = re.compile(r"\b(?:sensor|binary_sensor|input_number|input_boolean|input_select|input_text|switch|light|climate|cover|fan|lock|alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|zone|automation|script|scene|group|timer|counter|sun)\.[a-zA-Z0-9_.]+\b")
+        self._entity_reference_pattern = re.compile(
+            r"\b(?:sensor|binary_sensor|input_number|input_boolean|input_select|input_text|switch|light|climate|cover|fan|lock|alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|zone|automation|script|scene|group|timer|counter|sun)\.[a-zA-Z0-9_.]+\b"
+        )
 
     def resolve_collection(self, query: DynamicQuery) -> list[str]:
         """Resolve a dynamic query to a list of matching entity IDs.
@@ -87,8 +85,14 @@ class CollectionResolver:
         elif query.query_type == "state":
             return self._resolve_state_pattern(resolved_pattern)
         else:
-            _LOGGER.warning("Unknown collection query type: %s", query.query_type)
-            return []
+            # Unknown collection query type - this is a configuration error
+            _LOGGER.error("Unknown collection query type: %s", query.query_type)
+            from .exceptions import InvalidCollectionPatternError
+
+            raise InvalidCollectionPatternError(
+                query.query_type,
+                f"Query type '{query.query_type}' is not supported. Supported types are: regex, device_class, area, tags",
+            )
 
     def _resolve_entity_references_in_pattern(self, pattern: str) -> str:
         """Resolve entity references within a collection pattern.
@@ -108,11 +112,18 @@ class CollectionResolver:
             entity_id = match.group(0)
             state = self._hass.states.get(entity_id)
             if state is not None:
-                _LOGGER.debug("Resolving entity reference '%s' to value '%s'", entity_id, state.state)
+                _LOGGER.debug(
+                    "Resolving entity reference '%s' to value '%s'",
+                    entity_id,
+                    state.state,
+                )
                 return str(state.state)
             else:
-                _LOGGER.warning("Entity reference '%s' not found, keeping original", entity_id)
-                return entity_id
+                # Entity reference not found - this is a configuration error
+                _LOGGER.error("Entity reference '%s' not found - entity does not exist", entity_id)
+                from .exceptions import MissingDependencyError
+
+                raise MissingDependencyError(f"Entity reference '{entity_id}' not found in collection pattern")
 
         # Replace all entity references in the pattern
         resolved_pattern = self._entity_reference_pattern.sub(replace_entity_ref, pattern)
@@ -169,7 +180,11 @@ class CollectionResolver:
                 if entity_device_class in device_classes:
                     matching_entities.append(entity_id)
 
-        _LOGGER.debug("Device class pattern '%s' matched %d entities", pattern, len(matching_entities))
+        _LOGGER.debug(
+            "Device class pattern '%s' matched %d entities",
+            pattern,
+            len(matching_entities),
+        )
         return matching_entities
 
     def _resolve_tags_pattern(self, pattern: str) -> list[str]:
@@ -184,7 +199,8 @@ class CollectionResolver:
         matching_entities: list[str] = []
 
         if not self._entity_registry:
-            _LOGGER.warning("Entity registry not available for tags pattern resolution")
+            # Entity registry not available - this is a configuration/initialization error
+            _LOGGER.error("Entity registry not available for tags pattern resolution - collection will be empty")
             return matching_entities
 
         # Split by pipe (|) for OR logic
@@ -212,7 +228,8 @@ class CollectionResolver:
         matching_entities: list[str] = []
 
         if not self._area_registry or not self._entity_registry:
-            _LOGGER.warning("Area or entity registry not available for area pattern resolution")
+            # Area or entity registry not available - this is a configuration/initialization error
+            _LOGGER.error("Area or entity registry not available for area pattern resolution - collection will be empty")
             return matching_entities
 
         # Split by pipe (|) for OR logic
@@ -275,7 +292,11 @@ class CollectionResolver:
             condition_matches = self._resolve_single_attribute_condition(condition, matching_entities)
             matching_entities.extend(condition_matches)
 
-        _LOGGER.debug("Attribute pattern '%s' matched %d entities", pattern, len(matching_entities))
+        _LOGGER.debug(
+            "Attribute pattern '%s' matched %d entities",
+            pattern,
+            len(matching_entities),
+        )
         return matching_entities
 
     def _resolve_single_attribute_condition(self, condition: str, existing_matches: list[str]) -> list[str]:
@@ -293,7 +314,8 @@ class CollectionResolver:
         # Parse the condition
         parsed = self._parse_attribute_condition(condition)
         if not parsed:
-            _LOGGER.warning("Invalid attribute condition '%s'", condition)
+            # Invalid attribute condition - this is a configuration error
+            _LOGGER.error("Invalid attribute condition '%s' - check syntax", condition)
             return matches
 
         attribute_name, op, expected_value = parsed
@@ -326,7 +348,13 @@ class CollectionResolver:
                 return attribute_name, op, expected_value
         return None
 
-    def _entity_matches_attribute_condition(self, entity_id: str, attribute_name: str, op: str, expected_value: bool | float | int | str) -> bool:
+    def _entity_matches_attribute_condition(
+        self,
+        entity_id: str,
+        attribute_name: str,
+        op: str,
+        expected_value: bool | float | int | str,
+    ) -> bool:
         """Check if an entity matches an attribute condition.
 
         Args:
@@ -412,7 +440,8 @@ class CollectionResolver:
         # Parse the condition
         parsed = self._parse_state_condition(condition)
         if not parsed:
-            _LOGGER.warning("Invalid state condition '%s'", condition)
+            # Invalid state condition - this is a configuration error
+            _LOGGER.error("Invalid state condition '%s' - check syntax", condition)
             return matches
 
         op, expected_value = parsed

@@ -43,4 +43,4 @@ sensors:
     name: "Comprehensive Area Analysis"
     formula: 'sum("area:bedroom|bathroom") + count("area:office|study")'
     unit_of_measurement: "count"
-    state_class: "measurement" 
+    state_class: "measurement"

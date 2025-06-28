@@ -14,11 +14,7 @@ import pytest
 from ha_synthetic_sensors.config_manager import Config, FormulaConfig, SensorConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.name_resolver import NameResolver
-from ha_synthetic_sensors.sensor_manager import (
-    DynamicSensor,
-    SensorManager,
-    SensorState,
-)
+from ha_synthetic_sensors.sensor_manager import DynamicSensor, SensorManager, SensorState
 
 
 class TestSensorState:

@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
+
 from ha_synthetic_sensors.collection_resolver import CollectionResolver
 from ha_synthetic_sensors.dependency_parser import DependencyParser, DynamicQuery
 from ha_synthetic_sensors.evaluator import Evaluator
@@ -123,12 +125,36 @@ class TestCollectionResolver:
 
         # Mock states for testing
         self.mock_states = {
-            "sensor.circuit_a_power": Mock(state="150.5", entity_id="sensor.circuit_a_power", attributes={"device_class": "power"}),
-            "sensor.circuit_b_power": Mock(state="225.3", entity_id="sensor.circuit_b_power", attributes={"device_class": "power"}),
-            "sensor.kitchen_temperature": Mock(state="22.5", entity_id="sensor.kitchen_temperature", attributes={"device_class": "temperature"}),
-            "sensor.living_room_temperature": Mock(state="21.8", entity_id="sensor.living_room_temperature", attributes={"device_class": "temperature"}),
-            "sensor.battery_device": Mock(state="85", entity_id="sensor.battery_device", attributes={"battery_level": 85}),
-            "sensor.low_battery_device": Mock(state="15", entity_id="sensor.low_battery_device", attributes={"battery_level": 15}),
+            "sensor.circuit_a_power": Mock(
+                state="150.5",
+                entity_id="sensor.circuit_a_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.circuit_b_power": Mock(
+                state="225.3",
+                entity_id="sensor.circuit_b_power",
+                attributes={"device_class": "power"},
+            ),
+            "sensor.kitchen_temperature": Mock(
+                state="22.5",
+                entity_id="sensor.kitchen_temperature",
+                attributes={"device_class": "temperature"},
+            ),
+            "sensor.living_room_temperature": Mock(
+                state="21.8",
+                entity_id="sensor.living_room_temperature",
+                attributes={"device_class": "temperature"},
+            ),
+            "sensor.battery_device": Mock(
+                state="85",
+                entity_id="sensor.battery_device",
+                attributes={"battery_level": 85},
+            ),
+            "sensor.low_battery_device": Mock(
+                state="15",
+                entity_id="sensor.low_battery_device",
+                attributes={"battery_level": 15},
+            ),
         }
 
         # Set up states mock
@@ -136,7 +162,11 @@ class TestCollectionResolver:
         self.mock_hass.states.get.side_effect = lambda entity_id: self.mock_states.get(entity_id)
 
         # Create resolver with mocked HA
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get"), patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get"):
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+        ):
             self.resolver = CollectionResolver(self.mock_hass)
 
     def test_resolve_regex_pattern(self):
@@ -198,11 +228,13 @@ class TestCollectionResolver:
 
     def test_unknown_query_type(self):
         """Test handling of unknown query types."""
-        query = DynamicQuery(query_type="unknown_type", pattern="test", function="sum")
-        entities = self.resolver.resolve_collection(query)
+        from ha_synthetic_sensors.exceptions import InvalidCollectionPatternError
 
-        # Should return empty list for unknown query types
-        assert entities == []
+        query = DynamicQuery(query_type="unknown_type", pattern="test", function="sum")
+
+        # Should raise InvalidCollectionPatternError for unknown query types
+        with pytest.raises(InvalidCollectionPatternError):
+            self.resolver.resolve_collection(query)
 
 
 class TestMathFunctions:
@@ -270,7 +302,11 @@ class TestFormulaPreprocessing:
         self.mock_hass.data = {}
 
         # Mock successful registry initialization
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get"), patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get"):
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+        ):
             self.evaluator = Evaluator(self.mock_hass)
 
     def test_preprocess_formula_no_collection_functions(self):
@@ -310,6 +346,7 @@ class TestFormulaPreprocessing:
         # Mock the collection resolver directly on the instance
         mock_resolver = Mock()
         mock_resolver.resolve_collection.return_value = []
+        mock_resolver.get_entity_values.return_value = []
         self.evaluator._collection_resolver = mock_resolver
 
         formula = 'sum("regex:sensor\\.nonexistent.*")'
@@ -332,4 +369,5 @@ class TestFormulaPreprocessing:
 
         # Should replace with default value for sum (new behavior)
         expected = "0"
+        assert result == expected
         assert result == expected

@@ -3,7 +3,7 @@
 version: "1.0"
 
 sensors:
-  # Mixed data sources - integration data + HA entities  
+  # Mixed data sources - integration data + HA entities
   hybrid_power_analysis:
     name: "Hybrid Power Analysis"
     formula: "local_meter_power + grid_power + solar_power"
@@ -14,7 +14,7 @@ sensors:
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
-    
+
   # Purely integration data
   internal_efficiency:
     name: "Internal Efficiency"
@@ -25,7 +25,7 @@ sensors:
     unit_of_measurement: "%"
     device_class: "power_factor"
     state_class: "measurement"
-    
+
   # Purely HA data
   external_power_sum:
     name: "External Power Sum"
@@ -36,7 +36,7 @@ sensors:
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"
-    
+
   # Complex mixed with attributes
   comprehensive_analysis:
     name: "Comprehensive Analysis"

@@ -10,7 +10,16 @@ from ha_synthetic_sensors.schema_validator import SchemaValidator
 def test_unique_id_allows_hyphens() -> None:
     """Test that unique_id pattern allows hyphens, matching real Span device examples."""
     # Using actual Span device unique IDs from the registry
-    config: dict[str, Any] = {"version": "1.0", "sensors": {"span_nj-4919-005k6_select_795e8eddb4f448af9625130332a41df8": {"name": "Test Sensor with Hyphens", "formula": "5 + 3", "unit_of_measurement": "test"}}}
+    config: dict[str, Any] = {
+        "version": "1.0",
+        "sensors": {
+            "span_nj-4919-005k6_select_795e8eddb4f448af9625130332a41df8": {
+                "name": "Test Sensor with Hyphens",
+                "formula": "5 + 3",
+                "unit_of_measurement": "test",
+            }
+        },
+    }
 
     validator = SchemaValidator()
     result = validator.validate_config(config)
@@ -49,7 +58,16 @@ def test_unique_id_patterns() -> None:
     ]
 
     for pattern in valid_patterns:
-        config: dict[str, Any] = {"version": "1.0", "sensors": {pattern: {"name": f"Test sensor {pattern}", "formula": "5 + 3", "unit_of_measurement": "test"}}}
+        config: dict[str, Any] = {
+            "version": "1.0",
+            "sensors": {
+                pattern: {
+                    "name": f"Test sensor {pattern}",
+                    "formula": "5 + 3",
+                    "unit_of_measurement": "test",
+                }
+            },
+        }
 
         validator = SchemaValidator()
         result = validator.validate_config(config)

@@ -20,6 +20,7 @@ from typing import Any, cast
 
 from homeassistant.core import HomeAssistant, State
 
+from .data_validation import validate_data_provider_result, validate_entity_state_value
 from .exceptions import NonNumericStateError
 from .types import ContextValue, DataProviderCallback
 
@@ -91,8 +92,12 @@ class ContextResolutionStrategy(VariableResolutionStrategy):
             if isinstance(value, (int, float)):
                 return value, True, "context"
             else:
-                _LOGGER.warning("Context variable '%s' has non-numeric value '%s', skipping", variable_name, value)
-                return None, False, "context"
+                from .exceptions import MissingDependencyError
+
+                raise MissingDependencyError(
+                    f"Context variable '{variable_name}' has non-numeric value '{value}' - "
+                    "all context variables must be numeric for use in formulas"
+                )
         return None, False, "context"
 
 
@@ -135,12 +140,15 @@ class IntegrationResolutionStrategy(VariableResolutionStrategy):
         """Resolve variable using integration callback."""
         target_entity = entity_id or variable_name
 
-        try:
-            result = self._data_provider_callback(target_entity)
-            return result["value"], result["exists"], "integration"
-        except Exception as e:
-            _LOGGER.warning("Error calling data provider callback for '%s': %s", target_entity, e)
-            return None, False, "integration"
+        # Call data provider and validate result (let exceptions be fatal)
+        result = self._data_provider_callback(target_entity)
+        validated_result = validate_data_provider_result(result, f"integration data provider for '{target_entity}'")
+
+        # If entity exists, validate the state value too (per strict error handling requirements)
+        if validated_result["exists"]:
+            validate_entity_state_value(validated_result["value"], target_entity)
+
+        return validated_result["value"], validated_result["exists"], "integration"
 
 
 class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
@@ -193,7 +201,10 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
             elif state_str in ("off", "false", "closed", "away"):
                 return 0.0
             else:
-                raise NonNumericStateError(state.state, f"Cannot convert state '{state.state}' to numeric value") from None
+                raise NonNumericStateError(
+                    state.state,
+                    f"Cannot convert state '{state.state}' to numeric value",
+                ) from None
 
 
 class VariableResolver:

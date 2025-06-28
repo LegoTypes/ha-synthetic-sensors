@@ -49,9 +49,9 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "Run black format",
+			"label": "Run ruff format",
 			"type": "shell",
-			"command": "poetry run black --line-length 88 .",
+			"command": "poetry run ruff format .",
 			"group": "test",
 			"options": {
 				"cwd": "${workspaceFolder}"

@@ -55,7 +55,9 @@ sensors:
     result = validator.validate_config(config)
 
     assert result["valid"] is False, "Schema should reject 'state_formula' field"
-    assert any("state_formula" in str(error).lower() or "additional properties" in str(error).lower() for error in result["errors"]), f"Expected error about state_formula, got: {result['errors']}"
+    assert any(
+        "state_formula" in str(error).lower() or "additional properties" in str(error).lower() for error in result["errors"]
+    ), f"Expected error about state_formula, got: {result['errors']}"
 
 
 def test_schema_requires_formula_field() -> None:
@@ -75,4 +77,7 @@ sensors:
     result = validator.validate_config(config)
 
     assert result["valid"] is False, "Schema should require 'formula' field"
-    assert any("formula" in str(error).lower() and ("required" in str(error).lower() or "missing" in str(error).lower()) for error in result["errors"]), f"Expected error about missing formula, got: {result['errors']}"
+    assert any(
+        "formula" in str(error).lower() and ("required" in str(error).lower() or "missing" in str(error).lower())
+        for error in result["errors"]
+    ), f"Expected error about missing formula, got: {result['errors']}"

@@ -17,4 +17,4 @@ sensors:
     variables:
       battery_devices: "device_class:battery"
     unit_of_measurement: "devices"
-    state_class: "measurement" 
+    state_class: "measurement"

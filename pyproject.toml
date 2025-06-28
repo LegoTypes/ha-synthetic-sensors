@@ -27,7 +27,6 @@ pytest-cov = "^6.0.0"
 bandit = "^1.8.5"
 twine = "^6.0.1"
 pre-commit = "^4.0.0"
-black = "^25.1.0"
 ruff = "^0.12.0"
 mypy = "^1.15.0"
 radon = "*"
@@ -43,6 +42,7 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
+line-length = 128
 exclude = [
     ".*_cache/",
     "dist/",
@@ -66,11 +66,6 @@ select = [
 
 ignore = [
     "E501",   # line too long - following Home Assistant's approach
-    # May conflict with the formatter
-    "W191",
-    "E111",
-    "E114",
-    "E117",
 ]
 
 [tool.ruff.lint.isort]
@@ -139,6 +134,3 @@ exclude_lines = [
 
 [tool.bandit]
 exclude_dirs = ["tests"]
-
-[tool.black]
-line-length = 999  # Effectively disable line length restrictions (following HA approach)

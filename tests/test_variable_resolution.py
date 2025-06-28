@@ -52,7 +52,18 @@ class TestVariableResolution:
         evaluator = Evaluator(mock_hass)
 
         # Create a formula config similar to SPAN Panel solar sensors
-        config = FormulaConfig(id="solar_power", name="Solar Inverter Power", formula="leg1_power + leg2_power", variables={"leg1_power": "sensor.span_panel_circuit_30_power", "leg2_power": "sensor.span_panel_circuit_32_power"}, unit_of_measurement="W", device_class="power", state_class="measurement")
+        config = FormulaConfig(
+            id="solar_power",
+            name="Solar Inverter Power",
+            formula="leg1_power + leg2_power",
+            variables={
+                "leg1_power": "sensor.span_panel_circuit_30_power",
+                "leg2_power": "sensor.span_panel_circuit_32_power",
+            },
+            unit_of_measurement="W",
+            device_class="power",
+            state_class="measurement",
+        )
 
         # Test 1: Automatic variable resolution should work now
         result_auto_resolution = evaluator.evaluate_formula(config)
@@ -73,7 +84,20 @@ class TestVariableResolution:
     def test_dynamic_sensor_variable_resolution(self, mock_hass, config_manager):
         """Test that DynamicSensor correctly resolves variables from formula config."""
         # Create a sensor configuration with variables
-        sensor_config_data = {"solar_inverter_power": {"name": "Solar Inverter Power", "entity_id": "sensor.solar_inverter_power", "formula": "leg1_power + leg2_power", "variables": {"leg1_power": "sensor.span_panel_circuit_30_power", "leg2_power": "sensor.span_panel_circuit_32_power"}, "unit_of_measurement": "W", "device_class": "power", "state_class": "measurement"}}
+        sensor_config_data = {
+            "solar_inverter_power": {
+                "name": "Solar Inverter Power",
+                "entity_id": "sensor.solar_inverter_power",
+                "formula": "leg1_power + leg2_power",
+                "variables": {
+                    "leg1_power": "sensor.span_panel_circuit_30_power",
+                    "leg2_power": "sensor.span_panel_circuit_32_power",
+                },
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+            }
+        }
 
         # Parse the configuration
         yaml_config = {"version": "1.0", "sensors": sensor_config_data}
@@ -90,7 +114,13 @@ class TestVariableResolution:
         evaluator = Evaluator(mock_hass)
         mock_sensor_manager = MagicMock()
 
-        dynamic_sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager, SensorManagerConfig())
+        dynamic_sensor = DynamicSensor(
+            mock_hass,
+            sensor_config,
+            evaluator,
+            mock_sensor_manager,
+            SensorManagerConfig(),
+        )
 
         # Test the _build_variable_context method
         formula_config = sensor_config.formulas[0]
@@ -115,7 +145,15 @@ class TestVariableResolution:
         """Test variable resolution when one entity is unavailable."""
         evaluator = Evaluator(mock_hass)
 
-        config = FormulaConfig(id="partial_solar", name="Partial Solar", formula="available_power + unavailable_power", variables={"available_power": "sensor.span_panel_circuit_30_power", "unavailable_power": "sensor.unavailable_entity"})
+        config = FormulaConfig(
+            id="partial_solar",
+            name="Partial Solar",
+            formula="available_power + unavailable_power",
+            variables={
+                "available_power": "sensor.span_panel_circuit_30_power",
+                "unavailable_power": "sensor.unavailable_entity",
+            },
+        )
 
         # Create context manually (this is what DynamicSensor._build_variable_context should do)
         context = {}
@@ -138,7 +176,26 @@ class TestVariableResolution:
 
     def test_multiple_formulas_with_different_variables(self, mock_hass, config_manager):
         """Test sensor with multiple formulas that have different variable sets."""
-        sensor_config_data = {"comprehensive_solar": {"name": "Comprehensive Solar Monitor", "formula": "leg1_power + leg2_power", "variables": {"leg1_power": "sensor.span_panel_circuit_30_power", "leg2_power": "sensor.span_panel_circuit_32_power"}, "unit_of_measurement": "W", "attributes": {"efficiency_rating": {"formula": "base_power * efficiency_factor", "variables": {"base_power": "sensor.power_meter", "efficiency_factor": "input_number.efficiency"}}}}}  # Main formula
+        sensor_config_data = {
+            "comprehensive_solar": {
+                "name": "Comprehensive Solar Monitor",
+                "formula": "leg1_power + leg2_power",
+                "variables": {
+                    "leg1_power": "sensor.span_panel_circuit_30_power",
+                    "leg2_power": "sensor.span_panel_circuit_32_power",
+                },
+                "unit_of_measurement": "W",
+                "attributes": {
+                    "efficiency_rating": {
+                        "formula": "base_power * efficiency_factor",
+                        "variables": {
+                            "base_power": "sensor.power_meter",
+                            "efficiency_factor": "input_number.efficiency",
+                        },
+                    }
+                },
+            }
+        }  # Main formula
 
         yaml_config = {"version": "1.0", "sensors": sensor_config_data}
 
@@ -158,7 +215,13 @@ class TestVariableResolution:
         evaluator = Evaluator(mock_hass)
         mock_sensor_manager = MagicMock()
 
-        dynamic_sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager, SensorManagerConfig())
+        dynamic_sensor = DynamicSensor(
+            mock_hass,
+            sensor_config,
+            evaluator,
+            mock_sensor_manager,
+            SensorManagerConfig(),
+        )
 
         # Test context building for both formulas
         main_context = dynamic_sensor._build_variable_context(main_formula)

@@ -248,7 +248,7 @@ class ServiceLayer:
             if self._hass.services.has_service(self._domain, service):
                 self._hass.services.async_remove(self._domain, service)
 
-        _LOGGER.info("Unloaded %s services", self._domain)
+        _LOGGER.debug("Unloaded %s services", self._domain)
 
     async def _async_reload_config(self, call: ServiceCall) -> None:
         """Handle reload config service call."""
@@ -277,39 +277,72 @@ class ServiceLayer:
             _LOGGER.error("Failed to reload configuration: %s", e)
 
     async def _async_update_sensor(self, call: ServiceCall) -> None:
-        """Handle update sensor service call."""
+        """Handle dynamic sensor update service call.
+
+        Triggers a synthetic sensor to re-evaluate its formula(s) and update its state/attributes
+        using current entity values, without requiring a full configuration reload.
+
+        This service performs a "Dynamic Sensor Update":
+        - Re-runs all formulas with current entity states
+        - Updates sensor value and calculated attributes
+        - Handles dependency validation (missing/unavailable entities)
+        - Applies two-tier error handling (fatal vs transitory errors)
+        - Refreshes collection functions (like avg("area:garage device_class:temperature"))
+
+        Use cases:
+        - Manual refresh when suspecting stale data
+        - Debugging formula behavior
+        - Recovery after temporary entity unavailability
+        - Force expensive calculations on-demand
+        - Pick up newly discovered entities in collection patterns
+
+        Note: This only updates sensor values at runtime. Formula changes, units, device_class,
+        etc. require editing the configuration file and calling reload_config service.
+
+        **Dependency Propagation**: When you update a sensor, dependent sensors will catch up
+        through Home Assistant's natural update cycles. For a dependency chain like:
+        Physical Sensor → Sensor A → Sensor B → Sensor C
+
+        If you manually update Sensor A:
+        - Cycle 0: Sensor A updates immediately
+        - Cycle 1: Sensor B updates (sees new Sensor A value)
+        - Cycle 2: Sensor C updates (sees new Sensor B value)
+
+        Total propagation time = (chain_length - 1) x HA_update_interval
+
+        Args:
+            call: Service call containing entity_id and optional parameters for logging
+
+        Service Data:
+            entity_id (required): Entity ID of the synthetic sensor to update
+            formula (optional): Logged only - actual formula changes require config reload
+            unit_of_measurement (optional): Logged only
+            device_class (optional): Logged only
+            ... (other optional parameters are logged but don't change the sensor)
+        """
         try:
             entity_id = call.data["entity_id"]
 
-            # Find the sensor by entity_id and update it
-            # Note: This service updates the underlying configuration, not just state
-            # For runtime updates, services would typically call sensor methods directly
+            _LOGGER.debug("Update sensor service called for entity_id: %s", entity_id)
 
-            _LOGGER.info("Update sensor service called for entity_id: %s", entity_id)
-
-            # Get the sensor entity directly from HA registry if needed
-            # or use the sensor manager to find and update the sensor
-
-            # This is a placeholder - the actual implementation would depend on
-            # whether we're updating config or just triggering a sensor update
-
-            # For now, log the request
+            # Log parameters for debugging
             for key, value in call.data.items():
                 if key != "entity_id":
-                    _LOGGER.info("  %s: %s", key, value)
+                    _LOGGER.debug("  %s: %s", key, value)
 
             # Find the sensor by entity_id and trigger an update
             sensor = self._sensor_manager.get_sensor_by_entity_id(entity_id)
             if sensor:
-                # Force a sensor update/re-evaluation
-                await sensor._async_update_sensor()
-                _LOGGER.info("Triggered update for sensor: %s", entity_id)
+                # Request sensor update through Home Assistant's standard entity update mechanism
+                # This will trigger the sensor's async_update method if it has one
+                await sensor.async_device_update(warning=False)
+                _LOGGER.debug("Triggered update for sensor: %s", entity_id)
 
                 # Log any additional parameters that were requested
                 for key, value in call.data.items():
                     if key != "entity_id":
-                        _LOGGER.info(
-                            "  Parameter %s: %s (logging only - formula updates " "require config changes)",
+                        _LOGGER.debug(
+                            "  Parameter %s: %s (logging only - formula updates require config changes)",
                             key,
                             value,
                         )
@@ -389,7 +422,7 @@ class ServiceLayer:
             dependencies = self._evaluator.get_formula_dependencies(formula)
             variables = dependencies  # In this context, they're the same
 
-            _LOGGER.info("Formula evaluation result: %s = %s", formula, result)
+            _LOGGER.debug("Formula evaluation result: %s = %s", formula, result)
             _LOGGER.debug("Variables: %s, Dependencies: %s", variables, dependencies)
 
             # Store result in hass data for potential retrieval
@@ -497,7 +530,7 @@ class ServiceLayer:
                     [error["message"] for error in validation_result["errors"]],
                 )
             else:
-                _LOGGER.info("Configuration validation passed")
+                _LOGGER.debug("Configuration validation passed")
 
             if validation_result["warnings"]:
                 _LOGGER.warning(
@@ -545,7 +578,11 @@ class ServiceLayer:
                 # Get specific sensor info by entity_id
                 sensor = self._sensor_manager.get_sensor_by_entity_id(entity_id)
                 if sensor:
-                    formula_obj = getattr(sensor, "_formula_config", getattr(sensor, "_main_formula", None))
+                    formula_obj = getattr(
+                        sensor,
+                        "_formula_config",
+                        getattr(sensor, "_main_formula", None),
+                    )
                     formula_str = formula_obj.formula if formula_obj else None
                     dependencies = list(getattr(sensor, "_dependencies", []))
 
@@ -561,10 +598,10 @@ class ServiceLayer:
                         "formula": formula_str,
                         "dependencies": dependencies,
                     }
-                    _LOGGER.info("Retrieved sensor info for entity_id: %s", entity_id)
+                    _LOGGER.debug("Retrieved sensor info for entity_id: %s", entity_id)
                 else:
-                    info = {"error": f"Sensor not found: {entity_id}"}
-                    _LOGGER.warning("Sensor not found for entity_id: %s", entity_id)
+                    _LOGGER.error("Sensor not found for entity_id: %s", entity_id)
+                    raise ValueError(f"Sensor not found: {entity_id}")
             else:
                 # Get all sensors info
                 info = {
@@ -574,7 +611,11 @@ class ServiceLayer:
 
                 all_sensors = self._sensor_manager.get_all_sensor_entities()
                 for sensor in all_sensors:
-                    formula_obj = getattr(sensor, "_formula_config", getattr(sensor, "_main_formula", None))
+                    formula_obj = getattr(
+                        sensor,
+                        "_formula_config",
+                        getattr(sensor, "_main_formula", None),
+                    )
                     formula_str = formula_obj.formula if formula_obj else None
                     dependencies = list(getattr(sensor, "_dependencies", []))
 
@@ -597,7 +638,7 @@ class ServiceLayer:
 
             self._hass.data["synthetic_sensors_info"]["last_result"] = info
 
-            _LOGGER.info("Retrieved sensor info for: %s", entity_id or "all sensors")
+            _LOGGER.debug("Retrieved sensor info for: %s", entity_id or "all sensors")
 
         except Exception as e:
             _LOGGER.error("Failed to get sensor info: %s", e)
@@ -641,7 +682,7 @@ class ServiceLayer:
 
     async def async_unregister_services(self) -> None:
         """Unregister all services from Home Assistant."""
-        _LOGGER.info("Unregistering synthetic sensor services")
+        _LOGGER.debug("Unregistering synthetic sensor services")
 
         # Remove services
         for service_name in [

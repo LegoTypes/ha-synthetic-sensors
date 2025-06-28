@@ -219,7 +219,11 @@ class TestHybridDataAccess:
         # Add the same entity to HA with a different value
         mock_hass.states.get.return_value = Mock(state="999", attributes={})
 
-        formula_config = FormulaConfig(id="test_formula", formula="test_entity", variables={"test_entity": "span.meter_001"})
+        formula_config = FormulaConfig(
+            id="test_formula",
+            formula="test_entity",
+            variables={"test_entity": "span.meter_001"},
+        )
 
         result = evaluator.evaluate_formula(formula_config, {})
 
@@ -237,23 +241,27 @@ class TestHybridDataAccess:
         evaluator.update_integration_entities({"span.meter_001"})
 
         # Create callback that fails for the registered entity
-        def failing_data_provider(entity_id: str) -> tuple[Any, bool]:
+        def failing_data_provider(entity_id: str) -> DataProviderResult:
             if entity_id == "span.meter_001":
-                return None, False  # Integration claimed entity but can't provide it
+                return {"value": None, "exists": False}  # Integration claimed entity but can't provide it
             if entity_id in integration_data:
-                return integration_data[entity_id], True
-            return None, False
+                return {"value": integration_data[entity_id], "exists": True}
+            return {"value": None, "exists": False}
 
         evaluator._data_provider_callback = failing_data_provider
 
-        formula_config = FormulaConfig(id="test_formula_error", formula="test_entity", variables={"test_entity": "span.meter_001"})
+        formula_config = FormulaConfig(
+            id="test_formula_error",
+            formula="test_entity",
+            variables={"test_entity": "span.meter_001"},
+        )
 
         result = evaluator.evaluate_formula(formula_config, {})
 
         # Should handle the error gracefully - integration claimed entity but couldn't provide it
-        # This should result in an unavailable state, not a fallback to HA
-        assert result["success"] is True  # Not a syntax error, but unavailable dependency
-        assert result["state"] == "unknown"  # Should indicate unavailable dependency
+        # This should result in unknown state since the entity is registered but not available (transitory error)
+        assert result["success"] is True  # Not a fatal error, just unavailable dependency
+        assert result["state"] == "unknown"  # Transitory error state
         assert "unavailable_dependencies" in result
 
     def test_sensor_manager_with_registration(self, mock_hass, mock_integration_data_provider, hybrid_config):
@@ -266,7 +274,12 @@ class TestHybridDataAccess:
 
         # Create name resolver and sensor manager
         name_resolver = NameResolver(mock_hass, variables={})
-        sensor_manager = SensorManager(hass=mock_hass, name_resolver=name_resolver, add_entities_callback=async_add_entities, manager_config=manager_config)
+        sensor_manager = SensorManager(
+            hass=mock_hass,
+            name_resolver=name_resolver,
+            add_entities_callback=async_add_entities,
+            manager_config=manager_config,
+        )
 
         # Register integration entities with sensor manager
         mock_integration_data_provider.register_entities(sensor_manager)
@@ -296,7 +309,11 @@ class TestHybridDataAccess:
 
         mock_hass.states.get.side_effect = mock_get_state
 
-        formula_config = FormulaConfig(id="test_formula_3", formula="test_var", variables={"test_var": "sensor.test"})
+        formula_config = FormulaConfig(
+            id="test_formula_3",
+            formula="test_var",
+            variables={"test_var": "sensor.test"},
+        )
 
         result = evaluator.evaluate_formula(formula_config, {})
 
@@ -333,13 +350,21 @@ class TestHybridDataAccess:
         mock_hass.states.get.side_effect = mock_get_state
 
         # Test entity in registration - should use integration data
-        formula_config1 = FormulaConfig(id="test_formula_4", formula="test_var", variables={"test_var": "span.meter_001"})
+        formula_config1 = FormulaConfig(
+            id="test_formula_4",
+            formula="test_var",
+            variables={"test_var": "span.meter_001"},
+        )
         result1 = evaluator.evaluate_formula(formula_config1, {})
         assert result1["success"] is True
         assert result1["value"] == 1250.0  # Integration value
 
         # Test entity not in registration - should use HA
-        formula_config2 = FormulaConfig(id="test_formula_5", formula="test_var", variables={"test_var": "span.efficiency_input"})
+        formula_config2 = FormulaConfig(
+            id="test_formula_5",
+            formula="test_var",
+            variables={"test_var": "span.efficiency_input"},
+        )
         result2 = evaluator.evaluate_formula(formula_config2, {})
         assert result2["success"] is True
         assert result2["value"] == 999.0  # HA value, not integration value (850.0)
@@ -356,7 +381,11 @@ class TestHybridDataAccess:
         assert evaluator.get_integration_entities() == initial_entities
 
         # Update registration with more entities
-        updated_entities = {"span.meter_001", "span.local_sensor", "span.efficiency_input"}
+        updated_entities = {
+            "span.meter_001",
+            "span.local_sensor",
+            "span.efficiency_input",
+        }
         evaluator.update_integration_entities(updated_entities)
 
         # Verify updated registration
@@ -376,7 +405,12 @@ class TestHybridDataAccess:
         name_resolver = NameResolver(mock_hass, variables={})
         async_add_entities = Mock()
         manager_config = SensorManagerConfig(lifecycle_managed_externally=True)
-        sensor_manager = SensorManager(hass=mock_hass, name_resolver=name_resolver, add_entities_callback=async_add_entities, manager_config=manager_config)
+        sensor_manager = SensorManager(
+            hass=mock_hass,
+            name_resolver=name_resolver,
+            add_entities_callback=async_add_entities,
+            manager_config=manager_config,
+        )
 
         # Test initial state
         assert sensor_manager.get_registered_entities() == set()

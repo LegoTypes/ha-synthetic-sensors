@@ -96,24 +96,68 @@ class TestORAreaIntegration:
         # Mock entity registry entries with area assignments
         mock_entity_entries = {
             # Living room entities
-            "sensor.living_room_temp": Mock(entity_id="sensor.living_room_temp", area_id="living_room_id", device_id=None),
-            "light.living_room_main": Mock(entity_id="light.living_room_main", area_id="living_room_id", device_id=None),
-            "sensor.living_room_humidity": Mock(entity_id="sensor.living_room_humidity", area_id="living_room_id", device_id=None),
+            "sensor.living_room_temp": Mock(
+                entity_id="sensor.living_room_temp",
+                area_id="living_room_id",
+                device_id=None,
+            ),
+            "light.living_room_main": Mock(
+                entity_id="light.living_room_main",
+                area_id="living_room_id",
+                device_id=None,
+            ),
+            "sensor.living_room_humidity": Mock(
+                entity_id="sensor.living_room_humidity",
+                area_id="living_room_id",
+                device_id=None,
+            ),
             # Kitchen entities
             "sensor.kitchen_temp": Mock(entity_id="sensor.kitchen_temp", area_id="kitchen_id", device_id=None),
             "light.kitchen_overhead": Mock(entity_id="light.kitchen_overhead", area_id="kitchen_id", device_id=None),
-            "sensor.kitchen_humidity": Mock(entity_id="sensor.kitchen_humidity", area_id="kitchen_id", device_id=None),
+            "sensor.kitchen_humidity": Mock(
+                entity_id="sensor.kitchen_humidity",
+                area_id="kitchen_id",
+                device_id=None,
+            ),
             # Dining room entities
-            "sensor.dining_room_temp": Mock(entity_id="sensor.dining_room_temp", area_id="dining_room_id", device_id=None),
-            "light.dining_room_chandelier": Mock(entity_id="light.dining_room_chandelier", area_id="dining_room_id", device_id=None),
+            "sensor.dining_room_temp": Mock(
+                entity_id="sensor.dining_room_temp",
+                area_id="dining_room_id",
+                device_id=None,
+            ),
+            "light.dining_room_chandelier": Mock(
+                entity_id="light.dining_room_chandelier",
+                area_id="dining_room_id",
+                device_id=None,
+            ),
             # Master bedroom entities
-            "sensor.master_bedroom_temp": Mock(entity_id="sensor.master_bedroom_temp", area_id="master_bedroom_id", device_id=None),
-            "light.master_bedroom_lamp": Mock(entity_id="light.master_bedroom_lamp", area_id="master_bedroom_id", device_id=None),
+            "sensor.master_bedroom_temp": Mock(
+                entity_id="sensor.master_bedroom_temp",
+                area_id="master_bedroom_id",
+                device_id=None,
+            ),
+            "light.master_bedroom_lamp": Mock(
+                entity_id="light.master_bedroom_lamp",
+                area_id="master_bedroom_id",
+                device_id=None,
+            ),
             # Guest bedroom entities
-            "sensor.guest_bedroom_temp": Mock(entity_id="sensor.guest_bedroom_temp", area_id="guest_bedroom_id", device_id=None),
-            "light.guest_bedroom_overhead": Mock(entity_id="light.guest_bedroom_overhead", area_id="guest_bedroom_id", device_id=None),
+            "sensor.guest_bedroom_temp": Mock(
+                entity_id="sensor.guest_bedroom_temp",
+                area_id="guest_bedroom_id",
+                device_id=None,
+            ),
+            "light.guest_bedroom_overhead": Mock(
+                entity_id="light.guest_bedroom_overhead",
+                area_id="guest_bedroom_id",
+                device_id=None,
+            ),
             # Bathroom entities
-            "sensor.bathroom_humidity": Mock(entity_id="sensor.bathroom_humidity", area_id="bathroom_id", device_id=None),
+            "sensor.bathroom_humidity": Mock(
+                entity_id="sensor.bathroom_humidity",
+                area_id="bathroom_id",
+                device_id=None,
+            ),
             "light.bathroom_mirror": Mock(entity_id="light.bathroom_mirror", area_id="bathroom_id", device_id=None),
             # Office entities
             "sensor.office_temp": Mock(entity_id="sensor.office_temp", area_id="office_id", device_id=None),
@@ -129,8 +173,11 @@ class TestORAreaIntegration:
         mock_entity_registry = Mock()
         mock_entity_registry.entities = mock_entity_entries
 
-        with patch("ha_synthetic_sensors.collection_resolver.er.async_get") as mock_er, patch("ha_synthetic_sensors.collection_resolver.dr.async_get"), patch("ha_synthetic_sensors.collection_resolver.ar.async_get") as mock_ar:
-
+        with (
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get") as mock_er,
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+            patch("ha_synthetic_sensors.collection_resolver.ar.async_get") as mock_ar,
+        ):
             mock_er.return_value = mock_entity_registry
             mock_ar.return_value = mock_area_registry
             resolver = CollectionResolver(mock_hass)

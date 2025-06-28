@@ -267,7 +267,15 @@ class TestEvaluator:
         evaluator = Evaluator(mock_hass)
 
         # Test 1: Formula with variables from context
-        config = FormulaConfig(id="test_variables", name="Test Variables", formula="power_input + solar_input", variables={"power_input": "sensor.power_meter", "solar_input": "sensor.solar_panel"})
+        config = FormulaConfig(
+            id="test_variables",
+            name="Test Variables",
+            formula="power_input + solar_input",
+            variables={
+                "power_input": "sensor.power_meter",
+                "solar_input": "sensor.solar_panel",
+            },
+        )
 
         # Build context like DynamicSensor would - use Any to match ContextValue
         context: dict[str, Any] = {}
@@ -288,18 +296,40 @@ class TestEvaluator:
         assert result2["value"] == 300
 
         # Test 3: Formula with direct entity access (the correct way in this evaluator)
-        config_entity_access = FormulaConfig(id="test_entity_access", name="Test Entity Access", formula="sensor_temperature * 2 + sensor_humidity", variables={"sensor_temperature": "sensor.temperature", "sensor_humidity": "sensor.humidity"})  # Direct entity names, not entity() function
+        config_entity_access = FormulaConfig(
+            id="test_entity_access",
+            name="Test Entity Access",
+            formula="sensor_temperature * 2 + sensor_humidity",
+            variables={
+                "sensor_temperature": "sensor.temperature",
+                "sensor_humidity": "sensor.humidity",
+            },
+        )  # Direct entity names, not entity() function
 
-        entity_context: dict[str, Any] = {"sensor_temperature": 22.5, "sensor_humidity": 45.0}
+        entity_context: dict[str, Any] = {
+            "sensor_temperature": 22.5,
+            "sensor_humidity": 45.0,
+        }
 
         result3 = evaluator.evaluate_formula(config_entity_access, entity_context)
         assert result3["success"] is True
         assert result3["value"] == 90.0  # (22.5 * 2) + 45
 
         # Test 4: Complex formula with both variables and direct entity access
-        config_mixed = FormulaConfig(id="test_mixed", name="Test Mixed", formula="power_total + temperature_reading", variables={"power_total": "sensor.power_meter", "temperature_reading": "sensor.temperature"})
+        config_mixed = FormulaConfig(
+            id="test_mixed",
+            name="Test Mixed",
+            formula="power_total + temperature_reading",
+            variables={
+                "power_total": "sensor.power_meter",
+                "temperature_reading": "sensor.temperature",
+            },
+        )
 
-        mixed_context: dict[str, Any] = {"power_total": 1000.0, "temperature_reading": 22.5}
+        mixed_context: dict[str, Any] = {
+            "power_total": 1000.0,
+            "temperature_reading": 22.5,
+        }
         result4 = evaluator.evaluate_formula(config_mixed, mixed_context)
         assert result4["success"] is True
         assert result4["value"] == 1022.5  # 1000 + 22.5
@@ -312,7 +342,12 @@ class TestEvaluator:
         assert "missing_var" in result5.get("error", "")
 
         # Test 6: Error handling - unavailable entity (simulated by missing context)
-        config_unavailable = FormulaConfig(id="test_unavailable", name="Test Unavailable", formula="unavailable_sensor + 100", variables={"unavailable_sensor": "sensor.unavailable"})
+        config_unavailable = FormulaConfig(
+            id="test_unavailable",
+            name="Test Unavailable",
+            formula="unavailable_sensor + 100",
+            variables={"unavailable_sensor": "sensor.unavailable"},
+        )
 
         # Don't provide the variable in context to simulate unavailable entity
         result6 = evaluator.evaluate_formula(config_unavailable, {})
@@ -333,7 +368,12 @@ class TestEvaluator:
         mock_hass.states.get.side_effect = mock_states_get
         evaluator = Evaluator(mock_hass)
 
-        config = FormulaConfig(id="cache_test", name="Cache Test", formula="test_var * 2", variables={"test_var": "sensor.test_entity"})
+        config = FormulaConfig(
+            id="cache_test",
+            name="Cache Test",
+            formula="test_var * 2",
+            variables={"test_var": "sensor.test_entity"},
+        )
 
         # First evaluation
         context: dict[str, Any] = {"test_var": 100.0}
@@ -368,14 +408,22 @@ class TestEvaluator:
         ]
 
         for i, (formula, expected) in enumerate(test_cases):
-            config = FormulaConfig(id=f"math_test_{i}_{formula.replace('(', '_').replace(')', '').replace('[', '_').replace(']', '').replace(',', '_').replace(' ', '_')}", name=f"Math Test {i}", formula=formula)
+            config = FormulaConfig(
+                id=f"math_test_{i}_{formula.replace('(', '_').replace(')', '').replace('[', '_').replace(']', '').replace(',', '_').replace(' ', '_')}",
+                name=f"Math Test {i}",
+                formula=formula,
+            )
 
             result = evaluator.evaluate_formula(config)
             assert result["success"] is True, f"Formula {formula} failed: {result.get('error')}"
             result_value = result["value"]
             if isinstance(expected, float):
-                assert isinstance(result_value, (int, float)), f"Formula {formula}: expected numeric result, got {type(result_value)}"
-                assert abs(float(result_value) - expected) < 0.001, f"Formula {formula}: expected {expected}, got {result_value}"
+                assert isinstance(result_value, (int, float)), (
+                    f"Formula {formula}: expected numeric result, got {type(result_value)}"
+                )
+                assert abs(float(result_value) - expected) < 0.001, (
+                    f"Formula {formula}: expected {expected}, got {result_value}"
+                )
             else:
                 assert result_value == expected, f"Formula {formula}: expected {expected}, got {result_value}"
 
@@ -400,7 +448,9 @@ class TestEvaluator:
             assert result["success"] is False, f"Formula {formula} should have failed"
             error_msg = result.get("error", "").lower()
             # Check that some part of the expected error is in the actual error message
-            assert any(part.lower() in error_msg for part in expected_error_part.lower().split()), f"Formula {formula}: expected error containing '{expected_error_part}', got '{result.get('error')}'"
+            assert any(part.lower() in error_msg for part in expected_error_part.lower().split()), (
+                f"Formula {formula}: expected error containing '{expected_error_part}', got '{result.get('error')}'"
+            )
 
     def test_evaluator_dependency_extraction_comprehensive(self, mock_hass):
         """Test comprehensive dependency extraction from various formula types."""

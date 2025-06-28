@@ -116,4 +116,4 @@ sensors:
     name: "Direct Three-Way Tag Config"
     formula: 'avg("tags:input_select.tag1|input_select.tag2|input_select.tag3")'
     unit_of_measurement: "units"
-    state_class: "measurement" 
+    state_class: "measurement"

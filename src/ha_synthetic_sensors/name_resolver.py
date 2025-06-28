@@ -177,7 +177,9 @@ class NameResolver:
                 variable_name,
                 exc,
             )
-            raise HomeAssistantError(f"Entity '{entity_id}' state '{entity_state.state}' " f"cannot be converted to number") from exc
+            raise HomeAssistantError(
+                f"Entity '{entity_id}' state '{entity_state.state}' cannot be converted to number"
+            ) from exc
 
     def get_static_names(self) -> dict[str, float]:
         """Get all current variable values as a static dictionary.

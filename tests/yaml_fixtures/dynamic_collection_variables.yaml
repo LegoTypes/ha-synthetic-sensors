@@ -66,9 +66,9 @@ sensors:
 
   # Multiple collection functions with different variables using values of an attribute
   # "device_class:battery.battery_level resolves to the attributes of all the sensors with device class battery
-  # so the first part to get resolved is the variable "device_class:battery" and then the attribute of 
+  # so the first part to get resolved is the variable "device_class:battery" and then the attribute of
   # those sensors is used to filter the sensors. The trick here is that the varaible should not be fully resolved
-  # to a list of states because it is a special type of variable that is further refined in the formula before 
+  # to a list of states because it is a special type of variable that is further refined in the formula before
   # the states are read.
   power_to_battery_ratio:
     name: "Power to Battery Efficiency"

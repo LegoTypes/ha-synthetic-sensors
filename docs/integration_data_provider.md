@@ -92,7 +92,7 @@ entity registry. The integration can provide state for entities that only exist 
 │  │  entity_id_2, ...}  │    │  2. If registered:                      │ │
 │  │                     │    │     Call DataProviderCallback           | │
 │  └─────────────────────┘    │  3. If not registered:                  │ │
-│                             │     Query HA State Machine              | | 
+│                             │     Query HA State Machine              | |
 │                             │  4. ERROR if not found anywhere         │ │
 │                             └────────────────────────────────────────-┘ │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -138,7 +138,7 @@ sensor_manager = SensorManager(
 # Register entities that this integration can provide data for
 sensor_manager.register_data_provider_entities({
     "sensor.my_integration_temp",
-    "sensor.my_integration_humidity", 
+    "sensor.my_integration_humidity",
     "binary_sensor.my_integration_status"
 })
 

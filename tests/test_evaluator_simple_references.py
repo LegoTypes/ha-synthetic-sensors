@@ -24,7 +24,11 @@ def test_simple_variable_evaluator() -> None:
     evaluator = Evaluator(mock_hass)
 
     # Test simple variable reference
-    config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
+    config = FormulaConfig(
+        id="test_formula",
+        formula="power_reading",
+        variables={"power_reading": "sensor.power_meter"},
+    )
 
     result = evaluator.evaluate_formula(config)
 

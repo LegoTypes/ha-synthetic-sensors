@@ -79,7 +79,12 @@ class TestReferencePatterns:
         assert "electricity_rate" in daily_formula.variables
 
         # Test evaluation - we need to provide the 'state' value in context
-        context = {"state": 25.0, "current_power": 1000, "electricity_rate": 25, "energy_cost_analysis": 25.0}
+        context = {
+            "state": 25.0,
+            "current_power": 1000,
+            "electricity_rate": 25,
+            "energy_cost_analysis": 25.0,
+        }
         result = evaluator.evaluate_formula(daily_formula, context)
         assert result["success"] is True
         assert result["value"] == 600.0  # 25 * 24 = 600
@@ -97,7 +102,11 @@ class TestReferencePatterns:
         assert monthly_formula.variables["energy_cost_analysis"] == "sensor.energy_cost_analysis"
 
         # Test evaluation
-        context = {"current_power": 1000, "electricity_rate": 25, "energy_cost_analysis": 25.0}
+        context = {
+            "current_power": 1000,
+            "electricity_rate": 25,
+            "energy_cost_analysis": 25.0,
+        }
         result = evaluator.evaluate_formula(monthly_formula, context)
         assert result["success"] is True
         assert result["value"] == 18000.0  # 25 * 24 * 30 = 18000

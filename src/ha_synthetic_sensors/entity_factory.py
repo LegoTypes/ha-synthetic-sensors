@@ -130,7 +130,9 @@ class EntityFactory:
         device_class_val = (formula_config.get("device_class") if formula_config else None) or sensor_config.get("device_class")
         device_class = str(device_class_val) if device_class_val else None
 
-        unit_val = (formula_config.get("unit_of_measurement") if formula_config else None) or sensor_config.get("unit_of_measurement")
+        unit_val = (formula_config.get("unit_of_measurement") if formula_config else None) or sensor_config.get(
+            "unit_of_measurement"
+        )
         unit_of_measurement = str(unit_val) if unit_val else None
 
         state_class_val = (formula_config.get("state_class") if formula_config else None) or sensor_config.get("state_class")

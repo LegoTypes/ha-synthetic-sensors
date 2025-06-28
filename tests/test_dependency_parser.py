@@ -277,7 +277,10 @@ class TestDependencyParser:
 
     def test_mixed_quote_styles(self, parser):
         """Test handling of mixed quote styles in entity references."""
-        formula = """entity("sensor.temp") + state('sensor.humidity') + """ """states["sensor.power"]"""
+        formula = (
+            """entity("sensor.temp") + state('sensor.humidity') + """
+            """states["sensor.power"]"""
+        )
         entities = parser.extract_entity_references(formula)
 
         assert "sensor.temp" in entities

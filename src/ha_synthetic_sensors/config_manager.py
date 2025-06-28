@@ -89,7 +89,9 @@ class FormulaConfig:
     icon: str | None = None
     attributes: dict[str, AttributeValue] = field(default_factory=dict)
     dependencies: set[str] = field(default_factory=set)
-    variables: dict[str, str | int | float] = field(default_factory=dict)  # Variable name -> entity_id mappings or numeric literals
+    variables: dict[str, str | int | float] = field(
+        default_factory=dict
+    )  # Variable name -> entity_id mappings or numeric literals
 
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""
@@ -270,7 +272,7 @@ class ConfigManager:
                         msg += f" (Suggested fix: {error.suggested_fix})"
                     error_messages.append(msg)
 
-                error_msg = f"Configuration schema validation failed: " f"{'; '.join(error_messages)}"
+                error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
 
@@ -283,7 +285,7 @@ class ConfigManager:
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
 
-            self._logger.info(
+            self._logger.debug(
                 "Loaded configuration with %d sensors from %s",
                 len(self._config.sensors),
                 path,
@@ -344,7 +346,7 @@ class ConfigManager:
                         msg += f" (Suggested fix: {error.suggested_fix})"
                     error_messages.append(msg)
 
-                error_msg = f"Configuration schema validation failed: " f"{'; '.join(error_messages)}"
+                error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
 
@@ -357,7 +359,7 @@ class ConfigManager:
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
 
-            self._logger.info(
+            self._logger.debug(
                 "Loaded configuration with %d sensors from %s",
                 len(self._config.sensors),
                 path,
@@ -486,7 +488,7 @@ class ConfigManager:
         """
         attr_formula = attr_config.get("formula")
         if not attr_formula:
-            raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have " f"'formula' field")
+            raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have 'formula' field")
 
         # Merge parent sensor variables with attribute-specific variables
         # Attribute variables take precedence for overrides
@@ -640,7 +642,7 @@ class ConfigManager:
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
 
-            self._logger.info(
+            self._logger.debug(
                 "Loaded configuration with %d sensors from YAML content",
                 len(self._config.sensors),
             )
@@ -690,7 +692,7 @@ class ConfigManager:
             with open(path, "w", encoding="utf-8") as file:
                 yaml.dump(yaml_data, file, default_flow_style=False, allow_unicode=True)
 
-            self._logger.info("Saved configuration to %s", path)
+            self._logger.debug("Saved configuration to %s", path)
 
         except Exception as exc:
             error_msg = f"Failed to save configuration to {path}: {exc}"
@@ -774,7 +776,7 @@ class ConfigManager:
         variables = self._config.global_settings["variables"]
         if isinstance(variables, dict):
             variables[name] = entity_id
-            self._logger.info("Added variable: %s = %s", name, entity_id)
+            self._logger.debug("Added variable: %s = %s", name, entity_id)
             return True
 
         return False
@@ -794,7 +796,7 @@ class ConfigManager:
         variables = self._config.global_settings["variables"]
         if isinstance(variables, dict) and name in variables:
             del variables[name]
-            self._logger.info("Removed variable: %s", name)
+            self._logger.debug("Removed variable: %s", name)
             return True
 
         return False
@@ -983,7 +985,9 @@ class ConfigManager:
                 "file_path": str(path),
             }
 
-    def _auto_inject_entity_variables(self, formula: str, variables: dict[str, str | int | float]) -> dict[str, str | int | float]:
+    def _auto_inject_entity_variables(
+        self, formula: str, variables: dict[str, str | int | float]
+    ) -> dict[str, str | int | float]:
         """Auto-inject missing entity references as variables.
 
         Args:

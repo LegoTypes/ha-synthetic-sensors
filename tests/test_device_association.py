@@ -46,9 +46,25 @@ async def test_sensor_with_device_association(mock_hass):
     """Test creating a sensor with device association."""
 
     # Create a sensor config with device association
-    formula = FormulaConfig(id="main", formula="10 + 5", unit_of_measurement="W", device_class="power", state_class="measurement")
+    formula = FormulaConfig(
+        id="main",
+        formula="10 + 5",
+        unit_of_measurement="W",
+        device_class="power",
+        state_class="measurement",
+    )
 
-    sensor_config = SensorConfig(unique_id="test_sensor_with_device", name="Test Sensor", formulas=[formula], device_identifier="test_device_001", device_name="Test Device", device_manufacturer="Test Manufacturer", device_model="Test Model v1", device_sw_version="1.0.0", suggested_area="Test Area")
+    sensor_config = SensorConfig(
+        unique_id="test_sensor_with_device",
+        name="Test Sensor",
+        formulas=[formula],
+        device_identifier="test_device_001",
+        device_name="Test Device",
+        device_manufacturer="Test Manufacturer",
+        device_model="Test Model v1",
+        device_sw_version="1.0.0",
+        suggested_area="Test Area",
+    )
 
     # Mock add entities callback
     added_entities = []
@@ -65,7 +81,11 @@ async def test_sensor_with_device_association(mock_hass):
         # Create sensor manager
         variables = {}
         name_resolver = NameResolver(mock_hass, variables)
-        manager = SensorManager(hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities)
+        manager = SensorManager(
+            hass=mock_hass,
+            name_resolver=name_resolver,
+            add_entities_callback=mock_add_entities,
+        )
 
         # Create the sensor entity
         sensor = await manager._create_sensor_entity(sensor_config)
@@ -85,9 +105,19 @@ async def test_sensor_with_existing_device(mock_hass):
     """Test creating a sensor that associates with an existing device."""
 
     # Create a sensor config that references an existing device
-    formula = FormulaConfig(id="main", formula="20 + 10", unit_of_measurement="°C", device_class="temperature")
+    formula = FormulaConfig(
+        id="main",
+        formula="20 + 10",
+        unit_of_measurement="°C",
+        device_class="temperature",
+    )
 
-    sensor_config = SensorConfig(unique_id="test_sensor_existing_device", name="Temperature Sensor", formulas=[formula], device_identifier="existing_device_001")  # Only device_identifier needed
+    sensor_config = SensorConfig(
+        unique_id="test_sensor_existing_device",
+        name="Temperature Sensor",
+        formulas=[formula],
+        device_identifier="existing_device_001",
+    )  # Only device_identifier needed
 
     # Mock add entities callback
     added_entities = []
@@ -118,7 +148,11 @@ async def test_sensor_with_existing_device(mock_hass):
         # Create sensor manager
         variables = {}
         name_resolver = NameResolver(mock_hass, variables)
-        manager = SensorManager(hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities)
+        manager = SensorManager(
+            hass=mock_hass,
+            name_resolver=name_resolver,
+            add_entities_callback=mock_add_entities,
+        )
 
         # Create the sensor entity
         sensor = await manager._create_sensor_entity(sensor_config)
@@ -160,7 +194,11 @@ async def test_sensor_without_device_association(mock_hass):
         # Create sensor manager
         variables = {}
         name_resolver = NameResolver(mock_hass, variables)
-        manager = SensorManager(hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities)
+        manager = SensorManager(
+            hass=mock_hass,
+            name_resolver=name_resolver,
+            add_entities_callback=mock_add_entities,
+        )
 
         # Create the sensor entity
         sensor = await manager._create_sensor_entity(sensor_config)

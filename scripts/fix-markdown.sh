@@ -12,4 +12,4 @@ else
     echo "❌ Some markdown issues could not be automatically fixed."
     echo "📖 Please review the errors above and fix them manually."
     exit 1
-fi 
+fi

@@ -51,7 +51,10 @@ class TestMixedVariableAndDirectPatterns:
                 # Look for patterns like "sensor.something", "input_number.something"
                 import re
 
-                entity_pattern = r"\b(sensor|input_number|climate|switch|binary_sensor|button|" r"device_tracker)\.[\w_]+\b"
+                entity_pattern = (
+                    r"\b(sensor|input_number|climate|switch|binary_sensor|button|"
+                    r"device_tracker)\.[\w_]+\b"
+                )
                 found_entities = re.findall(entity_pattern, formula)
                 for match in found_entities:
                     # Reconstruct the full entity ID from the regex match
@@ -262,12 +265,14 @@ class TestMixedVariableAndDirectPatterns:
             # Test that all variables can be resolved
             for var_name, entity_id in variables.items():
                 resolved_value = resolver.resolve_name(MockNode(var_name))
-                assert resolved_value is not None, f"Could not resolve variable '{var_name}' -> '{entity_id}' " f"in sensor {sensor_id}"
+                assert resolved_value is not None, (
+                    f"Could not resolve variable '{var_name}' -> '{entity_id}' in sensor {sensor_id}"
+                )
 
     def test_dependency_parser_extract_all_entities_comprehensive(self, parser):
         """Test that dependency parser can extract all entity types from formula."""
         # Test with a formula that includes multiple entity domains
-        formula = "sensor.power + input_number.rate + climate.thermostat + " "switch.pump + binary_sensor.door"
+        formula = "sensor.power + input_number.rate + climate.thermostat + switch.pump + binary_sensor.door"
 
         entity_refs = parser.extract_entity_references(formula)
 
@@ -289,7 +294,6 @@ class TestMixedVariableAndDirectPatterns:
 
         # Test each sensor from the actual config file
         for sensor_id, sensor_config in sensors.items():
-
             formula = sensor_config["formula"]
             variables = sensor_config.get("variables", {})
 

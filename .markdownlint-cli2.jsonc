@@ -42,7 +42,7 @@
   "globs": ["**/*.md"],
   "ignores": [
     ".venv/**",
-    "venv/**", 
+    "venv/**",
     "node_modules/**",
     "__pycache__/**",
     "htmlcov/**",
