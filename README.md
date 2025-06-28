@@ -519,6 +519,54 @@ await sensor_manager.load_configuration(config)
 await service_layer.async_setup_services()
 ```
 
+## Logging Configuration
+
+The package provides logging utilities to help with debugging and troubleshooting. By default, the package uses
+Python's standard logging hierarchy, but you may need to explicitly configure it in Home Assistant environments.
+
+### Enable Debug Logging
+
+```python
+import logging
+import ha_synthetic_sensors
+
+# Configure debug logging for the entire package
+ha_synthetic_sensors.configure_logging(logging.DEBUG)
+
+# Test that logging is working (optional)
+ha_synthetic_sensors.test_logging()
+
+# Check current logging configuration (optional)
+logging_info = ha_synthetic_sensors.get_logging_info()
+_LOGGER.debug("Synthetic sensors logging: %s", logging_info)
+```
+
+### Home Assistant Configuration
+
+Alternatively, you can configure logging in Home Assistant's `configuration.yaml`:
+
+```yaml
+logger:
+  default: info
+  logs:
+    # Your integration
+    custom_components.your_integration: debug
+    # The synthetic sensors package
+    ha_synthetic_sensors: debug
+    # Specific modules (optional)
+    ha_synthetic_sensors.evaluator: debug
+    ha_synthetic_sensors.service_layer: debug
+```
+
+### Troubleshooting Logging Issues
+
+If you're not seeing log output from the package:
+
+1. **Call the test function**: `ha_synthetic_sensors.test_logging()` outputs test messages to verify logging works
+2. **Check configuration**: `ha_synthetic_sensors.get_logging_info()` shows current logger levels and settings
+3. **Verify integration setup**: Ensure your integration is also set to debug level
+4. **Check HA logs**: Look for the configuration confirmation message from `configure_logging()`
+
 ## Type safety
 
 Uses TypedDict for all data structures providing type safety and IDE support:
