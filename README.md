@@ -519,29 +519,6 @@ await sensor_manager.load_configuration(config)
 await service_layer.async_setup_services()
 ```
 
-## Update propagation behavior
-
-When synthetic sensors depend on each other, updates propagate through the dependency chain one step per
-Home Assistant update cycle. This is the expected behavior that matches Home Assistant's natural update model.
-
-**Example dependency chain:** A → B → C (where B depends on A, and C depends on B)
-
-If sensor A's value changes:
-
-- **Cycle 1**: A updates with new value, B still has old value, C still has old value
-- **Cycle 2**: B updates with A's new value, C still has old value
-- **Cycle 3**: C updates with B's new value (which reflects A's change)
-
-**Key points:**
-
-- For a dependency chain of length N, it takes N-1 update cycles for all sensors to reflect a change
-- This behavior is intentional and matches Home Assistant's update patterns
-- Use the `synthetic_sensors.update_sensor` service to manually trigger updates if needed
-- Complex dependency chains may require multiple service calls to fully propagate changes
-
-**Troubleshooting tip:** If you have long dependency chains and need immediate propagation, you can call the
-update service multiple times or restructure your sensors to reduce dependency depth.
-
 ## Type safety
 
 Uses TypedDict for all data structures providing type safety and IDE support:
