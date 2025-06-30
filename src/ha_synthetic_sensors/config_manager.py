@@ -22,8 +22,8 @@ from .schema_validator import validate_yaml_config
 
 _LOGGER = logging.getLogger(__name__)
 
-# Domain constant for device registry
-DOMAIN = "synthetic_sensors"
+# Default domain constant
+DEFAULT_DOMAIN = "synthetic_sensors"
 
 # Type alias for attribute values (allows complex types for formula metadata)
 AttributeValue = str | float | int | bool | list[str] | dict[str, Any]
@@ -176,7 +176,7 @@ class Config:
         return None
 
     def get_sensor_by_name(self, name: str) -> SensorConfig | None:
-        """Get a sensor configuration by name (legacy method)."""
+        """Get a sensor configuration by name."""
         for sensor in self.sensors:
             if sensor.name == name or sensor.unique_id == name:
                 return sensor
@@ -590,8 +590,6 @@ class ConfigManager:
     def load_from_file(self, file_path: str | Path) -> Config:
         """Load configuration from a specific file path.
 
-        This is an alias for load_config() for backward compatibility.
-
         Args:
             file_path: Path to the configuration file
 
@@ -602,8 +600,6 @@ class ConfigManager:
 
     async def async_load_from_file(self, file_path: str | Path) -> Config:
         """Load configuration from a specific file path (async version).
-
-        This is an alias for async_load_config() for backward compatibility.
 
         Args:
             file_path: Path to the configuration file
@@ -817,7 +813,7 @@ class ConfigManager:
         return {}
 
     def get_sensors(self) -> list[SensorConfig]:
-        """Get all sensor configurations (alias for get_sensor_configs).
+        """Get all sensor configurations.
 
         Returns:
             list: List of all sensor configurations

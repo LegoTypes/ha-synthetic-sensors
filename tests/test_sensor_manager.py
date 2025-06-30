@@ -963,11 +963,14 @@ class TestSensorManagerExtended:
             result = await sensor_manager._create_sensor_entity(sensor_config)
 
             # Should create sensor with all formulas
-            MockDynamicSensor.assert_called_once_with(
-                sensor_manager._hass,
-                sensor_config,
-                sensor_manager._evaluator,
-                sensor_manager,
-                sensor_manager._manager_config,
-            )
+            # Verify the call was made - the sensor_config will have entity_id populated
+            MockDynamicSensor.assert_called_once()
+            args, kwargs = MockDynamicSensor.call_args
+
+            # Check that the sensor_config now has an entity_id generated
+            called_sensor_config = args[1]
+            assert called_sensor_config.entity_id == "sensor.multi_sensor"
+            assert called_sensor_config.unique_id == "multi_sensor"
+            assert called_sensor_config.formulas == [main_formula, attr_formula]
+
             assert result == mock_sensor

@@ -99,8 +99,9 @@ class SyntheticSensorsIntegration:
         try:
             _LOGGER.debug("Setting up synthetic sensor integration")
 
-            # Initialize sensor manager
-            self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback)
+            # Initialize sensor manager with integration domain
+            manager_config = SensorManagerConfig(integration_domain="synthetic_sensors")
+            self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback, manager_config)
 
             # Initialize enhanced evaluator
             evaluator = Evaluator(self._hass)
@@ -306,6 +307,7 @@ class SyntheticSensorsIntegration:
     async def create_managed_sensor_manager(
         self,
         add_entities_callback: AddEntitiesCallback,
+        integration_domain: str,
         device_info: DeviceInfo | None = None,
         unique_id_prefix: str = "",
         lifecycle_managed_externally: bool = True,
@@ -322,6 +324,7 @@ class SyntheticSensorsIntegration:
 
         Args:
             add_entities_callback: Callback to add entities to HA
+            integration_domain: The domain of the parent integration (required for device lookup)
             device_info: Device info for the parent integration
             unique_id_prefix: Optional prefix for unique IDs (for compatibility with existing sensors)
             lifecycle_managed_externally: Whether lifecycle is managed by parent integration
@@ -341,6 +344,7 @@ class SyntheticSensorsIntegration:
 
         # Create manager config for external integration
         manager_config = SensorManagerConfig(
+            integration_domain=integration_domain,
             device_info=device_info,
             unique_id_prefix=unique_id_prefix,
             lifecycle_managed_externally=lifecycle_managed_externally,
@@ -361,7 +365,7 @@ class SyntheticSensorsIntegration:
             manager_config,
         )
 
-        _LOGGER.debug("Created managed sensor manager for external integration")
+        _LOGGER.debug(f"Created managed sensor manager for external integration domain: {integration_domain}")
         return sensor_manager
 
 
@@ -472,6 +476,7 @@ sensors:
     friendly_name: "Energy Cost Analysis"
     description: "Real-time energy cost calculations"
     category: "energy"
+    integration_domain: "synthetic_sensors"
     formulas:
       - name: "current_cost_rate"
         formula: >-
@@ -490,6 +495,7 @@ sensors:
     friendly_name: "Solar Analytics"
     description: "Advanced solar energy analysis"
     category: "solar"
+    integration_domain: "synthetic_sensors"
     formulas:
       - name: "efficiency_ratio"
         formula: >-

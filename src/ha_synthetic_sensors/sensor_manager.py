@@ -28,7 +28,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
-from .config_manager import DOMAIN, AttributeValue, Config, FormulaConfig, SensorConfig
+from .config_manager import AttributeValue, Config, FormulaConfig, SensorConfig
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
 from .types import DataProviderCallback
@@ -43,6 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 class SensorManagerConfig:
     """Configuration for SensorManager with device integration support."""
 
+    integration_domain: str = "synthetic_sensors"  # Integration domain for device lookup
     device_info: DeviceInfo | None = None
     unique_id_prefix: str = ""  # Optional prefix for unique IDs (for compatibility)
     lifecycle_managed_externally: bool = False
@@ -392,12 +393,13 @@ class SensorManager:
 
     def _get_existing_device_info(self, device_identifier: str) -> DeviceInfo | None:
         """Get device info for an existing device by identifier."""
-        # Look up existing device in registry
-        device_entry = self._device_registry.async_get_device(identifiers={(DOMAIN, device_identifier)})
+        # Look up existing device in registry using integration domain
+        integration_domain = self._manager_config.integration_domain
+        device_entry = self._device_registry.async_get_device(identifiers={(integration_domain, device_identifier)})
 
         if device_entry:
             return DeviceInfo(
-                identifiers={(DOMAIN, device_identifier)},
+                identifiers={(integration_domain, device_identifier)},
                 name=device_entry.name,
                 manufacturer=device_entry.manufacturer,
                 model=device_entry.model,
@@ -412,8 +414,9 @@ class SensorManager:
         if not sensor_config.device_identifier:
             raise ValueError("device_identifier is required to create device info")
 
+        integration_domain = self._manager_config.integration_domain
         return DeviceInfo(
-            identifiers={(DOMAIN, sensor_config.device_identifier)},
+            identifiers={(integration_domain, sensor_config.device_identifier)},
             name=sensor_config.device_name or f"Device {sensor_config.device_identifier}",
             manufacturer=sensor_config.device_manufacturer,
             model=sensor_config.device_model,
@@ -563,6 +566,37 @@ class SensorManager:
                 ]
             ):
                 device_info = self._create_new_device_info(sensor_config)
+
+        # Phase 1: Generate entity_id if not explicitly provided
+        if not sensor_config.entity_id:
+            try:
+                generated_entity_id = self._generate_entity_id(
+                    sensor_key=sensor_config.unique_id,
+                    device_identifier=sensor_config.device_identifier,
+                    explicit_entity_id=sensor_config.entity_id,
+                )
+                # Create a copy of the sensor config with the generated entity_id
+                sensor_config = SensorConfig(
+                    unique_id=sensor_config.unique_id,
+                    formulas=sensor_config.formulas,
+                    name=sensor_config.name,
+                    enabled=sensor_config.enabled,
+                    update_interval=sensor_config.update_interval,
+                    category=sensor_config.category,
+                    description=sensor_config.description,
+                    entity_id=generated_entity_id,
+                    device_identifier=sensor_config.device_identifier,
+                    device_name=sensor_config.device_name,
+                    device_manufacturer=sensor_config.device_manufacturer,
+                    device_model=sensor_config.device_model,
+                    device_sw_version=sensor_config.device_sw_version,
+                    device_hw_version=sensor_config.device_hw_version,
+                    suggested_area=sensor_config.suggested_area,
+                )
+                _LOGGER.debug(f"Generated entity_id '{generated_entity_id}' for sensor '{sensor_config.unique_id}'")
+            except ValueError as e:
+                _LOGGER.error(f"Failed to generate entity_id for sensor '{sensor_config.unique_id}': {e}")
+                raise
 
         # Create manager config with device info
         manager_config = SensorManagerConfig(
@@ -717,3 +751,59 @@ class SensorManager:
             Set of entity IDs currently registered with the integration
         """
         return self._registered_entities.copy()
+
+    def _resolve_device_name_prefix(self, device_identifier: str) -> str | None:
+        """Resolve device name to slugified prefix for entity_id generation.
+
+        Args:
+            device_identifier: Device identifier to look up
+
+        Returns:
+            Slugified device name for use as entity_id prefix, or None if device not found
+        """
+        integration_domain = self._manager_config.integration_domain
+        device_entry = self._device_registry.async_get_device(identifiers={(integration_domain, device_identifier)})
+
+        if device_entry:
+            # Use device name (user customizable) for prefix generation
+            device_name = device_entry.name
+            if device_name:
+                # Import slugify function for consistent HA entity_id generation
+                from homeassistant.util import slugify
+
+                return slugify(device_name)
+
+        return None
+
+    def _generate_entity_id(
+        self, sensor_key: str, device_identifier: str | None = None, explicit_entity_id: str | None = None
+    ) -> str:
+        """Generate entity_id for a synthetic sensor.
+
+        Args:
+            sensor_key: Sensor key from YAML configuration
+            device_identifier: Device identifier for prefix resolution
+            explicit_entity_id: Explicit entity_id override from configuration
+
+        Returns:
+            Generated entity_id following the pattern sensor.{device_prefix}_{sensor_key} or explicit override
+        """
+        # If explicit entity_id is provided, use it as-is (Phase 1 requirement)
+        if explicit_entity_id:
+            return explicit_entity_id
+
+        # If device_identifier provided, resolve device prefix
+        if device_identifier:
+            device_prefix = self._resolve_device_name_prefix(device_identifier)
+            if device_prefix:
+                return f"sensor.{device_prefix}_{sensor_key}"
+            else:
+                # Device not found - this should raise an error per Phase 1 requirements
+                integration_domain = self._manager_config.integration_domain
+                raise ValueError(
+                    f"Device not found for identifier '{device_identifier}' in domain '{integration_domain}'. "
+                    f"Ensure the device is registered before creating synthetic sensors."
+                )
+
+        # Fallback for sensors without device association (legacy behavior)
+        return f"sensor.{sensor_key}"

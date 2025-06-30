@@ -33,12 +33,13 @@ sensors:
   # Sensor with device association
   solar_inverter_efficiency:
     name: "Solar Inverter Efficiency"
-    formula: "actual_power / rated_power * percentage_factor"
+    formula: "solar_output / solar_capacity * percentage_factor"
     variables:
-      actual_power: "sensor.solar_inverter_current_power"
-      rated_power: "sensor.solar_inverter_max_power"
+      solar_output: "sensor.solar_current_power"
+      solar_capacity: "sensor.solar_max_capacity"
       percentage_factor: 100                     # Literal: percentage conversion
     unit_of_measurement: "%"
+    device_class: "power_factor"
     state_class: "measurement"
     # Device association fields
     device_identifier: "solar_inverter_001"

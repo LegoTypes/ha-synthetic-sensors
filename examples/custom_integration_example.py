@@ -69,6 +69,7 @@ class MyCustomIntegration:
 
         # Create a managed sensor manager with our device info AND our HA dependencies
         manager_config = SensorManagerConfig(
+            integration_domain="my_custom_integration",  # Required for device lookup
             device_info=self.device_info,
             lifecycle_managed_externally=True,
             # Pass our own HA dependencies for full control

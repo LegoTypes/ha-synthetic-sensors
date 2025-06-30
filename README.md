@@ -102,7 +102,7 @@ sensors:
         formula: "energy_cost_analysis * 24 * 30" # ref by main sensor key
         unit_of_measurement: "¢"
       annual_projected:
-        formula: "sensor.syn2_energy_cost_analysis * 24 * 365" # ref by entity_id
+        formula: "sensor.energy_cost_analysis * 24 * 365" # ref by entity_id
         unit_of_measurement: "¢"
       battery_efficiency:
         formula: "current_power * device.battery_level / 100" # using attribute access
@@ -174,6 +174,22 @@ sensors:
 - **New devices**: If a device with the `device_identifier` doesn't exist, it will be created with the provided information
 - **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are ignored)
 - **No device association**: Sensors without `device_identifier` behave as standalone entities (default behavior)
+- **Entity ID generation**: When using device association, entity IDs automatically include the device name prefix (e.g., `sensor.span_panel_main_power`)
+
+**Integration Domain:**
+
+Device association requires the integration to specify its `integration_domain` in the `SensorManagerConfig`:
+
+```python
+manager_config = SensorManagerConfig(
+    integration_domain="span",  # Your integration's domain
+    device_info=self.device_info,
+    lifecycle_managed_externally=True
+)
+```
+
+This ensures device lookups are isolated to your integration's namespace and prevents conflicts with other integrations
+that might use the same device identifiers.
 
 **Benefits of device association:**
 
@@ -181,6 +197,20 @@ sensors:
 - Better organization for complex setups with multiple related sensors
 - Device-level controls and automations
 - Cleaner entity management and discovery
+
+**Device-Aware Entity Naming:**
+
+When sensors are associated with devices, entity IDs are automatically generated using the device name as a prefix:
+
+- Device name is "slugified" (converted to lowercase, spaces become underscores, special characters removed)
+- Entity ID pattern: `sensor.{device_prefix}_{sensor_key}`
+- Examples:
+  - Device "SPAN Panel Main" + sensor "power" → `sensor.span_panel_main_power`
+  - Device "Solar Inverter" + sensor "efficiency" → `sensor.solar_inverter_efficiency`
+  - Device "Circuit - Phase A" + sensor "current" → `sensor.circuit_phase_a_current`
+
+This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to,
+while avoiding conflicts between sensors from different devices.
 
 **How attributes work:**
 
@@ -201,8 +231,16 @@ sensors:
 | **Attribute Dot Notation** | `entity.attribute` | `sensor1.battery_level` | Access entity attributes |
 | **Collection Functions** | `mathFunc(pattern:value)` | `sum(device_class:temperature)` | Aggregate entities by pattern |
 
-**Entity ID Generation**: The sensor key serves as the unique_id. Home Assistant creates entity_ids as
-`sensor.syn2_{key}` unless overridden with the optional `entity_id` field.
+**Entity ID Generation**:
+
+- **With device association**: `sensor.{device_prefix}_{sensor_key}` where device_prefix is auto-generated from the device name
+- **Without device association**: `sensor.{sensor_key}`
+- **Explicit override**: Use the optional `entity_id` field to specify exact entity ID
+
+**Device prefix examples:**
+
+- Device "SPAN Panel Main" → entity `sensor.span_panel_main_power`
+- Device "Solar Inverter" → entity `sensor.solar_inverter_efficiency`
 
 ### Variable Purpose and Scope
 
@@ -388,7 +426,7 @@ avg("device_class:temperature|humidity")    # Average temperature OR humidity se
 "sensor1.battery_level + climate.living_room.current_temperature"
 
 # Cross-sensor references
-"sensor.syn2_hvac_total_power + sensor.syn2_lighting_total_power"
+"sensor.span_panel_main_hvac_total_power + sensor.span_panel_main_lighting_total_power"
 ```
 
 ### Numeric Literals in Variables
@@ -484,12 +522,12 @@ service: synthetic_sensors.reload_config
 # Get sensor information
 service: synthetic_sensors.get_sensor_info
 data:
-  entity_id: "sensor.syn2_energy_cost_analysis"
+  entity_id: "sensor.span_panel_main_energy_cost_analysis"
 
 # Update sensor configuration
 service: synthetic_sensors.update_sensor
 data:
-  entity_id: "sensor.syn2_energy_cost_analysis"
+  entity_id: "sensor.span_panel_main_energy_cost_analysis"
   formula: "updated_formula"
 
 # Test formula evaluation
@@ -603,7 +641,7 @@ entity creation results, integration management, and more.
 
 **Auto-configuration files:** `<config>/synthetic_sensors_config.yaml`, `<config>/syn2_config.yaml`, etc.
 
-**Entity ID format:** `sensor.syn2_{sensor_key}`
+**Entity ID format:** `sensor.{device_prefix}_{sensor_key}` (with device association) or `sensor.{sensor_key}` (without)
 
 ## Integration Setup
 
@@ -620,15 +658,21 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 ```python
 from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
+from ha_synthetic_sensors.sensor_manager import SensorManagerConfig
 
 class MyCustomIntegration:
     async def async_setup_sensors(self, async_add_entities):
-        synthetic_integration = SyntheticSensorsIntegration(self.hass)
-
-        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
-            add_entities_callback=async_add_entities,
+        # Configure sensor manager with integration domain
+        manager_config = SensorManagerConfig(
+            integration_domain="your_integration",  # Your integration's domain
             device_info=self.device_info,
             lifecycle_managed_externally=True
+        )
+
+        synthetic_integration = SyntheticSensorsIntegration(self.hass)
+        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
+            add_entities_callback=async_add_entities,
+            manager_config=manager_config
         )
 
         # Load YAML config and apply
@@ -657,6 +701,7 @@ class MyCustomIntegration:
     async def async_setup_sensors(self, async_add_entities):
         # Configure sensor manager with data provider callback
         manager_config = SensorManagerConfig(
+            integration_domain="your_integration",  # Your integration's domain
             device_info=self.device_info,
             lifecycle_managed_externally=True,
             data_provider_callback=self.get_integration_data

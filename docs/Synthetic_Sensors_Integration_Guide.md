@@ -312,6 +312,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             unique_id_prefix="",
             lifecycle_managed_externally=True,
             data_provider_callback=data_provider_callback,
+            integration_domain=DOMAIN,
         )
 
         sensor_manager = SensorManager(hass, name_resolver, async_add_entities, manager_config)
