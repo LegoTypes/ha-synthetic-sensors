@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any, TypeAlias, TypedDict, cast
 
+import aiofiles  # type: ignore[import-untyped]
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
@@ -348,8 +349,9 @@ class ConfigManager:
             return self._config
 
         try:
-            with open(path, encoding="utf-8") as file:
-                yaml_data_raw = yaml.safe_load(file)
+            async with aiofiles.open(path, encoding="utf-8") as file:
+                content = await file.read()
+                yaml_data_raw = yaml.safe_load(content)
                 if not isinstance(yaml_data_raw, dict):
                     yaml_data: dict[str, Any] = {}
                 else:
