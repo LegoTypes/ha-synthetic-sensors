@@ -729,6 +729,39 @@ class ConfigManager:
             self._logger.error(error_msg)
             raise ConfigEntryError(error_msg) from exc
 
+    async def async_save_config(self, file_path: str | Path | None = None) -> None:
+        """Save current configuration to YAML file (async version).
+
+        Args:
+            file_path: Path to save to, or use current config path if None
+
+        Raises:
+            ConfigEntryError: If no configuration loaded or save fails
+        """
+        if not self._config:
+            raise ConfigEntryError("No configuration loaded to save")
+
+        path = Path(file_path) if file_path else self._config_path
+        if not path:
+            raise ConfigEntryError("No file path specified for saving")
+
+        try:
+            # Convert config back to YAML format
+            yaml_data = self._config_to_yaml(self._config)
+
+            # Convert to YAML string first
+            yaml_content = yaml.dump(yaml_data, default_flow_style=False, allow_unicode=True)
+
+            async with aiofiles.open(path, "w", encoding="utf-8") as file:
+                await file.write(yaml_content)
+
+            self._logger.debug("Saved configuration to %s", path)
+
+        except Exception as exc:
+            error_msg = f"Failed to save configuration to {path}: {exc}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg) from exc
+
     def _config_to_yaml(self, config: Config) -> dict[str, Any]:
         """Convert Config object back to YAML-compatible dictionary.
 
