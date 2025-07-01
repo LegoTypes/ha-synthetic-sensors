@@ -260,7 +260,7 @@ class SyntheticSensorsIntegration:
 
     async def async_cleanup_detailed(self) -> IntegrationCleanupResult:
         """Clean up all synthetic sensor resources with detailed results."""
-        errors = []
+        errors: list[str] = []
         services_unregistered = False
         sensors_removed = False
 
@@ -277,7 +277,7 @@ class SyntheticSensorsIntegration:
         try:
             # Clean up sensor manager
             if self._sensor_manager:
-                await self._sensor_manager._remove_all_sensors()
+                await self._sensor_manager.cleanup_all_sensors()
                 self._sensor_manager = None
                 sensors_removed = True
 

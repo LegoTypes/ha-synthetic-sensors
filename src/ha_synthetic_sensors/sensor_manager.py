@@ -142,7 +142,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._update_listeners: list[Any] = []
 
         # Collect all dependencies from all formulas
-        self._dependencies = set()
+        self._dependencies: set[str] = set()
         for formula in config.formulas:
             self._dependencies.update(formula.dependencies)
 
@@ -255,7 +255,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 self._update_extra_state_attributes()
 
                 # Notify sensor manager of successful update
-                self._sensor_manager._on_sensor_updated(
+                self._sensor_manager.on_sensor_updated(
                     self._config.unique_id,
                     main_result["value"],
                     self._calculated_attributes.copy(),
@@ -341,6 +341,17 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Force re-evaluation
         await self._async_update_sensor()
 
+    @property
+    def config_unique_id(self) -> str:
+        """Get the unique ID from the sensor configuration."""
+        return self._config.unique_id
+
+    async def async_update_sensor(self) -> None:
+        """Update the sensor value and calculated attributes (public method)."""
+        await self._async_update_sensor()
+
+    # ...existing code...
+
 
 class SensorManager:
     """Manages the lifecycle of synthetic sensors based on configuration."""
@@ -395,9 +406,23 @@ class SensorManager:
         """Get device info for an existing device by identifier."""
         # Look up existing device in registry using integration domain
         integration_domain = self._manager_config.integration_domain
-        device_entry = self._device_registry.async_get_device(identifiers={(integration_domain, device_identifier)})
+        lookup_identifier = (integration_domain, device_identifier)
+
+        _LOGGER.debug(
+            "DEVICE_LOOKUP_DEBUG: Looking for device with identifier %s in integration domain %s",
+            device_identifier,
+            integration_domain,
+        )
+
+        device_entry = self._device_registry.async_get_device(identifiers={lookup_identifier})
 
         if device_entry:
+            _LOGGER.debug(
+                "DEVICE_LOOKUP_DEBUG: Found existing device - ID: %s, Name: %s, Identifiers: %s",
+                device_entry.id,
+                device_entry.name,
+                device_entry.identifiers,
+            )
             return DeviceInfo(
                 identifiers={(integration_domain, device_identifier)},
                 name=device_entry.name,
@@ -405,6 +430,11 @@ class SensorManager:
                 model=device_entry.model,
                 sw_version=device_entry.sw_version,
                 hw_version=device_entry.hw_version,
+            )
+        else:
+            _LOGGER.debug(
+                "DEVICE_LOOKUP_DEBUG: No existing device found for identifier %s",
+                lookup_identifier,
             )
 
         return None
@@ -532,9 +562,18 @@ class SensorManager:
             state.last_update = dt_util.utcnow()
             state.is_available = True
 
+    def on_sensor_updated(
+        self,
+        sensor_unique_id: str,
+        main_value: Any,
+        calculated_attributes: dict[str, Any],
+    ) -> None:
+        """Called when a sensor is successfully updated (public method)."""
+        self._on_sensor_updated(sensor_unique_id, main_value, calculated_attributes)
+
     async def _create_all_sensors(self, config: Config) -> None:
         """Create all sensors from scratch."""
-        new_entities = []
+        new_entities: list[DynamicSensor] = []
 
         # Create one entity per sensor
         for sensor_config in config.sensors:
@@ -554,6 +593,11 @@ class SensorManager:
         device_info = None
 
         if sensor_config.device_identifier:
+            _LOGGER.debug(
+                "DEVICE_ASSOCIATION_DEBUG: Creating sensor with device_identifier: %s",
+                sensor_config.device_identifier,
+            )
+
             # First try to find existing device
             device_info = self._get_existing_device_info(sensor_config.device_identifier)
 
@@ -565,7 +609,16 @@ class SensorManager:
                     sensor_config.device_model,
                 ]
             ):
+                _LOGGER.debug(
+                    "DEVICE_ASSOCIATION_DEBUG: Creating new device for identifier %s",
+                    sensor_config.device_identifier,
+                )
                 device_info = self._create_new_device_info(sensor_config)
+            elif not device_info:
+                _LOGGER.debug(
+                    "DEVICE_ASSOCIATION_DEBUG: No existing device found and no device metadata provided for %s. Sensor will be created without device association.",
+                    sensor_config.device_identifier,
+                )
 
         # Phase 1: Generate entity_id if not explicitly provided
         if not sensor_config.entity_id:
@@ -623,7 +676,7 @@ class SensorManager:
 
         # Find sensors to add
         to_add = set(new_sensors.keys()) - set(old_sensors.keys())
-        new_entities = []
+        new_entities: list[DynamicSensor] = []
         for sensor_unique_id in to_add:
             sensor_config = new_sensors[sensor_unique_id]
             if sensor_config.enabled:
@@ -654,7 +707,7 @@ class SensorManager:
 
             if new_config.enabled:
                 new_sensor = await self._create_sensor_entity(new_config)
-                self._sensors_by_unique_id[new_config.unique_id] = new_sensor
+                self._sensors_by_unique_id[new_sensor.config_unique_id] = new_sensor
                 self._sensors_by_entity_id[new_sensor.entity_id] = new_sensor
                 self._add_entities_callback([new_sensor])
 
@@ -664,11 +717,15 @@ class SensorManager:
         for sensor_unique_id in sensor_unique_ids:
             await self.remove_sensor(sensor_unique_id)
 
+    async def cleanup_all_sensors(self) -> None:
+        """Remove all managed sensors - public cleanup method."""
+        await self._remove_all_sensors()
+
     async def create_sensors(self, config: Config) -> list[DynamicSensor]:
         """Create sensors from configuration - public interface for testing."""
         _LOGGER.debug(f"Creating sensors from config with {len(config.sensors)} sensor configs")
 
-        all_created_sensors = []
+        all_created_sensors: list[DynamicSensor] = []
 
         # Create one entity per sensor
         for sensor_config in config.sensors:
@@ -708,13 +765,13 @@ class SensorManager:
         if sensor_configs is None:
             # Update all managed sensors
             for sensor in self._sensors_by_unique_id.values():
-                await sensor._async_update_sensor()
+                await sensor.async_update_sensor()
         else:
             # Update specific sensors
             for config in sensor_configs:
                 if config.unique_id in self._sensors_by_unique_id:
                     sensor = self._sensors_by_unique_id[config.unique_id]
-                    await sensor._async_update_sensor()
+                    await sensor.async_update_sensor()
 
         self._logger.debug("Completed async sensor updates")
 

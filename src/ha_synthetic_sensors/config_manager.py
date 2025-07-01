@@ -76,6 +76,36 @@ class ConfigDict(TypedDict, total=False):
     sensors: dict[str, SensorConfigDict]
 
 
+def _default_attributes() -> dict[str, AttributeValue]:
+    """Default factory for attributes dictionary."""
+    return {}
+
+
+def _default_dependencies() -> set[str]:
+    """Default factory for dependencies set."""
+    return set()
+
+
+def _default_variables() -> dict[str, str | int | float]:
+    """Default factory for variables dictionary."""
+    return {}
+
+
+def _default_formulas() -> list[FormulaConfig]:
+    """Default factory for formulas list."""
+    return []
+
+
+def _default_sensors() -> list[SensorConfig]:
+    """Default factory for sensors list."""
+    return []
+
+
+def _default_global_settings() -> dict[str, AttributeValue]:
+    """Default factory for global settings dictionary."""
+    return {}
+
+
 @dataclass
 class FormulaConfig:
     """Configuration for a single formula within a synthetic sensor."""
@@ -87,10 +117,10 @@ class FormulaConfig:
     device_class: DeviceClassType | None = None
     state_class: StateClassType | None = None
     icon: str | None = None
-    attributes: dict[str, AttributeValue] = field(default_factory=dict)
-    dependencies: set[str] = field(default_factory=set)
+    attributes: dict[str, AttributeValue] = field(default_factory=_default_attributes)
+    dependencies: set[str] = field(default_factory=_default_dependencies)
     variables: dict[str, str | int | float] = field(
-        default_factory=dict
+        default_factory=_default_variables
     )  # Variable name -> entity_id mappings or numeric literals
 
     def __post_init__(self) -> None:
@@ -120,7 +150,7 @@ class SensorConfig:
     """Configuration for a complete synthetic sensor with multiple formulas."""
 
     unique_id: str  # REQUIRED: Unique identifier for HA entity creation
-    formulas: list[FormulaConfig] = field(default_factory=list)
+    formulas: list[FormulaConfig] = field(default_factory=_default_formulas)
     name: str | None = None  # OPTIONAL: Display name
     enabled: bool = True
     update_interval: int | None = None
@@ -138,14 +168,14 @@ class SensorConfig:
 
     def get_all_dependencies(self) -> set[str]:
         """Get all entity dependencies across all formulas."""
-        deps = set()
+        deps: set[str] = set()
         for formula in self.formulas:
             deps.update(formula.dependencies)
         return deps
 
     def validate(self) -> list[str]:
         """Validate sensor configuration and return list of errors."""
-        errors = []
+        errors: list[str] = []
 
         if not self.unique_id:
             errors.append("Sensor unique_id is required")
@@ -165,8 +195,8 @@ class Config:
     """Complete configuration containing all synthetic sensors."""
 
     version: str = "1.0"
-    sensors: list[SensorConfig] = field(default_factory=list)
-    global_settings: dict[str, AttributeValue] = field(default_factory=dict)
+    sensors: list[SensorConfig] = field(default_factory=_default_sensors)
+    global_settings: dict[str, AttributeValue] = field(default_factory=_default_global_settings)
 
     def get_sensor_by_unique_id(self, unique_id: str) -> SensorConfig | None:
         """Get a sensor configuration by unique_id."""
@@ -184,14 +214,14 @@ class Config:
 
     def get_all_dependencies(self) -> set[str]:
         """Get all entity dependencies across all sensors."""
-        deps = set()
+        deps: set[str] = set()
         for sensor in self.sensors:
             deps.update(sensor.get_all_dependencies())
         return deps
 
     def validate(self) -> list[str]:
         """Validate the entire configuration and return list of errors."""
-        errors = []
+        errors: list[str] = []
 
         # Check for duplicate sensor unique_ids
         sensor_unique_ids = [s.unique_id for s in self.sensors]
@@ -265,7 +295,7 @@ class ConfigManager:
 
             # Check for schema errors
             if not schema_result["valid"]:
-                error_messages = []
+                error_messages: list[str] = []
                 for error in schema_result["errors"]:
                     msg = f"{error.path}: {error.message}"
                     if error.suggested_fix:
@@ -319,9 +349,11 @@ class ConfigManager:
 
         try:
             with open(path, encoding="utf-8") as file:
-                yaml_data = yaml.safe_load(file)
-                if not isinstance(yaml_data, dict):
-                    yaml_data = {}
+                yaml_data_raw = yaml.safe_load(file)
+                if not isinstance(yaml_data_raw, dict):
+                    yaml_data: dict[str, Any] = {}
+                else:
+                    yaml_data = cast(dict[str, Any], yaml_data_raw)
 
             if not yaml_data:
                 self._logger.warning("Empty configuration file, using empty config")
@@ -339,7 +371,7 @@ class ConfigManager:
 
             # Check for schema errors
             if not schema_result["valid"]:
-                error_messages = []
+                error_messages: list[str] = []
                 for error in schema_result["errors"]:
                     msg = f"{error.path}: {error.message}"
                     if error.suggested_fix:
@@ -571,13 +603,13 @@ class ConfigManager:
         if not self._config:
             return {}
 
-        missing_deps = {}
+        missing_deps: dict[str, list[str]] = {}
 
         for sensor in self._config.sensors:
             if not sensor.enabled:
                 continue
 
-            missing = []
+            missing: list[str] = []
             for dep in sensor.get_all_dependencies():
                 if not self._hass.states.get(dep):
                     missing.append(dep)

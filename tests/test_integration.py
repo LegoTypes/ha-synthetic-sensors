@@ -296,7 +296,7 @@ class TestSyntheticSensorsIntegration:
         integration._service_manager = mock_service_manager
 
         mock_sensor_manager = MagicMock()
-        mock_sensor_manager._remove_all_sensors = AsyncMock()
+        mock_sensor_manager.cleanup_all_sensors = AsyncMock()
         integration._sensor_manager = mock_sensor_manager
 
         result = await integration._cleanup()
@@ -323,7 +323,7 @@ class TestSyntheticSensorsIntegration:
         integration._service_manager = mock_service_manager
 
         mock_sensor_manager = MagicMock()
-        mock_sensor_manager._remove_all_sensors = AsyncMock()
+        mock_sensor_manager.cleanup_all_sensors = AsyncMock()
         integration._sensor_manager = mock_sensor_manager
 
         result = await integration.async_cleanup_detailed()

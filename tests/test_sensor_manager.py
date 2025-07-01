@@ -493,7 +493,7 @@ class TestDynamicSensorExtended:
             # HA state should be written (verified by patch)
 
             # Verify sensor manager was notified
-            dynamic_sensor._sensor_manager._on_sensor_updated.assert_called_once()
+            dynamic_sensor._sensor_manager.on_sensor_updated.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_update_sensor_evaluation_failure(self, dynamic_sensor, mock_evaluator):
@@ -855,17 +855,17 @@ class TestSensorManagerExtended:
         """Test async_update_sensors with all sensors."""
         # Add mock sensors
         sensor1 = MagicMock()
-        sensor1._async_update_sensor = AsyncMock()
+        sensor1.async_update_sensor = AsyncMock()
         sensor2 = MagicMock()
-        sensor2._async_update_sensor = AsyncMock()
+        sensor2.async_update_sensor = AsyncMock()
 
         sensor_manager._sensors_by_unique_id = {"sensor1": sensor1, "sensor2": sensor2}
 
         await sensor_manager.async_update_sensors()
 
         # All sensors should be updated
-        sensor1._async_update_sensor.assert_called_once()
-        sensor2._async_update_sensor.assert_called_once()
+        sensor1.async_update_sensor.assert_called_once()
+        sensor2.async_update_sensor.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_update_sensors_specific(self, sensor_manager):
@@ -876,17 +876,17 @@ class TestSensorManagerExtended:
 
         # Add mock sensors
         sensor1 = MagicMock()
-        sensor1._async_update_sensor = AsyncMock()
+        sensor1.async_update_sensor = AsyncMock()
         sensor2 = MagicMock()
-        sensor2._async_update_sensor = AsyncMock()
+        sensor2.async_update_sensor = AsyncMock()
 
         sensor_manager._sensors_by_unique_id = {"sensor1": sensor1, "sensor2": sensor2}
 
         await sensor_manager.async_update_sensors([config1])
 
         # Only sensor1 should be updated
-        sensor1._async_update_sensor.assert_called_once()
-        sensor2._async_update_sensor.assert_not_called()
+        sensor1.async_update_sensor.assert_called_once()
+        sensor2.async_update_sensor.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_remove_sensor_success(self, sensor_manager):

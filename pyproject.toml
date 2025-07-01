@@ -19,6 +19,7 @@ pyyaml = "*"  # Let HA provide whatever version it needs
 simpleeval = "^1.0.3"  # Not used by HA, so we keep our own constraint
 voluptuous = "*"  # Let HA provide whatever version it needs
 jsonschema = "^4.17.0"  # Not used by HA, so we keep our own constraint
+aiofiles = "*"  # For async file operations to avoid blocking event loop
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"
@@ -27,11 +28,12 @@ pytest-cov = "^6.0.0"
 bandit = "^1.8.5"
 twine = "^6.0.1"
 pre-commit = "^4.0.0"
-ruff = "^0.12.0"
+ruff = "^0.12.1"
 mypy = "^1.15.0"
 radon = "*"
 types-PyYAML = "^6.0.0"
 types-jsonschema = "^4.0.0"
+types-aiofiles = "^24.1.0.20250606"
 homeassistant-stubs = "*"
 
 [tool.poetry.group.test.dependencies]
