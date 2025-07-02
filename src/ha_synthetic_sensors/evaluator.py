@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import logging
 import re
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from simpleeval import SimpleEval
 
@@ -234,15 +235,19 @@ class Evaluator(FormulaEvaluator):
                 if var_value is None:
                     # Use the validation helper to raise a fatal error
                     validate_entity_state_value(var_value, f"variable '{var_name}' in formula '{formula_name}'")
-                elif isinstance(var_value, str) and var_value in (
-                    "unavailable",
-                    "unknown",
-                ):
-                    # Also treat unavailable/unknown as fatal errors
+                elif isinstance(var_value, str) and var_value == STATE_UNAVAILABLE:
+                    # Treat unavailable as fatal error
                     raise DataValidationError(
                         f"Variable '{var_name}' in formula '{formula_name}' has unavailable state '{var_value}'. "
                         f"This is a fatal error - all dependencies must be available."
                     )
+                elif isinstance(var_value, str) and var_value == STATE_UNKNOWN:
+                    # Unknown state is always non-fatal - just propagate the unknown state
+                    return {
+                        "success": True,  # Not a failure, just temporarily unknown
+                        "value": None,
+                        "state": STATE_UNKNOWN,
+                    }
 
             # Create evaluator with proper separation of names and functions
             evaluator = SimpleEval()
@@ -406,7 +411,7 @@ class Evaluator(FormulaEvaluator):
                                 f"Data provider returned None state value for entity '{entity_id}' - this is a fatal error. "
                                 "All data provider values must be non-None."
                             )
-                        elif isinstance(value, str) and value in ("unavailable", "unknown"):
+                        elif isinstance(value, str) and value in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                             raise DataValidationError(
                                 f"Data provider returned unavailable state '{value}' for entity '{entity_id}' - this is a fatal error. "
                                 "All data provider values must be available and valid."
@@ -445,7 +450,7 @@ class Evaluator(FormulaEvaluator):
             if state is None:
                 # FATAL ERROR: Entity doesn't exist in Home Assistant and not provided by callback
                 missing.add(entity_id)
-            elif state.state in ("unavailable", "unknown") or state.state is None:
+            elif state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN) or state.state is None:
                 # TRANSITORY ERROR: Entity exists but currently unavailable or has None state
                 unavailable.add(entity_id)
             else:
@@ -587,7 +592,7 @@ class Evaluator(FormulaEvaluator):
             if state is None:
                 issues[entity_id] = "Entity does not exist"
                 missing_entities.append(entity_id)
-            elif state.state in ("unavailable", "unknown"):
+            elif state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 issues[entity_id] = f"Entity state is {state.state}"
                 unavailable_entities.append(entity_id)
 

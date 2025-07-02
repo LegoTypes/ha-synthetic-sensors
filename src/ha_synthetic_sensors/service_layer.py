@@ -327,7 +327,7 @@ class ServiceLayer:
             # Add to configuration
             if self._config_manager.add_variable(variable_config["name"], variable_config["entity_id"]):
                 # Save configuration
-                self._config_manager.save_config()
+                await self._config_manager.async_save_config()
 
                 # Add to name resolver
                 self._name_resolver.add_entity_mapping(variable_config["name"], variable_config["entity_id"])
@@ -354,7 +354,7 @@ class ServiceLayer:
             # Remove from configuration
             if self._config_manager.remove_variable(name):
                 # Save configuration
-                self._config_manager.save_config()
+                await self._config_manager.async_save_config()
 
                 # Remove from name resolver
                 self._name_resolver.remove_entity_mapping(name)
