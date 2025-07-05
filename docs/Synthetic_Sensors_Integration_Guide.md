@@ -3,281 +3,216 @@
 ## Overview
 
 This document provides a guide for Home Assistant integration developers on how to integrate
-the `ha-synthetic-sensors` package into their custom integrations. It covers best practices,
-import patterns, and implementation strategies for replacing native sensors with synthetic
-equivalents while maintaining seamless migration and consistent entity IDs.
+the `ha-synthetic-sensors` package into their custom integrations. The package supports both
+file-based YAML configuration and Home Assistant's built-in storage system, allowing integrations
+to choose the approach that best fits their needs.
 
-The SPAN Panel integration serves as a reference implementation demonstrating these patterns.
+## Integration Architecture
 
-## Key Integration Principles
+### Core Components
 
-### Import Timing and Architecture
-
-To successfully integrate ha-synthetic-sensors into your Home Assistant integration:
-
-1. **Submodule Import Pattern**: Use lightweight top-level imports with submodule imports for heavy components
-2. **Top-Level Imports**: Keep all imports at the top level of files to satisfy linters and type checkers
-3. **Linter-Friendly**: Ensure proper type checking and IDE autocomplete support
-4. **Performance Optimized**: Heavy modules only loaded when sensor platform loads (after HA is ready)
-
-### Recommended Import Pattern
-
-Use this **submodule import pattern** to avoid import timing issues:
-
-#### In Your Integration's `__init__.py`
-
-```python
-# Lightweight import at top level - safe during HA initialization
-import ha_synthetic_sensors
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # Configure debug logging for ha-synthetic-sensors package
-    ha_synthetic_sensors.configure_logging(logging.DEBUG)
-
-    # ... rest of your setup logic
-```
-
-#### In Your Integration's `sensor.py`
-
-```python
-# Submodule imports at top level for heavy components
-from ha_synthetic_sensors.config_manager import ConfigManager
-from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
-from ha_synthetic_sensors.name_resolver import NameResolver
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
-    # Use the imported classes here
-    sensor_manager = SensorManager(hass, name_resolver, async_add_entities, manager_config)
-```
-
-## Architecture Overview
-
-### Integration Authority Model
-
-When integrating ha-synthetic-sensors, use the **Integration Authority Model**:
-
-1. **Your integration owns the data** - Your coordinator/API client fetches and manages device data
-2. **Synthetic sensors package handles entity creation** - Creates HA entities based on YAML configuration
-3. **Data provider callback** - Your integration provides data directly to synthetic sensors via callback
-4. **Virtual backing entities** - Internal entity IDs used only for data mapping, never registered in HA
-
-### Integration Components
+**Storage-Based Path (Programmatic):**
 
 ```text
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────────┐
-│   __init__.py   │───▶│ YourSensorManager│───▶│ ha-synthetic-sensors│
-│                 │    │                  │    │     package         │
-│ - Setup entry   │    │ - YAML generation│    │ - Entity creation   │
-│ - Call synthetic│    │ - Data provider  │    │ - State management  │
-│   setup         │    │ - Config mgmt    │    │                     │
-└─────────────────┘    └──────────────────┘    └─────────────────────┘
-         │                       │                        │
-         ▼                       ▼                        ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────────┐
-│  Coordinator    │    │ SyntheticConfig  │    │    sensor.py        │
-│                 │    │    Manager       │    │                     │
-│ - Data fetching │    │ - YAML file I/O  │    │ - Platform setup    │
-│ - State updates │    │ - File mgmt      │    │ - Load synthetic    │
-│                 │    │                  │    │   sensors           │
-└─────────────────┘    └──────────────────┘    └─────────────────────┘
+┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
+│   Your Integration  │───▶│ BulkConfigService   │───▶│   StorageManager    │
+│                     │    │                     │    │                     │
+│ - Device data       │    │ - Device sensor     │    │ - HA storage        │
+│ - Sensor configs    │    │   sets              │    │ - Sensor metadata   │
+│ - Data provider     │    │ - Bulk operations   │    │ - Device association│
+└─────────────────────┘    └─────────────────────┘    └─────────────────────┘
 ```
 
-## Integration Flow
+**File-Based Path (Auto-Discovery):**
 
-### Your Integration → ha-synthetic-sensors Method Calls
+```text
+┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
+│   YAML Files        │───▶│   ConfigManager     │───▶│   SensorManager     │
+│                     │    │                     │    │                     │
+│ - sensor_config.yaml│    │ - YAML parsing      │    │ - Entity creation   │
+│ - syn2_config.yaml  │    │ - Validation        │    │ - State management  │
+│ - Auto-discovery    │    │ - Config objects    │    │ - Device association│
+└─────────────────────┘    └─────────────────────┘    └─────────────────────┘
+```
 
-#### Setup Phase (`__init__.py`)
+**Common Components:**
+
+```text
+┌─────────────────────┐    ┌─────────────────────┐
+│   ConfigConverter   │    │ Config/Formula Data │
+│                     │    │                     │
+│ - YAML ↔ Storage    │    │ - Formulas          │
+│ - Format conversion │    │ - Variables         │
+│ - Migration support │    │ - Attributes        │
+└─────────────────────┘    └─────────────────────┘
+```
+
+### Architectural Principles
+
+1. **Dual Configuration Support**: Both file-based YAML and storage-based configuration
+2. **Smart Configuration Detection**: Auto-discovery skipped when storage is in use
+3. **Device-Centric Organization**: Sensors can be grouped by device for bulk management
+4. **Integration Authority**: Your integration owns data, synthetic sensors handle entities
+5. **Flexible Workflow**: Choose between file-based simplicity or storage-based programmatic control
+
+## Quick Start Integration Pattern
+
+### 1. Basic Setup in `__init__.py`
 
 ```python
-# Lightweight import at top level
 import ha_synthetic_sensors
+from ha_synthetic_sensors.bulk_config_service import BulkConfigService
 
-# Configure debug logging for ha-synthetic-sensors package
-ha_synthetic_sensors.configure_logging(logging.DEBUG)
-
-# Generate YAML configuration (writes to file system)
-your_sensor_manager = YourSensorManager(hass, entry)
-config_generated = await your_sensor_manager.generate_config(coordinator, coordinator.data)
-```
-
-#### Platform Setup (`sensor.py`)
-
-```python
-# Submodule imports at top level for heavy components
-from ha_synthetic_sensors.config_manager import ConfigManager
-from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
-from ha_synthetic_sensors.name_resolver import NameResolver
-
-# Create SensorManager from ha-synthetic-sensors
-sensor_manager = SensorManager(hass, name_resolver, async_add_entities, manager_config)
-
-# Register backing entities (CRITICAL: must happen before load_configuration)
-sensor_manager.register_data_provider_entities(backing_entities)
-
-# Load YAML configuration - creates synthetic sensors in HA
-await sensor_manager.load_configuration(config)
-```
-
-#### Runtime Data Updates
-
-```python
-# ha-synthetic-sensors calls your data provider callback
-def data_provider_callback(entity_id: str) -> DataProviderResult:
-    # Parse backing entity ID: "your_integration_synthetic_backing.device_1_power"
-    # Return current coordinator data
-    return {"value": actual_value, "exists": True}
-```
-
-### 1. Integration Setup (`__init__.py`)
-
-```python
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # 1. Create your coordinator
-    coordinator = YourIntegrationCoordinator(...)
-
-    # 2. Perform initial data refresh
-    await coordinator.async_config_entry_first_refresh()
-
-    # 3. Set up synthetic sensors BEFORE platforms
-    await setup_synthetic_sensors(hass, entry, coordinator)
-
-    # 4. Set up platforms (sensor, switch, etc.)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-```
-
-### 2. Synthetic Sensors Setup
-
-```python
-# Top-level imports - lightweight package import only
-import ha_synthetic_sensors
-
-async def setup_synthetic_sensors(hass: HomeAssistant, entry: ConfigEntry, coordinator: YourIntegrationCoordinator) -> None:
-    # 1. Configure debug logging for ha-synthetic-sensors
+    # Configure logging
     ha_synthetic_sensors.configure_logging(logging.DEBUG)
 
-    # 2. Create your sensor manager
-    your_sensor_manager = YourSensorManager(hass, entry)
+    # Create your coordinator
+    coordinator = YourIntegrationCoordinator(...)
+    await coordinator.async_config_entry_first_refresh()
 
-    # 3. Generate YAML configuration
-    config_generated = await your_sensor_manager.generate_config(coordinator, coordinator.data)
+    # Initialize bulk config service
+    bulk_service = BulkConfigService(hass, DOMAIN)
+    await bulk_service.async_initialize()
 
-    # 4. Get registered backing entities
-    registered_entities = await your_sensor_manager.get_registered_entity_ids(coordinator.data)
+    # Store for use in sensor platform
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "bulk_service": bulk_service,
+    }
 
-    # 5. Store manager and entities in hass.data for sensor.py
-    hass.data[DOMAIN][entry.entry_id]["synthetic_manager"] = your_sensor_manager
-    hass.data[DOMAIN][entry.entry_id]["backing_entities"] = registered_entities
+    # Forward to platforms
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
 ```
 
-### 3. Implementing Your Sensor Manager
-
-You need to create a sensor manager class that generates YAML configuration for synthetic sensors:
+### 2. Sensor Platform Setup in `sensor.py`
 
 ```python
-class YourSensorManager:
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
-        self.hass = hass
-        self.entry = entry
+from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
+from ha_synthetic_sensors.sensor_manager import SensorManagerConfig
 
-    async def generate_config(self, coordinator, device_data) -> bool:
-        """Generate YAML configuration for synthetic sensors."""
-        # Build your YAML configuration
-        config = self._build_yaml_config(device_data)
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
+    data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = data["coordinator"]
+    bulk_service = data["bulk_service"]
 
-        # Write to file
-        config_manager = SyntheticConfigManager(self.hass, self.entry.entry_id)
-        await config_manager.write_config(config)
-        return True
+    # Create synthetic sensors integration
+    synthetic_integration = SyntheticSensorsIntegration(hass, entry)
 
-    async def get_registered_entity_ids(self, device_data) -> set[str]:
-        """Get backing entity IDs that your integration can provide data for."""
-        entity_ids = set()
+    # Configure sensor manager with your integration domain
+    manager_config = SensorManagerConfig(
+        integration_domain=DOMAIN,
+        device_info=your_device_info,
+        lifecycle_managed_externally=True,
+        data_provider_callback=create_data_provider_callback(coordinator),
+    )
 
-        # Generate backing entity IDs for your devices
-        for device_id, device in device_data.devices.items():
-            for sensor_type in ["power", "energy", "temperature"]:
-                entity_id = f"your_integration_synthetic_backing.device_{device_id}_{sensor_type}"
-                entity_ids.add(entity_id)
+    # Create managed sensor manager
+    sensor_manager = await synthetic_integration.create_managed_sensor_manager(
+        add_entities_callback=async_add_entities,
+        manager_config=manager_config
+    )
 
-        return entity_ids
+    # Generate and store sensor configurations
+    await setup_synthetic_sensors(
+        coordinator,
+        bulk_service,
+        sensor_manager,
+        your_device_identifier
+    )
+
+    # Create any native (non-synthetic) sensors
+    native_entities = create_native_sensors(coordinator)
+    async_add_entities(native_entities)
 ```
 
-### 4. YAML Configuration Format
-
-Your sensor manager generates YAML configuration that defines synthetic sensors:
-
-```yaml
-version: '1.0'
-sensors:
-  your_device_123_power:
-    name: Living Room Device Power
-    entity_id: sensor.your_integration_living_room_device_power
-    formula: source_value
-    variables:
-      source_value: your_integration_synthetic_backing.device_123_power  # Virtual backing entity
-    unit_of_measurement: W
-    device_class: power
-    state_class: measurement
-    device_identifier: your_integration_device_123
-```
-
-#### Entity ID Construction
-
-Entity IDs should be constructed consistently and respect user configuration options:
+### 3. Sensor Configuration Generation
 
 ```python
-# Device sensors
-entity_id = construct_entity_id(
-    coordinator,
-    device_data,
-    "sensor",
-    device_name,
-    device_id,
-    sensor_suffix,
-)
+async def setup_synthetic_sensors(
+    coordinator: YourCoordinator,
+    bulk_service: BulkConfigService,
+    sensor_manager: SensorManager,
+    device_identifier: str
+) -> None:
+    """Set up synthetic sensors for your integration."""
 
-# Main device sensors
-entity_id = construct_main_entity_id(
-    coordinator,
-    device_data,
-    "sensor",
-    suffix,
-)
+    # Generate sensor configurations from your device data
+    sensor_configs = generate_sensor_configs(coordinator.data, device_identifier)
+
+    # Add sensors to device in bulk
+    sensor_set_id = await bulk_service.async_add_sensors_to_device(
+        device_identifier=device_identifier,
+        sensor_configs=sensor_configs,
+        device_name=coordinator.device_name,
+    )
+
+    # Register data provider entities
+    backing_entities = generate_backing_entity_ids(coordinator.data, device_identifier)
+    sensor_manager.register_data_provider_entities(backing_entities)
+
+    # Convert storage to config and load
+    config = bulk_service.storage_manager.to_config(device_identifier=device_identifier)
+    await sensor_manager.load_configuration(config)
+
+def generate_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
+    """Generate sensor configurations from your device data."""
+    from ha_synthetic_sensors.config_manager import SensorConfig, FormulaConfig
+
+    configs = []
+
+    # Example: Power sensor
+    power_config = SensorConfig(
+        unique_id=f"{device_identifier}_power",
+        formulas=[
+            FormulaConfig(
+                formula="power_value",
+                variables={"power_value": f"your_integration_backing.{device_identifier}_power"},
+                unit_of_measurement="W",
+                device_class="power",
+                state_class="measurement",
+            )
+        ],
+        name=f"{device_data.name} Power",
+        device_identifier=device_identifier,
+    )
+    configs.append(power_config)
+
+    # Add more sensor configurations...
+
+    return configs
 ```
 
-Consider implementing config options for:
-
-- `use_device_prefix`: Controls whether integration name prefix is added
-- `use_friendly_names`: Controls friendly vs technical naming
-- `naming_pattern`: Different entity ID patterns for different use cases
-
-### 5. Data Provider Callback
-
-Your integration provides data directly to synthetic sensors via callback:
+### 4. Data Provider Implementation
 
 ```python
-def create_data_provider_callback(self, coordinator, device_data):
-    """Create a data provider callback for synthetic sensors."""
+def create_data_provider_callback(coordinator: YourCoordinator) -> DataProviderCallback:
+    """Create data provider callback for synthetic sensors."""
 
     def data_provider_callback(entity_id: str) -> DataProviderResult:
-        # Parse virtual entity ID: "your_integration_synthetic_backing.device_123_power"
+        """Provide live data for synthetic sensors."""
         try:
-            # Extract device ID and sensor type from entity_id
+            # Parse backing entity ID: "your_integration_backing.device_123_power"
+            if not entity_id.startswith("your_integration_backing."):
+                return {"value": None, "exists": False}
+
+            # Extract device and sensor type
             parts = entity_id.split(".")
-            if len(parts) != 2 or not parts[1].startswith("device_"):
+            if len(parts) != 2:
                 return {"value": None, "exists": False}
 
             # Parse device_123_power -> device_id=123, sensor_type=power
-            device_part = parts[1]  # "device_123_power"
-            device_id, sensor_type = self._parse_device_entity(device_part)
+            backing_part = parts[1]  # "device_123_power"
+            device_id, sensor_type = parse_backing_entity(backing_part)
 
             # Get current data from coordinator
-            device = device_data.devices.get(device_id)
-            if not device:
+            device_data = coordinator.data.get_device(device_id)
+            if not device_data:
                 return {"value": None, "exists": False}
 
             # Return the requested sensor value
-            value = getattr(device, sensor_type, None)
+            value = getattr(device_data, sensor_type, None)
             return {"value": value, "exists": value is not None}
 
         except Exception as e:
@@ -287,563 +222,369 @@ def create_data_provider_callback(self, coordinator, device_data):
     return data_provider_callback
 ```
 
-### 6. Platform Setup (`sensor.py`)
+## Storage-Based Configuration Management
+
+### Storage Concepts
+
+1. **Sensor Sets**: Groups of sensors defined within a single YAML file
+2. **Storage Persistence**: Configuration stored in HA's storage system
+3. **Bulk Operations**: Operations for managing multiple sensors within a sensor set
+
+### BulkConfigService API
 
 ```python
-# Top-level submodule imports for heavy components
-from ha_synthetic_sensors.config_manager import ConfigManager
-from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
-from ha_synthetic_sensors.name_resolver import NameResolver
+# Device-centric sensor management
+sensor_set_id = await bulk_service.async_create_device_sensor_set(
+    device_identifier="your_device_123",
+    device_name="Living Room Device",
+    description="Power monitoring sensors"
+)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
-    # 1. Get synthetic manager from hass.data
-    synthetic_manager = hass.data[DOMAIN][entry.entry_id].get("synthetic_manager")
+# Add sensors to device
+await bulk_service.async_add_sensors_to_device(
+    device_identifier="your_device_123",
+    sensor_configs=sensor_configs,
+    device_name="Living Room Device"
+)
 
-    # 2. Load synthetic sensors using ha-synthetic-sensors package
-    if synthetic_manager:
-        yaml_path = hass.data[DOMAIN][entry.entry_id].get("yaml_path")
+# Replace all sensors for a device
+await bulk_service.async_replace_device_sensors(
+    device_identifier="your_device_123",
+    sensor_configs=new_sensor_configs,
+    device_name="Living Room Device"
+)
 
-        # Create data provider callback
-        data_provider_callback = synthetic_manager.create_data_provider_callback(coordinator, coordinator.data)
+# Delete all sensors for a device
+deleted_count = await bulk_service.async_delete_device_sensors("your_device_123")
 
-        # Configure SensorManager with data provider
-        manager_config = SensorManagerConfig(
-            device_info=device_info,
-            unique_id_prefix="",
-            lifecycle_managed_externally=True,
-            data_provider_callback=data_provider_callback,
-            integration_domain=DOMAIN,
+# Import from YAML (compatibility)
+sensor_set_id = await bulk_service.async_import_yaml_for_device(
+    device_identifier="your_device_123",
+    yaml_content=yaml_content,
+    replace_existing=True
+)
+
+# Export to YAML
+yaml_content = await bulk_service.async_export_device_yaml("your_device_123")
+```
+
+### StorageManager Direct Access
+
+```python
+# For advanced use cases, access storage manager directly
+storage_manager = bulk_service.storage_manager
+
+# Convert between formats
+config = storage_manager.to_config(device_identifier="your_device_123")
+await storage_manager.async_from_config(config, sensor_set_id, device_identifier)
+
+# Query sensors
+sensors = storage_manager.list_sensors(device_identifier="your_device_123")
+sensor_sets = storage_manager.list_sensor_sets(device_identifier="your_device_123")
+```
+
+## Migration from File-Based Configuration
+
+### For Existing Integrations
+
+If you have existing YAML-based configurations, use the migration path:
+
+```python
+async def migrate_yaml_to_storage(
+    bulk_service: BulkConfigService,
+    yaml_file_path: str,
+    device_identifier: str
+) -> bool:
+    """Migrate existing YAML configuration to storage."""
+    try:
+        # Read existing YAML (non-blocking)
+        def _read_yaml_file():
+            with open(yaml_file_path, 'r') as f:
+                return f.read()
+
+        yaml_content = await hass.async_add_executor_job(_read_yaml_file)
+
+        # Import to storage
+        await bulk_service.async_import_yaml_for_device(
+            device_identifier=device_identifier,
+            yaml_content=yaml_content,
+            replace_existing=True
         )
 
-        sensor_manager = SensorManager(hass, name_resolver, async_add_entities, manager_config)
+        # Optionally remove old YAML file (non-blocking)
+        await hass.async_add_executor_job(os.remove, yaml_file_path)
+        return True
 
-        # Register backing entities that we can provide data for
-        sensor_manager.register_data_provider_entities(backing_entities)
-
-        # Load YAML configuration - THIS CREATES THE SYNTHETIC SENSORS
-        await sensor_manager.load_configuration(config)
-
-    # 3. Create native status sensors (non-synthetic)
-    status_entities = create_status_sensors(...)
-    async_add_entities(status_entities)
+    except Exception as e:
+        _LOGGER.error("Failed to migrate YAML to storage: %s", e)
+        return False
 ```
 
-### 6. Backing Entity Registration
+### Configuration Sources
 
-#### What are Backing Entities?
+The package supports two configuration approaches:
 
-Backing entities are **virtual entity IDs** that represent the data sources for synthetic sensors. They are:
+#### Auto-Discovery (files managed by the integration)
 
-- **Never registered in Home Assistant** - They don't appear in `hass.states`
-- **Used only for data mapping** - They connect synthetic sensors to our data provider
-- **Internal to the integration** - They're implementation details, not user-facing
+- **Automatic**: Package automatically searches for YAML files in the integration directory
+- **No configuration needed**: Just place a YAML file and the package finds it (reload when changes are made)
+- **Standalone mode**: Works without any integration storage setup code
 
-#### Backing Entity Format
+#### Storage-Based (storage managed by the package)
+
+- **Integration-controlled**: Your integration interacts with configuration via `BulkConfigService`
+- **HA storage system**: Configuration persisted in storage allocated by the integration (via Home Assistant)
+- **Full CRUD**: Add, update, delete individual sensors programmatically
+- **Device-centric**: Organize sensors by YAML in-memory handoff (with a sensor_set_id) for bulk loads
+- **YAML Import/Export**: Full roundtrip lossless export on a per-sensor_set_id granularity
+- **In storage Consistency**:  Event listeners update sensor references for any sensor entity_id and name changes in HA
+
+#### Configuration Behavior
+
+**IMPORTANT**: These approaches are **mutually exclusive** - only one configuration is active at a time:
+
+- **Auto-discovery runs first** when the package initializes
+- **Storage-based configuration, when loaded, replaces** any auto-discovered configuration
+- **Smart conflict prevention**: Auto-discovery is automatically skipped if storage already contains sensor sets
+- **Last loaded wins**: Each `load_configuration()` call completely replaces the previous configuration
+
+## Device Association and Entity IDs
+
+### Device-Aware Entity Naming
+
+When sensors are associated with devices, entity IDs are automatically generated:
 
 ```python
-# Circuit sensors
-"span_panel_synthetic_backing.circuit_1_power"
-"span_panel_synthetic_backing.circuit_1_energy_consumed"
-"span_panel_synthetic_backing.circuit_15_power"  # Solar panels
+# Device association in sensor config
+sensor_config = SensorConfig(
+    unique_id=f"{device_identifier}_power",
+    device_identifier=device_identifier,  # Associates with device
+    formulas=[...],
+    name="Device Power",
+)
 
-# Panel sensors
-"span_panel_synthetic_backing.circuit_0_instant_grid_power"
-"span_panel_synthetic_backing.circuit_0_feedthrough_power"
+# Results in entity ID: sensor.your_integration_device_name_power
 ```
 
-#### Registration Process
-
-1. **Generation** (`SpanSensorManager.get_registered_entity_ids()`):
-
-   ```python
-   # Generate backing entity IDs for all circuits and panel sensors
-   entity_ids = set()
-
-   # Panel sensors (circuit_0)
-   for panel_key in PANEL_SENSOR_MAP:
-       entity_id = f"{device_name}_synthetic_backing.circuit_0_{panel_key}"
-       entity_ids.add(entity_id)
-
-   # Circuit sensors
-   for circuit_id, circuit_data in span_panel.circuits.items():
-       circuit_number = get_circuit_number(circuit_data)
-       for suffix in CIRCUIT_FIELD_MAP:
-           entity_id = f"{device_name}_synthetic_backing.circuit_{circuit_number}{suffix}"
-           entity_ids.add(entity_id)
-   ```
-
-2. **Registration** (`sensor.py`):
-
-   ```python
-   # Tell synthetic package which backing entities we can provide data for
-   sensor_manager.register_data_provider_entities(backing_entities)
-   ```
-
-3. **YAML Mapping** (Generated YAML):
-
-   ```yaml
-   sensors:
-     span_sp3-242424-001_circuit_1_instantpowerw:
-       entity_id: sensor.span_panel_kitchen_outlets_power  # User-facing entity
-       variables:
-         source_value: span_panel_synthetic_backing.circuit_1_power  # Backing entity
-   ```
-
-#### Why Registration is Critical
-
-- **Validation**: Synthetic package validates that we can provide data for all backing entities referenced in YAML
-- **Callback Routing**: When synthetic sensor needs data, it calls our callback with the backing entity ID
-- **Error Prevention**: Prevents synthetic sensors from being created for non-existent data sources
-
-#### Static Caching and Multiple Invocation Protection
-
-The backing entity registration uses **static class-level caching** to ensure consistency:
+### Device Integration
 
 ```python
-class SpanSensorManager:
-    # Class-level cache for registered entities (static across all instances)
-    _static_registered_entities: set[str] | None = None
-    _static_entities_generated: bool = False
-    static_entities_registered: bool = False  # Public for cross-module access
+# Configure sensor manager with device info
+manager_config = SensorManagerConfig(
+    integration_domain="your_integration",
+    device_info=DeviceInfo(
+        identifiers={(DOMAIN, device_identifier)},
+        name=device_name,
+        manufacturer="Your Company",
+        model="Device Model",
+    ),
+    lifecycle_managed_externally=True,
+    data_provider_callback=data_provider_callback,
+)
+```
 
-async def get_registered_entity_ids(self, span_panel: Any) -> set[str]:
-    # Return static cached result if available to ensure consistency across ALL instances
-    if SpanSensorManager._static_registered_entities is not None:
-        return SpanSensorManager._static_registered_entities.copy()
+## Data Provider Patterns
 
-    # Generate entities only once, then cache statically
+### Backing Entity Naming Convention
+
+Use consistent naming for backing entities:
+
+```python
+def generate_backing_entity_ids(device_data: Any, device_identifier: str) -> set[str]:
+    """Generate backing entity IDs for data provider."""
     entity_ids = set()
-    # ... generate backing entities ...
 
-    # Cache the result statically for ALL instances
-    SpanSensorManager._static_registered_entities = entity_ids.copy()
-    SpanSensorManager._static_entities_generated = True
+    # Format: {integration}_backing.{device_id}_{sensor_type}
+    for sensor_type in ["power", "energy", "temperature"]:
+        entity_id = f"your_integration_backing.{device_identifier}_{sensor_type}"
+        entity_ids.add(entity_id)
 
     return entity_ids
 ```
 
-**Why Static Caching is Essential:**
-
-The SPAN Panel integration has **multiple sensor platforms and configs** that all need backing entities:
-
-- **Circuit sensors** (synthetic) - need `circuit_X_power`, `circuit_X_energy_consumed`, etc.
-- **Panel sensors** (synthetic) - need `circuit_0_instant_grid_power`, `circuit_0_feedthrough_power`, etc.
-- **Status sensors** (native) - don't need backing entities but share the same manager
-
-Without static caching, each platform setup could generate **different backing entity lists**, causing:
-
-- **Registration mismatches**: sensor.py registers one set, but YAML references another
-- **Data provider failures**: Synthetic sensors request backing entities that weren't registered
-- **Inconsistent behavior**: Different calls return different entity sets
-
-**Static caching solves this by:**
-
-- **Single generation**: First call generates the complete backing entity list for ALL sensor types
-- **Shared consistency**: All subsequent calls (from any platform) get the same list
-- **Cross-platform reliability**: Circuit sensors, panel sensors, and status sensors all see identical backing entities
-
-#### Integration Ownership of Backing Store
-
-The SPAN Panel integration **owns the entire backing store architecture**:
-
-- **YAML generation**: Integration generates and manages the YAML configuration files
-- **Backing entity definition**: Integration defines all virtual backing entity IDs
-- **Data provider implementation**: Integration provides the callback that supplies live data
-- **File lifecycle**: Integration handles YAML creation, updates, and cleanup
-
-This gives the integration **complete control** over the synthetic sensor ecosystem, while the ha-synthetic-sensors
-package handles the HA entity lifecycle and state management. Future enhancements might move to JSON storage or other
-formats, but the integration will continue to own the backing store design and data flow.
-
-### 7. Data Flow and Update Cycle
-
-#### Who Calls What and When
-
-1. **Integration Setup** (`__init__.py`):
-   - Calls `setup_synthetic_sensors()`
-   - Creates `SpanSensorManager`
-   - Generates YAML configuration
-   - Stores data provider callback in hass.data
-
-2. **Platform Setup** (`sensor.py`):
-   - Calls `SensorManager.register_data_provider_entities(backing_entities)` - **This tells synthetic package which virtual
-     entities we can provide data for**
-   - Calls `SensorManager.load_configuration(config)` - **This creates the actual synthetic sensor entities in HA**
-
-3. **Data Updates** (Automatic via HA):
-   - **Home Assistant calls synthetic sensor `async_update()`** when it needs fresh data
-   - **Synthetic sensor calls our data provider callback** with backing entity ID like `"span_panel_synthetic_backing.circuit_1_power"`
-   - **Our callback parses the entity ID** to extract circuit number and field type
-   - **Our callback fetches current data from coordinator** (always live data, no caching)
-   - **Our callback returns `{"value": actual_value, "exists": True}`**
-   - **Synthetic sensor updates its state** with the returned value and triggers HA state change
-
-#### Update Triggers
-
-- **Coordinator Updates**: When SPAN panel coordinator fetches new data (every scan_interval)
-- **HA State Requests**: When HA dashboard, automations, or other components request current state
-- **Manual Refresh**: When user manually refreshes entity or calls `homeassistant.update_entity`
-- **Dependency Updates**: When synthetic sensor dependencies change (though we use simple `source_value` formula)
-
-#### Update Flow Diagram
-
-```text
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────────┐
-│ Home Assistant  │───▶│ Synthetic Sensor │───▶│  Data Provider      │
-│                 │    │                  │    │   Callback          │
-│ - Calls         │    │ - async_update() │    │ - Gets coordinator  │
-│   async_update()│    │ - Requests data  │    │   data              │
-│ - Needs fresh   │    │   from callback  │    │ - Parses entity_id  │
-│   sensor data   │    │                  │    │ - Returns value     │
-└─────────────────┘    └──────────────────┘    └─────────────────────┘
-         ▲                       │                        │
-         │                       ▼                        ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────────┐
-│ Updated Sensor  │◀───│ Synthetic Sensor │◀───│    Coordinator      │
-│    State        │    │    Updates       │    │                     │
-│                 │    │ - Sets new state │    │ - Current panel     │
-│ - New value     │    │ - Triggers HA    │    │   data              │
-│ - Attributes    │    │   state change   │    │ - Circuit data      │
-│ - Timestamp     │    │                  │    │ - Panel data        │
-└─────────────────┘    └──────────────────┘    └─────────────────────┘
-```
-
-## 8. Entity Types and Mapping
-
-### Circuit Sensors (Synthetic)
-
-| Native Entity | Synthetic Entity | Backing Entity |
-|---------------|------------------|----------------|
-| `sensor.span_panel_kitchen_outlets_power` | Same entity ID | `span_panel_synthetic_backing.circuit_1_power` |
-| `sensor.span_panel_kitchen_outlets_energy_consumed` | Same entity ID | `span_panel_synthetic_backing.circuit_1_energy_consumed` |
-| `sensor.span_panel_kitchen_outlets_energy_produced` | Same entity ID | `span_panel_synthetic_backing.circuit_1_energy_produced` |
-
-### Panel Sensors (Synthetic)
-
-| Native Entity | Synthetic Entity | Backing Entity |
-|---------------|------------------|----------------|
-| `sensor.span_panel_current_power` | Same entity ID | `span_panel_synthetic_backing.circuit_0_instant_grid_power` |
-| `sensor.span_panel_feed_through_power` | Same entity ID | `span_panel_synthetic_backing.circuit_0_feedthrough_power` |
-
-### Status Sensors (Native - Not Synthetic)
-
-| Entity | Type | Notes |
-|--------|------|-------|
-| `sensor.span_panel_dsm_state` | Native | Panel operational state |
-| `sensor.span_panel_door_state` | Native | Hardware status |
-| `sensor.span_panel_wifi_strength` | Native | Hardware status |
-
-## 9. Configuration Management
-
-### SyntheticConfigManager
-
-Handles YAML file operations:
+### Data Provider Error Handling
 
 ```python
-class SyntheticConfigManager:
-    # Singleton pattern for shared config management
-    _instances: dict[str, SyntheticConfigManager] = {}
+def data_provider_callback(entity_id: str) -> DataProviderResult:
+    """Robust data provider with error handling."""
+    try:
+        # Validate entity ID format
+        if not entity_id.startswith("your_integration_backing."):
+            return {"value": None, "exists": False}
 
-    async def write_config(self, config: dict) -> None:
-        # Write YAML with timestamp for deterministic completion
-        # Use flush() and fsync() for reliable file writing
+        # Parse and validate
+        device_id, sensor_type = parse_backing_entity(entity_id)
+        if not device_id or not sensor_type:
+            return {"value": None, "exists": False}
 
-    async def delete_all_device_sensors(self, device_id: str) -> int:
-        # Remove sensors for specific device
+        # Get data with fallbacks
+        device_data = coordinator.data.get_device(device_id)
+        if not device_data:
+            _LOGGER.warning("Device %s not found in coordinator data", device_id)
+            return {"value": None, "exists": False}
 
-    def write_config_with_timestamp(self, config: dict) -> None:
-        # Atomic write with timestamp verification
+        # Get sensor value with type checking
+        value = getattr(device_data, sensor_type, None)
+        if value is None:
+            return {"value": None, "exists": False}
+
+        # Validate numeric values
+        if isinstance(value, str):
+            try:
+                value = float(value)
+            except ValueError:
+                _LOGGER.warning("Non-numeric value for %s: %s", entity_id, value)
+                return {"value": None, "exists": False}
+
+        return {"value": value, "exists": True}
+
+    except Exception as e:
+        _LOGGER.error("Error in data provider for %s: %s", entity_id, e)
+        return {"value": None, "exists": False}
 ```
 
-### File Locations
+## Testing Integration
 
-- **Production**: `<config_dir>/custom_components/span_panel/span_sensors.yaml`
-- **Testing**: `.venv/lib/python3.13/site-packages/pytest_homeassistant_custom_component/testing_config/custom_components/span_panel/span_sensors.yaml`
-
-## 10. Test Isolation Issues and Solutions
-
-### Root Cause Analysis
-
-When tests run together, three types of state pollution occurred:
-
-1. **YAML File Persistence**: YAML files from previous tests persisted in pytest testing directory
-2. **SyntheticConfigManager Singleton Cache**: Config manager cached state between tests
-3. **Static State in SpanSensorManager**: Class-level static variables carried over between tests
-
-### Symptoms
-
-- **Test works when run alone**: No previous state to interfere
-- **Test fails when run with others**: State pollution from first test
-- **Entity ID mismatches**: First test creates YAML with one config, second test uses cached version
-
-## Quick Start Checklist
-
-For integration developers wanting to add ha-synthetic-sensors support:
-
-### 1. Import Pattern Setup
+### Test Setup
 
 ```python
-# In your __init__.py
-import ha_synthetic_sensors  # Lightweight import
+@pytest.fixture
+async def bulk_service(hass):
+    """Create bulk config service for testing."""
+    service = BulkConfigService(hass, "test_storage")
+    await service.async_initialize()
+    return service
 
-# In your sensor.py
-from ha_synthetic_sensors.config_manager import ConfigManager
-from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
-from ha_synthetic_sensors.name_resolver import NameResolver
+@pytest.fixture
+async def synthetic_integration(hass, mock_config_entry):
+    """Create synthetic sensors integration for testing."""
+    return SyntheticSensorsIntegration(hass, mock_config_entry)
+
+async def test_device_sensor_creation(hass, bulk_service, synthetic_integration):
+    """Test creating sensors for a device."""
+    # Generate test sensor configs
+    sensor_configs = generate_test_sensor_configs("test_device_123")
+
+    # Add to device
+    sensor_set_id = await bulk_service.async_add_sensors_to_device(
+        device_identifier="test_device_123",
+        sensor_configs=sensor_configs,
+        device_name="Test Device"
+    )
+
+    # Verify storage
+    stored_sensors = bulk_service.storage_manager.list_sensors(
+        device_identifier="test_device_123"
+    )
+    assert len(stored_sensors) == len(sensor_configs)
 ```
 
-### 2. Create Your Sensor Manager
-
-```python
-class YourSensorManager:
-    async def generate_config(self, coordinator, device_data) -> bool:
-        # Generate YAML configuration
-
-    async def get_registered_entity_ids(self, device_data) -> set[str]:
-        # Return backing entity IDs you can provide data for
-
-    def create_data_provider_callback(self, coordinator, device_data):
-        # Return callback function that provides live data
-```
-
-### 3. Integration Setup Flow
-
-1. **`__init__.py`**: Configure logging, generate YAML, store manager in hass.data
-2. **`sensor.py`**: Create SensorManager, register backing entities, load configuration
-3. **Runtime**: Data provider callback supplies live data to synthetic sensors
-
-### Solution Implementation
-
-#### conftest.py Test Isolation
+### Test Isolation
 
 ```python
 @pytest.fixture(autouse=True)
-def reset_static_state():
-    """Reset static state before each test to prevent pollution."""
-
-    # 1. Reset SpanSensorManager static state
-    from custom_components.span_panel.span_sensor_manager import SpanSensorManager
-    SpanSensorManager._static_registered_entities = None
-    SpanSensorManager._static_entities_generated = False
-    SpanSensorManager.static_entities_registered = False
-
-    # 2. Clean up YAML files in correct locations
-    yaml_locations = [
-        Path.cwd() / "custom_components" / "span_panel",
-        Path(os.getcwd()) / ".venv/lib/python3.13/site-packages/pytest_homeassistant_custom_component/testing_config/custom_components/span_panel",
-    ]
-
-    for location in yaml_locations:
-        for filename in ["span_sensors.yaml", "solar_synthetic_sensors.yaml"]:
-            yaml_file = location / filename
-            if yaml_file.exists():
-                yaml_file.unlink()
-
-    # 3. Clear SyntheticConfigManager singleton cache
-    from custom_components.span_panel.synthetic_config_manager import SyntheticConfigManager
-    SyntheticConfigManager._instances = {}
-
-    # 4. Reset ha-synthetic-sensors package state
-    import ha_synthetic_sensors
-    if hasattr(ha_synthetic_sensors, '_global_sensor_managers'):
-        ha_synthetic_sensors._global_sensor_managers = {}
-    if hasattr(ha_synthetic_sensors, '_registered_integrations'):
-        ha_synthetic_sensors._registered_integrations = set()
-
+async def cleanup_storage(hass):
+    """Clean up storage between tests."""
+    # Storage is automatically isolated per test via unique storage keys
     yield
+
+    # Additional cleanup if needed
+    storage_path = hass.config.path(".storage/test_storage")
+    if os.path.exists(storage_path):
+        os.remove(storage_path)
 ```
 
-#### Test Configuration Consistency
+## Performance Considerations
 
-All tests must use consistent config entry options:
+### Bulk Operations
+
+Use bulk operations for better performance:
 
 ```python
-options = {
-    "use_device_prefix": True,
-    "use_circuit_numbers": False,
-}
-entry, _ = setup_span_panel_entry(hass, mock_responses, options=options)
+# Good: Bulk operation
+await bulk_service.async_add_sensors_to_device(
+    device_identifier="device_123",
+    sensor_configs=all_sensor_configs  # Process all at once
+)
+
+# Avoid: Individual operations
+for config in sensor_configs:
+    await storage_manager.async_store_sensor(config, sensor_set_id)  # Slower
 ```
 
-## 11. Debugging and Logging
-
-### Debug Logging Setup
+### Storage Optimization
 
 ```python
-# Lightweight package import at top level
+# Initialize storage once
+await bulk_service.async_initialize()
+
+# Batch updates
+updates = [
+    {"unique_id": "sensor1", "formula": "new_formula1"},
+    {"unique_id": "sensor2", "formula": "new_formula2"},
+]
+results = await bulk_service.async_batch_update_sensors(updates)
+```
+
+## Error Handling and Debugging
+
+### Logging Configuration
+
+```python
 import ha_synthetic_sensors
 
-# Enable debug logging for ha-synthetic-sensors package
+# Enable debug logging
 ha_synthetic_sensors.configure_logging(logging.DEBUG)
 
-# Check logging configuration
+# Check logging status
 logging_info = ha_synthetic_sensors.get_logging_info()
-_LOGGER.debug("Synthetic sensors logging config: %s", logging_info)
+_LOGGER.debug("Synthetic sensors logging: %s", logging_info)
 ```
 
-### Key Debug Points
+### Common Issues
 
-1. **YAML Generation**: Log when YAML is created and file paths
-2. **Entity Registration**: Log backing entities being registered
-3. **Data Provider Calls**: Log when synthetic sensors request data
-4. **File Operations**: Log YAML file creation/deletion
-5. **Static State**: Log static variable resets
+1. **Storage Not Initialized**: Always call `async_initialize()` on BulkConfigService
+2. **Missing Data Provider**: Register backing entities before loading configuration
+3. **Device Association**: Ensure device_identifier is consistent across all operations
+4. **Entity ID Conflicts**: Use unique device identifiers and sensor names
 
-### Common Issues and Solutions
-
-#### Issue: Entity IDs Don't Match Expected Format
-
-**Symptom**: Test expects `sensor.span_panel_kitchen_outlets_power` but gets `sensor.kitchen_outlets_power`
-
-**Cause**: Config entry options not set correctly or static state pollution
-
-**Solution**:
-
-1. Ensure all tests set consistent options
-2. Verify conftest.py is resetting static state
-3. Check YAML file cleanup
-
-#### Issue: Synthetic Sensors Show as 'unavailable'
-
-**Symptom**: Synthetic sensors exist but show unavailable state
-
-**Cause**: Data provider callback not being called or returning invalid data
-
-**Solution**:
-
-1. Verify backing entities are registered correctly
-2. Check data provider callback implementation
-3. Ensure coordinator data is available
-
-#### Issue: Tests Pass Individually But Fail Together
-
-**Symptom**: Classic test isolation problem
-
-**Cause**: State pollution between tests
-
-### Specific Testing Fixes Implemented
-
-#### 1. Static State Reset (`conftest.py`)
+### Debugging Tools
 
 ```python
-@pytest.fixture(autouse=True)
-def reset_static_state():
-    """Reset static state before each test to prevent pollution."""
-    # Reset SpanSensorManager static state
-    from custom_components.span_panel.span_sensor_manager import SpanSensorManager
-    SpanSensorManager._static_registered_entities = None
-    SpanSensorManager._static_entities_generated = False
-    SpanSensorManager.static_entities_registered = False
+# Check device summary
+summary = bulk_service.get_device_summary("device_123")
+_LOGGER.info("Device summary: %s", summary)
 
-    # Clean up YAML files in both possible locations
-    yaml_locations = [
-        Path.cwd() / "custom_components" / "span_panel",
-        Path(os.getcwd()) / ".venv/lib/python3.13/site-packages/pytest_homeassistant_custom_component/testing_config/custom_components/span_panel",
-    ]
+# Validate configuration
+validation = bulk_service.validate_device_configuration("device_123")
+if not validation["is_valid"]:
+    _LOGGER.error("Configuration errors: %s", validation["errors"])
 
-    for location in yaml_locations:
-        for filename in ["span_sensors.yaml", "solar_synthetic_sensors.yaml"]:
-            yaml_file = location / filename
-            if yaml_file.exists():
-                yaml_file.unlink()
-
-    # Clear SyntheticConfigManager singleton cache
-    from custom_components.span_panel.synthetic_config_manager import SyntheticConfigManager
-    SyntheticConfigManager._instances = {}
-
-    # Reset ha-synthetic-sensors package state
-    import ha_synthetic_sensors
-    if hasattr(ha_synthetic_sensors, '_global_sensor_managers'):
-        ha_synthetic_sensors._global_sensor_managers.clear()
-    if hasattr(ha_synthetic_sensors, '_registered_integrations'):
-        ha_synthetic_sensors._registered_integrations.clear()
+# Check registered entities
+registered = sensor_manager.get_registered_entities()
+_LOGGER.debug("Registered backing entities: %s", registered)
 ```
 
-#### 2. Consistent Test Configuration
+## Best Practices
 
-All tests were updated to use identical config entry options:
+### Integration Design
 
-```python
-options = {
-    "use_device_prefix": True,
-    "use_circuit_numbers": False,
-}
-entry, _ = setup_span_panel_entry(hass, mock_responses, options=options)
-```
+1. **YAML-Centric Organization**: Sensors are organized by YAML file structure, with optional device association via global `device_identifier`
+2. **Bulk Operations**: Use bulk operations for multiple sensors
+3. **Storage-First**: Store configuration in HA storage, not files
+4. **Error Handling**: Implement robust error handling in data providers
+5. **Test Isolation**: Use unique storage keys per test to prevent test interference
 
-#### 3. Test Helper Functions (`tests/helpers.py`)
+### Configuration Management
 
-```python
-def cleanup_synthetic_yaml_files(hass: HomeAssistant) -> None:
-    """Clean up synthetic sensor YAML files to ensure clean test state."""
-    main_yaml_path = Path(hass.config.config_dir) / "custom_components" / "span_panel" / "span_sensors.yaml"
-    if main_yaml_path.exists():
-        main_yaml_path.unlink()
+1. **Consistent Naming**: Use consistent device identifiers and entity naming
+2. **Backing Entities**: Use clear, parseable backing entity ID patterns
+3. **Device Association**: Always associate sensors with devices when possible
+4. **Validation**: Validate configurations before storing
 
-    solar_yaml_path = Path(hass.config.config_dir) / "custom_components" / "span_panel" / "solar_synthetic_sensors.yaml"
-    if solar_yaml_path.exists():
-        solar_yaml_path.unlink()
+### Performance
 
-def reset_span_sensor_manager_static_state() -> None:
-    """Reset static state in SpanSensorManager to prevent test pollution."""
-    from custom_components.span_panel.span_sensor_manager import SpanSensorManager
-    SpanSensorManager._static_registered_entities = None
-    SpanSensorManager._static_entities_generated = False
-    SpanSensorManager.static_entities_registered = False
-
-async def wait_for_synthetic_sensors(hass: HomeAssistant) -> None:
-    """Wait for synthetic sensors to be created by yielding to the event loop."""
-    for _ in range(5):
-        await hass.async_block_till_done()
-```
-
-#### 4. Logging Configuration Issues (Unresolved)
-
-The logging configuration was never fully resolved. There are conflicting fixtures in `conftest.py`:
-
-```python
-@pytest.fixture(autouse=True)
-def configure_ha_synthetic_logging():
-    # Attempts to set up ha-synthetic-sensors logging
-
-@pytest.fixture(autouse=True)
-def force_ha_synthetic_sensors_logging():
-    # Different approach to logging setup
-```
-
-**Issues encountered:**
-
-- **Conflicting fixtures**: Multiple auto-use fixtures trying to configure the same loggers
-- **Handler conflicts**: Duplicate handlers causing logging issues
-- **Package integration**: ha-synthetic-sensors internal logging not cooperating with test setup
-- **Propagation problems**: Logger propagation settings interfering with output
-
-**Current state**: Logging configuration remains problematic and was not essential for solving the core test isolation issues.
-
-**Solution**: These comprehensive fixes ensure complete test isolation
-
-## 12. Migration Considerations
-
-### Seamless Migration Strategy
-
-1. **Same Unique IDs**: Synthetic sensors should use identical unique IDs as original native sensors that you are replacing
-2. **Same Entity IDs**: Users should see no change in entity IDs
-3. **Same Device Association**: Sensors remain associated with same device
-
-## 13. Performance Considerations
-
-### Static Caching
-
-SpanSensorManager uses static caching to ensure consistency:
-
-```python
-# Cache results statically for ALL instances
-SpanSensorManager._static_registered_entities = entity_ids.copy()
-SpanSensorManager._static_entities_generated = True
-```
-
-### File I/O Optimization
-
-- **Atomic writes**: Single write operation instead of multiple incremental writes
-- **Timestamp verification**: Ensure file completion before proceeding
-- **Flush and fsync**: Guarantee data is written to disk
+1. **Initialize Once**: Initialize services once during setup
+2. **Batch Operations**: Use bulk operations for multiple sensors
+3. **Efficient Data Providers**: Keep data provider callbacks fast and simple
+4. **Storage Optimization**: Minimize storage operations

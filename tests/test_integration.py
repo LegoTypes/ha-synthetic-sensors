@@ -368,6 +368,91 @@ class TestSyntheticSensorsIntegration:
         assert result["services_registered"] is True
         assert result["last_error"] is None
 
+    @pytest.mark.asyncio
+    async def test_check_auto_configuration_skipped_when_storage_exists(self, integration, mock_hass):
+        """Test that auto-configuration is skipped when storage-based configuration exists."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        # Mock storage manager with existing sensor sets
+        mock_storage_manager = MagicMock()
+        mock_storage_manager.async_load = AsyncMock()
+        mock_storage_manager.list_sensor_sets.return_value = [
+            {"sensor_set_id": "existing_set", "device_identifier": "test_device"}
+        ]
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("ha_synthetic_sensors.storage_manager.StorageManager", return_value=mock_storage_manager),
+            patch.object(integration, "load_configuration_file") as mock_load,
+        ):
+            await integration._check_auto_configuration()
+            # Verify storage was checked
+            mock_storage_manager.async_load.assert_called_once()
+            mock_storage_manager.list_sensor_sets.assert_called_once()
+            # Verify auto-configuration file was NOT loaded
+            mock_load.assert_not_called()
+            # Verify auto_config_path was not set
+            assert integration._auto_config_path is None
+
+    @pytest.mark.asyncio
+    async def test_check_auto_configuration_proceeds_when_storage_empty(self, integration, mock_hass):
+        """Test that auto-configuration proceeds when storage has no sensor sets."""
+        from pathlib import Path
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        # Mock storage manager with no sensor sets
+        mock_storage_manager = MagicMock()
+        mock_storage_manager.async_load = AsyncMock()
+        mock_storage_manager.list_sensor_sets.return_value = []  # Empty storage
+
+        # Create a fake config file that should be discovered
+        config_dir = Path(mock_hass.config.config_dir)
+        config_file = config_dir / "synthetic_sensors_config.yaml"
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("ha_synthetic_sensors.storage_manager.StorageManager", return_value=mock_storage_manager),
+            patch.object(integration, "load_configuration_file") as mock_load,
+        ):
+            await integration._check_auto_configuration()
+            # Verify storage was checked
+            mock_storage_manager.async_load.assert_called_once()
+            mock_storage_manager.list_sensor_sets.assert_called_once()
+            # Verify auto-configuration file WAS loaded (since storage is empty)
+            mock_load.assert_called_once_with(str(config_file))
+            # Verify auto_config_path was set
+            assert integration._auto_config_path == config_file
+
+    @pytest.mark.asyncio
+    async def test_check_auto_configuration_proceeds_when_storage_check_fails(self, integration, mock_hass):
+        """Test that auto-configuration proceeds when storage check fails."""
+        from pathlib import Path
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        # Mock storage manager that raises an exception
+        mock_storage_manager = MagicMock()
+        mock_storage_manager.async_load = AsyncMock(side_effect=Exception("Storage error"))
+
+        # Create a fake config file that should be discovered
+        config_dir = Path(mock_hass.config.config_dir)
+        config_file = config_dir / "synthetic_sensors_config.yaml"
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("ha_synthetic_sensors.storage_manager.StorageManager", return_value=mock_storage_manager),
+            patch.object(integration, "load_configuration_file") as mock_load,
+        ):
+            await integration._check_auto_configuration()
+            # Verify storage check was attempted
+            mock_storage_manager.async_load.assert_called_once()
+            # Verify auto-configuration file WAS loaded (fallback behavior)
+            mock_load.assert_called_once_with(str(config_file))
+            # Verify auto_config_path was set
+            assert integration._auto_config_path == config_file
+
 
 class TestIntegrationFunctions:
     """Test integration module functions."""
@@ -509,14 +594,10 @@ class TestIntegrationFunctions:
 
     def test_validate_yaml_content_valid(self):
         """Test validate_yaml_content with valid YAML."""
-        yaml_content = """
-sensors:
-  - unique_id: test_sensor
-    name: Test Sensor
-    formulas:
-      - id: test_formula
-        formula: "1 + 1"
-"""
+        # Load YAML from fixture file
+        yaml_fixtures_dir = Path(__file__).parent / "yaml_fixtures"
+        with open(yaml_fixtures_dir / "integration_test_basic.yaml", encoding="utf-8") as f:
+            yaml_content = f.read()
 
         with patch("ha_synthetic_sensors.integration.ConfigManager") as MockConfigManager:
             mock_manager = MagicMock()

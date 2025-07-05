@@ -228,7 +228,31 @@ class SyntheticSensorsIntegration:
             return False
 
     async def _check_auto_configuration(self) -> None:
-        """Check for auto-configuration file and load if present."""
+        """Check for auto-configuration file and load if present.
+
+        Auto-discovery is skipped if storage-based configuration is detected
+        to avoid conflicts between configuration sources.
+        """
+        # Check if storage-based configuration exists
+        try:
+            from .storage_manager import StorageManager
+
+            # Create a temporary storage manager to check for existing data
+            storage_manager = StorageManager(self._hass)
+            await storage_manager.async_load()
+
+            # If storage has any sensor sets, skip auto-discovery
+            sensor_sets = storage_manager.list_sensor_sets()
+            if sensor_sets:
+                _LOGGER.debug(
+                    "Storage-based configuration detected (%d sensor sets). Skipping auto-discovery.", len(sensor_sets)
+                )
+                return
+
+        except Exception as err:
+            _LOGGER.debug("Could not check storage configuration: %s. Proceeding with auto-discovery.", err)
+            # Continue with auto-discovery if storage check fails
+
         # Define potential auto-config file locations
         config_dir = Path(self._hass.config.config_dir)
         potential_paths = [

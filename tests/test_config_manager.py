@@ -525,12 +525,11 @@ class TestConfigManagerExtended:
 
     def test_load_from_yaml_with_validation_errors(self, config_manager):
         """Test load_from_yaml when validation fails."""
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    formula: "1 + 1"
-"""
+        # Load YAML from fixture file
+        yaml_fixtures_dir = Path(__file__).parent / "yaml_fixtures"
+        with open(yaml_fixtures_dir / "config_manager_test_basic.yaml", encoding="utf-8") as f:
+            yaml_content = f.read()
+
         # Mock Config.validate to return errors
         with patch.object(Config, "validate") as mock_validate:
             mock_validate.return_value = ["Validation error"]

@@ -1,0 +1,5 @@
+version: "1.0"
+sensors:
+  test_sensor:
+    formula: "1 + 1"
+    unit_of_measurement: "units"

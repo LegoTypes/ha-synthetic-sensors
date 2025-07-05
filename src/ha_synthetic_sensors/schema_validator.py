@@ -474,22 +474,32 @@ class SchemaValidator:
                 "type": "object",
                 "description": "Global settings for all sensors",
                 "properties": {
-                    "domain_prefix": {
+                    "device_identifier": {
                         "type": "string",
-                        "description": "Prefix for sensor entity IDs",
-                        "pattern": id_pattern,
+                        "description": "Default device identifier for all sensors in this set",
                     },
-                    "enabled": {
-                        "type": "boolean",
-                        "description": ("Whether synthetic sensors are globally enabled"),
-                    },
-                    "update_interval": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "Default update interval in seconds",
+                    "variables": {
+                        "type": "object",
+                        "description": "Global variable mappings available to all sensors",
+                        "patternProperties": {
+                            var_pattern: {
+                                "oneOf": [
+                                    {
+                                        "type": "string",
+                                        "pattern": entity_pattern,
+                                        "description": "Home Assistant entity ID",
+                                    },
+                                    {
+                                        "type": "number",
+                                        "description": "Numeric literal value",
+                                    },
+                                ]
+                            }
+                        },
+                        "additionalProperties": False,
                     },
                 },
-                "additionalProperties": True,
+                "additionalProperties": False,
             },
             "sensors": {
                 "type": "array",
@@ -661,47 +671,32 @@ class SchemaValidator:
                 "type": "object",
                 "description": "Global settings for all sensors",
                 "properties": {
-                    "domain_prefix": {
+                    "device_identifier": {
                         "type": "string",
-                        "description": "Prefix for sensor entity IDs",
-                        "pattern": id_pattern,
+                        "description": "Default device identifier for all sensors in this set",
                     },
-                    "enabled": {
-                        "type": "boolean",
-                        "description": ("Whether synthetic sensors are globally enabled"),
-                    },
-                    "update_interval": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "Default update interval in seconds",
+                    "variables": {
+                        "type": "object",
+                        "description": "Global variable mappings available to all sensors",
+                        "patternProperties": {
+                            var_pattern: {
+                                "oneOf": [
+                                    {
+                                        "type": "string",
+                                        "pattern": entity_pattern,
+                                        "description": "Home Assistant entity ID",
+                                    },
+                                    {
+                                        "type": "number",
+                                        "description": "Numeric literal value",
+                                    },
+                                ]
+                            }
+                        },
+                        "additionalProperties": False,
                     },
                 },
-                "additionalProperties": True,
-            },
-            "global": {
-                "type": "object",
-                "description": ("Global settings for all sensors (alias for global_settings)"),
-                "properties": {
-                    "domain_prefix": {
-                        "type": "string",
-                        "description": "Prefix for sensor entity IDs",
-                        "pattern": id_pattern,
-                    },
-                    "enabled": {
-                        "type": "boolean",
-                        "description": ("Whether synthetic sensors are globally enabled"),
-                    },
-                    "update_interval": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "Default update interval in seconds",
-                    },
-                    "restore_state": {
-                        "type": "boolean",
-                        "description": "Whether to restore state on startup",
-                    },
-                },
-                "additionalProperties": True,
+                "additionalProperties": False,
             },
             "sensors": {
                 "type": "object",

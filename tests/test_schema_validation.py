@@ -4,6 +4,8 @@ Test schema validation functionality.
 This module tests the comprehensive YAML schema validation system.
 """
 
+from pathlib import Path
+
 import yaml
 
 from ha_synthetic_sensors.schema_validator import SchemaValidator, validate_yaml_config
@@ -239,10 +241,7 @@ class TestSchemaValidation:
         """Test validation with global settings."""
         config_data = {
             "version": "1.0",
-            "global": {
-                "update_interval": 30,
-                "restore_state": True,
-            },
+            "global_settings": {"device_identifier": "test_device", "variables": {"base_temp": "sensor.temperature"}},
             "sensors": {
                 "test_sensor": {
                     "formula": "1 + 1",
@@ -252,6 +251,31 @@ class TestSchemaValidation:
 
         result = validate_yaml_config(config_data)
         assert result["valid"] is True
+
+    def test_unsupported_global_settings_rejected(self):
+        """Test that unsupported global settings are rejected."""
+        config_data = {
+            "version": "1.0",
+            "global_settings": {
+                "domain_prefix": "test",  # Unsupported
+                "enabled": True,  # Unsupported
+                "update_interval": 30,  # Unsupported
+                "device_identifier": "test_device",  # Supported
+            },
+            "sensors": {
+                "test_sensor": {
+                    "formula": "1 + 1",
+                }
+            },
+        }
+
+        result = validate_yaml_config(config_data)
+        assert result["valid"] is False
+        assert len(result["errors"]) > 0
+
+        # Should have errors for unsupported properties
+        error_messages = [str(e.message) for e in result["errors"]]
+        assert any("additional" in msg.lower() or "not allowed" in msg.lower() for msg in error_messages)
 
     def test_invalid_domain_prefix_pattern(self):
         """Test validation of entity ID domain prefix pattern."""
@@ -292,13 +316,10 @@ class TestSchemaValidation:
 
     def test_yaml_parsing_from_string(self):
         """Test validation from YAML string."""
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    formula: "1 + 1"
-    unit_of_measurement: "units"
-"""
+        # Load YAML from fixture file
+        yaml_fixtures_dir = Path(__file__).parent / "yaml_fixtures"
+        with open(yaml_fixtures_dir / "validation_test_basic.yaml", encoding="utf-8") as f:
+            yaml_content = f.read()
 
         config_data = yaml.safe_load(yaml_content)
         result = validate_yaml_config(config_data)

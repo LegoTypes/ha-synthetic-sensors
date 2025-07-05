@@ -200,14 +200,16 @@ that might use the same device identifiers.
 
 **Device-Aware Entity Naming:**
 
-When sensors are associated with devices, entity IDs are automatically generated using the device name as a prefix:
+When sensors are associated with devices, entity IDs are automatically generated using the device's name as a prefix:
 
-- Device name is "slugified" (converted to lowercase, spaces become underscores, special characters removed)
-- Entity ID pattern: `sensor.{device_prefix}_{sensor_key}`
+- **device_identifier** is used to look up the device in Home Assistant's device registry
+- **Device name** (from the device registry) is "slugified" (converted to lowercase, spaces become
+underscores, special characters removed)
+- Entity ID pattern: `sensor.{slugified_device_name}_{sensor_key}`
 - Examples:
-  - Device "SPAN Panel Main" + sensor "power" → `sensor.span_panel_main_power`
-  - Device "Solar Inverter" + sensor "efficiency" → `sensor.solar_inverter_efficiency`
-  - Device "Circuit - Phase A" + sensor "current" → `sensor.circuit_phase_a_current`
+  - device_identifier "njs-abc-123" → Device "SPAN Panel House" → `sensor.span_panel_house_current_power`
+  - device_identifier "solar_inv_01" → Device "Solar Inverter" → `sensor.solar_inverter_efficiency`
+  - device_identifier "circuit_a1" → Device "Circuit - Phase A" → `sensor.circuit_phase_a_current`
 
 This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to,
 while avoiding conflicts between sensors from different devices.
@@ -219,6 +221,64 @@ while avoiding conflicts between sensors from different devices.
 - `state` always refers to the fresh main sensor calculation
 - Attributes can also reference other entities normally (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
+
+### Global Settings
+
+Global settings allow you to define common configuration that applies to all sensors in a YAML file, reducing duplication
+making sensor sets easier to manage:
+
+```yaml
+version: "1.0"
+
+global_settings:
+  device_identifier: "njs-abc-123"
+  variables:
+    electricity_rate: "input_number.electricity_rate_cents_kwh"
+    base_power_meter: "sensor.span_panel_instantaneous_power"
+    conversion_factor: 1000
+
+sensors:
+  # These sensors inherit global settings
+  current_power:
+    name: "Current Power"
+    # No device_identifier needed - inherits from global_settings
+    formula: "base_power_meter"
+    # No variables needed - inherits from global_settings
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  energy_cost:
+    name: "Energy Cost"
+    # No device_identifier needed - inherits from global_settings
+    formula: "base_power_meter * electricity_rate / conversion_factor"
+    # Uses global variables: base_power_meter, electricity_rate, conversion_factor
+    unit_of_measurement: "¢/h"
+    state_class: "measurement"
+
+  mixed_variables_sensor:
+    name: "Mixed Variables"
+    # No device_identifier needed - inherits from global_settings
+    formula: "base_power_meter + local_adjustment"
+    variables:
+      local_adjustment: "sensor.local_adjustment_value"
+    # Uses base_power_meter from global, local_adjustment from local
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+```
+
+**Supported Global Settings:**
+
+- **`device_identifier`**: Applied to sensors that don't specify their own device_identifier
+- **`variables`**: Merged with sensor-level variables (sensor-level variables take precedence)
+
+**Global Settings Behavior:**
+
+- **Device Identifier**: Sensors without a `device_identifier` automatically inherit the global one
+- **Variable Inheritance**: Global variables are merged with sensor-level variables
+- **Variable Precedence**: Local sensor variables override global variables with the same name
+- **Storage Fidelity**: Original YAML structure with global_settings is preserved for export
 
 ## Entity Reference Patterns
 
@@ -509,6 +569,8 @@ value_template: >
 
 - **Variable reuse**: Define once, use in multiple sensors and attributes
 - **Bulk management**: Single YAML file for dozens of related sensors
+- **Easily Nested**: Sensors can reference other sensors/atributes with easy math calculations
+- **Simple Notation**: Easily understood dot notations
 - **Dependency tracking**: Automatic sensor update ordering
 - **Type safety**: TypedDict interfaces for better IDE support
 - **Services**: Built-in reload, update, and testing capabilities
@@ -645,6 +707,75 @@ entity creation results, integration management, and more.
 
 ## Integration Setup
 
+The package supports two configuration approaches:
+
+- **Storage-based**: Full CRUD operations on individual sensors via `BulkConfigService`
+- **YAML-based**: File-level configuration managed by the integration (auto-discovery available)
+
+### Storage-Based Integration (Recommended)
+
+For integrations requiring programmatic sensor management with full CRUD capabilities:
+
+```python
+import ha_synthetic_sensors
+from ha_synthetic_sensors.bulk_config_service import BulkConfigService  # Storage system
+from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
+
+# In __init__.py
+async def async_setup_entry(hass, entry, async_add_entities):
+    ha_synthetic_sensors.configure_logging(logging.DEBUG)
+
+    # Initialize storage-based bulk config service
+    bulk_service = BulkConfigService(hass, f"{DOMAIN}_synthetic")  # Storage backend
+    await bulk_service.async_initialize()
+
+    # Store for sensor platform
+    hass.data[DOMAIN][entry.entry_id]["bulk_service"] = bulk_service
+
+# In sensor.py
+async def async_setup_entry(hass, entry, async_add_entities):
+    bulk_service = hass.data[DOMAIN][entry.entry_id]["bulk_service"]
+
+    # Add sensors to device in bulk (storage operation)
+    sensor_configs = generate_sensor_configs(device_data, device_identifier)
+    await bulk_service.async_add_sensors_to_device(  # Storage CRUD
+        device_identifier=device_identifier,
+        sensor_configs=sensor_configs,
+        device_name=device_name
+    )
+
+    # Create sensor manager and load from storage
+    synthetic_integration = SyntheticSensorsIntegration(hass, entry)
+    sensor_manager = await synthetic_integration.create_managed_sensor_manager(
+        add_entities_callback=async_add_entities,
+        manager_config=manager_config
+    )
+
+    # Register data provider and load from storage
+    sensor_manager.register_data_provider_entities(backing_entities)
+    config = bulk_service.storage_manager.to_config(device_identifier=device_identifier)  # Storage read
+    await sensor_manager.load_configuration(config)
+```
+
+### YAML-Based Integration
+
+For simple configurations or testing (integration maintains YAML files):
+
+```python
+from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
+
+class MyCustomIntegration:
+    async def async_setup_sensors(self, async_add_entities):
+        synthetic_integration = SyntheticSensorsIntegration(self.hass)
+        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
+            add_entities_callback=async_add_entities,
+            manager_config=manager_config
+        )
+
+        # Load YAML config (integration manages file updates)
+        config = await self.sensor_manager.load_config_from_yaml(yaml_config)
+        await self.sensor_manager.apply_config(config)
+
 ### Standalone Integration
 
 ```python
@@ -654,98 +785,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     return await async_setup_integration(hass, config_entry, async_add_entities)
 ```
 
-### Device Integration (sensors appear under parent device)
+**For detailed integration patterns, storage management, device association, and data provider implementation:**
 
-```python
-from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
-from ha_synthetic_sensors.sensor_manager import SensorManagerConfig
-
-class MyCustomIntegration:
-    async def async_setup_sensors(self, async_add_entities):
-        # Configure sensor manager with integration domain
-        manager_config = SensorManagerConfig(
-            integration_domain="your_integration",  # Your integration's domain
-            device_info=self.device_info,
-            lifecycle_managed_externally=True
-        )
-
-        synthetic_integration = SyntheticSensorsIntegration(self.hass)
-        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
-            add_entities_callback=async_add_entities,
-            manager_config=manager_config
-        )
-
-        # Load YAML config and apply
-        config = await self.sensor_manager.load_config_from_yaml(yaml_config)
-        await self.sensor_manager.apply_config(config)
-```
-
-### Integration Data Provider (hybrid data access)
-
-For integrations that need to provide some sensor data directly while still using Home Assistant entities for others:
-
-**See [Integration Data Provider Documentation](docs/integration_data_provider.md) for complete setup guide.**
-
-```python
-from ha_synthetic_sensors.sensor_manager import SensorManagerConfig
-from ha_synthetic_sensors.types import DataProviderCallback, DataProviderResult
-
-class MyCustomIntegration:
-    def get_integration_data(self, entity_id: str) -> DataProviderResult:
-        """Provide data directly from integration for specific entities."""
-        if entity_id in self.local_sensors:
-            value = self.local_sensors[entity_id].current_value
-            return {"value": value, "exists": True}
-        return {"value": None, "exists": False}
-
-    async def async_setup_sensors(self, async_add_entities):
-        # Configure sensor manager with data provider callback
-        manager_config = SensorManagerConfig(
-            integration_domain="your_integration",  # Your integration's domain
-            device_info=self.device_info,
-            lifecycle_managed_externally=True,
-            data_provider_callback=self.get_integration_data
-        )
-
-        synthetic_integration = SyntheticSensorsIntegration(self.hass)
-        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
-            add_entities_callback=async_add_entities,
-            manager_config=manager_config
-        )
-
-        # Register entities that this integration can provide data for
-        self.sensor_manager.register_data_provider_entities(set(self.local_sensors.keys()))
-
-        # Load config - evaluator will automatically use callbacks for registered entities
-        # and Home Assistant state queries for all other entities
-        config = await self.sensor_manager.load_config_from_yaml(yaml_config)
-        await self.sensor_manager.apply_config(config)
-```
-
-**Registration Methods:**
-
-- **`register_data_provider_entities(entity_ids: set[str])`**: Register entities that integration can provide data for
-- **`update_data_provider_entities(entity_ids: set[str])`**: Update the registered entity list (replaces existing)
-- **`get_registered_entities() -> set[str]`**: Get current registered entities
-
-**Data Provider Callback:**
-
-- **`DataProviderCallback`**: `(entity_id: str) -> DataProviderResult` - Returns a TypedDict with `value` and `exists` fields
-
-**Hybrid Data Access Behavior - Integration Authority Model:**
-
-- **Entity registration**: The integration **proactively registers** which entities it owns for synthetic sensor evaluation
-- **Integration entities**: All registered entities use the data provider callback exclusively
-- **Home Assistant entities**: All other entities use standard Home Assistant state queries exclusively
-- **No fallback**: Each entity uses exactly one data source - strict error handling prevents silent failures
-- **Entity state independence**: Integration-provided entities don't need to exist in Home Assistant's entity registry
-- **Seamless configuration**: YAML syntax is identical regardless of data source - the evaluator automatically routes
-  requests
-
-**Device integration benefits:** Unified device view, lifecycle control, update coordination, entity naming consistency.
-
-**For detailed implementation guide:** See [Integration Data Provider Documentation](docs/integration_data_provider.md) for
-complete examples, error handling details, and advanced usage patterns.
+**See [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for complete setup instructions.**
 
 ## Exception Handling
 
@@ -792,7 +834,6 @@ poetry run pre-commit install
 
 # Testing and quality
 poetry run pytest --cov=src/ha_synthetic_sensors
-poetry run black --line-length 88 .
 poetry run ruff check --fix .
 poetry run mypy src/ha_synthetic_sensors
 poetry run pre-commit run --all-files

@@ -177,14 +177,15 @@ class TestReferencePatterns:
         sensor_config = next(s for s in config.sensors if s.unique_id == "enhanced_power_analysis")
         formula_config = sensor_config.formulas[0]  # Main formula
 
-        # Should have both explicit variables plus auto-injected entity references
+        # Should have both explicit variables
         assert "base_power_analysis" in formula_config.variables
         assert "efficiency_factor" in formula_config.variables
         assert formula_config.variables["base_power_analysis"] == "sensor.base_power_analysis"
+        assert formula_config.variables["efficiency_factor"] == "input_number.electricity_rate_cents_kwh"
 
-        # Should also auto-inject direct entity references found in variables
-        assert "sensor.base_power_analysis" in formula_config.variables
-        assert "input_number.electricity_rate_cents_kwh" in formula_config.variables
+        # Should NOT auto-inject entity references that are already properly referenced through variables
+        # This is correct behavior - no duplication needed
+        assert len(formula_config.variables) == 2  # Only the two explicit variables
 
     def test_entity_id_with_attribute_access(self, config_manager, reference_patterns_yaml):
         """Test entity_id references combined with attribute access."""

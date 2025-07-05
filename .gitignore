@@ -27,4 +27,3 @@ dmypy.json
 /.coverage
 .cursor/
 .DS_Store
-.vscode

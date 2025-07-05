@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ha-synthetic-sensors"
-version = "1.1.0"
+version = "2.0.0"
 description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
 authors = ["SpanPanel"]
 readme = "README.md"
@@ -14,12 +14,10 @@ Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
 
 [tool.poetry.dependencies]
 python = ">=3.13.2,<3.14"
-# Core dependencies for synthetic sensors - let HA provide these
-pyyaml = "*"  # Let HA provide whatever version it needs
-simpleeval = "^1.0.3"  # Not used by HA, so we keep our own constraint
-voluptuous = "*"  # Let HA provide whatever version it needs
-jsonschema = "^4.17.0"  # Not used by HA, so we keep our own constraint
-aiofiles = "*"  # For async file operations to avoid blocking event loop
+simpleeval = "^1.0.3"  # Keep our own constraint for non-HA dependency
+jsonschema = "^4.24.0"  # Keep our own constraint for non-HA dependency
+homeassistant = "*"  # Required runtime dependency - brings pyyaml, voluptuous transitively
+aiofiles = "*"  # For async file operations - not included with HA core
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"
@@ -37,7 +35,7 @@ types-aiofiles = "^24.1.0.20250606"
 homeassistant-stubs = "*"
 
 [tool.poetry.group.test.dependencies]
-homeassistant = "*"
+# homeassistant is now in runtime dependencies, so no need here
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

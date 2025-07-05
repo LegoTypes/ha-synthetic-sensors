@@ -1,0 +1,45 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "global_device:test_123"
+  variables:
+    base_power_sensor: "sensor.test_power_meter"
+    energy_rate: 0.15
+    efficiency_threshold: 85
+
+sensors:
+  global_power_sensor:
+    name: "Global Power Sensor"
+    # No device_identifier - should inherit from global_settings
+    formula: "base_power_sensor"
+    # No variables - should inherit from global_settings
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  global_energy_cost:
+    name: "Global Energy Cost"
+    # No device_identifier - should inherit from global_settings
+    formula: "base_power_sensor * energy_rate"
+    # Uses global variables: base_power_sensor and energy_rate
+    unit_of_measurement: "$"
+    state_class: "measurement"
+
+  global_efficiency_check:
+    name: "Global Efficiency Check"
+    # No device_identifier - should inherit from global_settings
+    formula: "base_power_sensor > efficiency_threshold"
+    # Uses global variables: base_power_sensor and efficiency_threshold
+    unit_of_measurement: "bool"
+    state_class: "measurement"
+
+  mixed_variables_sensor:
+    name: "Mixed Variables Sensor"
+    # No device_identifier - should inherit from global_settings
+    formula: "base_power_sensor + local_adjustment"
+    variables:
+      local_adjustment: "sensor.local_adjustment_value"
+    # Should use base_power_sensor from global, local_adjustment from local
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"

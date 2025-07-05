@@ -428,16 +428,20 @@ class ConfigManager:
 
         return config
 
-    def _parse_sensor_config(self, sensor_key: str, sensor_data: SensorConfigDict) -> SensorConfig:
+    def _parse_sensor_config(
+        self, sensor_key: str, sensor_data: SensorConfigDict, global_settings: dict[str, Any] | None = None
+    ) -> SensorConfig:
         """Parse sensor configuration from v2.0 dict format.
 
         Args:
             sensor_key: Sensor key (serves as unique_id)
             sensor_data: Sensor configuration dictionary
+            global_settings: Global settings to apply as defaults
 
         Returns:
             SensorConfig: Parsed sensor configuration
         """
+        global_settings = global_settings or {}
         sensor = SensorConfig(unique_id=sensor_key)
 
         # Copy basic properties
@@ -448,8 +452,9 @@ class ConfigManager:
         sensor.description = sensor_data.get("description")
         sensor.entity_id = sensor_data.get("entity_id")
 
-        # Copy device association fields
-        sensor.device_identifier = sensor_data.get("device_identifier")
+        # Copy device association fields with global fallbacks
+        # Sensor-specific values take precedence over global settings
+        sensor.device_identifier = sensor_data.get("device_identifier") or global_settings.get("device_identifier")
         sensor.device_name = sensor_data.get("device_name")
         sensor.device_manufacturer = sensor_data.get("device_manufacturer")
         sensor.device_model = sensor_data.get("device_model")
@@ -681,6 +686,44 @@ class ConfigManager:
 
         except Exception as exc:
             error_msg = f"Failed to parse YAML content: {exc}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg) from exc
+
+    def load_from_dict(self, config_dict: ConfigDict) -> Config:
+        """Load configuration from dictionary (e.g., from JSON storage).
+
+        Args:
+            config_dict: Configuration as dictionary
+
+        Returns:
+            Config: Parsed configuration object
+
+        Raises:
+            ConfigEntryError: If parsing or validation fails
+        """
+        try:
+            if not config_dict:
+                self._config = Config()
+                return self._config
+
+            self._config = self._parse_yaml_config(config_dict)
+
+            # Validate the loaded configuration
+            errors = self._config.validate()
+            if errors:
+                error_msg = f"Configuration validation failed: {', '.join(errors)}"
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
+
+            self._logger.debug(
+                "Loaded configuration with %d sensors from dictionary",
+                len(self._config.sensors),
+            )
+
+            return self._config
+
+        except Exception as exc:
+            error_msg = f"Failed to parse dictionary content: {exc}"
             self._logger.error(error_msg)
             raise ConfigEntryError(error_msg) from exc
 
@@ -1031,10 +1074,28 @@ class ConfigManager:
             Updated variables dict with auto-injected entity references
         """
         parser = DependencyParser()
-        static_deps = parser.extract_static_dependencies(formula, variables)
+
+        # Only extract direct entity references from the formula itself,
+        # not from variable values (which may contain collection queries)
+        entity_matches = parser.ENTITY_PATTERN.findall(formula)
+        full_entity_matches = parser._direct_entity_pattern.findall(formula)
+
+        direct_entities = set(entity_matches + full_entity_matches)
+
+        # Filter out dot notation references where the base is already a variable
+        # e.g., if variables contains "temp_sensors", don't auto-inject "temp_sensors.temperature"
+        filtered_entities = set()
+        for entity_id in direct_entities:
+            # Check if this looks like a dot notation reference
+            if "." in entity_id:
+                base_part = entity_id.split(".")[0]
+                # If the base part is already a variable, don't auto-inject the full reference
+                if base_part in variables:
+                    continue
+            filtered_entities.add(entity_id)
 
         # Add missing entity_ids as self-referencing variables
-        for entity_id in static_deps:
+        for entity_id in filtered_entities:
             if entity_id not in variables:
                 variables[entity_id] = entity_id
 
