@@ -15,11 +15,11 @@ to choose the approach that best fits their needs.
 
 ```text
 ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
-│   Your Integration  │───▶│ BulkConfigService   │───▶│   StorageManager    │
+│   Your Integration  │───▶│   StorageManager    │───▶│     SensorSet       │
 │                     │    │                     │    │                     │
-│ - Device data       │    │ - Device sensor     │    │ - HA storage        │
-│ - Sensor configs    │    │   sets              │    │ - Sensor metadata   │
-│ - Data provider     │    │ - Bulk operations   │    │ - Device association│
+│ - Device data       │    │ - HA storage        │    │ - Individual CRUD   │
+│ - Sensor configs    │    │ - Sensor metadata   │    │ - Bulk operations   │
+│ - Data provider     │    │ - Sensor set mgmt   │    │ - YAML import/export│
 └─────────────────────┘    └─────────────────────┘    └─────────────────────┘
 ```
 
@@ -39,11 +39,11 @@ to choose the approach that best fits their needs.
 
 ```text
 ┌─────────────────────┐    ┌─────────────────────┐
-│   ConfigConverter   │    │ Config/Formula Data │
+│   StorageManager    │    │ Config/Formula Data │
 │                     │    │                     │
 │ - YAML ↔ Storage    │    │ - Formulas          │
 │ - Format conversion │    │ - Variables         │
-│ - Migration support │    │ - Attributes        │
+│ - SensorSet API     │    │ - Attributes        │
 └─────────────────────┘    └─────────────────────┘
 ```
 
@@ -55,13 +55,64 @@ to choose the approach that best fits their needs.
 4. **Integration Authority**: Your integration owns data, synthetic sensors handle entities
 5. **Flexible Workflow**: Choose between file-based simplicity or storage-based programmatic control
 
+## Integration Team Feedback
+
+The SensorSet architecture has received positive feedback from integration teams, particularly the SPAN Panel integration team
+who were the first to implement the storage-based API. Key benefits identified:
+
+**✅ RESOLVED** - The SensorSet architecture addresses major integration concerns:
+
+- Integration-controlled sensor_set_id ✅
+- Individual sensor CRUD operations ✅
+- Sensor set-focused YAML operations ✅
+- Proper abstraction between sensor set management and individual sensor operations ✅
+
+**Integration Usage Patterns:**
+
+### Setup Phase (Bulk Operations)
+
+```python
+# Initialize storage manager
+storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
+await storage_manager.async_load()
+
+# Create sensor set and get handle
+sensor_set = await storage_manager.async_create_sensor_set(
+    sensor_set_id=f"{device_identifier}_sensors",
+    device_identifier=device_identifier,
+    name=f"SPAN Panel {device_identifier}"
+)
+
+# Generate complete configuration
+config = generate_all_sensor_configs()
+yaml_content = yaml.dump(config)
+
+# Bulk import via SensorSet
+await sensor_set.async_import_yaml(yaml_content)
+```
+
+### Runtime Phase (Individual CRUD)
+
+```python
+# Get sensor set handle
+sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+# Individual operations via SensorSet
+sensor = sensor_set.get_sensor(unique_id)
+await sensor_set.async_update_sensor(modified_sensor)
+await sensor_set.async_remove_sensor(unique_id)
+
+# Property access for debugging/logging
+logger.debug(f"Sensor set {sensor_set.sensor_set_id} has {sensor_set.sensor_count} sensors")
+```
+
 ## Quick Start Integration Pattern
 
 ### 1. Basic Setup in `__init__.py`
 
 ```python
 import ha_synthetic_sensors
-from ha_synthetic_sensors.bulk_config_service import BulkConfigService
+from ha_synthetic_sensors.storage_manager import StorageManager
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Configure logging
@@ -71,14 +122,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = YourIntegrationCoordinator(...)
     await coordinator.async_config_entry_first_refresh()
 
-    # Initialize bulk config service
-    bulk_service = BulkConfigService(hass, DOMAIN)
-    await bulk_service.async_initialize()
+    # Initialize storage manager
+    storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
+    await storage_manager.async_load()
 
     # Store for use in sensor platform
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
-        "bulk_service": bulk_service,
+        "storage_manager": storage_manager,
     }
 
     # Forward to platforms
@@ -95,7 +146,7 @@ from ha_synthetic_sensors.sensor_manager import SensorManagerConfig
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
-    bulk_service = data["bulk_service"]
+    storage_manager = data["storage_manager"]
 
     # Create synthetic sensors integration
     synthetic_integration = SyntheticSensorsIntegration(hass, entry)
@@ -117,7 +168,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     # Generate and store sensor configurations
     await setup_synthetic_sensors(
         coordinator,
-        bulk_service,
+        storage_manager,
         sensor_manager,
         your_device_identifier
     )
@@ -132,7 +183,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 ```python
 async def setup_synthetic_sensors(
     coordinator: YourCoordinator,
-    bulk_service: BulkConfigService,
+    storage_manager: StorageManager,
     sensor_manager: SensorManager,
     device_identifier: str
 ) -> None:
@@ -141,19 +192,21 @@ async def setup_synthetic_sensors(
     # Generate sensor configurations from your device data
     sensor_configs = generate_sensor_configs(coordinator.data, device_identifier)
 
-    # Add sensors to device in bulk
-    sensor_set_id = await bulk_service.async_add_sensors_to_device(
+    # Create sensor set and populate with sensors
+    sensor_set = await storage_manager.async_create_sensor_set(
+        sensor_set_id=f"{device_identifier}_config_v1",
         device_identifier=device_identifier,
-        sensor_configs=sensor_configs,
-        device_name=coordinator.device_name,
+        name=f"{coordinator.device_name} Configuration",
     )
+
+    await sensor_set.async_replace_sensors(sensor_configs)
 
     # Register data provider entities
     backing_entities = generate_backing_entity_ids(coordinator.data, device_identifier)
     sensor_manager.register_data_provider_entities(backing_entities)
 
     # Convert storage to config and load
-    config = bulk_service.storage_manager.to_config(device_identifier=device_identifier)
+    config = storage_manager.to_config(device_identifier=device_identifier)
     await sensor_manager.load_configuration(config)
 
 def generate_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
@@ -226,61 +279,152 @@ def create_data_provider_callback(coordinator: YourCoordinator) -> DataProviderC
 
 ### Storage Concepts
 
-1. **Sensor Sets**: Groups of sensors defined within a single YAML file
+1. **Sensor Sets**: Groups of sensors with integration-controlled identifiers
 2. **Storage Persistence**: Configuration stored in HA's storage system
-3. **Bulk Operations**: Operations for managing multiple sensors within a sensor set
+3. **SensorSet Interface**: Focused handle for individual sensor set operations
 
-### BulkConfigService API
+### StorageManager and SensorSet API
 
 ```python
-# Device-centric sensor management
-sensor_set_id = await bulk_service.async_create_device_sensor_set(
-    device_identifier="your_device_123",
-    device_name="Living Room Device",
+# Initialize storage manager
+storage_manager = StorageManager(hass, "your_integration_synthetic")
+await storage_manager.async_load()
+
+# Create sensor set and get handle in one step
+sensor_set = await storage_manager.async_create_sensor_set(
+    sensor_set_id=f"{device_identifier}_sensors",  # Integration controls format
+    device_identifier="your_device_123",  # Optional - for entity ID generation
+    name=f"SPAN Panel {device_identifier}",
     description="Power monitoring sensors"
 )
 
-# Add sensors to device
-await bulk_service.async_add_sensors_to_device(
-    device_identifier="your_device_123",
-    sensor_configs=sensor_configs,
-    device_name="Living Room Device"
+# Bulk operations on sensor set
+sensor_configs = generate_sensor_configs(device_data)
+await sensor_set.async_replace_sensors(sensor_configs)
+
+# Individual sensor CRUD operations
+await sensor_set.async_add_sensor(new_sensor_config)
+await sensor_set.async_update_sensor(modified_sensor_config)
+await sensor_set.async_remove_sensor("sensor_unique_id")
+
+# Get individual sensor
+sensor = sensor_set.get_sensor("sensor_unique_id")
+
+# List all sensors in set
+sensors = sensor_set.list_sensors()
+
+# YAML operations
+await sensor_set.async_import_yaml(yaml_content)
+yaml_content = sensor_set.export_yaml()
+
+# Sensor set management
+sensor_count = sensor_set.sensor_count
+metadata = sensor_set.metadata
+exists = sensor_set.exists
+
+# Delete entire sensor set
+await sensor_set.async_delete()
+# OR
+await storage_manager.async_delete_sensor_set(f"{device_identifier}_sensors")
+```
+
+### Working with Multiple Sensor Sets
+
+```python
+# Create multiple sensor sets for different purposes
+config_set = await storage_manager.async_create_sensor_set(
+    sensor_set_id=f"{device_identifier}_config_v1",  # Integration controls format
+    device_identifier="device_123",
+    name="Device Configuration"
 )
 
-# Replace all sensors for a device
-await bulk_service.async_replace_device_sensors(
-    device_identifier="your_device_123",
-    sensor_configs=new_sensor_configs,
-    device_name="Living Room Device"
+monitoring_set = await storage_manager.async_create_sensor_set(
+    sensor_set_id=f"{device_identifier}_monitoring_v1",  # Integration controls format
+    device_identifier="device_123",
+    name="Device Monitoring"
 )
 
-# Delete all sensors for a device
-deleted_count = await bulk_service.async_delete_device_sensors("your_device_123")
+# Later, get handles for existing sensor sets - clean handle pattern
+config_set = storage_manager.get_sensor_set(f"{device_identifier}_config_v1")
+monitoring_set = storage_manager.get_sensor_set(f"{device_identifier}_monitoring_v1")
 
-# Import from YAML (compatibility)
-sensor_set_id = await bulk_service.async_import_yaml_for_device(
-    device_identifier="your_device_123",
-    yaml_content=yaml_content,
-    replace_existing=True
-)
+# Property access for debugging/logging
+_LOGGER.debug(f"Config set {config_set.sensor_set_id} has {config_set.sensor_count} sensors")
+_LOGGER.debug(f"Monitoring set {monitoring_set.sensor_set_id} has {monitoring_set.sensor_count} sensors")
 
-# Export to YAML
-yaml_content = await bulk_service.async_export_device_yaml("your_device_123")
+# Query all sensor sets
+all_sets = storage_manager.list_sensor_sets()
+device_sets = storage_manager.list_sensor_sets(device_identifier="device_123")
 ```
 
 ### StorageManager Direct Access
 
 ```python
-# For advanced use cases, access storage manager directly
-storage_manager = bulk_service.storage_manager
-
 # Convert between formats
 config = storage_manager.to_config(device_identifier="your_device_123")
 await storage_manager.async_from_config(config, sensor_set_id, device_identifier)
 
-# Query sensors
+# Query sensors across all sets
 sensors = storage_manager.list_sensors(device_identifier="your_device_123")
-sensor_sets = storage_manager.list_sensor_sets(device_identifier="your_device_123")
+specific_sensor = storage_manager.get_sensor("unique_id")
+
+# Global settings
+await storage_manager.async_set_global_setting("key", "value")
+value = storage_manager.get_global_setting("key", default="default")
+```
+
+### Enhanced SensorSet Features
+
+The SensorSet interface provides additional convenience methods for better integration experience:
+
+```python
+# SensorSet property getters
+sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+# Access sensor set metadata
+sensor_set_id = sensor_set.sensor_set_id
+device_identifier = sensor_set.device_identifier
+name = sensor_set.name
+sensor_count = sensor_set.sensor_count
+
+# Check sensor existence
+if sensor_set.sensor_exists("unique_id"):
+    sensor = sensor_set.get_sensor("unique_id")
+
+# StorageManager convenience methods
+if storage_manager.sensor_set_exists(sensor_set_id):
+    sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+# List sensor sets with optional filtering
+all_sets = await storage_manager.list_sensor_sets()
+device_sets = await storage_manager.list_sensor_sets(device_identifier="device_123")
+```
+
+### Error Handling Improvements
+
+The SensorSet architecture includes custom exceptions for better error handling:
+
+```python
+from ha_synthetic_sensors.exceptions import (
+    SensorSetNotFoundError,
+    SensorNotFoundError,
+    DuplicateSensorError
+)
+
+try:
+    sensor_set = storage_manager.get_sensor_set("nonexistent_set")
+except SensorSetNotFoundError:
+    _LOGGER.error("Sensor set not found")
+
+try:
+    await sensor_set.async_add_sensor(duplicate_config)
+except DuplicateSensorError:
+    _LOGGER.error("Sensor already exists in set")
+
+try:
+    sensor = sensor_set.get_sensor("nonexistent_sensor")
+except SensorNotFoundError:
+    _LOGGER.error("Sensor not found in set")
 ```
 
 ## Migration from File-Based Configuration
@@ -291,9 +435,10 @@ If you have existing YAML-based configurations, use the migration path:
 
 ```python
 async def migrate_yaml_to_storage(
-    bulk_service: BulkConfigService,
+    storage_manager: StorageManager,
     yaml_file_path: str,
-    device_identifier: str
+    sensor_set_id: str,
+    device_identifier: str | None = None
 ) -> bool:
     """Migrate existing YAML configuration to storage."""
     try:
@@ -304,12 +449,14 @@ async def migrate_yaml_to_storage(
 
         yaml_content = await hass.async_add_executor_job(_read_yaml_file)
 
-        # Import to storage
-        await bulk_service.async_import_yaml_for_device(
+        # Create sensor set and import YAML
+        sensor_set = await storage_manager.async_create_sensor_set(
+            sensor_set_id=sensor_set_id,
             device_identifier=device_identifier,
-            yaml_content=yaml_content,
-            replace_existing=True
+            name=f"Migrated from {yaml_file_path}"
         )
+
+        await sensor_set.async_import_yaml(yaml_content)
 
         # Optionally remove old YAML file (non-blocking)
         await hass.async_add_executor_job(os.remove, yaml_file_path)
@@ -332,12 +479,12 @@ The package supports two configuration approaches:
 
 #### Storage-Based (storage managed by the package)
 
-- **Integration-controlled**: Your integration interacts with configuration via `BulkConfigService`
+- **Integration-controlled**: Your integration interacts with configuration via `StorageManager` and `SensorSet`
 - **HA storage system**: Configuration persisted in storage allocated by the integration (via Home Assistant)
 - **Full CRUD**: Add, update, delete individual sensors programmatically
-- **Device-centric**: Organize sensors by YAML in-memory handoff (with a sensor_set_id) for bulk loads
+- **Sensor set-focused**: Organize sensors by integration-controlled sensor_set_id
 - **YAML Import/Export**: Full roundtrip lossless export on a per-sensor_set_id granularity
-- **In storage Consistency**:  Event listeners update sensor references for any sensor entity_id and name changes in HA
+- **Storage Consistency**: Event listeners update sensor references for any sensor entity_id and name changes in HA
 
 #### Configuration Behavior
 
@@ -449,33 +596,33 @@ def data_provider_callback(entity_id: str) -> DataProviderResult:
 
 ```python
 @pytest.fixture
-async def bulk_service(hass):
-    """Create bulk config service for testing."""
-    service = BulkConfigService(hass, "test_storage")
-    await service.async_initialize()
-    return service
+async def storage_manager(hass):
+    """Create storage manager for testing."""
+    storage_manager = StorageManager(hass, "test_storage")
+    await storage_manager.async_load()
+    return storage_manager
 
 @pytest.fixture
 async def synthetic_integration(hass, mock_config_entry):
     """Create synthetic sensors integration for testing."""
     return SyntheticSensorsIntegration(hass, mock_config_entry)
 
-async def test_device_sensor_creation(hass, bulk_service, synthetic_integration):
+async def test_device_sensor_creation(hass, storage_manager, synthetic_integration):
     """Test creating sensors for a device."""
     # Generate test sensor configs
     sensor_configs = generate_test_sensor_configs("test_device_123")
 
-    # Add to device
-    sensor_set_id = await bulk_service.async_add_sensors_to_device(
+    # Create sensor set and add sensors
+    sensor_set = await storage_manager.async_create_sensor_set(
+        sensor_set_id="test_device_123_config",
         device_identifier="test_device_123",
-        sensor_configs=sensor_configs,
-        device_name="Test Device"
+        name="Test Device Configuration"
     )
 
+    await sensor_set.async_replace_sensors(sensor_configs)
+
     # Verify storage
-    stored_sensors = bulk_service.storage_manager.list_sensors(
-        device_identifier="test_device_123"
-    )
+    stored_sensors = sensor_set.list_sensors()
     assert len(stored_sensors) == len(sensor_configs)
 ```
 
@@ -502,28 +649,29 @@ Use bulk operations for better performance:
 
 ```python
 # Good: Bulk operation
-await bulk_service.async_add_sensors_to_device(
-    device_identifier="device_123",
-    sensor_configs=all_sensor_configs  # Process all at once
+sensor_set = await storage_manager.async_create_sensor_set(
+    sensor_set_id="device_123_config",
+    device_identifier="device_123"
 )
+await sensor_set.async_replace_sensors(all_sensor_configs)  # Process all at once
 
 # Avoid: Individual operations
 for config in sensor_configs:
-    await storage_manager.async_store_sensor(config, sensor_set_id)  # Slower
+    await sensor_set.async_add_sensor(config)  # Slower
 ```
 
 ### Storage Optimization
 
 ```python
 # Initialize storage once
-await bulk_service.async_initialize()
+await storage_manager.async_load()
 
-# Batch updates
-updates = [
-    {"unique_id": "sensor1", "formula": "new_formula1"},
-    {"unique_id": "sensor2", "formula": "new_formula2"},
-]
-results = await bulk_service.async_batch_update_sensors(updates)
+# Use SensorSet for focused operations
+sensor_set = storage_manager.get_sensor_set("device_123_config")
+
+# Batch updates using replace
+updated_configs = modify_sensor_configs(existing_configs)
+await sensor_set.async_replace_sensors(updated_configs)
 ```
 
 ## Error Handling and Debugging
@@ -543,7 +691,7 @@ _LOGGER.debug("Synthetic sensors logging: %s", logging_info)
 
 ### Common Issues
 
-1. **Storage Not Initialized**: Always call `async_initialize()` on BulkConfigService
+1. **Storage Not Initialized**: Always call `async_load()` on StorageManager
 2. **Missing Data Provider**: Register backing entities before loading configuration
 3. **Device Association**: Ensure device_identifier is consistent across all operations
 4. **Entity ID Conflicts**: Use unique device identifiers and sensor names
@@ -551,14 +699,27 @@ _LOGGER.debug("Synthetic sensors logging: %s", logging_info)
 ### Debugging Tools
 
 ```python
-# Check device summary
-summary = bulk_service.get_device_summary("device_123")
-_LOGGER.info("Device summary: %s", summary)
+# Check sensor set summary - clean handle pattern
+sensor_set = storage_manager.get_sensor_set(f"{device_identifier}_config")
 
-# Validate configuration
-validation = bulk_service.validate_device_configuration("device_123")
-if not validation["is_valid"]:
-    _LOGGER.error("Configuration errors: %s", validation["errors"])
+# Property access for debugging/logging
+_LOGGER.info(f"Sensor set {sensor_set.sensor_set_id} has {sensor_set.sensor_count} sensors")
+_LOGGER.debug(f"Device identifier: {sensor_set.device_identifier}")
+_LOGGER.debug(f"Set name: {sensor_set.name}")
+
+# Check sensor existence before operations
+if sensor_set.sensor_exists("unique_id"):
+    sensor = sensor_set.get_sensor("unique_id")
+    _LOGGER.debug(f"Found sensor: {sensor.unique_id}")
+
+# List all sensor sets with convenience methods
+if storage_manager.sensor_set_exists(sensor_set_id):
+    all_sets = storage_manager.list_sensor_sets()
+    _LOGGER.debug("All sensor sets: %s", [s for s in all_sets])
+
+# Check individual sensors
+sensors = sensor_set.list_sensors()
+_LOGGER.debug("Sensors in set: %s", [s.unique_id for s in sensors])
 
 # Check registered entities
 registered = sensor_manager.get_registered_entities()
@@ -569,11 +730,13 @@ _LOGGER.debug("Registered backing entities: %s", registered)
 
 ### Integration Design
 
-1. **YAML-Centric Organization**: Sensors are organized by YAML file structure, with optional device association via global `device_identifier`
-2. **Bulk Operations**: Use bulk operations for multiple sensors
-3. **Storage-First**: Store configuration in HA storage, not files
-4. **Error Handling**: Implement robust error handling in data providers
-5. **Test Isolation**: Use unique storage keys per test to prevent test interference
+1. **SensorSet-Centric Organization**: Use SensorSet handles for focused operations on specific sensor groups
+2. **Clean Handle Pattern**: Get SensorSet handle once, use for all operations on that sensor set
+3. **Integration-Controlled IDs**: Maintain full control over sensor_set_id format and organization
+4. **Bulk Operations**: Use bulk operations for multiple sensors via SensorSet interface
+5. **Storage-First**: Store configuration in HA storage, not files
+6. **Error Handling**: Implement robust error handling in data providers with custom exceptions
+7. **Test Isolation**: Use unique storage keys per test to prevent test interference
 
 ### Configuration Management
 
@@ -584,7 +747,8 @@ _LOGGER.debug("Registered backing entities: %s", registered)
 
 ### Performance
 
-1. **Initialize Once**: Initialize services once during setup
-2. **Batch Operations**: Use bulk operations for multiple sensors
-3. **Efficient Data Providers**: Keep data provider callbacks fast and simple
-4. **Storage Optimization**: Minimize storage operations
+1. **Initialize Once**: Initialize StorageManager once during setup
+2. **SensorSet Handles**: Use SensorSet handles for efficient, focused operations
+3. **Batch Operations**: Use bulk operations for multiple sensors via SensorSet interface
+4. **Efficient Data Providers**: Keep data provider callbacks fast and simple
+5. **Storage Optimization**: Minimize storage operations, leverage SensorSet caching

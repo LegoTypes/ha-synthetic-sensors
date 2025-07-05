@@ -25,7 +25,7 @@ using YAML configuration.
 - Evaluates math expressions using `simpleeval` library
 - Maps variable names to Home Assistant entity IDs
 - Manages sensor lifecycle (creation, updates, removal)
-- Provides Home Assistant services for configuration management
+- Provides storage-based configuration with full CRUD operations via SensorSet interface
 - Tracks dependencies between sensors
 - Caches formula results
 - Variable declarations for shortcut annotations in math formulas
@@ -709,7 +709,7 @@ entity creation results, integration management, and more.
 
 The package supports two configuration approaches:
 
-- **Storage-based**: Full CRUD operations on individual sensors via `BulkConfigService`
+- **Storage-based**: Full CRUD operations on individual sensors via `StorageManager` and `SensorSet` interface
 - **YAML-based**: File-level configuration managed by the integration (auto-discovery available)
 
 ### Storage-Based Integration (Recommended)
@@ -718,31 +718,34 @@ For integrations requiring programmatic sensor management with full CRUD capabil
 
 ```python
 import ha_synthetic_sensors
-from ha_synthetic_sensors.bulk_config_service import BulkConfigService  # Storage system
+from ha_synthetic_sensors.storage_manager import StorageManager
 from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
 
 # In __init__.py
 async def async_setup_entry(hass, entry, async_add_entities):
     ha_synthetic_sensors.configure_logging(logging.DEBUG)
 
-    # Initialize storage-based bulk config service
-    bulk_service = BulkConfigService(hass, f"{DOMAIN}_synthetic")  # Storage backend
-    await bulk_service.async_initialize()
+    # Initialize storage manager
+    storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
+    await storage_manager.async_load()
 
     # Store for sensor platform
-    hass.data[DOMAIN][entry.entry_id]["bulk_service"] = bulk_service
+    hass.data[DOMAIN][entry.entry_id]["storage_manager"] = storage_manager
 
 # In sensor.py
 async def async_setup_entry(hass, entry, async_add_entities):
-    bulk_service = hass.data[DOMAIN][entry.entry_id]["bulk_service"]
+    storage_manager = hass.data[DOMAIN][entry.entry_id]["storage_manager"]
 
-    # Add sensors to device in bulk (storage operation)
-    sensor_configs = generate_sensor_configs(device_data, device_identifier)
-    await bulk_service.async_add_sensors_to_device(  # Storage CRUD
+    # Create sensor set with integration-controlled ID and get handle
+    sensor_set = await storage_manager.async_create_sensor_set(
+        sensor_set_id=f"{device_identifier}_sensors",  # Integration controls format
         device_identifier=device_identifier,
-        sensor_configs=sensor_configs,
-        device_name=device_name
+        name=f"SPAN Panel {device_identifier}"
     )
+
+    # Generate complete configuration and bulk import via SensorSet
+    sensor_configs = generate_sensor_configs(device_data, device_identifier)
+    await sensor_set.async_replace_sensors(sensor_configs)
 
     # Create sensor manager and load from storage
     synthetic_integration = SyntheticSensorsIntegration(hass, entry)
@@ -753,8 +756,21 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     # Register data provider and load from storage
     sensor_manager.register_data_provider_entities(backing_entities)
-    config = bulk_service.storage_manager.to_config(device_identifier=device_identifier)  # Storage read
+    config = storage_manager.to_config(device_identifier=device_identifier)
     await sensor_manager.load_configuration(config)
+
+# Later, for individual sensor CRUD operations:
+async def update_sensor_config(hass, entry, device_identifier, sensor_unique_id, new_config):
+    storage_manager = hass.data[DOMAIN][entry.entry_id]["storage_manager"]
+
+    # Get sensor set handle - clean handle pattern
+    sensor_set = storage_manager.get_sensor_set(f"{device_identifier}_sensors")
+
+    # Individual operations via SensorSet
+    await sensor_set.async_update_sensor(new_config)
+
+    # Property access for debugging/logging
+    _LOGGER.debug(f"Sensor set {sensor_set.sensor_set_id} has {sensor_set.sensor_count} sensors")
 ```
 
 ### YAML-Based Integration

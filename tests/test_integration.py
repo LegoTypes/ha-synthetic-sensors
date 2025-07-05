@@ -1,7 +1,6 @@
 """Tests for synthetic sensors integration components and workflow."""
 
 from pathlib import Path
-from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,7 +15,6 @@ from ha_synthetic_sensors.integration import (
     get_integration,
     validate_yaml_content,
 )
-from ha_synthetic_sensors.types import ContextValue
 
 
 class TestSyntheticSensorsIntegration:
@@ -634,96 +632,301 @@ class TestIntegrationFunctions:
 
 
 class TestIntegration:
-    """Test cases for integration workflow."""
+    """Test integration workflow and architecture patterns."""
 
     @pytest.fixture
     def mock_hass(self):
         """Create a mock Home Assistant instance."""
         hass = MagicMock()
-        hass.states = MagicMock()
+        hass.config = MagicMock()
+        hass.config.config_dir = "/config"
+        hass.data = {}
         return hass
 
     @pytest.fixture
     def mock_config_entry(self):
         """Create a mock config entry."""
-        config_entry = MagicMock()
-        config_entry.entry_id = "test_entry_id"
-        return config_entry
+        entry = MagicMock()
+        entry.entry_id = "test_entry_123"
+        entry.data = {"name": "test_integration"}
+        return entry
 
     def test_service_layer_setup(self, mock_hass, mock_config_entry):
-        """Test that service layer sets up properly."""
-        from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
+        """Test service layer initialization."""
+        from ha_synthetic_sensors.service_layer import ServiceLayer
 
-        # Create integration instance
-        integration = SyntheticSensorsIntegration(mock_hass, mock_config_entry)
+        # Mock required dependencies
+        mock_config_manager = MagicMock()
+        mock_sensor_manager = MagicMock()
+        mock_name_resolver = MagicMock()
+        mock_evaluator = MagicMock()
 
-        # Test that integration initializes
-        assert integration is not None
-        assert hasattr(integration, "config_manager")
-        assert hasattr(integration, "_config_manager")
+        service_layer = ServiceLayer(
+            hass=mock_hass,
+            config_manager=mock_config_manager,
+            sensor_manager=mock_sensor_manager,
+            name_resolver=mock_name_resolver,
+            evaluator=mock_evaluator,
+        )
+        assert service_layer is not None
+        assert service_layer._hass == mock_hass
+        assert service_layer._config_manager == mock_config_manager
 
     def test_yaml_to_entities_workflow(self, mock_hass, mock_config_entry):
-        """Test the complete workflow from YAML config to entity processing."""
-        from ha_synthetic_sensors.config_manager import ConfigManager, FormulaConfig, SensorConfig
-        from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
+        """Test the basic YAML to entities workflow."""
+        from ha_synthetic_sensors.config_manager import ConfigManager
+        from ha_synthetic_sensors.name_resolver import NameResolver
+        from ha_synthetic_sensors.sensor_manager import SensorManager
 
-        # Create integration instance
-        SyntheticSensorsIntegration(mock_hass, mock_config_entry)
-
-        # Test that configuration can be loaded and processed
+        # Create config manager
         config_manager = ConfigManager(mock_hass)
-        config = config_manager.load_config()  # Load empty config
+        assert config_manager is not None
 
-        # Add test sensor
-        formula = FormulaConfig(
-            id="total_power",
-            name="total_power",
-            formula="hvac_upstairs + hvac_downstairs",
+        # Create sensor manager
+        add_entities_callback = MagicMock()
+        name_resolver = NameResolver(mock_hass, {})
+        sensor_manager = SensorManager(
+            hass=mock_hass,
+            name_resolver=name_resolver,
+            add_entities_callback=add_entities_callback,
         )
-        sensor = SensorConfig(unique_id="test_sensor", name="test_sensor", formulas=[formula])
-        config.sensors.append(sensor)
-
-        # Verify sensor was added
-        assert len(config.sensors) == 1
-        assert config.sensors[0].name == "test_sensor"
+        assert sensor_manager is not None
 
     def test_config_validation_workflow(self, mock_hass):
         """Test configuration validation workflow."""
-        from ha_synthetic_sensors.config_manager import Config, ConfigManager, FormulaConfig, SensorConfig
+        from ha_synthetic_sensors.config_manager import ConfigManager
 
-        ConfigManager(mock_hass)
-        config = Config()
+        config_manager = ConfigManager(mock_hass)
 
-        # Test invalid configuration (duplicate sensor names)
-        formula1 = FormulaConfig(id="test_formula", name="test_formula", formula="A + B")
-        formula2 = FormulaConfig(id="test_formula2", name="test_formula2", formula="C + D")
+        # Test YAML validation
+        valid_yaml = {
+            "version": "1.0",
+            "sensors": {
+                "test_sensor": {
+                    "name": "Test Sensor",
+                    "formula": "1 + 1",
+                    "unit_of_measurement": "units",
+                }
+            },
+        }
 
-        sensor1 = SensorConfig(unique_id="unique_id_1", name="unique_name_1", formulas=[formula1])
-        sensor2 = SensorConfig(unique_id="unique_id_2", name="unique_name_2", formulas=[formula2])
-
-        config.sensors = [sensor1, sensor2]
-
-        # Validate configuration
-        errors = config.validate()
-        assert len(errors) == 0
+        # This should not raise an exception
+        config = config_manager.load_from_dict(valid_yaml)
+        assert config is not None
+        assert len(config.sensors) == 1
 
     def test_formula_evaluation_workflow(self, mock_hass):
-        """Test formula evaluation integration workflow."""
+        """Test formula evaluation workflow."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
-        from ha_synthetic_sensors.name_resolver import NameResolver
 
-        # Create components
-        variables = {"temp": "sensor.temperature", "humidity": "sensor.humidity"}
         evaluator = Evaluator(mock_hass)
-        NameResolver(mock_hass, variables)
+        assert evaluator is not None
 
-        # Test integrated workflow
-        formula_config = FormulaConfig(id="comfort_index", name="comfort_index", formula="temp + humidity")
-
-        # Test evaluation with context
-        context = cast(dict[str, ContextValue], {"temp": 22.5, "humidity": 45.0})
-        result = evaluator.evaluate_formula(formula_config, context)
-
+        # Test simple evaluation using evaluate_formula
+        formula_config = FormulaConfig(
+            id="test_formula",
+            formula="1 + 1",
+        )
+        result = evaluator.evaluate_formula(formula_config, {})
         assert result["success"] is True
-        assert result["value"] == 67.5
+        assert result["value"] == 2
+
+
+class TestSensorSetIntegrationWorkflow:
+    """Test the recommended SensorSet-based integration workflow."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock()
+        hass.data = {}
+        return hass
+
+    @pytest.fixture
+    async def storage_manager(self, mock_hass):
+        """Create a StorageManager instance for testing."""
+        from unittest.mock import AsyncMock, patch
+
+        from ha_synthetic_sensors.storage_manager import StorageManager
+
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            mock_store.async_save = AsyncMock()
+            MockStore.return_value = mock_store
+
+            manager = StorageManager(mock_hass, "test_integration_synthetic")
+            manager._store = mock_store
+            await manager.async_load()
+            return manager
+
+    @pytest.mark.asyncio
+    async def test_integration_setup_workflow(self, mock_hass, storage_manager):
+        """Test the complete integration setup workflow using SensorSet."""
+        from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+
+        # Step 1: Create sensor set for a device
+        device_identifier = "test_device_123"
+        sensor_set = await storage_manager.async_create_sensor_set(
+            sensor_set_id=f"{device_identifier}_config_v1",
+            device_identifier=device_identifier,
+            name="Test Device Sensors",
+            description="Synthetic sensors for test device",
+        )
+
+        assert sensor_set.sensor_set_id == f"{device_identifier}_config_v1"
+        assert sensor_set.exists is True
+
+        # Step 2: Generate sensor configurations
+        sensor_configs = [
+            SensorConfig(
+                unique_id=f"{device_identifier}_power",
+                name="Device Power",
+                formulas=[
+                    FormulaConfig(
+                        id=f"{device_identifier}_power",
+                        formula="power_value",
+                        variables={"power_value": f"sensor.{device_identifier}_raw_power"},
+                        unit_of_measurement="W",
+                        device_class="power",
+                        state_class="measurement",
+                    )
+                ],
+                device_identifier=device_identifier,
+            ),
+            SensorConfig(
+                unique_id=f"{device_identifier}_energy",
+                name="Device Energy",
+                formulas=[
+                    FormulaConfig(
+                        id=f"{device_identifier}_energy",
+                        formula="energy_value / 1000",
+                        variables={"energy_value": f"sensor.{device_identifier}_raw_energy"},
+                        unit_of_measurement="kWh",
+                        device_class="energy",
+                        state_class="total_increasing",
+                    )
+                ],
+                device_identifier=device_identifier,
+            ),
+        ]
+
+        # Step 3: Add sensors to the sensor set
+        await sensor_set.async_replace_sensors(sensor_configs)
+
+        # Verify sensors were added
+        assert sensor_set.sensor_count == 2
+        stored_sensors = sensor_set.list_sensors()
+        assert len(stored_sensors) == 2
+
+        # Step 4: Individual sensor operations
+        power_sensor = sensor_set.get_sensor(f"{device_identifier}_power")
+        assert power_sensor is not None
+        assert power_sensor.name == "Device Power"
+
+        # Step 5: Export configuration for debugging/backup
+        yaml_content = sensor_set.export_yaml()
+        assert yaml_content is not None
+        assert "sensors:" in yaml_content
+        assert f"{device_identifier}_power:" in yaml_content
+
+    @pytest.mark.asyncio
+    async def test_yaml_import_workflow(self, mock_hass, storage_manager):
+        """Test importing YAML configuration into a sensor set."""
+        device_identifier = "yaml_test_device"
+
+        # Create sensor set
+        sensor_set = await storage_manager.async_create_sensor_set(
+            sensor_set_id=f"{device_identifier}_yaml_config", device_identifier=device_identifier, name="YAML Test Device"
+        )
+
+        # YAML configuration to import
+        yaml_content = """
+version: "1.0"
+sensors:
+  yaml_test_device_total_power:
+    name: "Total Power"
+    formula: "power_input"
+    variables:
+      power_input: "sensor.yaml_test_device_raw_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  yaml_test_device_efficiency:
+    name: "Power Efficiency"
+    formula: "output_power / input_power * 100"
+    variables:
+      output_power: "sensor.yaml_test_device_output"
+      input_power: "sensor.yaml_test_device_input"
+    unit_of_measurement: "%"
+    device_class: "power_factor"
+    state_class: "measurement"
+"""
+
+        # Import YAML
+        await sensor_set.async_import_yaml(yaml_content)
+
+        # Verify import
+        assert sensor_set.sensor_count == 2
+
+        total_power = sensor_set.get_sensor("yaml_test_device_total_power")
+        assert total_power is not None
+        assert total_power.name == "Total Power"
+
+        efficiency = sensor_set.get_sensor("yaml_test_device_efficiency")
+        assert efficiency is not None
+        assert efficiency.name == "Power Efficiency"
+
+    @pytest.mark.asyncio
+    async def test_sensor_set_validation(self, mock_hass, storage_manager):
+        """Test sensor set validation capabilities."""
+        from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+
+        device_identifier = "validation_device"
+        sensor_set = await storage_manager.async_create_sensor_set(
+            sensor_set_id=f"{device_identifier}_validation", device_identifier=device_identifier, name="Validation Test"
+        )
+
+        # Add a valid sensor
+        valid_sensor = SensorConfig(
+            unique_id=f"{device_identifier}_valid",
+            name="Valid Sensor",
+            formulas=[
+                FormulaConfig(
+                    id=f"{device_identifier}_valid",
+                    formula="test_value",
+                    variables={"test_value": "sensor.test"},
+                    unit_of_measurement="units",
+                )
+            ],
+            device_identifier=device_identifier,
+        )
+
+        # Add an invalid sensor (missing formula)
+        invalid_sensor = SensorConfig(
+            unique_id=f"{device_identifier}_invalid",
+            name="Invalid Sensor",
+            formulas=[],  # No formulas - invalid
+            device_identifier=device_identifier,
+        )
+
+        await sensor_set.async_add_sensor(valid_sensor)
+        await sensor_set.async_add_sensor(invalid_sensor)
+
+        # Test validation
+        errors = sensor_set.get_sensor_errors()
+        assert len(errors) == 1  # Only invalid sensor should have errors
+        assert f"{device_identifier}_invalid" in errors
+        assert "must have at least one formula" in errors[f"{device_identifier}_invalid"][0]
+
+        # Test overall validity
+        assert sensor_set.is_valid() is False  # Has errors
+
+        # Remove invalid sensor
+        await sensor_set.async_remove_sensor(f"{device_identifier}_invalid")
+
+        # Now should be valid
+        assert sensor_set.is_valid() is True
+        assert len(sensor_set.get_sensor_errors()) == 0

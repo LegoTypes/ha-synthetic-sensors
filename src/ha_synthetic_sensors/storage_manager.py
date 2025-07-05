@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, dataclass
 import logging
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -21,6 +21,9 @@ import yaml
 
 from .config_manager import Config, FormulaConfig, SensorConfig
 from .exceptions import SyntheticSensorsError
+
+if TYPE_CHECKING:
+    from .sensor_set import SensorSet
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -342,7 +345,7 @@ class StorageManager:
         device_identifier: str | None = None,
         name: str | None = None,
         description: str | None = None,
-    ) -> str:
+    ) -> SensorSet:
         """
         Create a new sensor set for bulk management.
 
@@ -353,7 +356,7 @@ class StorageManager:
             description: Description of the sensor set
 
         Returns:
-            The provided sensor_set_id
+            SensorSet handle for the created sensor set
         """
         self._ensure_loaded()
         data = self._ensure_loaded()
@@ -380,7 +383,7 @@ class StorageManager:
             name,
         )
 
-        return sensor_set_id
+        return self.get_sensor_set(sensor_set_id)
 
     async def async_delete_sensor_set(self, sensor_set_id: str) -> bool:
         """
@@ -673,6 +676,37 @@ class StorageManager:
 
         return result
 
+    async def async_update_sensor(self, sensor_config: SensorConfig) -> bool:
+        """
+        Update existing sensor configuration.
+
+        Args:
+            sensor_config: Updated sensor configuration
+
+        Returns:
+            True if updated, False if sensor not found
+        """
+        data = self._ensure_loaded()
+
+        if sensor_config.unique_id not in data["sensors"]:
+            _LOGGER.warning("Sensor %s not found for update", sensor_config.unique_id)
+            return False
+
+        stored_sensor = data["sensors"][sensor_config.unique_id]
+        sensor_set_id = stored_sensor.get("sensor_set_id")
+
+        # Update the sensor config data and timestamp
+        stored_sensor["config_data"] = self._serialize_sensor_config(sensor_config)
+        stored_sensor["updated_at"] = self._get_timestamp()
+
+        # Update sensor set metadata
+        if sensor_set_id and sensor_set_id in data["sensor_sets"]:
+            data["sensor_sets"][sensor_set_id]["updated_at"] = self._get_timestamp()
+
+        await self.async_save()
+        _LOGGER.debug("Updated sensor: %s", sensor_config.unique_id)
+        return True
+
     async def async_delete_sensor(self, unique_id: str) -> bool:
         """
         Delete a sensor configuration.
@@ -894,3 +928,99 @@ class StorageManager:
         """Get all global settings."""
         data = self._ensure_loaded()
         return data["global_settings"].copy()
+
+    def get_sensor_set(self, sensor_set_id: str) -> SensorSet:
+        """
+        Get a SensorSet handle for individual sensor set operations.
+
+        Args:
+            sensor_set_id: Sensor set identifier
+
+        Returns:
+            SensorSet handle for the specified sensor set
+        """
+        from .sensor_set import SensorSet
+
+        return SensorSet(self, sensor_set_id)
+
+    # Convenience methods for integration support
+
+    def sensor_set_exists(self, sensor_set_id: str) -> bool:
+        """
+        Check if a sensor set exists.
+
+        Args:
+            sensor_set_id: Sensor set identifier
+
+        Returns:
+            True if sensor set exists, False otherwise
+        """
+        return self.get_sensor_set_metadata(sensor_set_id) is not None
+
+    def get_sensor_count(self, sensor_set_id: str | None = None) -> int:
+        """
+        Get count of sensors in storage.
+
+        Args:
+            sensor_set_id: Optional sensor set to filter by
+
+        Returns:
+            Number of sensors
+        """
+        data = self._ensure_loaded()
+
+        if sensor_set_id:
+            # Count sensors in specific sensor set
+            count = 0
+            for sensor_data in data["sensors"].values():
+                if sensor_data.get("sensor_set_id") == sensor_set_id:
+                    count += 1
+            return count
+        else:
+            # Count all sensors
+            return len(data["sensors"])
+
+    async def async_clear_all_data(self) -> None:
+        """
+        Clear all data from storage.
+
+        This is useful for testing or complete resets.
+        """
+        data = self._ensure_loaded()
+        data["sensors"].clear()
+        data["sensor_sets"].clear()
+        data["global_settings"].clear()
+        await self.async_save()
+        _LOGGER.info("Cleared all synthetic sensor storage data")
+
+    def get_storage_stats(self) -> dict[str, Any]:
+        """
+        Get storage statistics.
+
+        Returns:
+            Dictionary with storage statistics
+        """
+        data = self._ensure_loaded()
+
+        # Count sensors by sensor set
+        sensor_set_counts: dict[str, int] = {}
+        for sensor_data in data["sensors"].values():
+            sensor_set_id = sensor_data.get("sensor_set_id", "unknown")
+            sensor_set_counts[sensor_set_id] = sensor_set_counts.get(sensor_set_id, 0) + 1
+
+        return {
+            "total_sensors": len(data["sensors"]),
+            "total_sensor_sets": len(data["sensor_sets"]),
+            "global_settings_count": len(data["global_settings"]),
+            "sensor_sets": sensor_set_counts,
+        }
+
+    def has_data(self) -> bool:
+        """
+        Check if storage has any data.
+
+        Returns:
+            True if storage has sensors or sensor sets, False otherwise
+        """
+        data = self._ensure_loaded()
+        return len(data["sensors"]) > 0 or len(data["sensor_sets"]) > 0

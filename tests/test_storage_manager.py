@@ -98,6 +98,40 @@ def load_yaml_fixture(fixture_name: str) -> str:
         return f.read()
 
 
+@pytest.fixture
+def sample_stored_sensor():
+    """Create a sample stored sensor for testing."""
+    return {
+        "unique_id": "test_sensor_power",
+        "name": "Test Sensor Power",
+        "formulas": [
+            {
+                "id": "main",
+                "formula": "source_value",
+                "variables": {"source_value": "sensor.test_source"},
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+            }
+        ],
+        "device_identifier": "test_device:123",
+        "sensor_set_id": "test_sensor_set",
+    }
+
+
+@pytest.fixture
+def sample_sensor_set_metadata():
+    """Create a sample sensor set metadata for testing."""
+    return {
+        "device_identifier": "test_device:123",
+        "name": "Test Device Sensors",
+        "description": "Test sensor set",
+        "sensor_count": 1,
+        "created_at": "2023-01-01T00:00:00Z",
+        "updated_at": "2023-01-01T00:00:00Z",
+    }
+
+
 class TestStorageManager:
     """Test cases for StorageManager."""
 
@@ -134,15 +168,17 @@ class TestStorageManager:
         ):
             await storage_manager.async_load()
 
-            sensor_set_id = await storage_manager.async_create_sensor_set(
+            sensor_set = await storage_manager.async_create_sensor_set(
                 sensor_set_id="test_sensor_set",
                 device_identifier="test_device:123",
                 name="Test Device Sensors",
                 description="Test sensor set",
             )
 
-            assert sensor_set_id in storage_manager._data["sensor_sets"]
-            metadata = storage_manager._data["sensor_sets"][sensor_set_id]
+            # Verify the sensor set was created and is accessible
+            assert sensor_set.sensor_set_id == "test_sensor_set"
+            assert "test_sensor_set" in storage_manager._data["sensor_sets"]
+            metadata = storage_manager._data["sensor_sets"]["test_sensor_set"]
             assert metadata["device_identifier"] == "test_device:123"
             assert metadata["name"] == "Test Device Sensors"
             assert metadata["description"] == "Test sensor set"
@@ -157,7 +193,7 @@ class TestStorageManager:
             await storage_manager.async_load()
 
             # Create sensor set first
-            sensor_set_id = await storage_manager.async_create_sensor_set(
+            sensor_set = await storage_manager.async_create_sensor_set(
                 sensor_set_id="test_sensor_set",
                 device_identifier="test_device:123",
                 name="Test Device",
@@ -166,18 +202,18 @@ class TestStorageManager:
             # Store sensor
             await storage_manager.async_store_sensor(
                 sample_sensor_config,
-                sensor_set_id,
+                sensor_set.sensor_set_id,
                 "test_device:123",
             )
 
             # Verify sensor was stored
             assert sample_sensor_config.unique_id in storage_manager._data["sensors"]
             stored_sensor = storage_manager._data["sensors"][sample_sensor_config.unique_id]
-            assert stored_sensor["sensor_set_id"] == sensor_set_id
+            assert stored_sensor["sensor_set_id"] == sensor_set.sensor_set_id
             assert stored_sensor["device_identifier"] == "test_device:123"
 
             # Verify sensor set metadata was updated
-            sensor_set_metadata = storage_manager._data["sensor_sets"][sensor_set_id]
+            sensor_set_metadata = storage_manager._data["sensor_sets"][sensor_set.sensor_set_id]
             assert sensor_set_metadata["sensor_count"] == 1
 
     async def test_store_sensors_bulk(self, storage_manager, sample_sensor_config):
@@ -313,6 +349,67 @@ class TestStorageManager:
             assert len(device2_sensors) == 2
             for sensor in device2_sensors:
                 assert sensor.unique_id.startswith("device2_sensor_")
+
+    async def test_update_sensor(self, storage_manager, sample_sensor_config):
+        """Test updating an existing sensor configuration."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Create sensor set and add sensor
+            sensor_set = await storage_manager.async_create_sensor_set(
+                sensor_set_id="test_update_set",
+                device_identifier="test_device:123",
+                name="Test Device",
+            )
+
+            await storage_manager.async_store_sensor(
+                sample_sensor_config,
+                sensor_set.sensor_set_id,
+                "test_device:123",
+            )
+
+            # Get original timestamp
+            original_stored = storage_manager._data["sensors"][sample_sensor_config.unique_id]
+            original_updated_at = original_stored["updated_at"]
+
+            # Update sensor configuration
+            updated_config = SensorConfig(
+                unique_id=sample_sensor_config.unique_id,
+                name="Updated Test Sensor Power",  # Changed name
+                formulas=sample_sensor_config.formulas,
+                device_identifier=sample_sensor_config.device_identifier,
+            )
+
+            success = await storage_manager.async_update_sensor(updated_config)
+            assert success
+
+            # Verify sensor was updated
+            stored_sensor = storage_manager._data["sensors"][sample_sensor_config.unique_id]
+            config_data = stored_sensor["config_data"]
+            assert config_data["name"] == "Updated Test Sensor Power"
+            assert stored_sensor["updated_at"] != original_updated_at
+
+            # Verify sensor set metadata was updated
+            sensor_set_metadata = storage_manager._data["sensor_sets"][sensor_set.sensor_set_id]
+            assert sensor_set_metadata["updated_at"] != original_updated_at
+
+    async def test_update_sensor_not_found(self, storage_manager):
+        """Test updating a non-existent sensor."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+
+            # Try to update non-existent sensor
+            non_existent_config = SensorConfig(
+                unique_id="non_existent_sensor",
+                name="Non-existent Sensor",
+                formulas=[],
+            )
+
+            success = await storage_manager.async_update_sensor(non_existent_config)
+            assert not success
 
     async def test_delete_sensor_set(self, storage_manager, sample_sensor_config):
         """Test deleting a sensor set and all associated sensors."""
@@ -811,3 +908,235 @@ class TestStorageManagerIntegration:
         # Verify sensors in exported local YAML do have device_identifier
         local_power_exported = exported_local_data["sensors"]["local_power_sensor"]
         assert local_power_exported["device_identifier"] == "local_device:test_456"
+
+    async def test_async_set_global_setting(self, storage_manager):
+        """Test setting a global setting."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            await storage_manager.async_set_global_setting("test_key", "test_value")
+
+            # Verify setting was stored
+            assert storage_manager.get_global_setting("test_key") == "test_value"
+
+            # Verify save was called
+            storage_manager.async_save.assert_called()
+
+    def test_get_global_setting_exists(self, storage_manager):
+        """Test getting an existing global setting."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            storage_manager._data = {
+                "version": "1.0",
+                "sensors": {},
+                "sensor_sets": {},
+                "global_settings": {"test_key": "test_value"},
+            }
+            storage_manager._loaded = True
+
+            result = storage_manager.get_global_setting("test_key")
+
+            assert result == "test_value"
+
+    def test_get_global_setting_default(self, storage_manager):
+        """Test getting a non-existent global setting with default."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            storage_manager._data = {"version": "1.0", "sensors": {}, "sensor_sets": {}, "global_settings": {}}
+            storage_manager._loaded = True
+
+            result = storage_manager.get_global_setting("nonexistent", "default_value")
+
+            assert result == "default_value"
+
+    def test_get_global_settings(self, storage_manager):
+        """Test getting all global settings."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            storage_manager._data = {
+                "version": "1.0",
+                "sensors": {},
+                "sensor_sets": {},
+                "global_settings": {"key1": "value1", "key2": "value2"},
+            }
+            storage_manager._loaded = True
+
+            result = storage_manager.get_global_settings()
+
+            assert result == {"key1": "value1", "key2": "value2"}
+
+    def test_get_sensor_set(self, storage_manager):
+        """Test getting a SensorSet handle."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            storage_manager._data = {"version": "1.0", "sensors": {}, "sensor_sets": {}, "global_settings": {}}
+            storage_manager._loaded = True
+
+            result = storage_manager.get_sensor_set("test_set")
+
+            assert result.sensor_set_id == "test_set"
+            assert result.storage_manager == storage_manager
+
+
+class TestStorageManagerConvenienceMethods:
+    """Test StorageManager convenience methods."""
+
+    @pytest.mark.asyncio
+    async def test_sensor_set_exists_true(self, storage_manager, sample_sensor_set_metadata):
+        """Test sensor_set_exists when sensor set exists."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+            storage_manager._data["sensor_sets"]["test_set"] = sample_sensor_set_metadata
+
+            result = storage_manager.sensor_set_exists("test_set")
+
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_sensor_set_exists_false(self, storage_manager):
+        """Test sensor_set_exists when sensor set doesn't exist."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+
+            result = storage_manager.sensor_set_exists("nonexistent_set")
+
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_get_sensor_count_all(self, storage_manager, sample_stored_sensor):
+        """Test get_sensor_count for all sensors."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+            storage_manager._data["sensors"]["sensor1"] = sample_stored_sensor
+            storage_manager._data["sensors"]["sensor2"] = {
+                **sample_stored_sensor,
+                "unique_id": "sensor2",
+                "sensor_set_id": "different_set",
+            }
+
+            result = storage_manager.get_sensor_count()
+
+            assert result == 2
+
+    @pytest.mark.asyncio
+    async def test_get_sensor_count_specific_set(self, storage_manager, sample_stored_sensor):
+        """Test get_sensor_count for specific sensor set."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+            storage_manager._data["sensors"]["sensor1"] = sample_stored_sensor
+            storage_manager._data["sensors"]["sensor2"] = {
+                **sample_stored_sensor,
+                "unique_id": "sensor2",
+                "sensor_set_id": "different_set",
+            }
+
+            result = storage_manager.get_sensor_count("test_sensor_set")
+
+            assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_get_sensor_count_empty(self, storage_manager):
+        """Test get_sensor_count when no sensors exist."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+
+            result = storage_manager.get_sensor_count()
+
+            assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_async_clear_all_data(self, storage_manager, sample_stored_sensor, sample_sensor_set_metadata):
+        """Test clearing all data from storage."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+            # Add some data
+            storage_manager._data["sensors"]["sensor1"] = sample_stored_sensor
+            storage_manager._data["sensor_sets"]["set1"] = sample_sensor_set_metadata
+            storage_manager._data["global_settings"]["key1"] = "value1"
+
+            await storage_manager.async_clear_all_data()
+
+            # Verify all data was cleared
+            assert len(storage_manager._data["sensors"]) == 0
+            assert len(storage_manager._data["sensor_sets"]) == 0
+            assert len(storage_manager._data["global_settings"]) == 0
+
+            # Verify save was called
+            storage_manager._store.async_save.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_storage_stats(self, storage_manager, sample_stored_sensor, sample_sensor_set_metadata):
+        """Test getting storage statistics."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+            # Add test data
+            storage_manager._data["sensors"]["sensor1"] = sample_stored_sensor
+            storage_manager._data["sensors"]["sensor2"] = {
+                **sample_stored_sensor,
+                "unique_id": "sensor2",
+                "sensor_set_id": "different_set",
+            }
+            storage_manager._data["sensor_sets"]["set1"] = sample_sensor_set_metadata
+            storage_manager._data["global_settings"]["key1"] = "value1"
+
+            result = storage_manager.get_storage_stats()
+
+            expected = {
+                "total_sensors": 2,
+                "total_sensor_sets": 1,
+                "global_settings_count": 1,
+                "sensor_sets": {
+                    "test_sensor_set": 1,
+                    "different_set": 1,
+                },
+            }
+
+            assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_get_storage_stats_empty(self, storage_manager):
+        """Test getting storage statistics when empty."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+
+            result = storage_manager.get_storage_stats()
+
+            expected = {
+                "total_sensors": 0,
+                "total_sensor_sets": 0,
+                "global_settings_count": 0,
+                "sensor_sets": {},
+            }
+
+            assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_has_data_true_sensors(self, storage_manager, sample_stored_sensor):
+        """Test has_data when storage has sensors."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+            storage_manager._data["sensors"]["sensor1"] = sample_stored_sensor
+
+            result = storage_manager.has_data()
+
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_has_data_true_sensor_sets(self, storage_manager, sample_sensor_set_metadata):
+        """Test has_data when storage has sensor sets."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+            storage_manager._data["sensor_sets"]["set1"] = sample_sensor_set_metadata
+
+            result = storage_manager.has_data()
+
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_has_data_false(self, storage_manager):
+        """Test has_data when storage is empty."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+
+            result = storage_manager.has_data()
+
+            assert result is False

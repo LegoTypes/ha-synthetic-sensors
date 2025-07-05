@@ -16,7 +16,7 @@ Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
 python = ">=3.13.2,<3.14"
 simpleeval = "^1.0.3"  # Keep our own constraint for non-HA dependency
 jsonschema = "^4.24.0"  # Keep our own constraint for non-HA dependency
-homeassistant = "*"  # Required runtime dependency - brings pyyaml, voluptuous transitively
+homeassistant = "^2025.7.0"  # Required runtime dependency - brings pyyaml, voluptuous transitively
 aiofiles = "*"  # For async file operations - not included with HA core
 
 [tool.poetry.group.dev.dependencies]

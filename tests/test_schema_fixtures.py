@@ -31,6 +31,10 @@ class TestSchemaFixtures:
         yaml_files = list(fixtures_dir.glob("*.yaml"))
         assert len(yaml_files) > 0, "No YAML fixtures found"
 
+        # Exclude files that contain multiple test scenarios rather than single configs
+        excluded_files = {"sensor_set_test.yaml"}
+        yaml_files = [f for f in yaml_files if f.name not in excluded_files]
+
         invalid_files = []
 
         for yaml_file in yaml_files:
