@@ -222,7 +222,7 @@ while avoiding conflicts between sensors from different devices.
 - Attributes can also reference other entities normally (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
 
-### Global Settings
+### Global YAML Settings
 
 Global settings allow you to define common configuration that applies to all sensors in a YAML file, reducing duplication
 making sensor sets easier to manage:
@@ -271,7 +271,12 @@ sensors:
 **Supported Global Settings:**
 
 - **`device_identifier`**: Applied to sensors that don't specify their own device_identifier
-- **`variables`**: Merged with sensor-level variables (sensor-level variables take precedence)
+- **`variables`**: Merged with sensor-level variables
+- **Global Precedence**: Local `variables` or `device_identifer` MUST NOT override global values
+- **Local Preservation**: A local that matches a global and has the same value is preserved on export
+
+The rationale for disallowing locals values for `variables` that don't match global variable values is rooted
+in the fact that a formula evaluation cannot disambiguate between a global and a local alias
 
 **Global Settings Behavior:**
 

@@ -546,7 +546,8 @@ class TestSensorSetIntegration:
 
     @pytest.mark.asyncio
     async def test_complete_sensor_lifecycle(self, storage_manager, sensor_set_metadata, sample_sensor_config, yaml_fixtures):
-        """Test complete sensor lifecycle: import, add, update, remove, export."""
+        """Test complete sensor lifecycle with YAML import/export."""
+        # Setup mocks
         storage_manager.get_sensor_set_metadata = MagicMock(return_value=sensor_set_metadata)
         storage_manager.async_from_yaml = AsyncMock()
         storage_manager.async_store_sensor = AsyncMock()
@@ -575,6 +576,365 @@ class TestSensorSetIntegration:
         result = sensor_set.export_yaml()
 
         assert result == "exported_yaml"
+
+    @pytest.mark.asyncio
+    async def test_export_yaml_includes_crud_added_sensors(self, mock_hass, yaml_fixtures):
+        """Test that export YAML includes sensors added via CRUD operations."""
+        from unittest.mock import AsyncMock, patch
+
+        from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+        from ha_synthetic_sensors.storage_manager import StorageManager
+
+        # Create a StorageManager with mocked Store to test actual export behavior
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_export_bug")
+            storage_manager._store = mock_store
+
+            # Initialize storage with empty data
+            with patch.object(storage_manager._store, "async_load", return_value=None):
+                await storage_manager.async_load()
+
+            # Create sensor set
+            with patch.object(storage_manager, "async_save", new_callable=AsyncMock):
+                sensor_set = await storage_manager.async_create_sensor_set(
+                    sensor_set_id="test_export_bug", device_identifier="test-device-123", name="Test Export Bug"
+                )
+
+                # Import initial YAML
+                yaml_content = yaml.dump(yaml_fixtures["basic_sensor_set"])
+                await sensor_set.async_import_yaml(yaml_content)
+
+                # Export YAML before adding new sensor
+                initial_export = sensor_set.export_yaml()
+
+                # Add a new sensor via CRUD
+                new_sensor = SensorConfig(
+                    unique_id="new_crud_sensor",
+                    name="New CRUD Sensor",
+                    formulas=[
+                        FormulaConfig(
+                            id="new_crud_sensor",  # Formula ID must match sensor unique_id for main formula
+                            formula="crud_value",
+                            variables={"crud_value": "sensor.crud_source"},
+                            unit_of_measurement="A",
+                            device_class="current",
+                            state_class="measurement",
+                        )
+                    ],
+                    enabled=True,
+                    device_identifier="test-device-123",
+                )
+
+                await sensor_set.async_add_sensor(new_sensor)
+
+                # Export YAML after adding new sensor
+                final_export = sensor_set.export_yaml()
+
+                # Parse both exports to compare
+                import yaml as yaml_lib
+
+                initial_data = yaml_lib.safe_load(initial_export)
+                final_data = yaml_lib.safe_load(final_export)
+
+                # Check that the new sensor is included in the final export
+                assert "new_crud_sensor" in final_data["sensors"], (
+                    f"New sensor not found in export. Final sensors: {list(final_data['sensors'].keys())}"
+                )
+
+                # Check that the new sensor has the correct properties
+                new_sensor_data = final_data["sensors"]["new_crud_sensor"]
+                assert new_sensor_data["name"] == "New CRUD Sensor"
+                assert new_sensor_data["formula"] == "crud_value"
+                assert new_sensor_data["variables"]["crud_value"] == "sensor.crud_source"
+                assert new_sensor_data["unit_of_measurement"] == "A"
+                assert new_sensor_data["device_class"] == "current"
+
+                # Verify the sensor count increased
+                assert len(final_data["sensors"]) == len(initial_data["sensors"]) + 1
+
+    @pytest.mark.asyncio
+    async def test_export_yaml_reflects_crud_updated_sensors(self, mock_hass, yaml_fixtures):
+        """Test that export YAML reflects sensors updated via CRUD operations."""
+        from unittest.mock import AsyncMock, patch
+
+        from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+        from ha_synthetic_sensors.storage_manager import StorageManager
+
+        # Create a StorageManager with mocked Store to test actual export behavior
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_export_update")
+            storage_manager._store = mock_store
+
+            # Initialize storage with empty data
+            with patch.object(storage_manager._store, "async_load", return_value=None):
+                await storage_manager.async_load()
+
+            # Create sensor set
+            with patch.object(storage_manager, "async_save", new_callable=AsyncMock):
+                sensor_set = await storage_manager.async_create_sensor_set(
+                    sensor_set_id="test_export_update", device_identifier="test-device-123", name="Test Export Update"
+                )
+
+                # Import initial YAML
+                yaml_content = yaml.dump(yaml_fixtures["basic_sensor_set"])
+                await sensor_set.async_import_yaml(yaml_content)
+
+                # Export YAML before updating sensor
+                initial_export = sensor_set.export_yaml()
+                initial_data = yaml.safe_load(initial_export)
+
+                # Verify the original sensor exists
+                original_sensor_key = next(iter(initial_data["sensors"].keys()))
+                original_sensor_data = initial_data["sensors"][original_sensor_key]
+
+                # Update the sensor via CRUD
+                updated_sensor = SensorConfig(
+                    unique_id=original_sensor_key,
+                    name="Updated Sensor Name",  # Changed name
+                    formulas=[
+                        FormulaConfig(
+                            id=original_sensor_key,  # Formula ID must match sensor unique_id for main formula
+                            formula="updated_source_value",  # Changed formula
+                            variables={"updated_source_value": "sensor.updated_source"},  # Changed variables
+                            unit_of_measurement="V",  # Changed unit
+                            device_class="voltage",  # Changed device class
+                            state_class="measurement",
+                        )
+                    ],
+                    enabled=True,
+                    device_identifier="test-device-123",
+                )
+
+                await sensor_set.async_update_sensor(updated_sensor)
+
+                # Export YAML after updating sensor
+                final_export = sensor_set.export_yaml()
+                final_data = yaml.safe_load(final_export)
+
+                # Check that the sensor was updated in the export
+                assert original_sensor_key in final_data["sensors"], (
+                    f"Updated sensor not found in export. Final sensors: {list(final_data['sensors'].keys())}"
+                )
+
+                # Check that the sensor has the updated properties
+                updated_sensor_data = final_data["sensors"][original_sensor_key]
+                assert updated_sensor_data["name"] == "Updated Sensor Name"
+                assert updated_sensor_data["formula"] == "updated_source_value"
+                assert updated_sensor_data["variables"]["updated_source_value"] == "sensor.updated_source"
+                assert updated_sensor_data["unit_of_measurement"] == "V"
+                assert updated_sensor_data["device_class"] == "voltage"
+
+                # Verify the sensor count stayed the same
+                assert len(final_data["sensors"]) == len(initial_data["sensors"])
+
+                # Verify the changes are different from original
+                assert updated_sensor_data["name"] != original_sensor_data["name"]
+                assert updated_sensor_data["formula"] != original_sensor_data["formula"]
+
+    @pytest.mark.asyncio
+    async def test_export_yaml_reflects_crud_deleted_sensors(self, mock_hass, yaml_fixtures):
+        """Test that export YAML reflects sensors deleted via CRUD operations."""
+        from unittest.mock import AsyncMock, patch
+
+        from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+        from ha_synthetic_sensors.storage_manager import StorageManager
+
+        # Create a StorageManager with mocked Store to test actual export behavior
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_export_delete")
+            storage_manager._store = mock_store
+
+            # Initialize storage with empty data
+            with patch.object(storage_manager._store, "async_load", return_value=None):
+                await storage_manager.async_load()
+
+            # Create sensor set
+            with patch.object(storage_manager, "async_save", new_callable=AsyncMock):
+                sensor_set = await storage_manager.async_create_sensor_set(
+                    sensor_set_id="test_export_delete", device_identifier="test-device-123", name="Test Export Delete"
+                )
+
+                # Import initial YAML with multiple sensors
+                yaml_content = yaml.dump(yaml_fixtures["basic_sensor_set"])
+                await sensor_set.async_import_yaml(yaml_content)
+
+                # Add a second sensor so we have multiple to work with
+                second_sensor = SensorConfig(
+                    unique_id="second_sensor",
+                    name="Second Sensor",
+                    formulas=[
+                        FormulaConfig(
+                            id="second_sensor",
+                            formula="second_value",
+                            variables={"second_value": "sensor.second_source"},
+                            unit_of_measurement="W",
+                            device_class="power",
+                            state_class="measurement",
+                        )
+                    ],
+                    enabled=True,
+                    device_identifier="test-device-123",
+                )
+                await sensor_set.async_add_sensor(second_sensor)
+
+                # Export YAML before deleting sensor
+                initial_export = sensor_set.export_yaml()
+                initial_data = yaml.safe_load(initial_export)
+
+                # Verify we have multiple sensors
+                assert len(initial_data["sensors"]) >= 2
+
+                # Get the sensor to delete (use the first one from original import)
+                original_sensor_keys = list(initial_data["sensors"].keys())
+                sensor_to_delete = original_sensor_keys[0]  # Delete the first sensor
+                sensor_to_keep = "second_sensor"  # Keep the second sensor
+
+                # Delete the sensor via CRUD
+                await sensor_set.async_remove_sensor(sensor_to_delete)
+
+                # Export YAML after deleting sensor
+                final_export = sensor_set.export_yaml()
+                final_data = yaml.safe_load(final_export)
+
+                # Check that the deleted sensor is NOT in the export
+                assert sensor_to_delete not in final_data["sensors"], (
+                    f"Deleted sensor still found in export. Final sensors: {list(final_data['sensors'].keys())}"
+                )
+
+                # Check that the remaining sensor is still in the export
+                assert sensor_to_keep in final_data["sensors"], (
+                    f"Remaining sensor not found in export. Final sensors: {list(final_data['sensors'].keys())}"
+                )
+
+                # Verify the sensor count decreased
+                assert len(final_data["sensors"]) == len(initial_data["sensors"]) - 1
+
+                # Verify the remaining sensor has correct properties
+                remaining_sensor_data = final_data["sensors"][sensor_to_keep]
+                assert remaining_sensor_data["name"] == "Second Sensor"
+                assert remaining_sensor_data["formula"] == "second_value"
+
+    @pytest.mark.asyncio
+    async def test_export_yaml_reflects_multiple_crud_operations(self, mock_hass, yaml_fixtures):
+        """Test that export YAML reflects multiple CRUD operations (add, update, delete) in sequence."""
+        from unittest.mock import AsyncMock, patch
+
+        from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+        from ha_synthetic_sensors.storage_manager import StorageManager
+
+        # Create a StorageManager with mocked Store to test actual export behavior
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_export_multiple")
+            storage_manager._store = mock_store
+
+            # Initialize storage with empty data
+            with patch.object(storage_manager._store, "async_load", return_value=None):
+                await storage_manager.async_load()
+
+            # Create sensor set
+            with patch.object(storage_manager, "async_save", new_callable=AsyncMock):
+                sensor_set = await storage_manager.async_create_sensor_set(
+                    sensor_set_id="test_export_multiple", device_identifier="test-device-123", name="Test Export Multiple"
+                )
+
+                # Import initial YAML
+                yaml_content = yaml.dump(yaml_fixtures["basic_sensor_set"])
+                await sensor_set.async_import_yaml(yaml_content)
+
+                # Get initial state
+                initial_export = sensor_set.export_yaml()
+                initial_data = yaml.safe_load(initial_export)
+                original_sensor_key = next(iter(initial_data["sensors"].keys()))
+
+                # Step 1: Add a new sensor
+                new_sensor = SensorConfig(
+                    unique_id="new_sensor",
+                    name="New Sensor",
+                    formulas=[
+                        FormulaConfig(
+                            id="new_sensor",
+                            formula="new_value",
+                            variables={"new_value": "sensor.new_source"},
+                            unit_of_measurement="A",
+                            device_class="current",
+                        )
+                    ],
+                    enabled=True,
+                    device_identifier="test-device-123",
+                )
+                await sensor_set.async_add_sensor(new_sensor)
+
+                # Step 2: Update the original sensor
+                updated_original = SensorConfig(
+                    unique_id=original_sensor_key,
+                    name="Updated Original Sensor",
+                    formulas=[
+                        FormulaConfig(
+                            id=original_sensor_key,
+                            formula="updated_original_value",
+                            variables={"updated_original_value": "sensor.updated_original_source"},
+                            unit_of_measurement="V",
+                            device_class="voltage",
+                        )
+                    ],
+                    enabled=True,
+                    device_identifier="test-device-123",
+                )
+                await sensor_set.async_update_sensor(updated_original)
+
+                # Step 3: Add another sensor to delete later
+                temp_sensor = SensorConfig(
+                    unique_id="temp_sensor",
+                    name="Temporary Sensor",
+                    formulas=[
+                        FormulaConfig(
+                            id="temp_sensor",
+                            formula="temp_value",
+                            variables={"temp_value": "sensor.temp_source"},
+                        )
+                    ],
+                    enabled=True,
+                    device_identifier="test-device-123",
+                )
+                await sensor_set.async_add_sensor(temp_sensor)
+
+                # Step 4: Delete the temporary sensor
+                await sensor_set.async_remove_sensor("temp_sensor")
+
+                # Export final YAML after all operations
+                final_export = sensor_set.export_yaml()
+                final_data = yaml.safe_load(final_export)
+
+                # Verify final state
+                # Should have initial_count + 1 new sensor (temp sensor was added and deleted)
+                assert len(final_data["sensors"]) == len(initial_data["sensors"]) + 1
+                assert original_sensor_key in final_data["sensors"]  # Updated original still there
+                assert "new_sensor" in final_data["sensors"]  # New sensor added
+                assert "temp_sensor" not in final_data["sensors"]  # Temp sensor deleted
+
+                # Verify updated original sensor
+                updated_data = final_data["sensors"][original_sensor_key]
+                assert updated_data["name"] == "Updated Original Sensor"
+                assert updated_data["formula"] == "updated_original_value"
+                assert updated_data["device_class"] == "voltage"
+
+                # Verify new sensor
+                new_data = final_data["sensors"]["new_sensor"]
+                assert new_data["name"] == "New Sensor"
+                assert new_data["formula"] == "new_value"
+                assert new_data["device_class"] == "current"
 
     @pytest.mark.asyncio
     async def test_error_handling_sensor_not_exists(self, storage_manager):

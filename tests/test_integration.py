@@ -883,6 +883,7 @@ sensors:
     async def test_sensor_set_validation(self, mock_hass, storage_manager):
         """Test sensor set validation capabilities."""
         from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+        from ha_synthetic_sensors.exceptions import SyntheticSensorsError
 
         device_identifier = "validation_device"
         sensor_set = await storage_manager.async_create_sensor_set(
@@ -913,20 +914,15 @@ sensors:
         )
 
         await sensor_set.async_add_sensor(valid_sensor)
-        await sensor_set.async_add_sensor(invalid_sensor)
 
-        # Test validation
+        # Try to add invalid sensor - should be rejected
+        with pytest.raises(SyntheticSensorsError, match="Sensor validation failed"):
+            await sensor_set.async_add_sensor(invalid_sensor)
+
+        # Test validation - should only have the valid sensor
         errors = sensor_set.get_sensor_errors()
-        assert len(errors) == 1  # Only invalid sensor should have errors
-        assert f"{device_identifier}_invalid" in errors
-        assert "must have at least one formula" in errors[f"{device_identifier}_invalid"][0]
+        assert len(errors) == 0  # No errors since invalid sensor was rejected
 
         # Test overall validity
-        assert sensor_set.is_valid() is False  # Has errors
-
-        # Remove invalid sensor
-        await sensor_set.async_remove_sensor(f"{device_identifier}_invalid")
-
-        # Now should be valid
-        assert sensor_set.is_valid() is True
-        assert len(sensor_set.get_sensor_errors()) == 0
+        assert sensor_set.is_valid() is True  # Should be valid since invalid sensor was rejected
+        assert sensor_set.sensor_count == 1  # Only the valid sensor should be present

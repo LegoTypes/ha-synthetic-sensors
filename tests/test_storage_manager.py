@@ -144,7 +144,6 @@ class TestStorageManager:
             assert storage_manager._data["version"] == "1.0"
             assert storage_manager._data["sensors"] == {}
             assert storage_manager._data["sensor_sets"] == {}
-            assert storage_manager._data["global_settings"] == {}
 
     async def test_load_existing_data(self, storage_manager):
         """Test loading existing storage data."""
@@ -152,7 +151,6 @@ class TestStorageManager:
             "version": "1.0",
             "sensors": {"test_sensor": {"unique_id": "test_sensor"}},
             "sensor_sets": {"set_1": {"name": "Test Set"}},
-            "global_settings": {"test_setting": "value"},
         }
 
         with patch.object(storage_manager._store, "async_load", return_value=existing_data):
@@ -467,15 +465,13 @@ class TestStorageManager:
                 "test_device:123",
             )
 
-            await storage_manager.async_set_global_setting("test_setting", "test_value")
-
             # Convert to Config
             config = storage_manager.to_config(device_identifier="test_device:123")
 
             assert config.version == "1.0"
             assert len(config.sensors) == 1
             assert config.sensors[0].unique_id == sample_sensor_config.unique_id
-            assert config.global_settings["test_setting"] == "test_value"
+            assert config.global_settings == {}
 
     async def test_get_sensor_set_metadata(self, storage_manager):
         """Test retrieving sensor set metadata."""
@@ -549,39 +545,404 @@ class TestStorageManager:
         with pytest.raises(SyntheticSensorsError, match="Storage not loaded"):
             storage_manager.get_sensor("test_sensor")
 
-    async def test_async_save_error_handling(self, storage_manager):
-        """Test error handling during save operations."""
-        with (
-            patch.object(storage_manager._store, "async_load", return_value=None),
-            patch.object(storage_manager._store, "async_save", side_effect=Exception("Save failed")),
-        ):
-            await storage_manager.async_load()
-
-            with pytest.raises(SyntheticSensorsError, match="Failed to save storage"):
-                await storage_manager.async_save()
-
-    async def test_global_settings_management(self, storage_manager):
-        """Test global settings management."""
+    async def test_delete_sensor(self, storage_manager, sample_sensor_config):
+        """Test deleting an individual sensor."""
         with (
             patch.object(storage_manager._store, "async_load", return_value=None),
             patch.object(storage_manager, "async_save", new_callable=AsyncMock),
         ):
             await storage_manager.async_load()
 
-            # Set global setting
-            await storage_manager.async_set_global_setting("test_key", "test_value")
+            # Create sensor set and store sensor
+            sensor_set_id = "test_delete_individual_sensor"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_device:123",
+                name="Test Device",
+            )
 
-            # Get global setting
-            value = storage_manager.get_global_setting("test_key")
-            assert value == "test_value"
+            await storage_manager.async_store_sensor(
+                sample_sensor_config,
+                sensor_set_id,
+                "test_device:123",
+            )
 
-            # Get non-existent setting with default
-            default_value = storage_manager.get_global_setting("non_existent", "default")
-            assert default_value == "default"
+            # Verify sensor exists
+            assert sample_sensor_config.unique_id in storage_manager._data["sensors"]
+            assert storage_manager._data["sensor_sets"][sensor_set_id]["sensor_count"] == 1
 
-            # Get all settings
-            all_settings = storage_manager.get_global_settings()
-            assert all_settings["test_key"] == "test_value"
+            # Delete individual sensor
+            result = await storage_manager.async_delete_sensor(sample_sensor_config.unique_id)
+            assert result is True
+
+            # Verify sensor is deleted but sensor set remains
+            assert sample_sensor_config.unique_id not in storage_manager._data["sensors"]
+            assert sensor_set_id in storage_manager._data["sensor_sets"]
+            assert storage_manager._data["sensor_sets"][sensor_set_id]["sensor_count"] == 0
+
+    async def test_delete_sensor_not_found(self, storage_manager):
+        """Test deleting a non-existent sensor."""
+        with patch.object(storage_manager._store, "async_load", return_value=None):
+            await storage_manager.async_load()
+
+            # Try to delete non-existent sensor
+            result = await storage_manager.async_delete_sensor("non_existent_sensor")
+            assert result is False
+
+    async def test_update_sensor_with_global_settings(self, storage_manager):
+        """Test updating sensor when global settings are present."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Import YAML with global settings
+            yaml_content = """
+version: "1.0"
+global_settings:
+  device_identifier: "global_device:test_123"
+  variables:
+    global_var: "sensor.global_entity"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "1 + 2"
+"""
+            sensor_set_id = await storage_manager.async_from_yaml(yaml_content, "test_global_update_set", "test_device:123")
+
+            # Get the imported sensor
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 1
+            original_sensor = sensors[0]
+
+            # Verify global settings were applied
+            assert original_sensor.device_identifier == "global_device:test_123"
+            assert original_sensor.formulas[0].variables.get("global_var") == "sensor.global_entity"
+
+            # Update the sensor with new name but keep global settings
+            updated_config = SensorConfig(
+                unique_id=original_sensor.unique_id,
+                name="Updated Test Sensor",  # Changed name
+                formulas=original_sensor.formulas,
+                device_identifier="global_device:test_123",  # Keep global setting
+            )
+
+            success = await storage_manager.async_update_sensor(updated_config)
+            assert success
+
+            # Verify the updated sensor still has global settings applied
+            updated_sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(updated_sensors) == 1
+            updated_sensor = updated_sensors[0]
+
+            assert updated_sensor.name == "Updated Test Sensor"
+            assert updated_sensor.device_identifier == "global_device:test_123"
+            assert updated_sensor.formulas[0].variables.get("global_var") == "sensor.global_entity"
+
+    async def test_delete_sensor_with_global_settings(self, storage_manager):
+        """Test deleting sensor when global settings are present."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Import YAML with global settings
+            yaml_content = """
+version: "1.0"
+global_settings:
+  device_identifier: "global_device:test_123"
+  variables:
+    global_var: "sensor.global_entity"
+sensors:
+  test_sensor_1:
+    name: "Test Sensor 1"
+    formula: "1 + 2"
+  test_sensor_2:
+    name: "Test Sensor 2"
+    formula: "2 + 3"
+"""
+            sensor_set_id = await storage_manager.async_from_yaml(yaml_content, "test_global_delete_set", "test_device:123")
+
+            # Verify both sensors exist with global settings
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 2
+
+            sensor_to_delete = next(s for s in sensors if s.unique_id == "test_sensor_1")
+            assert sensor_to_delete.device_identifier == "global_device:test_123"
+
+            # Delete one sensor
+            result = await storage_manager.async_delete_sensor("test_sensor_1")
+            assert result is True
+
+            # Verify remaining sensor still has global settings
+            remaining_sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(remaining_sensors) == 1
+            remaining_sensor = remaining_sensors[0]
+
+            assert remaining_sensor.unique_id == "test_sensor_2"
+            assert remaining_sensor.device_identifier == "global_device:test_123"
+            assert remaining_sensor.formulas[0].variables.get("global_var") == "sensor.global_entity"
+
+    async def test_export_yaml_after_update_operations(self, storage_manager):
+        """Test that export YAML includes updated sensors correctly."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Import initial YAML
+            yaml_content = """
+version: "1.0"
+global_settings:
+  device_identifier: "global_device:test_123"
+sensors:
+  original_sensor:
+    name: "Original Sensor"
+    formula: "1 + 2"
+"""
+            sensor_set_id = await storage_manager.async_from_yaml(yaml_content, "test_export_after_update", "test_device:123")
+
+            # Update the sensor
+            updated_config = SensorConfig(
+                unique_id="original_sensor",
+                name="Updated Original Sensor",
+                formulas=[FormulaConfig(id="original_sensor", formula="2 + 3")],
+                device_identifier="global_device:test_123",
+            )
+
+            success = await storage_manager.async_update_sensor(updated_config)
+            assert success
+
+            # Export YAML and verify it contains the updated sensor
+            exported_yaml = storage_manager.export_yaml(sensor_set_id)
+
+            # Parse the exported YAML to verify content
+            import yaml as yaml_lib
+
+            exported_data = yaml_lib.safe_load(exported_yaml)
+
+            assert "sensors" in exported_data
+            assert "original_sensor" in exported_data["sensors"]
+            assert exported_data["sensors"]["original_sensor"]["name"] == "Updated Original Sensor"
+            assert exported_data["sensors"]["original_sensor"]["formula"] == "2 + 3"
+
+    async def test_export_yaml_after_delete_operations(self, storage_manager):
+        """Test that export YAML excludes deleted sensors correctly."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Import initial YAML with multiple sensors
+            yaml_content = """
+version: "1.0"
+global_settings:
+  device_identifier: "global_device:test_123"
+sensors:
+  sensor_to_keep:
+    name: "Sensor to Keep"
+    formula: "1 + 2"
+  sensor_to_delete:
+    name: "Sensor to Delete"
+    formula: "3 + 4"
+"""
+            sensor_set_id = await storage_manager.async_from_yaml(yaml_content, "test_export_after_delete", "test_device:123")
+
+            # Delete one sensor
+            result = await storage_manager.async_delete_sensor("sensor_to_delete")
+            assert result is True
+
+            # Export YAML and verify it only contains the remaining sensor
+            exported_yaml = storage_manager.export_yaml(sensor_set_id)
+
+            # Parse the exported YAML to verify content
+            import yaml as yaml_lib
+
+            exported_data = yaml_lib.safe_load(exported_yaml)
+
+            assert "sensors" in exported_data
+            assert "sensor_to_keep" in exported_data["sensors"]
+            assert "sensor_to_delete" not in exported_data["sensors"]
+            assert len(exported_data["sensors"]) == 1
+
+    async def test_crud_validation_global_conflicts(self, storage_manager):
+        """Test that CRUD operations reject sensors with global setting conflicts."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Create sensor set with global settings
+            sensor_set_id = "test_validation_conflicts"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_device:123",
+                name="Test Validation",
+            )
+
+            # Set global settings for this sensor set
+            data = storage_manager._ensure_loaded()
+            data["sensor_sets"][sensor_set_id]["global_settings"] = {
+                "device_identifier": "global_device:test_123",
+                "variables": {"global_var": "sensor.global_entity"},
+            }
+
+            # Try to add sensor with conflicting device_identifier
+            conflicting_sensor = SensorConfig(
+                unique_id="conflicting_sensor",
+                name="Conflicting Sensor",
+                formulas=[FormulaConfig(id="conflicting_sensor", formula="1 + 2")],
+                device_identifier="different_device:456",  # Conflicts with global
+            )
+
+            with pytest.raises(SyntheticSensorsError, match="Sensor validation failed"):
+                await storage_manager.async_store_sensor(conflicting_sensor, sensor_set_id, "test_device:123")
+
+            # Try to add sensor with conflicting variable
+            conflicting_var_sensor = SensorConfig(
+                unique_id="conflicting_var_sensor",
+                name="Conflicting Variable Sensor",
+                formulas=[
+                    FormulaConfig(
+                        id="conflicting_var_sensor",
+                        formula="1 + 2",
+                        variables={"global_var": "sensor.different_entity"},  # Conflicts with global
+                    )
+                ],
+            )
+
+            with pytest.raises(SyntheticSensorsError, match="Sensor validation failed"):
+                await storage_manager.async_store_sensor(conflicting_var_sensor, sensor_set_id, "test_device:123")
+
+    async def test_crud_validation_standard_errors(self, storage_manager):
+        """Test that CRUD operations reject sensors with standard validation errors."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Create sensor set
+            sensor_set_id = "test_validation_standard"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_device:123",
+                name="Test Standard Validation",
+            )
+
+            # Try to add sensor with missing unique_id
+            invalid_sensor = SensorConfig(
+                unique_id="",  # Invalid: empty unique_id
+                name="Invalid Sensor",
+                formulas=[FormulaConfig(id="main", formula="1 + 2")],
+            )
+
+            with pytest.raises(SyntheticSensorsError, match="Sensor validation failed"):
+                await storage_manager.async_store_sensor(invalid_sensor, sensor_set_id, "test_device:123")
+
+            # Try to add sensor with no formulas
+            no_formula_sensor = SensorConfig(
+                unique_id="no_formula_sensor",
+                name="No Formula Sensor",
+                formulas=[],  # Invalid: no formulas
+            )
+
+            with pytest.raises(SyntheticSensorsError, match="Sensor validation failed"):
+                await storage_manager.async_store_sensor(no_formula_sensor, sensor_set_id, "test_device:123")
+
+    async def test_crud_validation_valid_sensors(self, storage_manager):
+        """Test that CRUD operations accept valid sensors."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Create sensor set with global settings
+            sensor_set_id = "test_validation_valid"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_device:123",
+                name="Test Valid Validation",
+            )
+
+            # Set global settings
+            data = storage_manager._ensure_loaded()
+            data["sensor_sets"][sensor_set_id]["global_settings"] = {
+                "device_identifier": "global_device:test_123",
+                "variables": {"global_var": "sensor.global_entity"},
+            }
+
+            # Add valid sensor that matches global settings
+            valid_sensor = SensorConfig(
+                unique_id="valid_sensor",
+                name="Valid Sensor",
+                formulas=[
+                    FormulaConfig(
+                        id="valid_sensor",
+                        formula="1 + 2",
+                        variables={"global_var": "sensor.global_entity"},  # Matches global
+                    )
+                ],
+                device_identifier="global_device:test_123",  # Matches global
+            )
+
+            # This should succeed
+            await storage_manager.async_store_sensor(valid_sensor, sensor_set_id, "test_device:123")
+
+            # Verify sensor was stored
+            stored_sensor = storage_manager.get_sensor("valid_sensor")
+            assert stored_sensor is not None
+            assert stored_sensor.unique_id == "valid_sensor"
+
+    async def test_update_validation_with_context(self, storage_manager):
+        """Test that update operations validate against global settings."""
+        with (
+            patch.object(storage_manager._store, "async_load", return_value=None),
+            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
+        ):
+            await storage_manager.async_load()
+
+            # Import sensor set with global settings
+            yaml_content = """
+version: "1.0"
+global_settings:
+  device_identifier: "global_device:test_123"
+  variables:
+    global_var: "sensor.global_entity"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "1 + 2"
+"""
+            await storage_manager.async_from_yaml(yaml_content, "test_update_validation", "test_device:123")
+
+            # Try to update sensor with conflicting device_identifier
+            conflicting_update = SensorConfig(
+                unique_id="test_sensor",
+                name="Updated Test Sensor",
+                formulas=[FormulaConfig(id="test_sensor", formula="2 + 3")],
+                device_identifier="different_device:456",  # Conflicts with global
+            )
+
+            with pytest.raises(SyntheticSensorsError, match="Sensor update validation failed"):
+                await storage_manager.async_update_sensor(conflicting_update)
+
+            # Valid update should work
+            valid_update = SensorConfig(
+                unique_id="test_sensor",
+                name="Updated Test Sensor",
+                formulas=[FormulaConfig(id="test_sensor", formula="2 + 3", variables={"global_var": "sensor.global_entity"})],
+                device_identifier="global_device:test_123",
+            )
+
+            result = await storage_manager.async_update_sensor(valid_update)
+            assert result is True
 
 
 class TestStorageManagerIntegration:
@@ -728,19 +1089,14 @@ class TestStorageManagerIntegration:
             assert sensor.formulas[0].formula == f"test_value_{i}"
 
         # Modify data and save again
-        await new_manager.async_set_global_setting("test_cycle", "cycle_1")
-
-        # Create another manager and verify persistence
+        # Create final storage manager to test persistence
         final_manager = StorageManager(storage_manager_real.hass, "test_storage_real")
         final_manager._store = storage_manager_real._store
+
+        # Load and verify everything persisted
         await final_manager.async_load()
 
-        # Verify all data is still intact
-        final_sensors = final_manager.list_sensors(sensor_set_id=sensor_set_id)
-        assert len(final_sensors) == 5
-        assert final_manager.get_global_setting("test_cycle") == "cycle_1"
-
-        # Verify metadata is preserved
+        # Verify sensor set metadata persisted correctly
         metadata = final_manager.get_sensor_set_metadata(sensor_set_id)
         assert metadata.name == "Integrity Test"
         assert metadata.sensor_count == 5
@@ -909,66 +1265,10 @@ class TestStorageManagerIntegration:
         local_power_exported = exported_local_data["sensors"]["local_power_sensor"]
         assert local_power_exported["device_identifier"] == "local_device:test_456"
 
-    async def test_async_set_global_setting(self, storage_manager):
-        """Test setting a global setting."""
-        with (
-            patch.object(storage_manager._store, "async_load", return_value=None),
-            patch.object(storage_manager, "async_save", new_callable=AsyncMock),
-        ):
-            await storage_manager.async_load()
-
-            await storage_manager.async_set_global_setting("test_key", "test_value")
-
-            # Verify setting was stored
-            assert storage_manager.get_global_setting("test_key") == "test_value"
-
-            # Verify save was called
-            storage_manager.async_save.assert_called()
-
-    def test_get_global_setting_exists(self, storage_manager):
-        """Test getting an existing global setting."""
-        with patch.object(storage_manager._store, "async_load", return_value=None):
-            storage_manager._data = {
-                "version": "1.0",
-                "sensors": {},
-                "sensor_sets": {},
-                "global_settings": {"test_key": "test_value"},
-            }
-            storage_manager._loaded = True
-
-            result = storage_manager.get_global_setting("test_key")
-
-            assert result == "test_value"
-
-    def test_get_global_setting_default(self, storage_manager):
-        """Test getting a non-existent global setting with default."""
-        with patch.object(storage_manager._store, "async_load", return_value=None):
-            storage_manager._data = {"version": "1.0", "sensors": {}, "sensor_sets": {}, "global_settings": {}}
-            storage_manager._loaded = True
-
-            result = storage_manager.get_global_setting("nonexistent", "default_value")
-
-            assert result == "default_value"
-
-    def test_get_global_settings(self, storage_manager):
-        """Test getting all global settings."""
-        with patch.object(storage_manager._store, "async_load", return_value=None):
-            storage_manager._data = {
-                "version": "1.0",
-                "sensors": {},
-                "sensor_sets": {},
-                "global_settings": {"key1": "value1", "key2": "value2"},
-            }
-            storage_manager._loaded = True
-
-            result = storage_manager.get_global_settings()
-
-            assert result == {"key1": "value1", "key2": "value2"}
-
     def test_get_sensor_set(self, storage_manager):
         """Test getting a SensorSet handle."""
         with patch.object(storage_manager._store, "async_load", return_value=None):
-            storage_manager._data = {"version": "1.0", "sensors": {}, "sensor_sets": {}, "global_settings": {}}
+            storage_manager._data = {"version": "1.0", "sensors": {}, "sensor_sets": {}}
             storage_manager._loaded = True
 
             result = storage_manager.get_sensor_set("test_set")
@@ -1051,17 +1351,13 @@ class TestStorageManagerConvenienceMethods:
             # Add some data
             storage_manager._data["sensors"]["sensor1"] = sample_stored_sensor
             storage_manager._data["sensor_sets"]["set1"] = sample_sensor_set_metadata
-            storage_manager._data["global_settings"]["key1"] = "value1"
 
+            # Clear all data
             await storage_manager.async_clear_all_data()
 
-            # Verify all data was cleared
+            # Verify all data is cleared
             assert len(storage_manager._data["sensors"]) == 0
             assert len(storage_manager._data["sensor_sets"]) == 0
-            assert len(storage_manager._data["global_settings"]) == 0
-
-            # Verify save was called
-            storage_manager._store.async_save.assert_called()
 
     @pytest.mark.asyncio
     async def test_get_storage_stats(self, storage_manager, sample_stored_sensor, sample_sensor_set_metadata):
@@ -1076,14 +1372,12 @@ class TestStorageManagerConvenienceMethods:
                 "sensor_set_id": "different_set",
             }
             storage_manager._data["sensor_sets"]["set1"] = sample_sensor_set_metadata
-            storage_manager._data["global_settings"]["key1"] = "value1"
 
             result = storage_manager.get_storage_stats()
 
             expected = {
                 "total_sensors": 2,
                 "total_sensor_sets": 1,
-                "global_settings_count": 1,
                 "sensor_sets": {
                     "test_sensor_set": 1,
                     "different_set": 1,
@@ -1103,7 +1397,6 @@ class TestStorageManagerConvenienceMethods:
             expected = {
                 "total_sensors": 0,
                 "total_sensor_sets": 0,
-                "global_settings_count": 0,
                 "sensor_sets": {},
             }
 

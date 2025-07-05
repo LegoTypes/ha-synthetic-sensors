@@ -3,7 +3,7 @@ basic_sensor_set:
   global_settings:
     device_identifier: "test-device-123"
     variables:
-      global_var: "test_value"
+      global_var: "sensor.test_value"
   sensors:
     test_sensor_1:
       name: "Test Sensor 1"
@@ -53,15 +53,15 @@ complex_formulas_sensor_set:
   global_settings:
     device_identifier: "span-panel-789"
     variables:
-      efficiency_factor: "0.95"
-      base_load: "100"
+      efficiency_factor: "sensor.efficiency_factor"
+      base_load: "sensor.base_load"
   sensors:
     total_power:
       name: "Total Power"
       entity_id: "sensor.span_panel_total_power"
       formula: "sum(device_class:power) * efficiency_factor"
       variables:
-        efficiency_factor: "0.95"
+        efficiency_factor: "sensor.efficiency_factor"
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
@@ -72,7 +72,7 @@ complex_formulas_sensor_set:
       formula: "total_power - base_load"
       variables:
         total_power: "sensor.span_panel_total_power"
-        base_load: "100"
+        base_load: "sensor.base_load"
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
@@ -154,7 +154,7 @@ bulk_operations_sensor_set:
   global_settings:
     device_identifier: "bulk-device-456"
     variables:
-      common_multiplier: "1.5"
+      common_multiplier: "sensor.common_multiplier"
   sensors:
     bulk_sensor_1:
       name: "Bulk Sensor 1"
@@ -162,7 +162,7 @@ bulk_operations_sensor_set:
       formula: "source_value * common_multiplier"
       variables:
         source_value: "sensor.bulk_source_1"
-        common_multiplier: "1.5"
+        common_multiplier: "sensor.common_multiplier"
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
@@ -173,7 +173,7 @@ bulk_operations_sensor_set:
       formula: "source_value * common_multiplier"
       variables:
         source_value: "sensor.bulk_source_2"
-        common_multiplier: "1.5"
+        common_multiplier: "sensor.common_multiplier"
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
@@ -184,7 +184,7 @@ bulk_operations_sensor_set:
       formula: "source_value * common_multiplier"
       variables:
         source_value: "sensor.bulk_source_3"
-        common_multiplier: "1.5"
+        common_multiplier: "sensor.common_multiplier"
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"

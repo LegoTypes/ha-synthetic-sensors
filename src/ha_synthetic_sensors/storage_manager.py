@@ -50,7 +50,6 @@ class StorageData(TypedDict):
     version: str
     sensors: dict[str, StoredSensorDict]  # unique_id -> sensor data
     sensor_sets: dict[str, dict[str, Any]]  # sensor_set_id -> metadata
-    global_settings: dict[str, Any]
 
 
 def _default_sensors() -> dict[str, StoredSensorDict]:
@@ -60,11 +59,6 @@ def _default_sensors() -> dict[str, StoredSensorDict]:
 
 def _default_sensor_sets() -> dict[str, dict[str, Any]]:
     """Default factory for sensor sets dictionary."""
-    return {}
-
-
-def _default_global_settings() -> dict[str, Any]:
-    """Default factory for global settings dictionary."""
     return {}
 
 
@@ -114,7 +108,6 @@ class StorageManager:
                         version="1.0",
                         sensors=_default_sensors(),
                         sensor_sets=_default_sensor_sets(),
-                        global_settings=_default_global_settings(),
                     )
                     _LOGGER.info("Initialized empty synthetic sensor storage")
                 else:
@@ -131,7 +124,6 @@ class StorageManager:
                     version="1.0",
                     sensors=_default_sensors(),
                     sensor_sets=_default_sensor_sets(),
-                    global_settings=_default_global_settings(),
                 )
                 raise SyntheticSensorsError(f"Failed to load storage: {err}") from err
 
@@ -205,14 +197,21 @@ class StorageManager:
             timestamp = self._get_timestamp()
             data["sensor_sets"][sensor_set_id]["updated_at"] = timestamp
 
-            # Store the original YAML data for perfect round-trip export
-            data["sensor_sets"][sensor_set_id]["yaml_data"] = yaml_data
-
-            # Parse YAML and create individual sensor records for runtime access
+            # Parse YAML and create individual sensor records
             from .config_manager import ConfigManager
 
             config_manager = ConfigManager(self.hass)
             config = config_manager.load_from_dict(yaml_data)
+
+            # Store global settings per sensor set
+            yaml_global_settings = {}
+            if "global_settings" in yaml_data:
+                yaml_global_settings = yaml_data["global_settings"]
+                # Store global settings in the sensor set metadata
+                data["sensor_sets"][sensor_set_id]["global_settings"] = yaml_global_settings
+
+            # Validate that local settings don't conflict with global settings
+            self._validate_no_global_conflicts(config.sensors, yaml_global_settings)
 
             # Remove any existing sensors from this sensor set first
             sensors_to_remove = [
@@ -249,7 +248,7 @@ class StorageManager:
 
     def export_yaml(self, sensor_set_id: str) -> str:
         """
-        Export sensor set data as YAML string using original YAML structure if available.
+        Export sensor set data as YAML string reconstructed from current sensor state.
 
         Args:
             sensor_set_id: Sensor set identifier
@@ -262,20 +261,20 @@ class StorageManager:
         if sensor_set_id not in data["sensor_sets"]:
             raise SyntheticSensorsError(f"Sensor set not found: {sensor_set_id}")
 
-        sensor_set = data["sensor_sets"][sensor_set_id]
-
-        # If we have the original YAML data, use it for perfect round-trip fidelity
-        if "yaml_data" in sensor_set:
-            return yaml.dump(sensor_set["yaml_data"], default_flow_style=False, allow_unicode=True, sort_keys=False)
-
-        # Fallback: reconstruct YAML from individual sensors
+        # Always reconstruct YAML from current sensor state
         sensor_configs = self.list_sensors(sensor_set_id=sensor_set_id)
 
         if not sensor_configs:
             raise SyntheticSensorsError(f"No sensors found for sensor set: {sensor_set_id}")
 
         # Reconstruct YAML structure with sensors as dict (not list)
-        yaml_data: dict[str, Any] = {"version": "1.0", "sensors": {}, "global_settings": data["global_settings"].copy()}
+        yaml_data: dict[str, Any] = {"version": "1.0", "sensors": {}}
+
+        # Add global settings from this specific sensor set
+        sensor_set_metadata = data["sensor_sets"].get(sensor_set_id, {})
+        global_settings = sensor_set_metadata.get("global_settings", {})
+        if global_settings:
+            yaml_data["global_settings"] = global_settings
 
         # Convert sensors to YAML format (sensors as dict with unique_id as keys)
         for sensor_config in sensor_configs:
@@ -283,6 +282,11 @@ class StorageManager:
                 "name": sensor_config.name,
                 "enabled": sensor_config.enabled,
             }
+
+            # Add device_identifier if not covered by global settings
+            global_device_identifier = global_settings.get("device_identifier")
+            if sensor_config.device_identifier and sensor_config.device_identifier != global_device_identifier:
+                sensor_dict["device_identifier"] = sensor_config.device_identifier
 
             # Add optional sensor fields
             if sensor_config.update_interval is not None:
@@ -317,8 +321,22 @@ class StorageManager:
             # Add main formula details
             if main_formula:
                 sensor_dict["formula"] = main_formula.formula
+
+                # Add variables, excluding global ones (only include locals that were originally there)
                 if main_formula.variables:
-                    sensor_dict["variables"] = main_formula.variables
+                    global_variables = global_settings.get("variables", {})
+                    local_variables = {}
+                    for var_name, var_value in main_formula.variables.items():
+                        # Only include variables that are not in globals, or are local overrides with same value
+                        if var_name not in global_variables:
+                            local_variables[var_name] = var_value
+                        elif var_name in global_variables and var_value == global_variables[var_name]:
+                            # This was a local override with same value as global - preserve it in export
+                            local_variables[var_name] = var_value
+
+                    if local_variables:
+                        sensor_dict["variables"] = local_variables
+
                 if main_formula.unit_of_measurement:
                     sensor_dict["unit_of_measurement"] = main_formula.unit_of_measurement
                 if main_formula.device_class:
@@ -490,8 +508,22 @@ class StorageManager:
             sensor_config: Sensor configuration to store
             sensor_set_id: Sensor set identifier for bulk management
             device_identifier: Device to associate with
+
+        Raises:
+            SyntheticSensorsError: If sensor validation fails or conflicts with global settings
         """
         data = self._ensure_loaded()
+
+        # Validate sensor set exists
+        if sensor_set_id not in data["sensor_sets"]:
+            raise SyntheticSensorsError(f"Sensor set not found: {sensor_set_id}")
+
+        # Perform comprehensive validation with context
+        validation_errors = self._validate_sensor_with_context(sensor_config, sensor_set_id)
+        if validation_errors:
+            error_msg = f"Sensor validation failed: {'; '.join(validation_errors)}"
+            _LOGGER.error(error_msg)
+            raise SyntheticSensorsError(error_msg)
 
         timestamp = self._get_timestamp()
 
@@ -595,15 +627,13 @@ class StorageManager:
 
         sensor_config = self._deserialize_sensor_config(config_data)
 
-        # Apply global settings from sensor set
+        # Apply global settings from this sensor's sensor set
         sensor_set_id = stored_sensor.get("sensor_set_id")
-        if sensor_set_id and sensor_set_id in data["sensor_sets"]:
-            sensor_set = data["sensor_sets"][sensor_set_id]
-            yaml_data = sensor_set.get("yaml_data", {})
-            global_settings = yaml_data.get("global_settings", {})
+        if sensor_set_id:
+            sensor_set_metadata = data["sensor_sets"].get(sensor_set_id, {})
+            global_settings = sensor_set_metadata.get("global_settings", {})
 
             if global_settings:
-                # Apply global settings to this single sensor
                 normalized_sensors = self._apply_global_settings_to_sensors(
                     [sensor_config], global_settings, stored_sensor.get("device_identifier")
                 )
@@ -657,20 +687,15 @@ class StorageManager:
         for set_id, sensor_data_list in sensors_by_set.items():
             sensors = [sensor for sensor, _ in sensor_data_list]
 
-            # Get global settings for this sensor set
-            if set_id and set_id in data["sensor_sets"]:
-                sensor_set = data["sensor_sets"][set_id]
-                yaml_data = sensor_set.get("yaml_data", {})
-                global_settings = yaml_data.get("global_settings", {})
+            # Apply global settings from this specific sensor set
+            sensor_set_metadata = data["sensor_sets"].get(set_id, {})
+            global_settings = sensor_set_metadata.get("global_settings", {})
 
-                if global_settings:
-                    # Apply global settings to all sensors in this set
-                    # Use device_identifier from the first sensor (they should all be the same in a set)
-                    device_id = sensor_data_list[0][1].get("device_identifier") if sensor_data_list else None
-                    normalized_sensors = self._apply_global_settings_to_sensors(sensors, global_settings, device_id)
-                    result.extend(normalized_sensors)
-                else:
-                    result.extend(sensors)
+            if global_settings:
+                # Use device_identifier from the first sensor (they should all be the same in a set)
+                device_id = sensor_data_list[0][1].get("device_identifier") if sensor_data_list else None
+                normalized_sensors = self._apply_global_settings_to_sensors(sensors, global_settings, device_id)
+                result.extend(normalized_sensors)
             else:
                 result.extend(sensors)
 
@@ -678,13 +703,16 @@ class StorageManager:
 
     async def async_update_sensor(self, sensor_config: SensorConfig) -> bool:
         """
-        Update existing sensor configuration.
+        Update existing sensor configuration with full validation.
 
         Args:
             sensor_config: Updated sensor configuration
 
         Returns:
             True if updated, False if sensor not found
+
+        Raises:
+            SyntheticSensorsError: If validation fails
         """
         data = self._ensure_loaded()
 
@@ -694,6 +722,16 @@ class StorageManager:
 
         stored_sensor = data["sensors"][sensor_config.unique_id]
         sensor_set_id = stored_sensor.get("sensor_set_id")
+
+        if not sensor_set_id:
+            raise SyntheticSensorsError(f"Sensor {sensor_config.unique_id} has no sensor set ID")
+
+        # Perform comprehensive validation with context
+        validation_errors = self._validate_sensor_with_context(sensor_config, sensor_set_id)
+        if validation_errors:
+            error_msg = f"Sensor update validation failed: {'; '.join(validation_errors)}"
+            _LOGGER.error(error_msg)
+            raise SyntheticSensorsError(error_msg)
 
         # Update the sensor config data and timestamp
         stored_sensor["config_data"] = self._serialize_sensor_config(sensor_config)
@@ -762,30 +800,13 @@ class StorageManager:
         """
         data = self._ensure_loaded()
 
-        # Get the stored YAML data if available (for sensor sets)
-        if sensor_set_id and sensor_set_id in data["sensor_sets"]:
-            sensor_set = data["sensor_sets"][sensor_set_id]
-            yaml_data = sensor_set.get("yaml_data")
-
-            if yaml_data:
-                # Use the ConfigManager to parse the stored YAML data
-                # This ensures the same parsing logic (including auto-injection) is applied
-                from .config_manager import ConfigManager
-
-                config_manager = ConfigManager(self.hass)
-                config = config_manager.load_from_dict(yaml_data)
-
-                # Filter sensors if device_identifier is specified
-                if device_identifier:
-                    filtered_sensors = [sensor for sensor in config.sensors if sensor.device_identifier == device_identifier]
-                    config.sensors = filtered_sensors
-
-                return config
-
-        # Fallback: construct Config from individual sensors
-        # This handles cases where YAML data isn't available or filtering is needed
+        # Always construct Config from current sensor state
         sensors = self.list_sensors(device_identifier, sensor_set_id)
-        global_settings = data.get("global_settings", {})
+
+        # Get global settings from the specific sensor set if provided
+        global_settings = {}
+        if sensor_set_id and sensor_set_id in data["sensor_sets"]:
+            global_settings = data["sensor_sets"][sensor_set_id].get("global_settings", {})
 
         return Config(
             version=data.get("version", "1.0"),
@@ -809,8 +830,9 @@ class StorageManager:
         """
         data = self._ensure_loaded()
 
-        # Store global settings
-        data["global_settings"].update(config.global_settings)
+        # Store global settings in the sensor set metadata
+        if sensor_set_id in data["sensor_sets"]:
+            data["sensor_sets"][sensor_set_id]["global_settings"] = config.global_settings
 
         # Store all sensors in bulk
         await self.async_store_sensors_bulk(
@@ -864,6 +886,10 @@ class StorageManager:
         """
         Apply global settings to sensors, creating normalized sensor configs.
 
+        Validates that local overrides don't conflict with global settings.
+        Local overrides with different values are fatal errors.
+        Local overrides with same values are acceptable.
+
         Args:
             sensors: List of sensor configurations
             global_settings: Global settings from YAML
@@ -871,9 +897,13 @@ class StorageManager:
 
         Returns:
             List of sensor configurations with global settings applied
+
+        Raises:
+            SyntheticSensorsError: If local overrides conflict with global settings
         """
         normalized_sensors = []
         global_variables = global_settings.get("variables", {})
+        global_device_identifier = global_settings.get("device_identifier")
 
         for sensor in sensors:
             # Create a copy of the sensor to avoid modifying the original
@@ -881,29 +911,81 @@ class StorageManager:
 
             normalized_sensor = deepcopy(sensor)
 
-            # Apply global device_identifier if sensor doesn't have one
-            if not normalized_sensor.device_identifier:
-                # Use provided device_identifier or global setting
-                normalized_sensor.device_identifier = device_identifier or global_settings.get("device_identifier")
+            # Validate and apply global device_identifier
+            if global_device_identifier:
+                if normalized_sensor.device_identifier and normalized_sensor.device_identifier != global_device_identifier:
+                    raise SyntheticSensorsError(
+                        f"Sensor '{sensor.unique_id}' has conflicting device_identifier. "
+                        f"Local: '{normalized_sensor.device_identifier}', Global: '{global_device_identifier}'. "
+                        f"Local overrides with different values are not allowed."
+                    )
+                normalized_sensor.device_identifier = global_device_identifier
+            elif not normalized_sensor.device_identifier:
+                # Use provided device_identifier if no global or local device_identifier
+                normalized_sensor.device_identifier = device_identifier
 
-            # Apply global variables to all formulas
+            # Validate and apply global variables to all formulas
             if global_variables:
                 for formula in normalized_sensor.formulas:
                     if formula.variables is None:
                         formula.variables = {}
 
-                    # Merge global variables with local variables
-                    # Local variables take precedence over global ones
+                    # Check for conflicting local variables - locals MUST NOT override globals
+                    for var_name, global_value in global_variables.items():
+                        if var_name in formula.variables:
+                            local_value = formula.variables[var_name]
+                            if local_value != global_value:
+                                raise SyntheticSensorsError(
+                                    f"Sensor '{sensor.unique_id}' formula '{formula.id}' has conflicting variable '{var_name}'. "
+                                    f"Local: '{local_value}', Global: '{global_value}'. "
+                                    f"Local overrides with different values are not allowed."
+                                )
+
+                    # Apply global variables - they are mandatory for all sensors in the set
+                    # Local variables are added on top of globals (no conflicts allowed)
                     merged_variables = global_variables.copy()
                     merged_variables.update(formula.variables)
                     formula.variables = merged_variables
 
-            # Apply other global settings that make sense at sensor level
-            # Note: Only device_identifier and variables are currently supported
-
             normalized_sensors.append(normalized_sensor)
 
         return normalized_sensors
+
+    def _validate_no_global_conflicts(self, sensors: list[SensorConfig], global_settings: dict[str, Any]) -> None:
+        """
+        Validate that local settings don't conflict with global settings during import.
+
+        Args:
+            sensors: List of sensor configurations from YAML
+            global_settings: Global settings from YAML
+
+        Raises:
+            SyntheticSensorsError: If local settings conflict with global settings
+        """
+        global_device_identifier = global_settings.get("device_identifier")
+        global_variables = global_settings.get("variables", {})
+
+        for sensor in sensors:
+            # Check device_identifier conflicts
+            if global_device_identifier and sensor.device_identifier and sensor.device_identifier != global_device_identifier:
+                raise SyntheticSensorsError(
+                    f"Sensor '{sensor.unique_id}' has conflicting device_identifier. "
+                    f"Local: '{sensor.device_identifier}', Global: '{global_device_identifier}'. "
+                    f"Local device_identifier must match global device_identifier or be omitted."
+                )
+
+            # Check variable conflicts in all formulas
+            for formula in sensor.formulas:
+                if formula.variables:
+                    for var_name, local_value in formula.variables.items():
+                        if var_name in global_variables:
+                            global_value = global_variables[var_name]
+                            if local_value != global_value:
+                                raise SyntheticSensorsError(
+                                    f"Sensor '{sensor.unique_id}' formula '{formula.id}' has conflicting variable '{var_name}'. "
+                                    f"Local: '{local_value}', Global: '{global_value}'. "
+                                    f"Local variables must match global variables or be omitted."
+                                )
 
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO format."""
@@ -911,23 +993,144 @@ class StorageManager:
 
         return datetime.now().isoformat()
 
-    # Global Settings Management
+    def _get_sensor_set_header(self, sensor_set_id: str) -> dict[str, Any]:
+        """
+        Extract sensor set header information (version and global settings).
 
-    async def async_set_global_setting(self, key: str, value: Any) -> None:
-        """Set a global setting."""
-        data = self._ensure_loaded()
-        data["global_settings"][key] = value
-        await self.async_save()
+        Args:
+            sensor_set_id: Sensor set identifier
 
-    def get_global_setting(self, key: str, default: Any = None) -> Any:
-        """Get a global setting."""
+        Returns:
+            Dictionary with version and global_settings (if any)
+        """
         data = self._ensure_loaded()
-        return data["global_settings"].get(key, default)
 
-    def get_global_settings(self) -> dict[str, Any]:
-        """Get all global settings."""
-        data = self._ensure_loaded()
-        return data["global_settings"].copy()
+        header = {"version": "1.0"}
+
+        # Add global settings if they exist for this sensor set
+        if sensor_set_id in data["sensor_sets"]:
+            sensor_set_metadata = data["sensor_sets"][sensor_set_id]
+            global_settings = sensor_set_metadata.get("global_settings", {})
+            if global_settings:
+                header["global_settings"] = global_settings
+
+        return header
+
+    def _validate_sensor_with_context(self, sensor_config: SensorConfig, sensor_set_id: str) -> list[str]:
+        """
+        Validate a sensor configuration within the context of its sensor set.
+
+        This creates a minimal YAML structure with the sensor set header (version/globals)
+        plus the sensor being validated, then performs full validation including:
+        - Standard sensor validation
+        - Global settings conflict validation
+        - Schema validation
+
+        Args:
+            sensor_config: Sensor configuration to validate
+            sensor_set_id: Sensor set identifier for context
+
+        Returns:
+            List of validation errors (empty if valid)
+        """
+        errors = []
+
+        try:
+            # Get sensor set header (version and global settings)
+            header = self._get_sensor_set_header(sensor_set_id)
+
+            # Create minimal YAML structure for validation
+            test_yaml_data = header.copy()
+            test_yaml_data["sensors"] = {sensor_config.unique_id: {}}
+
+            # Convert sensor to YAML-like dict format for validation
+            sensor_dict: dict[str, Any] = {
+                "name": sensor_config.name,
+                "enabled": sensor_config.enabled,
+            }
+
+            # Add device_identifier if present
+            if sensor_config.device_identifier:
+                sensor_dict["device_identifier"] = sensor_config.device_identifier
+
+            # Add optional fields
+            if sensor_config.update_interval is not None:
+                sensor_dict["update_interval"] = sensor_config.update_interval
+            if sensor_config.category:
+                sensor_dict["category"] = sensor_config.category
+            if sensor_config.description:
+                sensor_dict["description"] = sensor_config.description
+
+            # Handle formulas - for validation, we need at least the main formula
+            if sensor_config.formulas:
+                # Find main formula (id matches sensor unique_id or legacy "main")
+                main_formula = None
+                for formula in sensor_config.formulas:
+                    if formula.id == sensor_config.unique_id or formula.id == "main":
+                        main_formula = formula
+                        break
+
+                if main_formula:
+                    sensor_dict["formula"] = main_formula.formula
+
+                    # Add variables if present
+                    if main_formula.variables:
+                        sensor_dict["variables"] = main_formula.variables
+
+                    # Add other formula properties
+                    if main_formula.unit_of_measurement:
+                        sensor_dict["unit_of_measurement"] = main_formula.unit_of_measurement
+                    if main_formula.device_class:
+                        sensor_dict["device_class"] = main_formula.device_class
+                    if main_formula.state_class:
+                        sensor_dict["state_class"] = main_formula.state_class
+                    if main_formula.icon:
+                        sensor_dict["icon"] = main_formula.icon
+
+            test_yaml_data["sensors"][sensor_config.unique_id] = sensor_dict
+
+            # Perform schema validation
+            from .schema_validator import validate_yaml_config
+
+            schema_result = validate_yaml_config(test_yaml_data)
+
+            if not schema_result["valid"]:
+                for error in schema_result["errors"]:
+                    errors.append(f"Schema validation: {error.message}")
+
+            # Perform configuration validation using ConfigManager
+            from typing import cast
+
+            from .config_manager import ConfigDict, ConfigManager
+
+            config_manager = ConfigManager(self.hass)
+
+            try:
+                config = config_manager.load_from_dict(cast(ConfigDict, test_yaml_data))
+
+                # Validate the config
+                config_errors = config.validate()
+                errors.extend(config_errors)
+
+                # Additional validation: check for global settings conflicts
+                if len(config.sensors) > 0:
+                    sensor = config.sensors[0]
+                    global_settings = config.global_settings
+
+                    if global_settings:
+                        # Use the existing validation method
+                        try:
+                            self._validate_no_global_conflicts([sensor], global_settings)
+                        except Exception as e:
+                            errors.append(str(e))
+
+            except Exception as e:
+                errors.append(f"Configuration validation failed: {e}")
+
+        except Exception as e:
+            errors.append(f"Validation setup failed: {e}")
+
+        return errors
 
     def get_sensor_set(self, sensor_set_id: str) -> SensorSet:
         """
@@ -989,7 +1192,6 @@ class StorageManager:
         data = self._ensure_loaded()
         data["sensors"].clear()
         data["sensor_sets"].clear()
-        data["global_settings"].clear()
         await self.async_save()
         _LOGGER.info("Cleared all synthetic sensor storage data")
 
@@ -1011,7 +1213,6 @@ class StorageManager:
         return {
             "total_sensors": len(data["sensors"]),
             "total_sensor_sets": len(data["sensor_sets"]),
-            "global_settings_count": len(data["global_settings"]),
             "sensor_sets": sensor_set_counts,
         }
 
