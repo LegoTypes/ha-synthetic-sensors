@@ -986,6 +986,85 @@ class TestSensorSetIntegration:
         storage_manager.async_store_sensors_bulk.assert_called_once()
         storage_manager.export_yaml.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_export_yaml_preserves_entity_id_from_import(self, mock_hass, yaml_fixtures):
+        """Test that entity_id from YAML import is preserved in export."""
+        from unittest.mock import AsyncMock, patch
+
+        from ha_synthetic_sensors.storage_manager import StorageManager
+
+        # Create a StorageManager with mocked Store to test actual export behavior
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_entity_id_preservation")
+            storage_manager._store = mock_store
+
+            # Initialize storage with empty data
+            with patch.object(storage_manager._store, "async_load", return_value=None):
+                await storage_manager.async_load()
+
+            # Create sensor set
+            with patch.object(storage_manager, "async_save", new_callable=AsyncMock):
+                sensor_set = await storage_manager.async_create_sensor_set(
+                    sensor_set_id="test_entity_id_preservation",
+                    device_identifier="test-device-123",
+                    name="Test Entity ID Preservation",
+                )
+
+                # Import YAML with explicit entity_id
+                yaml_content = yaml.dump(
+                    {
+                        "version": "1.0",
+                        "sensors": {
+                            "sensor_with_entity_id": {
+                                "name": "Sensor With Custom Entity ID",
+                                "entity_id": "sensor.custom_power_monitor",
+                                "formula": "power_value",
+                                "variables": {"power_value": "sensor.source_power"},
+                                "unit_of_measurement": "W",
+                                "device_class": "power",
+                                "state_class": "measurement",
+                            },
+                            "sensor_without_entity_id": {
+                                "name": "Sensor Without Custom Entity ID",
+                                "formula": "energy_value",
+                                "variables": {"energy_value": "sensor.source_energy"},
+                                "unit_of_measurement": "kWh",
+                                "device_class": "energy",
+                                "state_class": "total_increasing",
+                            },
+                        },
+                    }
+                )
+
+                await sensor_set.async_import_yaml(yaml_content)
+
+                # Export YAML and verify entity_id is preserved
+                exported_yaml = sensor_set.export_yaml()
+                exported_data = yaml.safe_load(exported_yaml)
+
+                # Check that sensor with explicit entity_id preserves it
+                sensor_with_id = exported_data["sensors"]["sensor_with_entity_id"]
+                assert "entity_id" in sensor_with_id
+                assert sensor_with_id["entity_id"] == "sensor.custom_power_monitor"
+                assert sensor_with_id["name"] == "Sensor With Custom Entity ID"
+
+                # Check that sensor without explicit entity_id doesn't have it in export
+                sensor_without_id = exported_data["sensors"]["sensor_without_entity_id"]
+                assert "entity_id" not in sensor_without_id
+                assert sensor_without_id["name"] == "Sensor Without Custom Entity ID"
+
+                # Verify the sensors were stored correctly by retrieving them
+                stored_with_id = sensor_set.get_sensor("sensor_with_entity_id")
+                assert stored_with_id is not None
+                assert stored_with_id.entity_id == "sensor.custom_power_monitor"
+
+                stored_without_id = sensor_set.get_sensor("sensor_without_entity_id")
+                assert stored_without_id is not None
+                assert stored_without_id.entity_id is None
+
 
 class TestSensorSetValidation:
     """Test SensorSet validation and convenience methods."""

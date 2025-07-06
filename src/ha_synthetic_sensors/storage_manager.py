@@ -289,6 +289,8 @@ class StorageManager:
                 sensor_dict["device_identifier"] = sensor_config.device_identifier
 
             # Add optional sensor fields
+            if sensor_config.entity_id:
+                sensor_dict["entity_id"] = sensor_config.entity_id
             if sensor_config.update_interval is not None:
                 sensor_dict["update_interval"] = sensor_config.update_interval
             if sensor_config.category:

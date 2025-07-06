@@ -147,6 +147,15 @@ sensors:
     unit_of_measurement: "devices"
     state_class: "measurement"
 
+  # Entity ID preservation test
+  custom_entity_id_sensor:
+    name: "Custom Entity ID Sensor"
+    entity_id: "sensor.my_custom_power_sensor"
+    formula: 'sum("device_class:power")'
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
   # multiple regex patterns
   sum_two_regex_patterns:
     name: "Sum Two Regex Patterns"

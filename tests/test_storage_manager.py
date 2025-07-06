@@ -993,9 +993,9 @@ class TestStorageManagerIntegration:
         assert retrieved_sensor.name == sample_sensor_config.name
 
     async def test_yaml_round_trip_with_real_storage(self, storage_manager_real):
-        """Test YAML import/export with real storage persistence."""
-        # Load YAML from fixture
-        yaml_content = load_yaml_fixture("storage_integration_test.yaml")
+        """Test YAML import/export with real storage persistence using complex fixture."""
+        # Load complex YAML fixture with all supported features
+        yaml_content = load_yaml_fixture("storage_test_complex.yaml")
 
         # Load storage
         await storage_manager_real.async_load()
@@ -1008,9 +1008,7 @@ class TestStorageManagerIntegration:
         # Verify import worked
         assert sensor_set_id in storage_manager_real._data["sensor_sets"]
         sensors = storage_manager_real.list_sensors(sensor_set_id=sensor_set_id)
-        assert (
-            len(sensors) == 5
-        )  # test_power_sensor, test_energy_sensor, test_efficiency_sensor, test_analysis_suite, test_dynamic_collection
+        assert len(sensors) > 30  # Complex fixture has many sensors
 
         # Export YAML
         exported_yaml = storage_manager_real.export_yaml(sensor_set_id)
@@ -1023,31 +1021,70 @@ class TestStorageManagerIntegration:
         # Verify structure is preserved
         assert exported_data["version"] == "1.0"
         assert "sensors" in exported_data
-        assert "test_power_sensor" in exported_data["sensors"]
-        assert "test_energy_sensor" in exported_data["sensors"]
-        assert "test_analysis_suite" in exported_data["sensors"]
 
-        # Verify sensor details
-        power_sensor = exported_data["sensors"]["test_power_sensor"]
-        assert power_sensor["name"] == "Test Power Sensor"
-        assert power_sensor["formula"] == "instant_power"
-        assert power_sensor["unit_of_measurement"] == "W"
-        assert power_sensor["device_class"] == "power"
+        # Test key complex sensors are preserved
+        assert "dynamic_device_sum" in exported_data["sensors"]
+        assert "energy_analysis_suite" in exported_data["sensors"]
+        assert "comprehensive_regex_analysis" in exported_data["sensors"]
 
-        energy_sensor = exported_data["sensors"]["test_energy_sensor"]
-        assert energy_sensor["name"] == "Test Energy Sensor"
-        assert energy_sensor["formula"] == "cumulative_energy"
-        assert energy_sensor["unit_of_measurement"] == "kWh"
-        assert energy_sensor["device_class"] == "energy"
+        # Verify dynamic variable sensor
+        dynamic_sensor = exported_data["sensors"]["dynamic_device_sum"]
+        assert dynamic_sensor["name"] == "Dynamic Device Sum"
+        assert dynamic_sensor["formula"] == 'sum("device_class:device_type")'
+        assert "variables" in dynamic_sensor
+        assert dynamic_sensor["variables"]["device_type"] == "input_select.monitoring_device_class"
+        assert dynamic_sensor["unit_of_measurement"] == "W"
+        assert dynamic_sensor["device_class"] == "power"
+        assert dynamic_sensor["state_class"] == "measurement"
 
-        # Verify multi-formula sensor with attributes
-        analysis_sensor = exported_data["sensors"]["test_analysis_suite"]
-        assert analysis_sensor["name"] == "Test Analysis Suite"
-        assert analysis_sensor["formula"] == 'sum("device_class:primary_type")'
+        # Verify complex multi-formula sensor with attributes
+        analysis_sensor = exported_data["sensors"]["energy_analysis_suite"]
+        assert analysis_sensor["name"] == "Energy Analysis Suite"
+        assert analysis_sensor["formula"] == 'sum("device_class:primary_energy_type")'
         assert "attributes" in analysis_sensor
         assert "secondary_consumption" in analysis_sensor["attributes"]
         assert "efficiency_rating" in analysis_sensor["attributes"]
-        assert analysis_sensor["attributes"]["secondary_consumption"]["formula"] == 'sum("device_class:secondary_type")'
+        assert "high_usage_count" in analysis_sensor["attributes"]
+        assert analysis_sensor["attributes"]["secondary_consumption"]["formula"] == 'sum("device_class:secondary_energy_type")'
+        assert analysis_sensor["attributes"]["efficiency_rating"]["formula"] == "state / total_consumption * 100"
+        assert "variables" in analysis_sensor
+        assert "primary_energy_type" in analysis_sensor["variables"]
+        assert "alert_threshold" in analysis_sensor["variables"]
+
+        # Verify complex regex sensor with extensive attributes
+        regex_sensor = exported_data["sensors"]["comprehensive_regex_analysis"]
+        assert regex_sensor["name"] == "Comprehensive Regex Analysis"
+        assert "attributes" in regex_sensor
+        assert "circuit_status" in regex_sensor["attributes"]
+        assert "climate_data" in regex_sensor["attributes"]
+        assert "motion_sensors" in regex_sensor["attributes"]
+        assert "mixed_patterns" in regex_sensor["attributes"]
+        assert len(regex_sensor["variables"]) > 10  # Has many variables
+
+        # Verify OR patterns are preserved
+        assert "door_window_count" in exported_data["sensors"]
+        door_sensor = exported_data["sensors"]["door_window_count"]
+        assert door_sensor["formula"] == 'count("device_class:door|window")'
+
+        # Verify regex OR patterns
+        assert "circuit_or_kitchen_power" in exported_data["sensors"]
+        regex_or_sensor = exported_data["sensors"]["circuit_or_kitchen_power"]
+        assert regex_or_sensor["formula"] == 'sum("regex:circuit_pattern|kitchen_pattern")'
+        assert "variables" in regex_or_sensor
+        assert "circuit_pattern" in regex_or_sensor["variables"]
+        assert "kitchen_pattern" in regex_or_sensor["variables"]
+
+        # Verify direct entity ID patterns
+        assert "direct_device_class_or" in exported_data["sensors"]
+        direct_sensor = exported_data["sensors"]["direct_device_class_or"]
+        assert direct_sensor["formula"] == 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
+
+        # Verify entity_id is preserved
+        assert "custom_entity_id_sensor" in exported_data["sensors"]
+        entity_id_sensor = exported_data["sensors"]["custom_entity_id_sensor"]
+        assert entity_id_sensor["entity_id"] == "sensor.my_custom_power_sensor"
+        assert entity_id_sensor["name"] == "Custom Entity ID Sensor"
+        assert entity_id_sensor["formula"] == 'sum("device_class:power")'
 
     async def test_save_load_cycle_integrity(self, storage_manager_real, sample_sensor_config):
         """Test that multiple save/load cycles maintain data integrity."""
