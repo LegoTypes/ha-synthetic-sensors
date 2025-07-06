@@ -268,3 +268,45 @@ def formula_evaluation_test_yaml(load_yaml_fixture):
 def syn2_sample_config_yaml(load_yaml_fixture):
     """Load syn2 sample configuration from YAML instead of hardcoded dictionary."""
     return load_yaml_fixture("syn2_sample_config")
+
+
+@pytest.fixture
+def storage_manager_real(mock_hass):
+    """Create a StorageManager instance that tests actual save/load without mocking Store methods."""
+    import os
+    import tempfile
+    from unittest.mock import AsyncMock, patch
+
+    # Create a temporary file for storage
+    with tempfile.NamedTemporaryFile(mode="w+", suffix=".json", delete=False) as temp_file:
+        temp_file_name = temp_file.name
+
+    # Create a mock store that actually reads/writes to the file
+    mock_store = AsyncMock()
+
+    async def mock_load():
+        try:
+            with open(temp_file_name) as f:
+                import json
+
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
+
+    async def mock_save(data):
+        with open(temp_file_name, "w") as f:
+            import json
+
+            json.dump(data, f, indent=2)
+
+    mock_store.async_load = mock_load
+    mock_store.async_save = mock_save
+
+    with patch("ha_synthetic_sensors.storage_manager.Store", return_value=mock_store):
+        from ha_synthetic_sensors.storage_manager import StorageManager
+
+        manager = StorageManager(mock_hass, "test_storage_real")
+        yield manager
+
+    # Cleanup
+    os.unlink(temp_file_name)

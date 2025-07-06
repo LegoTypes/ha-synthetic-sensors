@@ -1,0 +1,53 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device:roundtrip_123"
+  variables:
+    shared_power_meter: "sensor.house_main_power"
+    global_efficiency: 0.92
+    base_voltage: "sensor.house_voltage"
+
+sensors:
+  # Sensor that uses ONLY global variables in formula
+  pure_global_sensor:
+    name: "Pure Global Sensor"
+    entity_id: "sensor.pure_global_sensor"
+    formula: 'state("shared_power_meter") * global_efficiency'
+    # NO local variables - should use globals only
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Sensor that uses global + local variables
+  mixed_usage_sensor:
+    name: "Mixed Usage Sensor"
+    entity_id: "sensor.mixed_usage_sensor"
+    formula: 'state("shared_power_meter") + state("local_offset")'
+    variables:
+      local_offset: "sensor.local_adjustment"
+    # Uses shared_power_meter from global, local_offset from local
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  # Sensor with complex formula using multiple globals
+  complex_global_sensor:
+    name: "Complex Global Sensor"
+    entity_id: "sensor.complex_global_sensor"
+    formula: '(state("shared_power_meter") / state("base_voltage")) * global_efficiency'
+    # NO local variables - uses shared_power_meter, base_voltage, global_efficiency from globals
+    unit_of_measurement: "A"
+    device_class: "current"
+    state_class: "measurement"
+
+  # Sensor that doesn't use any globals (control case)
+  pure_local_sensor:
+    name: "Pure Local Sensor"
+    entity_id: "sensor.pure_local_sensor"
+    formula: 'state("local_temp") + 5'
+    variables:
+      local_temp: "sensor.room_temperature"
+    # Uses only local variables
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+    state_class: "measurement"

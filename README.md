@@ -778,6 +778,70 @@ async def update_sensor_config(hass, entry, device_identifier, sensor_unique_id,
     _LOGGER.debug(f"Sensor set {sensor_set.sensor_set_id} has {sensor_set.sensor_count} sensors")
 ```
 
+### Bulk Modification and Entity ID Change Tracking
+
+The package provides advanced bulk modification capabilities and automatic entity ID change tracking:
+
+#### Bulk Sensor Set Modifications
+
+```python
+from ha_synthetic_sensors.sensor_set import SensorSetModification
+
+# Example: Bulk entity ID changes when device configuration changes
+entity_id_changes = {
+    "sensor.old_power_meter": "sensor.new_power_meter",
+    "sensor.old_energy_meter": "sensor.new_energy_meter",
+    "sensor.old_temperature": "sensor.new_temperature"
+}
+
+modification = SensorSetModification(
+    entity_id_changes=entity_id_changes,
+    global_settings={"variables": {"efficiency_factor": 0.92}},
+    add_sensors=[new_sensor_config],
+    remove_sensors=["outdated_sensor_id"],
+    update_sensors=[modified_sensor_config]
+)
+
+result = await sensor_set.async_modify(modification)
+print(f"Applied {result['entity_ids_changed']} entity ID changes, "
+      f"added {result['sensors_added']} sensors, "
+      f"removed {result['sensors_removed']} sensors")
+```
+
+#### Automatic Entity ID Change Detection
+
+The system automatically tracks entity ID changes in Home Assistant:
+
+```python
+# When entity IDs change in HA (e.g., user renames entities),
+# the system automatically updates:
+# 1. Sensor configurations and formulas
+# 2. Global settings variables
+# 3. Home Assistant entity registry
+# 4. Formula caches
+# 5. Registered callbacks
+
+# Check if an entity ID is being tracked
+if storage_manager.is_entity_tracked("sensor.power_meter"):
+    print("Changes to this entity ID will be automatically handled")
+
+# Register callback for entity ID changes
+def handle_entity_change(old_id: str, new_id: str) -> None:
+    _LOGGER.info("Entity ID changed: %s -> %s", old_id, new_id)
+    # Update your integration's references
+
+storage_manager.add_entity_change_callback(handle_entity_change)
+```
+
+#### Benefits of Entity ID Change Tracking
+
+- **Automatic Updates**: No manual intervention needed when entities are renamed
+- **Efficiency**: Only processes changes for entities actually used by synthetic sensors
+- **Self-Change Detection**: Prevents infinite loops when the system initiates changes
+- **Bulk Operation Support**: Handles multiple entity ID changes efficiently
+- **Cache Coordination**: Automatically invalidates formula caches
+- **Integration Callbacks**: Notifies your integration of changes
+
 ### YAML-Based Integration
 
 For simple configurations or testing (integration maintains YAML files):
@@ -796,6 +860,7 @@ class MyCustomIntegration:
         # Load YAML config (integration manages file updates)
         config = await self.sensor_manager.load_config_from_yaml(yaml_config)
         await self.sensor_manager.apply_config(config)
+```
 
 ### Standalone Integration
 

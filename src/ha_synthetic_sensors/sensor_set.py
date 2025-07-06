@@ -7,6 +7,7 @@ including CRUD operations on sensors within the set and metadata management.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -16,7 +17,33 @@ from .exceptions import SyntheticSensorsError
 if TYPE_CHECKING:
     from .storage_manager import SensorSetMetadata, StorageManager
 
+__all__ = ["SensorSet", "SensorSetModification"]
+
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class SensorSetModification:
+    """
+    Specification for bulk modifications to a sensor set.
+
+    Allows comprehensive changes while preserving sensor unique_ids (keys).
+    """
+
+    # Sensors to add (new unique_ids only)
+    add_sensors: list[SensorConfig] | None = None
+
+    # Sensors to remove (by unique_id)
+    remove_sensors: list[str] | None = None
+
+    # Sensors to update (existing unique_ids only)
+    update_sensors: list[SensorConfig] | None = None
+
+    # Entity ID changes (old_entity_id -> new_entity_id)
+    entity_id_changes: dict[str, str] | None = None
+
+    # Global settings changes
+    global_settings: dict[str, Any] | None = None
 
 
 class SensorSet:
@@ -186,6 +213,394 @@ class SensorSet:
         )
 
         _LOGGER.info("Replaced %d sensors in set %s", len(sensor_configs), self.sensor_set_id)
+
+    async def async_modify(self, modification: SensorSetModification) -> dict[str, Any]:
+        """
+        Perform bulk modifications to this sensor set.
+
+        Supports comprehensive changes while preserving sensor unique_ids (keys):
+        - Add new sensors
+        - Remove existing sensors
+        - Update existing sensors (formulas, entity_ids, etc.)
+        - Bulk entity ID changes across all sensors
+        - Global settings changes
+
+        Optimized to rebuild entity index only once and coordinate entity ID changes
+        to avoid event thrashing.
+
+        Args:
+            modification: Specification of changes to make
+
+        Returns:
+            Summary of changes made
+
+        Raises:
+            SyntheticSensorsError: If validation fails or conflicts occur
+        """
+        self._ensure_exists()
+
+        # Collect all changes for bulk processing
+        changes_summary = {
+            "sensors_added": 0,
+            "sensors_removed": 0,
+            "sensors_updated": 0,
+            "entity_ids_changed": 0,
+            "global_settings_updated": False,
+        }
+
+        # Get current sensors for validation and processing
+        current_sensors = {s.unique_id: s for s in self.list_sensors()}
+
+        # 1. Validate the modification request
+        self._validate_modification(modification, current_sensors)
+
+        # 2. Update global settings if specified (BEFORE entity ID changes to avoid conflicts)
+        if modification.global_settings is not None:
+            await self._update_global_settings(modification.global_settings)
+            changes_summary["global_settings_updated"] = True
+
+        # 3. Apply entity ID changes (but don't update HA registry yet - collect changes)
+        entity_id_changes_to_apply = {}
+        if modification.entity_id_changes:
+            entity_id_changes_to_apply = modification.entity_id_changes.copy()
+            # Apply changes to storage but defer HA registry updates
+            await self._apply_entity_id_changes_deferred(entity_id_changes_to_apply, current_sensors)
+            changes_summary["entity_ids_changed"] = len(entity_id_changes_to_apply)
+
+        # 4. Remove sensors (use direct storage operations)
+        if modification.remove_sensors:
+            for unique_id in modification.remove_sensors:
+                await self._remove_sensor_direct(unique_id)
+                changes_summary["sensors_removed"] += 1
+
+        # 5. Update existing sensors (use direct storage operations)
+        if modification.update_sensors:
+            for sensor_config in modification.update_sensors:
+                await self._update_sensor_direct(sensor_config)
+                changes_summary["sensors_updated"] += 1
+
+        # 6. Add new sensors (use direct storage operations)
+        if modification.add_sensors:
+            for sensor_config in modification.add_sensors:
+                await self._add_sensor_direct(sensor_config)
+                changes_summary["sensors_added"] += 1
+
+        # 7. OPTIMIZATION: Rebuild entity index once with all final state
+        self.storage_manager._populate_entity_index()
+        _LOGGER.debug("Rebuilt entity index after bulk modifications to sensor set %s", self.sensor_set_id)
+
+        # 8. Apply entity ID changes to HA registry in one batch (after index rebuild)
+        if entity_id_changes_to_apply:
+            await self._apply_entity_registry_changes(entity_id_changes_to_apply)
+
+        _LOGGER.info(
+            "Modified sensor set %s: %d added, %d removed, %d updated, %d entity IDs changed",
+            self.sensor_set_id,
+            changes_summary["sensors_added"],
+            changes_summary["sensors_removed"],
+            changes_summary["sensors_updated"],
+            changes_summary["entity_ids_changed"],
+        )
+
+        return changes_summary
+
+    def _validate_modification(self, modification: SensorSetModification, current_sensors: dict[str, SensorConfig]) -> None:
+        """
+        Validate a modification request before applying changes.
+
+        Args:
+            modification: Modification specification
+            current_sensors: Current sensors in the set
+
+        Raises:
+            SyntheticSensorsError: If validation fails or conflicts occur
+        """
+        errors = []
+
+        # Validate add_sensors (must be new unique_ids)
+        if modification.add_sensors:
+            for sensor in modification.add_sensors:
+                if sensor.unique_id in current_sensors:
+                    errors.append(f"Cannot add sensor {sensor.unique_id}: already exists")
+
+        # Validate remove_sensors (must exist)
+        if modification.remove_sensors:
+            for unique_id in modification.remove_sensors:
+                if unique_id not in current_sensors:
+                    errors.append(f"Cannot remove sensor {unique_id}: not found")
+
+        # Validate update_sensors (must exist, cannot change unique_id)
+        if modification.update_sensors:
+            for sensor in modification.update_sensors:
+                if sensor.unique_id not in current_sensors:
+                    errors.append(f"Cannot update sensor {sensor.unique_id}: not found")
+
+        # Check for conflicts between operations
+        if modification.add_sensors and modification.remove_sensors:
+            add_ids = {s.unique_id for s in modification.add_sensors}
+            remove_ids = set(modification.remove_sensors)
+            conflicts = add_ids & remove_ids
+            if conflicts:
+                errors.append(f"Cannot add and remove same sensors: {conflicts}")
+
+        if modification.update_sensors and modification.remove_sensors:
+            update_ids = {s.unique_id for s in modification.update_sensors}
+            remove_ids = set(modification.remove_sensors)
+            conflicts = update_ids & remove_ids
+            if conflicts:
+                errors.append(f"Cannot update and remove same sensors: {conflicts}")
+
+        # Validate global settings conflicts
+        if modification.global_settings is not None or modification.entity_id_changes:
+            try:
+                self._validate_global_settings_conflicts(modification, current_sensors)
+            except Exception as e:
+                errors.append(str(e))
+
+        if errors:
+            raise SyntheticSensorsError(f"Modification validation failed: {'; '.join(errors)}")
+
+    def _validate_global_settings_conflicts(
+        self, modification: SensorSetModification, current_sensors: dict[str, SensorConfig]
+    ) -> None:
+        """
+        Validate that the modification won't create global settings conflicts.
+
+        Simulates the final state after all modifications and validates against
+        global settings conflicts (device_identifier and variable mismatches).
+
+        Args:
+            modification: Modification specification
+            current_sensors: Current sensors in the set
+
+        Raises:
+            SyntheticSensorsError: If conflicts would be created
+        """
+        # Get current global settings
+        current_metadata = self.metadata
+        current_global_settings = {}
+        if current_metadata:
+            data = self.storage_manager._ensure_loaded()
+            if self.sensor_set_id in data["sensor_sets"]:
+                current_global_settings = data["sensor_sets"][self.sensor_set_id].get("global_settings", {})
+
+        # Determine final global settings after modification
+        final_global_settings = current_global_settings.copy()
+        if modification.global_settings is not None:
+            final_global_settings.update(modification.global_settings)
+
+        # Apply entity ID changes to global settings variables
+        if modification.entity_id_changes and "variables" in final_global_settings:
+            updated_variables = {}
+            for var_name, var_value in final_global_settings["variables"].items():
+                if isinstance(var_value, str) and var_value in modification.entity_id_changes:
+                    updated_variables[var_name] = modification.entity_id_changes[var_value]
+                else:
+                    updated_variables[var_name] = var_value
+            final_global_settings["variables"] = updated_variables
+
+        # Build final sensor list after all modifications
+        final_sensors = {}
+
+        # Start with current sensors
+        for unique_id, sensor in current_sensors.items():
+            final_sensors[unique_id] = sensor
+
+        # Remove sensors
+        if modification.remove_sensors:
+            for unique_id in modification.remove_sensors:
+                final_sensors.pop(unique_id, None)
+
+        # Update sensors
+        if modification.update_sensors:
+            for sensor in modification.update_sensors:
+                final_sensors[sensor.unique_id] = sensor
+
+        # Add sensors
+        if modification.add_sensors:
+            for sensor in modification.add_sensors:
+                final_sensors[sensor.unique_id] = sensor
+
+        # Apply entity ID changes to final sensors
+        if modification.entity_id_changes:
+            updated_sensors = {}
+            for unique_id, sensor in final_sensors.items():
+                # Create a copy to avoid modifying the original
+                import copy
+
+                updated_sensor = copy.deepcopy(sensor)
+
+                # Update sensor entity_id
+                if updated_sensor.entity_id and updated_sensor.entity_id in modification.entity_id_changes:
+                    updated_sensor.entity_id = modification.entity_id_changes[updated_sensor.entity_id]
+
+                # Update formula variables
+                for formula in updated_sensor.formulas:
+                    if formula.variables:
+                        for var_name, var_value in formula.variables.items():
+                            if isinstance(var_value, str) and var_value in modification.entity_id_changes:
+                                formula.variables[var_name] = modification.entity_id_changes[var_value]
+
+                updated_sensors[unique_id] = updated_sensor
+            final_sensors = updated_sensors
+
+        # Validate final state for global settings conflicts
+        if final_global_settings:
+            final_sensor_list = list(final_sensors.values())
+            self.storage_manager._validate_no_global_conflicts(final_sensor_list, final_global_settings)
+
+    async def _apply_entity_id_changes_deferred(
+        self, entity_id_changes: dict[str, str], current_sensors: dict[str, SensorConfig]
+    ) -> None:
+        """
+        Apply entity ID changes to storage without updating HA registry or entity index.
+
+        This is used during bulk operations to defer registry updates until the end.
+
+        Args:
+            entity_id_changes: Map of old_entity_id -> new_entity_id
+            current_sensors: Current sensors to update
+        """
+        # Update our storage (sensor configs) only
+        for sensor_config in current_sensors.values():
+            updated = False
+
+            # Update sensor entity_id
+            if sensor_config.entity_id and sensor_config.entity_id in entity_id_changes:
+                old_id = sensor_config.entity_id
+                sensor_config.entity_id = entity_id_changes[sensor_config.entity_id]
+                updated = True
+                _LOGGER.debug("Updated sensor %s entity_id: %s -> %s", sensor_config.unique_id, old_id, sensor_config.entity_id)
+
+            # Update formula variables
+            for formula in sensor_config.formulas:
+                if formula.variables:
+                    for var_name, var_value in formula.variables.items():
+                        if isinstance(var_value, str) and var_value in entity_id_changes:
+                            old_value = var_value
+                            formula.variables[var_name] = entity_id_changes[var_value]
+                            updated = True
+                            _LOGGER.debug(
+                                "Updated sensor %s formula %s variable %s: %s -> %s",
+                                sensor_config.unique_id,
+                                formula.id,
+                                var_name,
+                                old_value,
+                                formula.variables[var_name],
+                            )
+
+            # Save updated sensor directly to storage (bypass entity index updates)
+            if updated:
+                await self._update_sensor_direct(sensor_config)
+
+    async def _apply_entity_registry_changes(self, entity_id_changes: dict[str, str]) -> None:
+        """
+        Apply entity ID changes to Home Assistant's entity registry in batch.
+
+        Args:
+            entity_id_changes: Map of old_entity_id -> new_entity_id
+        """
+        from homeassistant.helpers import entity_registry as er
+
+        registry_updates = []
+        try:
+            entity_registry = er.async_get(self.storage_manager.hass)
+
+            for old_entity_id, new_entity_id in entity_id_changes.items():
+                try:
+                    # Check if entity exists in HA registry
+                    entity_entry = entity_registry.async_get(old_entity_id)
+                    if entity_entry:
+                        # Update the entity ID in HA's registry
+                        entity_registry.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
+                        registry_updates.append(f"{old_entity_id} -> {new_entity_id}")
+                        _LOGGER.debug("Updated HA entity registry: %s -> %s", old_entity_id, new_entity_id)
+                    else:
+                        _LOGGER.debug("Entity %s not found in HA registry, skipping registry update", old_entity_id)
+                except Exception as e:
+                    _LOGGER.debug("Failed to update HA entity registry for %s -> %s: %s", old_entity_id, new_entity_id, e)
+        except Exception as e:
+            # Entity registry not available (e.g., in tests) - continue without HA registry updates
+            _LOGGER.debug("Entity registry not available, skipping HA registry updates: %s", e)
+
+        # Invalidate formula caches for the changed entities
+        if registry_updates:
+            from .entity_change_handler import EntityChangeHandler
+
+            temp_handler = EntityChangeHandler()
+            for old_entity_id, new_entity_id in entity_id_changes.items():
+                temp_handler.handle_entity_id_change(old_entity_id, new_entity_id)
+
+            _LOGGER.info("Applied %d entity ID changes to HA registry: %s", len(registry_updates), ", ".join(registry_updates))
+
+    async def _add_sensor_direct(self, sensor_config: SensorConfig) -> None:
+        """Add sensor directly to storage without entity index updates."""
+        await self.storage_manager.async_store_sensor(
+            sensor_config=sensor_config,
+            sensor_set_id=self.sensor_set_id,
+            device_identifier=self.metadata.device_identifier if self.metadata else None,
+        )
+
+    async def _update_sensor_direct(self, sensor_config: SensorConfig) -> None:
+        """Update sensor directly in storage without entity index updates."""
+        data = self.storage_manager._ensure_loaded()
+
+        if sensor_config.unique_id not in data["sensors"]:
+            _LOGGER.warning("Sensor %s not found for direct update", sensor_config.unique_id)
+            return
+
+        stored_sensor = data["sensors"][sensor_config.unique_id]
+        sensor_set_id = stored_sensor.get("sensor_set_id")
+
+        # Update the sensor config data and timestamp (skip entity index updates)
+        stored_sensor["config_data"] = self.storage_manager._serialize_sensor_config(sensor_config)
+        stored_sensor["updated_at"] = self.storage_manager._get_timestamp()
+
+        # Update sensor set metadata
+        if sensor_set_id and sensor_set_id in data["sensor_sets"]:
+            data["sensor_sets"][sensor_set_id]["updated_at"] = self.storage_manager._get_timestamp()
+
+        await self.storage_manager.async_save()
+        _LOGGER.debug("Direct updated sensor: %s", sensor_config.unique_id)
+
+    async def _remove_sensor_direct(self, unique_id: str) -> None:
+        """Remove sensor directly from storage without entity index updates."""
+        data = self.storage_manager._ensure_loaded()
+
+        if unique_id not in data["sensors"]:
+            _LOGGER.warning("Sensor %s not found for direct removal", unique_id)
+            return
+
+        # Get sensor set ID for cleanup
+        stored_sensor = data["sensors"][unique_id]
+        sensor_set_id = stored_sensor.get("sensor_set_id")
+
+        # Delete the sensor (skip entity index updates)
+        del data["sensors"][unique_id]
+
+        # Update sensor set metadata
+        if sensor_set_id and sensor_set_id in data["sensor_sets"]:
+            data["sensor_sets"][sensor_set_id]["updated_at"] = self.storage_manager._get_timestamp()
+            data["sensor_sets"][sensor_set_id]["sensor_count"] = len(
+                [s for s in data["sensors"].values() if s.get("sensor_set_id") == sensor_set_id]
+            )
+
+        await self.storage_manager.async_save()
+        _LOGGER.debug("Direct deleted sensor: %s", unique_id)
+
+    async def _update_global_settings(self, global_settings: dict[str, Any]) -> None:
+        """
+        Update global settings for this sensor set.
+
+        Args:
+            global_settings: New global settings
+        """
+        data = self.storage_manager._ensure_loaded()
+
+        if self.sensor_set_id in data["sensor_sets"]:
+            data["sensor_sets"][self.sensor_set_id]["global_settings"] = global_settings
+            data["sensor_sets"][self.sensor_set_id]["updated_at"] = self.storage_manager._get_timestamp()
+            await self.storage_manager.async_save()
 
     # YAML Operations
 

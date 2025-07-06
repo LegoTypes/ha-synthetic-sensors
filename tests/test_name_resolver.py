@@ -406,7 +406,6 @@ class TestNameResolver:
         assert resolver._is_valid_entity_id("binary_sensor.door") is True
         assert resolver._is_valid_entity_id("switch.light_1") is True
         assert resolver._is_valid_entity_id("input_number.rate") is True
-        assert resolver._is_valid_entity_id("custom_domain.entity") is True
 
         # Invalid entity IDs
         assert resolver._is_valid_entity_id("no_dot") is False
@@ -416,6 +415,7 @@ class TestNameResolver:
         assert resolver._is_valid_entity_id("") is False
         assert resolver._is_valid_entity_id("domain-with-dash.entity") is False
         assert resolver._is_valid_entity_id("domain.entity-with-dash") is False
+        assert resolver._is_valid_entity_id("custom_domain.entity") is False  # Invalid domain
 
     def test_resolve_name_error_scenarios(self, mock_hass):
         """Test error handling in resolve_name method."""

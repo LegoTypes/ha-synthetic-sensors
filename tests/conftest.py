@@ -208,6 +208,7 @@ entity_management_test_yaml = test_fixtures_module.entity_management_test_yaml
 mock_entities_with_dependencies = test_fixtures_module.mock_entities_with_dependencies
 load_yaml_fixture = test_fixtures_module.load_yaml_fixture
 yaml_fixtures_dir = test_fixtures_module.yaml_fixtures_dir
+storage_manager_real = test_fixtures_module.storage_manager_real
 
 
 @pytest.fixture

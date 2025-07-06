@@ -20,6 +20,7 @@ from homeassistant.helpers.storage import Store
 import yaml
 
 from .config_manager import Config, FormulaConfig, SensorConfig
+from .entity_index import EntityIndex
 from .exceptions import SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -96,6 +97,7 @@ class StorageManager:
         self._store: Store[StorageData] = Store(hass, STORAGE_VERSION, storage_key)
         self._data: StorageData | None = None
         self._lock = asyncio.Lock()
+        self._entity_index = EntityIndex(hass)
 
     async def async_load(self) -> None:
         """Load configuration from HA storage."""
@@ -117,6 +119,8 @@ class StorageManager:
                         len(stored_data.get("sensors", {})),
                         len(stored_data.get("sensor_sets", {})),
                     )
+                    # Populate entity index from loaded data
+                    self._populate_entity_index()
             except Exception as err:
                 _LOGGER.error("Failed to load synthetic sensor storage: %s", err)
                 # Initialize empty storage on error
@@ -187,8 +191,8 @@ class StorageManager:
                 timestamp = self._get_timestamp()
                 data["sensor_sets"][sensor_set_id] = {
                     "device_identifier": device_identifier,
-                    "name": f"YAML Import {sensor_set_id}",
-                    "description": "Imported from YAML content",
+                    "name": yaml_data.get("name", f"YAML Import {sensor_set_id}"),
+                    "description": yaml_data.get("description", "Imported from YAML content"),
                     "created_at": timestamp,
                     "updated_at": timestamp,
                     "sensor_count": 0,
@@ -220,7 +224,18 @@ class StorageManager:
                 if sensor_data.get("sensor_set_id") == sensor_set_id
             ]
             for unique_id in sensors_to_remove:
+                # Remove from entity index
+                old_stored_sensor = data["sensors"][unique_id]
+                old_sensor_config = self._deserialize_sensor_config(old_stored_sensor["config_data"])
+                self._entity_index.remove_sensor_entities(old_sensor_config)
+
                 del data["sensors"][unique_id]
+
+            # Update entity index for global settings
+            if yaml_global_settings:
+                global_variables = yaml_global_settings.get("variables", {})
+                if global_variables:
+                    self._entity_index.add_global_entities(global_variables)
 
             # Store all sensors from the YAML with sensor_set_id association
             # Store original sensor configs - global settings will be applied during retrieval
@@ -234,6 +249,9 @@ class StorageManager:
                     updated_at=timestamp,
                 )
                 data["sensors"][sensor_config.unique_id] = stored_sensor
+
+                # Update entity index
+                self._entity_index.add_sensor_entities(sensor_config)
 
             # Update sensor set metadata
             data["sensor_sets"][sensor_set_id]["sensor_count"] = len(config.sensors)
@@ -324,21 +342,11 @@ class StorageManager:
             if main_formula:
                 sensor_dict["formula"] = main_formula.formula
 
-                # Add variables, excluding global ones (only include locals that were originally there)
+                # Add variables if present
                 if main_formula.variables:
-                    global_variables = global_settings.get("variables", {})
-                    local_variables = {}
-                    for var_name, var_value in main_formula.variables.items():
-                        # Only include variables that are not in globals, or are local overrides with same value
-                        if var_name not in global_variables:
-                            local_variables[var_name] = var_value
-                        elif var_name in global_variables and var_value == global_variables[var_name]:
-                            # This was a local override with same value as global - preserve it in export
-                            local_variables[var_name] = var_value
+                    sensor_dict["variables"] = main_formula.variables
 
-                    if local_variables:
-                        sensor_dict["variables"] = local_variables
-
+                # Add other formula properties
                 if main_formula.unit_of_measurement:
                     sensor_dict["unit_of_measurement"] = main_formula.unit_of_measurement
                 if main_formula.device_class:
@@ -426,8 +434,20 @@ class StorageManager:
             unique_id for unique_id, sensor_data in data["sensors"].items() if sensor_data.get("sensor_set_id") == sensor_set_id
         ]
 
+        # Remove from entity index and delete sensors
         for unique_id in sensors_to_delete:
+            stored_sensor = data["sensors"][unique_id]
+            sensor_config = self._deserialize_sensor_config(stored_sensor["config_data"])
+            self._entity_index.remove_sensor_entities(sensor_config)
             del data["sensors"][unique_id]
+
+        # Remove global settings from entity index
+        sensor_set_metadata = data["sensor_sets"][sensor_set_id]
+        global_settings = sensor_set_metadata.get("global_settings", {})
+        if global_settings:
+            global_variables = global_settings.get("variables", {})
+            if global_variables:
+                self._entity_index.remove_global_entities(global_variables)
 
         # Delete the sensor set metadata
         del data["sensor_sets"][sensor_set_id]
@@ -542,6 +562,9 @@ class StorageManager:
         # Store the sensor
         data["sensors"][sensor_config.unique_id] = stored_sensor
 
+        # Update entity index
+        self._entity_index.add_sensor_entities(sensor_config)
+
         # Update sensor set metadata
         if sensor_set_id in data["sensor_sets"]:
             data["sensor_sets"][sensor_set_id]["updated_at"] = timestamp
@@ -587,6 +610,9 @@ class StorageManager:
                 updated_at=timestamp,
             )
             data["sensors"][sensor_config.unique_id] = stored_sensor
+
+            # Update entity index
+            self._entity_index.add_sensor_entities(sensor_config)
 
         # Update sensor set metadata
         if sensor_set_id in data["sensor_sets"]:
@@ -735,6 +761,13 @@ class StorageManager:
             _LOGGER.error(error_msg)
             raise SyntheticSensorsError(error_msg)
 
+        # Get old sensor config for entity index update
+        old_sensor_config = self._deserialize_sensor_config(stored_sensor["config_data"])
+
+        # Update entity index - remove old entities, add new ones
+        self._entity_index.remove_sensor_entities(old_sensor_config)
+        self._entity_index.add_sensor_entities(sensor_config)
+
         # Update the sensor config data and timestamp
         stored_sensor["config_data"] = self._serialize_sensor_config(sensor_config)
         stored_sensor["updated_at"] = self._get_timestamp()
@@ -762,8 +795,13 @@ class StorageManager:
         if unique_id not in data["sensors"]:
             return False
 
-        # Get sensor set ID for metadata update
-        sensor_set_id = data["sensors"][unique_id].get("sensor_set_id")
+        # Get sensor config and sensor set ID for cleanup
+        stored_sensor = data["sensors"][unique_id]
+        sensor_set_id = stored_sensor.get("sensor_set_id")
+
+        # Remove from entity index
+        old_sensor_config = self._deserialize_sensor_config(stored_sensor["config_data"])
+        self._entity_index.remove_sensor_entities(old_sensor_config)
 
         # Delete the sensor
         del data["sensors"][unique_id]
@@ -892,6 +930,9 @@ class StorageManager:
         Local overrides with different values are fatal errors.
         Local overrides with same values are acceptable.
 
+        NOTE: Global variables are NOT automatically applied to sensors here.
+        They are resolved at runtime/evaluation time to keep storage clean.
+
         Args:
             sensors: List of sensor configurations
             global_settings: Global settings from YAML
@@ -926,28 +967,24 @@ class StorageManager:
                 # Use provided device_identifier if no global or local device_identifier
                 normalized_sensor.device_identifier = device_identifier
 
-            # Validate and apply global variables to all formulas
+            # Validate global variables against local variables (but don't merge them)
             if global_variables:
                 for formula in normalized_sensor.formulas:
-                    if formula.variables is None:
-                        formula.variables = {}
+                    if formula.variables:
+                        # Check for conflicting local variables - locals MUST NOT override globals
+                        for var_name, global_value in global_variables.items():
+                            if var_name in formula.variables:
+                                local_value = formula.variables[var_name]
+                                if local_value != global_value:
+                                    raise SyntheticSensorsError(
+                                        f"Sensor '{sensor.unique_id}' formula '{formula.id}' has conflicting variable '{var_name}'. "
+                                        f"Local: '{local_value}', Global: '{global_value}'. "
+                                        f"Local overrides with different values are not allowed."
+                                    )
 
-                    # Check for conflicting local variables - locals MUST NOT override globals
-                    for var_name, global_value in global_variables.items():
-                        if var_name in formula.variables:
-                            local_value = formula.variables[var_name]
-                            if local_value != global_value:
-                                raise SyntheticSensorsError(
-                                    f"Sensor '{sensor.unique_id}' formula '{formula.id}' has conflicting variable '{var_name}'. "
-                                    f"Local: '{local_value}', Global: '{global_value}'. "
-                                    f"Local overrides with different values are not allowed."
-                                )
-
-                    # Apply global variables - they are mandatory for all sensors in the set
-                    # Local variables are added on top of globals (no conflicts allowed)
-                    merged_variables = global_variables.copy()
-                    merged_variables.update(formula.variables)
-                    formula.variables = merged_variables
+            # NOTE: We do NOT merge global variables into sensor storage here.
+            # Global variables are resolved at runtime/evaluation time.
+            # This keeps storage clean and allows proper global variable changes.
 
             normalized_sensors.append(normalized_sensor)
 
@@ -1227,3 +1264,61 @@ class StorageManager:
         """
         data = self._ensure_loaded()
         return len(data["sensors"]) > 0 or len(data["sensor_sets"]) > 0
+
+    def _populate_entity_index(self) -> None:
+        """Populate the entity index from loaded storage data."""
+        self._entity_index.clear()
+
+        data = self._ensure_loaded()
+
+        # Add entities from all sensors
+        for unique_id, sensor_data in data["sensors"].items():
+            try:
+                config_data = sensor_data.get("config_data")
+                if config_data:
+                    sensor_config = self._deserialize_sensor_config(config_data)
+                    self._entity_index.add_sensor_entities(sensor_config)
+                else:
+                    _LOGGER.debug("Skipping sensor %s - no config_data found", unique_id)
+            except Exception as e:
+                _LOGGER.warning("Failed to process sensor %s for entity index: %s", unique_id, e)
+
+        # Add entities from global settings in all sensor sets
+        for sensor_set_id, sensor_set_data in data["sensor_sets"].items():
+            try:
+                global_settings = sensor_set_data.get("global_settings", {})
+                if global_settings:
+                    global_variables = global_settings.get("variables", {})
+                    if global_variables:
+                        self._entity_index.add_global_entities(global_variables)
+            except Exception as e:
+                _LOGGER.warning("Failed to process sensor set %s global settings for entity index: %s", sensor_set_id, e)
+
+        stats = self._entity_index.get_stats()
+        _LOGGER.debug(
+            "Populated entity index: %d total entities (%d synthetic, %d external)",
+            stats["total_entities"],
+            stats["synthetic_entities"],
+            stats["external_entities"],
+        )
+
+    def get_entity_index_stats(self) -> dict[str, Any]:
+        """
+        Get entity index statistics.
+
+        Returns:
+            Dictionary with entity index statistics
+        """
+        return self._entity_index.get_stats()
+
+    def is_entity_tracked(self, entity_id: str) -> bool:
+        """
+        Check if an entity ID is tracked in the index.
+
+        Args:
+            entity_id: Entity ID to check
+
+        Returns:
+            True if entity ID is tracked, False otherwise
+        """
+        return self._entity_index.contains(entity_id)

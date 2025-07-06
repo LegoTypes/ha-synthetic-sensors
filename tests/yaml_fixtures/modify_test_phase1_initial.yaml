@@ -1,0 +1,70 @@
+version: "1.0"
+
+global_settings:
+  variables:
+    main_power: sensor.house_power_meter
+    main_voltage: sensor.house_voltage
+    efficiency_factor: 0.95
+  device_identifier: test_device:modify_123
+
+sensors:
+  total_power:
+    name: Total Power Consumption
+    entity_id: sensor.total_power_consumption
+    formula: state("main_power") * efficiency_factor
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    attributes:
+      source_info:
+        formula: "main_power"
+        unit_of_measurement: "entity_id"
+
+  power_efficiency:
+    name: Power Efficiency
+    entity_id: sensor.power_efficiency
+    formula: (state("main_power") * efficiency_factor) / state("main_power") * 100
+    unit_of_measurement: "%"
+    state_class: measurement
+    attributes:
+      calculation_method:
+        formula: "efficiency_factor * 100"
+        unit_of_measurement: "%"
+
+  voltage_monitor:
+    name: Voltage Monitor
+    entity_id: sensor.voltage_monitor
+    formula: state("main_voltage")
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    attributes:
+      source_entity:
+        formula: "main_voltage"
+        unit_of_measurement: "entity_id"
+
+  local_sensor:
+    name: Local Sensor (No Globals)
+    entity_id: sensor.local_sensor
+    formula: state("local_var") + 10
+    variables:
+      local_var: sensor.local_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    attributes:
+      offset_value:
+        formula: "10"
+        unit_of_measurement: "°C"
+
+  complex_calculation:
+    name: Complex Multi-Formula Sensor
+    entity_id: sensor.complex_calculation
+    formula: state("main_power") * 0.8
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    attributes:
+      phase_info:
+        formula: "0.8"
+        unit_of_measurement: "multiplier"

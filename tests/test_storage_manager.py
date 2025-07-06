@@ -616,9 +616,12 @@ sensors:
             assert len(sensors) == 1
             original_sensor = sensors[0]
 
-            # Verify global settings were applied
+            # Verify global device_identifier was applied
             assert original_sensor.device_identifier == "global_device:test_123"
-            assert original_sensor.formulas[0].variables.get("global_var") == "sensor.global_entity"
+
+            # Verify global variables are NOT automatically applied to sensor storage
+            # (they should be resolved at runtime/evaluation time)
+            assert original_sensor.formulas[0].variables.get("global_var") is None
 
             # Update the sensor with new name but keep global settings
             updated_config = SensorConfig(
@@ -631,14 +634,15 @@ sensors:
             success = await storage_manager.async_update_sensor(updated_config)
             assert success
 
-            # Verify the updated sensor still has global settings applied
+            # Verify the updated sensor still has global device_identifier
             updated_sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
             assert len(updated_sensors) == 1
             updated_sensor = updated_sensors[0]
 
             assert updated_sensor.name == "Updated Test Sensor"
             assert updated_sensor.device_identifier == "global_device:test_123"
-            assert updated_sensor.formulas[0].variables.get("global_var") == "sensor.global_entity"
+            # Global variables should still NOT be in sensor storage
+            assert updated_sensor.formulas[0].variables.get("global_var") is None
 
     async def test_delete_sensor_with_global_settings(self, storage_manager):
         """Test deleting sensor when global settings are present."""
@@ -665,7 +669,7 @@ sensors:
 """
             sensor_set_id = await storage_manager.async_from_yaml(yaml_content, "test_global_delete_set", "test_device:123")
 
-            # Verify both sensors exist with global settings
+            # Verify both sensors exist with global device_identifier
             sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
             assert len(sensors) == 2
 
@@ -676,14 +680,15 @@ sensors:
             result = await storage_manager.async_delete_sensor("test_sensor_1")
             assert result is True
 
-            # Verify remaining sensor still has global settings
+            # Verify remaining sensor still has global device_identifier
             remaining_sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
             assert len(remaining_sensors) == 1
             remaining_sensor = remaining_sensors[0]
 
             assert remaining_sensor.unique_id == "test_sensor_2"
             assert remaining_sensor.device_identifier == "global_device:test_123"
-            assert remaining_sensor.formulas[0].variables.get("global_var") == "sensor.global_entity"
+            # Global variables should NOT be in sensor storage
+            assert remaining_sensor.formulas[0].variables.get("global_var") is None
 
     async def test_export_yaml_after_update_operations(self, storage_manager):
         """Test that export YAML includes updated sensors correctly."""
@@ -1221,12 +1226,12 @@ class TestStorageManagerIntegration:
         for sensor in local_sensors:
             assert sensor.device_identifier == "local_device:test_456"
 
-        # Test specific sensor retrieval with global settings applied
+        # Test specific sensor retrieval - verify global variables are NOT stored in sensors
         global_power_sensor = storage_manager_real.get_sensor("global_power_sensor")
         assert global_power_sensor is not None
         assert global_power_sensor.device_identifier == "global_device:test_123"
 
-        # Verify global variables are applied
+        # Verify global variables are NOT automatically applied to sensor storage
         main_formula = None
         for formula in global_power_sensor.formulas:
             if formula.id == "global_power_sensor":
@@ -1234,11 +1239,10 @@ class TestStorageManagerIntegration:
                 break
 
         assert main_formula is not None
-        assert main_formula.variables is not None
-        assert "base_power_sensor" in main_formula.variables
-        assert main_formula.variables["base_power_sensor"] == "sensor.test_power_meter"
+        # Global variables should NOT be in sensor storage
+        assert main_formula.variables is None or "base_power_sensor" not in main_formula.variables
 
-        # Test mixed variables sensor (global + local variables)
+        # Test mixed variables sensor (has local variables but not global ones in storage)
         mixed_sensor = storage_manager_real.get_sensor("mixed_variables_sensor")
         assert mixed_sensor is not None
         assert mixed_sensor.device_identifier == "global_device:test_123"
@@ -1251,10 +1255,9 @@ class TestStorageManagerIntegration:
 
         assert mixed_formula is not None
         assert mixed_formula.variables is not None
-        # Should have both global and local variables
-        assert "base_power_sensor" in mixed_formula.variables  # From global
+        # Should have only local variables, not global ones
         assert "local_adjustment" in mixed_formula.variables  # From local
-        assert mixed_formula.variables["base_power_sensor"] == "sensor.test_power_meter"
+        assert "base_power_sensor" not in mixed_formula.variables  # Global variables not stored
         assert mixed_formula.variables["local_adjustment"] == "sensor.local_adjustment_value"
 
         # Test that local sensors don't get global variables
@@ -1301,6 +1304,17 @@ class TestStorageManagerIntegration:
         # Verify sensors in exported local YAML do have device_identifier
         local_power_exported = exported_local_data["sensors"]["local_power_sensor"]
         assert local_power_exported["device_identifier"] == "local_device:test_456"
+
+        # Verify that sensors in global export don't have global variables in their variables
+        # (since they should be resolved from global_settings at runtime)
+        if "variables" in global_power_exported:
+            assert "base_power_sensor" not in global_power_exported["variables"]
+
+        # Verify mixed sensor only has local variables in export
+        mixed_exported = exported_global_data["sensors"]["mixed_variables_sensor"]
+        if "variables" in mixed_exported:
+            assert "local_adjustment" in mixed_exported["variables"]
+            assert "base_power_sensor" not in mixed_exported["variables"]
 
     def test_get_sensor_set(self, storage_manager):
         """Test getting a SensorSet handle."""

@@ -1,0 +1,105 @@
+version: "1.0"
+
+global_settings:
+  variables:
+    main_power: sensor.new_house_power_meter     # Changed entity ID
+    main_voltage: sensor.new_house_voltage       # Changed entity ID
+    efficiency_factor: 0.92
+    new_multiplier: 1.1
+  device_identifier: test_device:modify_123
+
+sensors:
+  total_power:
+    name: Total Power Consumption (Updated)
+    entity_id: sensor.new_total_power_consumption  # Changed entity ID
+    formula: state("main_power") * efficiency_factor * new_multiplier
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    attributes:
+      source_info:
+        formula: "main_power"
+        unit_of_measurement: "entity_id"
+      efficiency_info:
+        formula: "efficiency_factor * new_multiplier"
+        unit_of_measurement: "multiplier"
+
+  power_efficiency:
+    name: Power Efficiency
+    entity_id: sensor.new_power_efficiency         # Changed entity ID
+    formula: (state("main_power") * efficiency_factor) / state("main_power") * 100
+    unit_of_measurement: "%"
+    state_class: measurement
+    attributes:
+      calculation_method:
+        formula: "efficiency_factor * 100"
+        unit_of_measurement: "%"
+
+  local_sensor:
+    name: Local Sensor (No Globals)
+    entity_id: sensor.new_local_sensor             # Changed entity ID
+    formula: state("local_var") + 15
+    variables:
+      local_var: sensor.new_local_temperature  # Changed entity ID
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    attributes:
+      offset_value:
+        formula: "15"
+        unit_of_measurement: "°C"
+
+  complex_calculation:
+    name: Complex Multi-Formula Sensor
+    entity_id: sensor.new_complex_calculation      # Changed entity ID
+    formula: state("main_power") * 0.9         # Changed multiplier
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    attributes:
+      phase_info:
+        formula: "0.9"
+        unit_of_measurement: "multiplier"
+      voltage_percentage:
+        formula: state("main_voltage") / 120 * 100
+        variables:
+          reference_voltage: 120
+        unit_of_measurement: "%"
+
+  new_power_factor:
+    name: Power Factor Calculator
+    entity_id: sensor.new_power_factor_calculator  # Changed entity ID
+    formula: state("main_power") / (state("main_voltage") * state("current_var"))
+    variables:
+      current_var: sensor.new_house_current    # Changed entity ID
+    unit_of_measurement: ""
+    state_class: measurement
+    attributes:
+      calculation_type:
+        formula: "power_factor"
+        unit_of_measurement: "type"
+
+  energy_cost:
+    name: Energy Cost Estimator
+    entity_id: sensor.new_energy_cost_estimator    # Changed entity ID
+    formula: (state("main_power") / 1000) * efficiency_factor * cost_per_kwh
+    variables:
+      cost_per_kwh: 0.15                       # Changed rate
+    unit_of_measurement: "$/hr"
+    state_class: measurement
+    attributes:
+      rate_info:
+        formula: "cost_per_kwh"
+        unit_of_measurement: "$/kWh"
+
+  voltage_monitor:
+    name: Voltage Monitor (Restored)
+    entity_id: sensor.new_voltage_monitor          # New entity ID
+    formula: state("main_voltage")
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    attributes:
+      source_entity:
+        formula: "main_voltage"
+        unit_of_measurement: "entity_id"

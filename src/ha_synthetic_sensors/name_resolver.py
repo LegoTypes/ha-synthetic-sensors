@@ -335,8 +335,9 @@ class NameResolver:
         if not (domain and entity):
             return False
 
-        # Check domain format (common HA domains)
+        # Check domain format (Home Assistant built-in domains only)
         valid_domains = {
+            # Core entity platforms
             "sensor",
             "binary_sensor",
             "switch",
@@ -351,22 +352,52 @@ class NameResolver:
             "weather",
             "camera",
             "alarm_control_panel",
+            "button",
+            "number",
+            "select",
+            "text",
+            # Input helpers
             "input_number",
             "input_boolean",
             "input_select",
             "input_text",
             "input_datetime",
+            # Other built-in domains
             "counter",
             "timer",
-            "number",
-            "select",
-            "button",
-            "text",
+            "automation",
+            "script",
+            "scene",
+            "group",
+            "zone",
+            "person",
+            "sun",
+            # Additional entity platforms
+            "air_quality",
+            "assist_satellite",
+            "calendar",
+            "conversation",
+            "date",
+            "datetime",
+            "event",
+            "humidifier",
+            "image",
+            "lawn_mower",
+            "notify",
+            "remote",
+            "siren",
+            "speech_to_text",
+            "time",
+            "todo",
+            "text_to_speech",
+            "update",
+            "valve",
+            "wake_word_detection",
+            "water_heater",
         }
 
         if domain not in valid_domains:
-            # Still allow it - could be a custom domain
-            pass
+            return False
 
         # Basic format check: alphanumeric and underscores
         if not re.match(r"^[a-zA-Z0-9_]+$", domain):

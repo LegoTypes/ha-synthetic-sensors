@@ -328,6 +328,65 @@ await sensor_set.async_delete()
 await storage_manager.async_delete_sensor_set(f"{device_identifier}_sensors")
 ```
 
+### Bulk Modification Operations
+
+The `SensorSet.async_modify()` method provides powerful bulk modification capabilities for complex operations:
+
+```python
+from ha_synthetic_sensors.sensor_set import SensorSetModification
+
+# Example: Bulk entity ID changes (e.g., when device entity IDs change)
+entity_id_changes = {
+    "sensor.old_power_meter": "sensor.new_power_meter",
+    "sensor.old_energy_meter": "sensor.new_energy_meter",
+    "sensor.old_temperature": "sensor.new_temperature"
+}
+
+modification = SensorSetModification(
+    entity_id_changes=entity_id_changes,
+    global_settings={"variables": {"efficiency_factor": 0.92}}  # Update global settings too
+)
+
+result = await sensor_set.async_modify(modification)
+print(f"Changed {result['entity_ids_changed']} entity IDs")
+
+# Example: Complex sensor set restructuring
+modification = SensorSetModification(
+    # Remove outdated sensors
+    remove_sensors=["old_sensor_1", "old_sensor_2"],
+
+    # Add new sensors
+    add_sensors=[new_sensor_config_1, new_sensor_config_2],
+
+    # Update existing sensors with new formulas
+    update_sensors=[updated_sensor_config],
+
+    # Change entity IDs and global settings
+    entity_id_changes={"sensor.old_reference": "sensor.new_reference"},
+    global_settings={"device_identifier": "new_device_id"}
+)
+
+result = await sensor_set.async_modify(modification)
+print(f"Modifications: {result['sensors_added']} added, {result['sensors_removed']} removed, "
+      f"{result['sensors_updated']} updated, {result['entity_ids_changed']} entity IDs changed")
+```
+
+**SensorSetModification Operations:**
+
+- **`add_sensors`**: List of new SensorConfig objects to add
+- **`remove_sensors`**: List of unique_ids to remove
+- **`update_sensors`**: List of SensorConfig objects to update (must preserve unique_id)
+- **`entity_id_changes`**: Dict mapping old entity IDs to new entity IDs
+- **`global_settings`**: Dict of new global settings to apply
+
+**Bulk Modification Benefits:**
+
+- **Atomic Operations**: All changes succeed or fail together
+- **Validation**: Comprehensive validation prevents conflicts
+- **Efficiency**: Single operation handles complex changes
+- **Entity ID Coordination**: Automatic Home Assistant entity registry updates
+- **Cache Management**: Coordinated formula cache invalidation
+
 ### Working with Multiple Sensor Sets
 
 ```python
@@ -588,6 +647,142 @@ def data_provider_callback(entity_id: str) -> DataProviderResult:
     except Exception as e:
         _LOGGER.error("Error in data provider for %s: %s", entity_id, e)
         return {"value": None, "exists": False}
+```
+
+## Entity ID Change Tracking
+
+The synthetic sensors system automatically tracks and handles entity ID changes in Home Assistant, ensuring that your
+synthetic sensors remain functional when referenced entities are renamed.
+
+### Automatic Entity ID Updates
+
+When entity IDs change in Home Assistant (e.g., when a user renames an entity), the system automatically:
+
+1. **Detects Changes**: Monitors entity registry for ID changes affecting tracked entities
+2. **Updates Storage**: Updates sensor configurations, formulas, and global settings
+3. **Updates Registry**: Coordinates with Home Assistant's entity registry
+4. **Invalidates Caches**: Clears formula caches to use new entity IDs immediately
+5. **Notifies Callbacks**: Informs registered callbacks about the changes
+
+### Entity Index Efficiency
+
+The system uses an efficient entity index to minimize processing overhead:
+
+```python
+# Only entity IDs actually used by synthetic sensors are tracked
+# Registry changes for untracked entities are ignored
+storage_manager = StorageManager(hass, "your_integration_synthetic")
+await storage_manager.async_load()
+
+# Check if an entity ID is being tracked
+if storage_manager.is_entity_tracked("sensor.power_meter"):
+    print("This entity ID change will be processed")
+else:
+    print("This entity ID change will be ignored")
+```
+
+### Bulk Entity ID Changes
+
+For scenarios where many entity IDs change simultaneously (e.g., device reconfiguration), use bulk operations:
+
+```python
+# Example: Device reconfiguration changes all entity IDs
+entity_id_changes = {
+    "sensor.old_device_power": "sensor.new_device_power",
+    "sensor.old_device_energy": "sensor.new_device_energy",
+    "sensor.old_device_voltage": "sensor.new_device_voltage"
+}
+
+modification = SensorSetModification(entity_id_changes=entity_id_changes)
+result = await sensor_set.async_modify(modification)
+
+# The system will:
+# 1. Update entity index for self-change detection
+# 2. Update Home Assistant entity registry
+# 3. Update sensor configurations and formulas
+# 4. Update global settings if needed
+# 5. Invalidate formula caches immediately
+```
+
+### Integration with Backing Entities
+
+The entity ID tracking system works seamlessly with backing entities provided by your integration:
+
+```python
+# Register backing entities that your integration provides
+backing_entities = {
+    "your_integration_backing.device_123_power",
+    "your_integration_backing.device_123_energy",
+    "your_integration_backing.device_123_temperature"
+}
+
+sensor_manager.register_data_provider_entities(backing_entities)
+
+# If your integration changes these backing entity IDs:
+old_backing_entities = {"your_integration_backing.device_123_power"}
+new_backing_entities = {"your_integration_backing.device_456_power"}
+
+# Update the synthetic sensors to use new backing entities
+entity_id_changes = {
+    "your_integration_backing.device_123_power": "your_integration_backing.device_456_power"
+}
+
+modification = SensorSetModification(entity_id_changes=entity_id_changes)
+await sensor_set.async_modify(modification)
+```
+
+### Self-Change Detection
+
+The system prevents infinite loops when it initiates entity ID changes:
+
+```python
+# When your integration uses SensorSet.async_modify() to change entity IDs,
+# the system pre-updates its entity index to ignore the resulting registry events
+# This prevents processing its own changes and avoids unnecessary work
+
+# The modify operation handles this automatically:
+await sensor_set.async_modify(SensorSetModification(
+    entity_id_changes={"sensor.old_id": "sensor.new_id"}
+))
+# The system ignores the registry event for this change since it initiated it
+```
+
+### Callback Registration
+
+Register callbacks to be notified when entity IDs change:
+
+```python
+def handle_entity_id_change(old_entity_id: str, new_entity_id: str) -> None:
+    """Handle entity ID changes in your integration."""
+    _LOGGER.info("Entity ID changed: %s -> %s", old_entity_id, new_entity_id)
+
+    # Update your integration's internal references
+    if old_entity_id in your_integration_references:
+        your_integration_references[new_entity_id] = your_integration_references.pop(old_entity_id)
+
+# Register the callback
+storage_manager.add_entity_change_callback(handle_entity_id_change)
+
+# Later, remove the callback if needed
+storage_manager.remove_entity_change_callback(handle_entity_id_change)
+```
+
+### Error Handling
+
+The entity ID tracking system handles various error conditions gracefully:
+
+```python
+# Registry update failures (entity doesn't exist in HA)
+# - Storage updates continue
+# - Cache invalidation still occurs
+# - System remains consistent
+
+# Validation failures during bulk operations
+# - All changes are rejected if any conflicts exist
+# - System remains in consistent state
+# - Clear error messages indicate specific issues
+
+# Partial failures are logged but don't prevent other updates
 ```
 
 ## Testing Integration
