@@ -7,21 +7,20 @@ from ha_synthetic_sensors.entity_index import EntityIndex
 class TestEntityIndex:
     """Test entity index functionality."""
 
-    def test_empty_index(self):
+    def test_empty_index(self, mock_hass):
         """Test empty entity index."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         assert not index.contains("sensor.test")
         assert len(index.get_all_entities()) == 0
 
         stats = index.get_stats()
         assert stats["total_entities"] == 0
-        assert stats["synthetic_entities"] == 0
-        assert stats["external_entities"] == 0
+        assert stats["tracked_entities"] == 0
 
-    def test_add_sensor_entities(self):
+    def test_add_sensor_entities(self, mock_hass):
         """Test adding sensor entities to index."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         # Create sensor config with entity_id and formula variables
         sensor_config = SensorConfig(
@@ -55,9 +54,9 @@ class TestEntityIndex:
         assert "sensor.power_meter" in all_entities
         assert "sensor.temperature" in all_entities
 
-    def test_remove_sensor_entities(self):
+    def test_remove_sensor_entities(self, mock_hass):
         """Test removing sensor entities from index."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         # Create and add sensor
         sensor_config = SensorConfig(
@@ -79,9 +78,9 @@ class TestEntityIndex:
         assert not index.contains("sensor.power_meter")
         assert len(index.get_all_entities()) == 0
 
-    def test_add_global_entities(self):
+    def test_add_global_entities(self, mock_hass):
         """Test adding global variable entities to index."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         global_variables = {
             "power": "sensor.global_power",
@@ -98,9 +97,9 @@ class TestEntityIndex:
         all_entities = index.get_all_entities()
         assert len(all_entities) == 2
 
-    def test_remove_global_entities(self):
+    def test_remove_global_entities(self, mock_hass):
         """Test removing global variable entities from index."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         global_variables = {"power": "sensor.global_power", "temp": "sensor.global_temp"}
 
@@ -113,9 +112,9 @@ class TestEntityIndex:
         assert not index.contains("sensor.global_temp")
         assert len(index.get_all_entities()) == 0
 
-    def test_entity_id_validation(self):
+    def test_entity_id_validation(self, mock_hass):
         """Test entity ID validation logic."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         # Test valid entity IDs
         assert index._is_entity_id("sensor.test")
@@ -133,22 +132,9 @@ class TestEntityIndex:
         assert not index._is_entity_id("123")
         assert not index._is_entity_id(None)
 
-    def test_synthetic_entity_detection(self):
-        """Test synthetic entity detection logic."""
-        index = EntityIndex()
-
-        # Test synthetic entities (simple heuristic)
-        assert index._is_synthetic_entity("sensor.synthetic_power")
-        assert index._is_synthetic_entity("sensor.calculated_total")
-
-        # Test non-synthetic entities
-        assert not index._is_synthetic_entity("sensor.power_meter")
-        assert not index._is_synthetic_entity("light.living_room")
-        assert not index._is_synthetic_entity("switch.kitchen")
-
-    def test_clear_index(self):
+    def test_clear_index(self, mock_hass):
         """Test clearing the entity index."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         # Add some entities
         sensor_config = SensorConfig(
@@ -167,20 +153,20 @@ class TestEntityIndex:
         assert not index.contains("sensor.test")
         assert not index.contains("sensor.power")
 
-    def test_stats(self):
+    def test_stats(self, mock_hass):
         """Test entity index statistics."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
-        # Add mix of synthetic and external entities
+        # Add entities
         sensor_config = SensorConfig(
             unique_id="test_sensor",
             name="Test Sensor",
-            entity_id="sensor.synthetic_power",  # Synthetic
+            entity_id="sensor.my_power",
             formulas=[
                 FormulaConfig(
                     id="test_sensor",
                     formula='state("power_var")',
-                    variables={"power_var": "sensor.power_meter"},  # External
+                    variables={"power_var": "sensor.power_meter"},
                 )
             ],
         )
@@ -189,12 +175,11 @@ class TestEntityIndex:
 
         stats = index.get_stats()
         assert stats["total_entities"] == 2
-        assert stats["synthetic_entities"] == 1  # sensor.synthetic_power
-        assert stats["external_entities"] == 1  # sensor.power_meter
+        assert stats["tracked_entities"] == 2
 
-    def test_multiple_formulas(self):
+    def test_multiple_formulas(self, mock_hass):
         """Test sensor with multiple formulas (main + attributes)."""
-        index = EntityIndex()
+        index = EntityIndex(mock_hass)
 
         sensor_config = SensorConfig(
             unique_id="test_sensor",

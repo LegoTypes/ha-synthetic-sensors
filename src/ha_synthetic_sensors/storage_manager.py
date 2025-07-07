@@ -19,8 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 import yaml
 
-from .config_manager import Config, FormulaConfig, SensorConfig
-from .entity_index import EntityIndex
+from .config_manager import Config, ConfigManager, FormulaConfig, SensorConfig
 from .exceptions import SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -97,7 +96,6 @@ class StorageManager:
         self._store: Store[StorageData] = Store(hass, STORAGE_VERSION, storage_key)
         self._data: StorageData | None = None
         self._lock = asyncio.Lock()
-        self._entity_index = EntityIndex(hass)
 
     async def async_load(self) -> None:
         """Load configuration from HA storage."""
@@ -119,8 +117,6 @@ class StorageManager:
                         len(stored_data.get("sensors", {})),
                         len(stored_data.get("sensor_sets", {})),
                     )
-                    # Populate entity index from loaded data
-                    self._populate_entity_index()
             except Exception as err:
                 _LOGGER.error("Failed to load synthetic sensor storage: %s", err)
                 # Initialize empty storage on error
@@ -202,8 +198,6 @@ class StorageManager:
             data["sensor_sets"][sensor_set_id]["updated_at"] = timestamp
 
             # Parse YAML and create individual sensor records
-            from .config_manager import ConfigManager
-
             config_manager = ConfigManager(self.hass)
             config = config_manager.load_from_dict(yaml_data)
 
@@ -217,6 +211,9 @@ class StorageManager:
             # Validate that local settings don't conflict with global settings
             self._validate_no_global_conflicts(config.sensors, yaml_global_settings)
 
+            # Validate that attribute variables don't conflict with sensor variables
+            self._validate_no_attribute_variable_conflicts(config.sensors)
+
             # Remove any existing sensors from this sensor set first
             sensors_to_remove = [
                 unique_id
@@ -224,18 +221,7 @@ class StorageManager:
                 if sensor_data.get("sensor_set_id") == sensor_set_id
             ]
             for unique_id in sensors_to_remove:
-                # Remove from entity index
-                old_stored_sensor = data["sensors"][unique_id]
-                old_sensor_config = self._deserialize_sensor_config(old_stored_sensor["config_data"])
-                self._entity_index.remove_sensor_entities(old_sensor_config)
-
                 del data["sensors"][unique_id]
-
-            # Update entity index for global settings
-            if yaml_global_settings:
-                global_variables = yaml_global_settings.get("variables", {})
-                if global_variables:
-                    self._entity_index.add_global_entities(global_variables)
 
             # Store all sensors from the YAML with sensor_set_id association
             # Store original sensor configs - global settings will be applied during retrieval
@@ -249,9 +235,6 @@ class StorageManager:
                     updated_at=timestamp,
                 )
                 data["sensors"][sensor_config.unique_id] = stored_sensor
-
-                # Update entity index
-                self._entity_index.add_sensor_entities(sensor_config)
 
             # Update sensor set metadata
             data["sensor_sets"][sensor_set_id]["sensor_count"] = len(config.sensors)
@@ -434,20 +417,9 @@ class StorageManager:
             unique_id for unique_id, sensor_data in data["sensors"].items() if sensor_data.get("sensor_set_id") == sensor_set_id
         ]
 
-        # Remove from entity index and delete sensors
+        # Delete sensors
         for unique_id in sensors_to_delete:
-            stored_sensor = data["sensors"][unique_id]
-            sensor_config = self._deserialize_sensor_config(stored_sensor["config_data"])
-            self._entity_index.remove_sensor_entities(sensor_config)
             del data["sensors"][unique_id]
-
-        # Remove global settings from entity index
-        sensor_set_metadata = data["sensor_sets"][sensor_set_id]
-        global_settings = sensor_set_metadata.get("global_settings", {})
-        if global_settings:
-            global_variables = global_settings.get("variables", {})
-            if global_variables:
-                self._entity_index.remove_global_entities(global_variables)
 
         # Delete the sensor set metadata
         del data["sensor_sets"][sensor_set_id]
@@ -524,7 +496,7 @@ class StorageManager:
         device_identifier: str | None = None,
     ) -> None:
         """
-        Store a sensor configuration.
+        Store a single sensor configuration.
 
         Args:
             sensor_config: Sensor configuration to store
@@ -532,24 +504,24 @@ class StorageManager:
             device_identifier: Device to associate with
 
         Raises:
-            SyntheticSensorsError: If sensor validation fails or conflicts with global settings
+            SyntheticSensorsError: If storage fails or validation errors occur
         """
         data = self._ensure_loaded()
 
-        # Validate sensor set exists
-        if sensor_set_id not in data["sensor_sets"]:
-            raise SyntheticSensorsError(f"Sensor set not found: {sensor_set_id}")
-
-        # Perform comprehensive validation with context
+        # Validate the sensor configuration with context
         validation_errors = self._validate_sensor_with_context(sensor_config, sensor_set_id)
         if validation_errors:
             error_msg = f"Sensor validation failed: {'; '.join(validation_errors)}"
             _LOGGER.error(error_msg)
             raise SyntheticSensorsError(error_msg)
 
+        # Ensure sensor set exists
+        if sensor_set_id not in data["sensor_sets"]:
+            raise SyntheticSensorsError(f"Sensor set not found: {sensor_set_id}")
+
         timestamp = self._get_timestamp()
 
-        # Convert sensor config to storage format
+        # Create sensor record
         stored_sensor = StoredSensorDict(
             unique_id=sensor_config.unique_id,
             sensor_set_id=sensor_set_id,
@@ -562,24 +534,14 @@ class StorageManager:
         # Store the sensor
         data["sensors"][sensor_config.unique_id] = stored_sensor
 
-        # Update entity index
-        self._entity_index.add_sensor_entities(sensor_config)
-
         # Update sensor set metadata
-        if sensor_set_id in data["sensor_sets"]:
-            data["sensor_sets"][sensor_set_id]["updated_at"] = timestamp
-            data["sensor_sets"][sensor_set_id]["sensor_count"] = len(
-                [s for s in data["sensors"].values() if s.get("sensor_set_id") == sensor_set_id]
-            )
+        data["sensor_sets"][sensor_set_id]["updated_at"] = timestamp
+        data["sensor_sets"][sensor_set_id]["sensor_count"] = len(
+            [s for s in data["sensors"].values() if s.get("sensor_set_id") == sensor_set_id]
+        )
 
         await self.async_save()
-
-        _LOGGER.debug(
-            "Stored sensor: %s (set: %s, device: %s)",
-            sensor_config.unique_id,
-            sensor_set_id,
-            device_identifier,
-        )
+        _LOGGER.debug("Stored sensor: %s", sensor_config.unique_id)
 
     async def async_store_sensors_bulk(
         self,
@@ -594,8 +556,30 @@ class StorageManager:
             sensor_configs: List of sensor configurations to store
             sensor_set_id: Sensor set identifier for bulk management
             device_identifier: Device to associate with
+
+        Raises:
+            SyntheticSensorsError: If storage fails or validation errors occur
         """
+        if not sensor_configs:
+            return
+
         data = self._ensure_loaded()
+
+        # Ensure sensor set exists
+        if sensor_set_id not in data["sensor_sets"]:
+            raise SyntheticSensorsError(f"Sensor set not found: {sensor_set_id}")
+
+        # Validate all sensors first
+        all_errors = []
+        for sensor_config in sensor_configs:
+            validation_errors = self._validate_sensor_with_context(sensor_config, sensor_set_id)
+            if validation_errors:
+                all_errors.extend([f"Sensor {sensor_config.unique_id}: {error}" for error in validation_errors])
+
+        if all_errors:
+            error_msg = f"Bulk sensor validation failed: {'; '.join(all_errors)}"
+            _LOGGER.error(error_msg)
+            raise SyntheticSensorsError(error_msg)
 
         timestamp = self._get_timestamp()
 
@@ -611,24 +595,14 @@ class StorageManager:
             )
             data["sensors"][sensor_config.unique_id] = stored_sensor
 
-            # Update entity index
-            self._entity_index.add_sensor_entities(sensor_config)
-
         # Update sensor set metadata
-        if sensor_set_id in data["sensor_sets"]:
-            data["sensor_sets"][sensor_set_id]["updated_at"] = timestamp
-            data["sensor_sets"][sensor_set_id]["sensor_count"] = len(
-                [s for s in data["sensors"].values() if s.get("sensor_set_id") == sensor_set_id]
-            )
+        data["sensor_sets"][sensor_set_id]["updated_at"] = timestamp
+        data["sensor_sets"][sensor_set_id]["sensor_count"] = len(
+            [s for s in data["sensors"].values() if s.get("sensor_set_id") == sensor_set_id]
+        )
 
         await self.async_save()
-
-        _LOGGER.info(
-            "Stored %d sensors in bulk (set: %s, device: %s)",
-            len(sensor_configs),
-            sensor_set_id,
-            device_identifier,
-        )
+        _LOGGER.debug("Stored %d sensors in bulk for sensor set: %s", len(sensor_configs), sensor_set_id)
 
     def get_sensor(self, unique_id: str) -> SensorConfig | None:
         """
@@ -754,19 +728,12 @@ class StorageManager:
         if not sensor_set_id:
             raise SyntheticSensorsError(f"Sensor {sensor_config.unique_id} has no sensor set ID")
 
-        # Perform comprehensive validation with context
+        # Validate the updated sensor configuration against global settings
         validation_errors = self._validate_sensor_with_context(sensor_config, sensor_set_id)
         if validation_errors:
             error_msg = f"Sensor update validation failed: {'; '.join(validation_errors)}"
-            _LOGGER.error(error_msg)
+            _LOGGER.error("Update validation failed for sensor %s: %s", sensor_config.unique_id, error_msg)
             raise SyntheticSensorsError(error_msg)
-
-        # Get old sensor config for entity index update
-        old_sensor_config = self._deserialize_sensor_config(stored_sensor["config_data"])
-
-        # Update entity index - remove old entities, add new ones
-        self._entity_index.remove_sensor_entities(old_sensor_config)
-        self._entity_index.add_sensor_entities(sensor_config)
 
         # Update the sensor config data and timestamp
         stored_sensor["config_data"] = self._serialize_sensor_config(sensor_config)
@@ -777,6 +744,7 @@ class StorageManager:
             data["sensor_sets"][sensor_set_id]["updated_at"] = self._get_timestamp()
 
         await self.async_save()
+
         _LOGGER.debug("Updated sensor: %s", sensor_config.unique_id)
         return True
 
@@ -798,10 +766,6 @@ class StorageManager:
         # Get sensor config and sensor set ID for cleanup
         stored_sensor = data["sensors"][unique_id]
         sensor_set_id = stored_sensor.get("sensor_set_id")
-
-        # Remove from entity index
-        old_sensor_config = self._deserialize_sensor_config(stored_sensor["config_data"])
-        self._entity_index.remove_sensor_entities(old_sensor_config)
 
         # Delete the sensor
         del data["sensors"][unique_id]
@@ -1026,6 +990,52 @@ class StorageManager:
                                     f"Local variables must match global variables or be omitted."
                                 )
 
+    def _validate_no_attribute_variable_conflicts(self, sensors: list[SensorConfig]) -> None:
+        """
+        Validate that attribute variables don't conflict with sensor variables.
+
+        Args:
+            sensors: List of sensor configurations from YAML
+
+        Raises:
+            SyntheticSensorsError: If attribute variables conflict with sensor variables
+        """
+        for sensor in sensors:
+            # Get sensor-level variables from the main formula
+            sensor_variables = {}
+            main_formula = None
+
+            # Find the main formula (typically the first one or one matching the sensor unique_id)
+            for formula in sensor.formulas:
+                if formula.id == sensor.unique_id or formula.id == "main":
+                    main_formula = formula
+                    break
+
+            if not main_formula and sensor.formulas:
+                # If no main formula found, use the first formula as the sensor-level formula
+                main_formula = sensor.formulas[0]
+
+            if main_formula and main_formula.variables:
+                sensor_variables = main_formula.variables
+
+            # Check attribute formulas for conflicts with sensor variables
+            for formula in sensor.formulas:
+                # Skip the main formula (sensor-level)
+                if formula == main_formula:
+                    continue
+
+                # This is an attribute formula - check for conflicts
+                if formula.variables:
+                    for var_name, attr_value in formula.variables.items():
+                        if var_name in sensor_variables:
+                            sensor_value = sensor_variables[var_name]
+                            if attr_value != sensor_value:
+                                raise SyntheticSensorsError(
+                                    f"Sensor '{sensor.unique_id}' attribute '{formula.id}' has conflicting variable '{var_name}'. "
+                                    f"Attribute: '{attr_value}', Sensor: '{sensor_value}'. "
+                                    f"Attribute variables must match sensor variables or be omitted."
+                                )
+
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO format."""
         from datetime import datetime
@@ -1140,7 +1150,7 @@ class StorageManager:
             # Perform configuration validation using ConfigManager
             from typing import cast
 
-            from .config_manager import ConfigDict, ConfigManager
+            from .config_manager import ConfigDict
 
             config_manager = ConfigManager(self.hass)
 
@@ -1162,6 +1172,12 @@ class StorageManager:
                             self._validate_no_global_conflicts([sensor], global_settings)
                         except Exception as e:
                             errors.append(str(e))
+
+                    # Validate attribute variable conflicts
+                    try:
+                        self._validate_no_attribute_variable_conflicts([sensor])
+                    except Exception as e:
+                        errors.append(str(e))
 
             except Exception as e:
                 errors.append(f"Configuration validation failed: {e}")
@@ -1264,61 +1280,3 @@ class StorageManager:
         """
         data = self._ensure_loaded()
         return len(data["sensors"]) > 0 or len(data["sensor_sets"]) > 0
-
-    def _populate_entity_index(self) -> None:
-        """Populate the entity index from loaded storage data."""
-        self._entity_index.clear()
-
-        data = self._ensure_loaded()
-
-        # Add entities from all sensors
-        for unique_id, sensor_data in data["sensors"].items():
-            try:
-                config_data = sensor_data.get("config_data")
-                if config_data:
-                    sensor_config = self._deserialize_sensor_config(config_data)
-                    self._entity_index.add_sensor_entities(sensor_config)
-                else:
-                    _LOGGER.debug("Skipping sensor %s - no config_data found", unique_id)
-            except Exception as e:
-                _LOGGER.warning("Failed to process sensor %s for entity index: %s", unique_id, e)
-
-        # Add entities from global settings in all sensor sets
-        for sensor_set_id, sensor_set_data in data["sensor_sets"].items():
-            try:
-                global_settings = sensor_set_data.get("global_settings", {})
-                if global_settings:
-                    global_variables = global_settings.get("variables", {})
-                    if global_variables:
-                        self._entity_index.add_global_entities(global_variables)
-            except Exception as e:
-                _LOGGER.warning("Failed to process sensor set %s global settings for entity index: %s", sensor_set_id, e)
-
-        stats = self._entity_index.get_stats()
-        _LOGGER.debug(
-            "Populated entity index: %d total entities (%d synthetic, %d external)",
-            stats["total_entities"],
-            stats["synthetic_entities"],
-            stats["external_entities"],
-        )
-
-    def get_entity_index_stats(self) -> dict[str, Any]:
-        """
-        Get entity index statistics.
-
-        Returns:
-            Dictionary with entity index statistics
-        """
-        return self._entity_index.get_stats()
-
-    def is_entity_tracked(self, entity_id: str) -> bool:
-        """
-        Check if an entity ID is tracked in the index.
-
-        Args:
-            entity_id: Entity ID to check
-
-        Returns:
-            True if entity ID is tracked, False otherwise
-        """
-        return self._entity_index.contains(entity_id)

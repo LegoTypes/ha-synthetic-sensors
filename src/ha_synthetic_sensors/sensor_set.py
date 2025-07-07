@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .config_manager import SensorConfig
+from .entity_index import EntityIndex
 from .exceptions import SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -64,6 +65,11 @@ class SensorSet:
         """
         self.storage_manager = storage_manager
         self.sensor_set_id = sensor_set_id
+        self._entity_index = EntityIndex(storage_manager.hass)
+
+        # Initialize entity index with current sensors if the sensor set exists
+        if self.exists:
+            self._rebuild_entity_index()
 
     @property
     def metadata(self) -> SensorSetMetadata | None:
@@ -100,6 +106,9 @@ class SensorSet:
             device_identifier=device_identifier,
         )
 
+        # Rebuild entity index to include new sensor's entities
+        self._rebuild_entity_index()
+
         _LOGGER.info("Added sensor %s to set %s", sensor_config.unique_id, self.sensor_set_id)
 
     async def async_update_sensor(self, sensor_config: SensorConfig) -> bool:
@@ -120,6 +129,8 @@ class SensorSet:
 
         success = await self.storage_manager.async_update_sensor(sensor_config)
         if success:
+            # Rebuild entity index to reflect updated sensor's entities
+            self._rebuild_entity_index()
             _LOGGER.info("Updated sensor %s in set %s", sensor_config.unique_id, self.sensor_set_id)
 
         return success
@@ -143,6 +154,8 @@ class SensorSet:
 
         success = await self.storage_manager.async_delete_sensor(unique_id)
         if success:
+            # Rebuild entity index to remove deleted sensor's entities
+            self._rebuild_entity_index()
             _LOGGER.info("Removed sensor %s from set %s", unique_id, self.sensor_set_id)
 
         return success
@@ -254,12 +267,17 @@ class SensorSet:
         # 1. Validate the modification request
         self._validate_modification(modification, current_sensors)
 
-        # 2. Update global settings if specified (BEFORE entity ID changes to avoid conflicts)
+        # 2. CRITICAL: Rebuild entity index to reflect FINAL state (for event storm protection)
+        # This must happen BEFORE any storage or registry changes
+        self._rebuild_entity_index_for_modification(modification, current_sensors)
+        _LOGGER.debug("Pre-updated entity index for storm protection in sensor set %s", self.sensor_set_id)
+
+        # 3. Update global settings if specified (BEFORE entity ID changes to avoid conflicts)
         if modification.global_settings is not None:
             await self._update_global_settings(modification.global_settings)
             changes_summary["global_settings_updated"] = True
 
-        # 3. Apply entity ID changes (but don't update HA registry yet - collect changes)
+        # 4. Apply entity ID changes (but don't update HA registry yet - collect changes)
         entity_id_changes_to_apply = {}
         if modification.entity_id_changes:
             entity_id_changes_to_apply = modification.entity_id_changes.copy()
@@ -267,29 +285,25 @@ class SensorSet:
             await self._apply_entity_id_changes_deferred(entity_id_changes_to_apply, current_sensors)
             changes_summary["entity_ids_changed"] = len(entity_id_changes_to_apply)
 
-        # 4. Remove sensors (use direct storage operations)
+        # 5. Remove sensors (use direct storage operations)
         if modification.remove_sensors:
             for unique_id in modification.remove_sensors:
                 await self._remove_sensor_direct(unique_id)
                 changes_summary["sensors_removed"] += 1
 
-        # 5. Update existing sensors (use direct storage operations)
+        # 6. Update existing sensors (use direct storage operations)
         if modification.update_sensors:
             for sensor_config in modification.update_sensors:
                 await self._update_sensor_direct(sensor_config)
                 changes_summary["sensors_updated"] += 1
 
-        # 6. Add new sensors (use direct storage operations)
+        # 7. Add new sensors (use direct storage operations)
         if modification.add_sensors:
             for sensor_config in modification.add_sensors:
                 await self._add_sensor_direct(sensor_config)
                 changes_summary["sensors_added"] += 1
 
-        # 7. OPTIMIZATION: Rebuild entity index once with all final state
-        self.storage_manager._populate_entity_index()
-        _LOGGER.debug("Rebuilt entity index after bulk modifications to sensor set %s", self.sensor_set_id)
-
-        # 8. Apply entity ID changes to HA registry in one batch (after index rebuild)
+        # 8. Apply entity ID changes to HA registry in one batch (EntityIndex already reflects new state)
         if entity_id_changes_to_apply:
             await self._apply_entity_registry_changes(entity_id_changes_to_apply)
 
@@ -448,6 +462,9 @@ class SensorSet:
         if final_global_settings:
             final_sensor_list = list(final_sensors.values())
             self.storage_manager._validate_no_global_conflicts(final_sensor_list, final_global_settings)
+
+            # Validate attribute variable conflicts
+            self.storage_manager._validate_no_attribute_variable_conflicts(final_sensor_list)
 
     async def _apply_entity_id_changes_deferred(
         self, entity_id_changes: dict[str, str], current_sensors: dict[str, SensorConfig]
@@ -803,3 +820,148 @@ class SensorSet:
 
         errors = self.get_sensor_errors()
         return len(errors) == 0
+
+    def is_entity_tracked(self, entity_id: str) -> bool:
+        """
+        Check if an entity ID is tracked by this sensor set.
+
+        Args:
+            entity_id: Entity ID to check
+
+        Returns:
+            True if entity ID is tracked by this sensor set
+        """
+        return self._entity_index.contains(entity_id)
+
+    def get_entity_index_stats(self) -> dict[str, Any]:
+        """
+        Get entity index statistics for this sensor set.
+
+        Returns:
+            Dictionary with entity index statistics
+        """
+        return self._entity_index.get_stats()
+
+    def _rebuild_entity_index(self) -> None:
+        """Rebuild the entity index from all sensors and global settings in this sensor set."""
+        self._entity_index.clear()
+
+        # Add entities from all sensors in this sensor set
+        for sensor_config in self.list_sensors():
+            self._entity_index.add_sensor_entities(sensor_config)
+
+        # Add entities from global settings
+        metadata = self.metadata
+        if metadata:
+            data = self.storage_manager._ensure_loaded()
+            if self.sensor_set_id in data["sensor_sets"]:
+                global_settings = data["sensor_sets"][self.sensor_set_id].get("global_settings", {})
+                global_variables = global_settings.get("variables", {})
+                if global_variables:
+                    self._entity_index.add_global_entities(global_variables)
+
+        stats = self._entity_index.get_stats()
+        _LOGGER.debug(
+            "Rebuilt entity index for sensor set %s: %d total entities",
+            self.sensor_set_id,
+            stats["total_entities"],
+        )
+
+    def _rebuild_entity_index_for_modification(
+        self, modification: SensorSetModification, current_sensors: dict[str, SensorConfig]
+    ) -> None:
+        """
+        Rebuild the entity index to reflect the FINAL state after modification.
+
+        This is critical for registry event storm protection - the index must reflect
+        the post-modification state BEFORE we start making changes, so that registry
+        events triggered by our own changes will be properly filtered out.
+
+        Args:
+            modification: The modification being applied
+            current_sensors: Current sensors before modification
+        """
+        self._entity_index.clear()
+
+        # Calculate final sensor list after all modifications
+        final_sensors = {}
+
+        # Start with current sensors
+        for unique_id, sensor in current_sensors.items():
+            final_sensors[unique_id] = sensor
+
+        # Remove sensors
+        if modification.remove_sensors:
+            for unique_id in modification.remove_sensors:
+                final_sensors.pop(unique_id, None)
+
+        # Update sensors
+        if modification.update_sensors:
+            for sensor in modification.update_sensors:
+                final_sensors[sensor.unique_id] = sensor
+
+        # Add sensors
+        if modification.add_sensors:
+            for sensor in modification.add_sensors:
+                final_sensors[sensor.unique_id] = sensor
+
+        # Apply entity ID changes to final sensors
+        if modification.entity_id_changes:
+            updated_sensors = {}
+            for unique_id, sensor in final_sensors.items():
+                # Create a copy to avoid modifying the original
+                import copy
+
+                updated_sensor = copy.deepcopy(sensor)
+
+                # Update sensor entity_id
+                if updated_sensor.entity_id and updated_sensor.entity_id in modification.entity_id_changes:
+                    updated_sensor.entity_id = modification.entity_id_changes[updated_sensor.entity_id]
+
+                # Update formula variables
+                for formula in updated_sensor.formulas:
+                    if formula.variables:
+                        for var_name, var_value in formula.variables.items():
+                            if isinstance(var_value, str) and var_value in modification.entity_id_changes:
+                                formula.variables[var_name] = modification.entity_id_changes[var_value]
+
+                updated_sensors[unique_id] = updated_sensor
+            final_sensors = updated_sensors
+
+        # Add entities from final sensor list to index
+        for sensor_config in final_sensors.values():
+            self._entity_index.add_sensor_entities(sensor_config)
+
+        # Add entities from final global settings
+        metadata = self.metadata
+        if metadata:
+            data = self.storage_manager._ensure_loaded()
+            if self.sensor_set_id in data["sensor_sets"]:
+                current_global_settings = data["sensor_sets"][self.sensor_set_id].get("global_settings", {})
+
+                # Apply global settings modifications
+                final_global_settings = current_global_settings.copy()
+                if modification.global_settings is not None:
+                    final_global_settings.update(modification.global_settings)
+
+                # Apply entity ID changes to global settings variables
+                if modification.entity_id_changes and "variables" in final_global_settings:
+                    updated_variables = {}
+                    for var_name, var_value in final_global_settings["variables"].items():
+                        if isinstance(var_value, str) and var_value in modification.entity_id_changes:
+                            updated_variables[var_name] = modification.entity_id_changes[var_value]
+                        else:
+                            updated_variables[var_name] = var_value
+                    final_global_settings["variables"] = updated_variables
+
+                # Add global variable entities to index
+                global_variables = final_global_settings.get("variables", {})
+                if global_variables:
+                    self._entity_index.add_global_entities(global_variables)
+
+        stats = self._entity_index.get_stats()
+        _LOGGER.debug(
+            "Pre-built entity index for modification on sensor set %s: %d total entities",
+            self.sensor_set_id,
+            stats["total_entities"],
+        )

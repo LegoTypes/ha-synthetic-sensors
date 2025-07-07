@@ -104,8 +104,15 @@ class EntityRegistryListener:
             old_entity_id = changes["entity_id"]["old"]
             new_entity_id = changes["entity_id"]["new"]
 
-            # Only process if we're tracking this entity ID
-            if not self.storage_manager.is_entity_tracked(old_entity_id):
+            # Check if any SensorSet is tracking this entity ID
+            is_tracked = False
+            for sensor_set_id in self.storage_manager.list_sensor_sets():
+                sensor_set = self.storage_manager.get_sensor_set(sensor_set_id.sensor_set_id)
+                if sensor_set.is_entity_tracked(old_entity_id):
+                    is_tracked = True
+                    break
+
+            if not is_tracked:
                 self._logger.debug("Ignoring entity ID change %s -> %s (not tracked)", old_entity_id, new_entity_id)
                 return
 
@@ -151,7 +158,11 @@ class EntityRegistryListener:
 
         # Update sensor configurations
         for unique_id, stored_sensor in data["sensors"].items():
-            sensor_config = self.storage_manager._deserialize_sensor_config(stored_sensor["config_data"])
+            config_data = stored_sensor.get("config_data")
+            if not config_data:
+                continue
+
+            sensor_config = self.storage_manager._deserialize_sensor_config(config_data)
             updated = False
 
             # Update sensor entity_id
@@ -205,14 +216,16 @@ class EntityRegistryListener:
                     sensor_set_data["updated_at"] = self.storage_manager._get_timestamp()
                     updated_sensor_sets.append(sensor_set_id)
 
-        # Update entity index
-        if self.storage_manager._entity_index.contains(old_entity_id):
-            self.storage_manager._entity_index._entity_ids.discard(old_entity_id)
-            self.storage_manager._entity_index._entity_ids.add(new_entity_id)
-
         # Save changes if any updates were made
         if updated_sensors or updated_sensor_sets:
             await self.storage_manager.async_save()
+
+            # Rebuild entity indexes for affected sensor sets
+            for sensor_set_metadata in self.storage_manager.list_sensor_sets():
+                sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
+                if sensor_set.is_entity_tracked(old_entity_id) or sensor_set.is_entity_tracked(new_entity_id):
+                    # Rebuild the entity index to reflect the changes
+                    sensor_set._rebuild_entity_index()
 
             self._logger.info(
                 "Updated entity ID %s -> %s in %d sensors and %d sensor sets",
@@ -231,8 +244,14 @@ class EntityRegistryListener:
         Returns:
             Dictionary with listener statistics
         """
+        total_tracked_entities = 0
+        for sensor_set_metadata in self.storage_manager.list_sensor_sets():
+            sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
+            stats = sensor_set.get_entity_index_stats()
+            total_tracked_entities += stats["total_entities"]
+
         return {
             "active": self._unsub_registry is not None,
-            "tracked_entities": len(self.storage_manager._entity_index.get_all_entities()),
+            "tracked_entities": total_tracked_entities,
             "entity_change_handler": self.entity_change_handler.get_stats(),
         }

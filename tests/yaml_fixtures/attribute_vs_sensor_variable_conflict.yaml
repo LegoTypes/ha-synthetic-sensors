@@ -1,0 +1,23 @@
+version: "1.0"
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "power_source * 2"
+    variables:
+      power_source: "sensor.main_power_meter"
+      voltage: "sensor.main_voltage"
+    attributes:
+      efficiency:
+        formula: "power_source / max_power * 100"
+        variables:
+          power_source: "sensor.different_power_meter"  # CONFLICT: Different from sensor variable
+          max_power: 1000
+        unit_of_measurement: "%"
+      voltage_ratio:
+        formula: "voltage / reference_voltage"
+        variables:
+          voltage: "sensor.different_voltage"  # CONFLICT: Different from sensor variable
+          reference_voltage: 240
+        unit_of_measurement: "ratio"
+    unit_of_measurement: "W"

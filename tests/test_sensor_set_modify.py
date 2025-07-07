@@ -715,58 +715,248 @@ sensors:
 
     @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_valid_global_variable_change_succeeds(self, mock_er_async_get, storage_manager_real):
-        """Test that valid global variable changes succeed when no conflicts exist."""
+        """Test that valid global variable changes are accepted."""
         # Setup entity registry mock
         mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
+        mock_entity_registry.async_get.return_value = None
         mock_entity_registry.async_update_entity = MagicMock()
         mock_er_async_get.return_value = mock_entity_registry
 
-        # Load storage first
         await storage_manager_real.async_load()
 
-        # Create a sensor set with global settings
-        sensor_set = await storage_manager_real.async_create_sensor_set("test_valid_global", name="Valid Global Test")
-
-        # Import initial YAML with global settings
-        initial_yaml = """
-version: "1.0"
-global_settings:
-  variables:
-    main_power: sensor.house_power_meter
-    efficiency_factor: 0.95
-  device_identifier: test_device:valid_global_123
-
-sensors:
-  test_sensor:
-    name: Test Sensor
-    entity_id: sensor.test_sensor
-    formula: state("main_power") * efficiency_factor
-    unit_of_measurement: W
-    device_class: power
-    state_class: measurement
-"""
-
-        await sensor_set.async_import_yaml(initial_yaml)
-
-        # Valid modification: add a new global variable (no conflict possible)
-        modification = SensorSetModification(
-            global_settings={
-                "variables": {
-                    "main_power": "sensor.house_power_meter",
-                    "efficiency_factor": 0.95,  # Keep existing value
-                    "new_multiplier": 1.1,  # Add new variable
-                },
-                "device_identifier": "test_device:valid_global_123",
-            }
+        # Create initial sensor set
+        sensor_set = await storage_manager_real.async_create_sensor_set(
+            sensor_set_id="test_global_change", device_identifier="test_device:789"
         )
 
-        # This should succeed
+        # Add sensor with global variable reference
+        test_sensor = SensorConfig(
+            unique_id="test_sensor",
+            name="Test Sensor",
+            formulas=[
+                FormulaConfig(
+                    id="test_sensor",
+                    formula="global_var * 2",
+                )
+            ],
+        )
+
+        # First modification: Add sensor and set global variable
+        modification1 = SensorSetModification(add_sensors=[test_sensor], global_settings={"variables": {"global_var": 10}})
+
+        result = await sensor_set.async_modify(modification1)
+        assert result["global_settings_updated"] is True
+
+        # Second modification: Change global variable value (should succeed)
+        modification2 = SensorSetModification(global_settings={"variables": {"global_var": 20}})
+
+        result = await sensor_set.async_modify(modification2)
+        assert result["global_settings_updated"] is True
+
+
+class TestSensorSetFormulaEvaluationAfterModify:
+    """Test that formula modifications produce correct structural changes."""
+
+    @pytest.fixture
+    def load_yaml_fixture(self):
+        """Load a YAML fixture file and return its contents."""
+
+        def _load_yaml_fixture(fixture_name: str) -> str:
+            import os
+
+            fixture_path = os.path.join("tests", "yaml_fixtures", fixture_name)
+            with open(fixture_path) as f:
+                return f.read()
+
+        return _load_yaml_fixture
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_formula_modification_structural_changes(self, mock_er_async_get, storage_manager_real, load_yaml_fixture):
+        """Test that formula modifications produce correct structural changes."""
+        # Setup entity registry mock
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = None
+        mock_entity_registry.async_update_entity = MagicMock()
+        mock_er_async_get.return_value = mock_entity_registry
+
+        await storage_manager_real.async_load()
+
+        # Load initial state from YAML fixture
+        before_yaml = load_yaml_fixture("formula_evaluation_before.yaml")
+        sensor_set_id = await storage_manager_real.async_from_yaml(
+            yaml_content=before_yaml, sensor_set_id="formula_eval_test", device_identifier="test_device:eval_123"
+        )
+        sensor_set = storage_manager_real.get_sensor_set(sensor_set_id)
+
+        # Verify initial state
+        assert sensor_set.sensor_count == 5
+        assert sensor_set.get_sensor("simple_math") is not None
+        assert sensor_set.get_sensor("power_calculation") is not None
+        assert sensor_set.get_sensor("cost_calculator") is not None
+        assert sensor_set.get_sensor("voltage_ratio") is not None
+        assert sensor_set.get_sensor("complex_calculation") is not None
+
+        # Check initial formulas
+        simple_math = sensor_set.get_sensor("simple_math")
+        assert simple_math.formulas[0].formula == "10 + 5 * 2"
+
+        power_calc = sensor_set.get_sensor("power_calculation")
+        assert power_calc.formulas[0].formula == "base_power * efficiency_factor"
+
+        # Check initial global settings
+        initial_yaml = sensor_set.export_yaml()
+        import yaml
+
+        initial_data = yaml.safe_load(initial_yaml)
+        assert initial_data["global_settings"]["variables"]["efficiency_factor"] == 0.95
+        assert initial_data["global_settings"]["variables"]["tax_rate"] == 0.08
+
+        # Load the "after" configuration
+        after_yaml = load_yaml_fixture("formula_evaluation_after.yaml")
+        after_data = yaml.safe_load(after_yaml)
+
+        # Create modification from the differences
+        from ha_synthetic_sensors.config_manager import ConfigManager
+
+        config_manager = ConfigManager(storage_manager_real.hass)
+        after_config = config_manager.load_from_dict(after_data)
+
+        # Apply the modification
+        modification = SensorSetModification(
+            update_sensors=after_config.sensors[:-1],  # All except the new sensor
+            add_sensors=[after_config.sensors[-1]],  # The new energy_efficiency sensor
+            global_settings=after_config.global_settings,
+        )
+
         result = await sensor_set.async_modify(modification)
 
-        assert result["global_settings_updated"]
+        # Verify modification was successful
+        assert result["sensors_updated"] == 5  # Updated all existing sensors
+        assert result["sensors_added"] == 1  # Added energy_efficiency sensor
+        assert result["global_settings_updated"] is True
 
-        # Verify the global setting was updated
-        data = sensor_set.storage_manager._ensure_loaded()
-        global_settings = data["sensor_sets"][sensor_set.sensor_set_id]["global_settings"]
-        assert global_settings["variables"]["new_multiplier"] == 1.1
+        # Verify structural changes
+        assert sensor_set.sensor_count == 6  # 5 original + 1 new
+
+        # Check that formulas were updated
+        simple_math_after = sensor_set.get_sensor("simple_math")
+        assert simple_math_after.formulas[0].formula == "20 + 3 * 4"
+        assert simple_math_after.name == "Simple Math Sensor (Updated)"
+
+        power_calc_after = sensor_set.get_sensor("power_calculation")
+        assert power_calc_after.formulas[0].formula == "base_power * efficiency_factor * new_multiplier"
+
+        cost_calc_after = sensor_set.get_sensor("cost_calculator")
+        assert "fixed_fee" in cost_calc_after.formulas[0].formula
+        # Check that local variables were updated
+        cost_vars = cost_calc_after.formulas[0].variables
+        assert cost_vars["rate_per_kwh"] == 0.18
+        assert cost_vars["fixed_fee"] == 2.50
+
+        voltage_ratio_after = sensor_set.get_sensor("voltage_ratio")
+        assert "adjustment_factor" in voltage_ratio_after.formulas[0].formula
+        voltage_vars = voltage_ratio_after.formulas[0].variables
+        assert voltage_vars["adjustment_factor"] == 1.05
+
+        # Check new sensor was added
+        energy_efficiency = sensor_set.get_sensor("energy_efficiency")
+        assert energy_efficiency is not None
+        assert energy_efficiency.name == "Energy Efficiency Rating"
+        assert energy_efficiency.formulas[0].formula == "(base_power * efficiency_factor) / theoretical_max * 100"
+
+        # Check that new attribute was added to complex_calculation
+        complex_calc_after = sensor_set.get_sensor("complex_calculation")
+        attribute_formulas = [f for f in complex_calc_after.formulas if f.id.endswith("_new_metric")]
+        assert len(attribute_formulas) == 1
+        assert attribute_formulas[0].formula == "base_power / base_voltage"
+
+        # Verify global settings were updated
+        final_yaml = sensor_set.export_yaml()
+        final_data = yaml.safe_load(final_yaml)
+
+        assert final_data["global_settings"]["variables"]["efficiency_factor"] == 0.90
+        assert final_data["global_settings"]["variables"]["tax_rate"] == 0.10
+        assert final_data["global_settings"]["variables"]["new_multiplier"] == 1.2
+
+        # Verify entity index was updated correctly
+        entity_stats = sensor_set.get_entity_index_stats()
+        # Should track entities referenced in formulas and variables
+        assert entity_stats["total_entities"] > 0
+        assert sensor_set.is_entity_tracked("sensor.power_meter")
+        assert sensor_set.is_entity_tracked("sensor.voltage_meter")
+        assert sensor_set.is_entity_tracked("sensor.reactive_power")
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_formula_evaluation_with_simple_math(self, mock_er_async_get, storage_manager_real):
+        """Test simple formula evaluation to verify the evaluator works."""
+        # Setup entity registry mock
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = None
+        mock_entity_registry.async_update_entity = MagicMock()
+        mock_er_async_get.return_value = mock_entity_registry
+
+        await storage_manager_real.async_load()
+
+        # Create a simple sensor set with basic math
+        sensor_set = await storage_manager_real.async_create_sensor_set(
+            sensor_set_id="simple_eval_test", device_identifier="test_device:simple_123"
+        )
+
+        # Add a sensor with simple math
+        from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
+
+        simple_sensor = SensorConfig(
+            unique_id="simple_math_test",
+            name="Simple Math Test",
+            formulas=[
+                FormulaConfig(
+                    id="simple_math_test",
+                    formula="10 + 5 * 2",
+                    unit_of_measurement="units",
+                )
+            ],
+        )
+
+        await sensor_set.async_add_sensor(simple_sensor)
+
+        # Test evaluation using the evaluator
+        from ha_synthetic_sensors.evaluator import Evaluator
+
+        evaluator = Evaluator(storage_manager_real.hass)
+
+        # Get the sensor and evaluate its formula
+        stored_sensor = sensor_set.get_sensor("simple_math_test")
+        result = evaluator.evaluate_formula(stored_sensor.formulas[0], {})
+
+        assert result["success"] is True
+        assert result["value"] == 20.0
+
+        # Now modify the formula and test again
+        updated_sensor = SensorConfig(
+            unique_id="simple_math_test",
+            name="Simple Math Test Updated",
+            formulas=[
+                FormulaConfig(
+                    id="simple_math_test",
+                    formula="20 + 3 * 4",  # Should equal 32
+                    unit_of_measurement="units",
+                )
+            ],
+        )
+
+        modification = SensorSetModification(update_sensors=[updated_sensor])
+        mod_result = await sensor_set.async_modify(modification)
+        assert mod_result["sensors_updated"] == 1
+
+        # NOTE: In real integration usage, cache clearing is handled by higher-level
+        # components (ServiceLayer, SensorManager) that orchestrate the modification.
+        # Here we clear manually since we're testing async_modify in isolation.
+        evaluator.clear_cache()
+
+        # Test the updated formula
+        updated_stored_sensor = sensor_set.get_sensor("simple_math_test")
+        updated_result = evaluator.evaluate_formula(updated_stored_sensor.formulas[0], {})
+
+        assert updated_result["success"] is True
+        assert updated_result["value"] == 32.0
+        assert updated_stored_sensor.name == "Simple Math Test Updated"

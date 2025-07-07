@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 
 from .config_manager import SensorConfig
-from .dependency_parser import DependencyParser
 from .name_resolver import NameResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,16 +28,16 @@ class EntityIndex:
     - Attribute access patterns (variable.attribute)
     """
 
-    def __init__(self, hass: HomeAssistant | None = None) -> None:
-        """Initialize empty entity index.
+    def __init__(self, hass: HomeAssistant) -> None:
+        """
+        Initialize the EntityIndex.
 
         Args:
             hass: Home Assistant instance for entity validation
         """
         self._hass = hass
+        self._logger = logging.getLogger(__name__)
         self._entity_ids: set[str] = set()
-        self._dependency_parser = DependencyParser()
-        self._logger = _LOGGER.getChild(self.__class__.__name__)
 
     def _extract_base_entity_id(self, value: str) -> str | None:
         """
@@ -223,15 +221,14 @@ class EntityIndex:
         """
         return {
             "total_entities": len(self._entity_ids),
-            "synthetic_entities": len([e for e in self._entity_ids if self._is_synthetic_entity(e)]),
-            "external_entities": len([e for e in self._entity_ids if not self._is_synthetic_entity(e)]),
+            "tracked_entities": len(self._entity_ids),  # More descriptive name
         }
 
     def _is_entity_id(self, value: str) -> bool:
         """
         Check if a string value represents a valid Home Assistant entity ID.
 
-        Uses the same validation logic as NameResolver to ensure consistency.
+        Uses NameResolver validation for consistency.
 
         Args:
             value: String value to check
@@ -242,37 +239,6 @@ class EntityIndex:
         if not isinstance(value, str):
             return False
 
-        # Use NameResolver for validation if hass is available
-        if self._hass is not None:
-            temp_resolver = NameResolver(self._hass, {})
-            return temp_resolver._is_valid_entity_id(value)
-
-        # Fallback to basic validation when hass is not available (e.g., in tests)
-        # Basic validation: should have exactly one dot, valid domain and entity parts
-        if value.count(".") != 1:
-            return False
-
-        domain, entity = value.split(".")
-
-        # Basic validation of domain and entity parts
-        if not (domain and entity):
-            return False
-
-        # Basic format check: alphanumeric and underscores
-        if not re.match(r"^[a-zA-Z0-9_]+$", domain):
-            return False
-        return bool(re.match(r"^[a-zA-Z0-9_]+$", entity))
-
-    def _is_synthetic_entity(self, entity_id: str) -> bool:
-        """
-        Check if an entity ID belongs to our synthetic sensors.
-
-        Args:
-            entity_id: Entity ID to check
-
-        Returns:
-            True if entity ID is one of our synthetic sensors
-        """
-        # This is a simple heuristic - could be made more sophisticated
-        # by checking against known synthetic sensor patterns
-        return entity_id.startswith("sensor.") and ("synthetic" in entity_id or "calculated" in entity_id)
+        # Use NameResolver for validation
+        temp_resolver = NameResolver(self._hass, {})
+        return temp_resolver._is_valid_entity_id(value)

@@ -110,8 +110,16 @@ sensors:
           device: "sensor.backup_device"
         unit_of_measurement: "W"
       efficiency:
-        formula: "state / sensor.max_power_capacity * 100"
+        formula: "state / max_capacity * 100"
+        variables:
+          max_capacity: "sensor.max_power_capacity"
         unit_of_measurement: "%"
+      temperature_analysis:
+        formula: "outdoor_temp - indoor_temp"
+        variables:
+          outdoor_temp: "sensor.outdoor_temperature"
+          indoor_temp: "sensor.indoor_temperature"
+        unit_of_measurement: "°C"
     variables:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
@@ -219,7 +227,9 @@ while avoiding conflicts between sensors from different devices.
 - Main sensor state is calculated first using the `formula`
 - Attributes are calculated second and have access to the `state` variable
 - `state` always refers to the fresh main sensor calculation
-- Attributes can also reference other entities normally (like `sensor.max_power_capacity` above)
+- Attributes can define their own `variables` section for attribute-specific entity references
+- Attributes inherit all variables from their parent sensor and can add their own
+- Attributes can also reference other entities directly (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
 
 ### Global YAML Settings
@@ -271,19 +281,13 @@ sensors:
 **Supported Global Settings:**
 
 - **`device_identifier`**: Applied to sensors that don't specify their own device_identifier
-- **`variables`**: Merged with sensor-level variables
-- **Global Precedence**: Local `variables` or `device_identifer` MUST NOT override global values
-- **Local Preservation**: A local that matches a global and has the same value is preserved on export
+- **`variables`**: Available to all sensors in the YAML file
 
-The rationale for disallowing locals values for `variables` that don't match global variable values is rooted
-in the fact that a formula evaluation cannot disambiguate between a global and a local alias
+**Variable Conflict Rules:**
 
-**Global Settings Behavior:**
-
-- **Device Identifier**: Sensors without a `device_identifier` automatically inherit the global one
-- **Variable Inheritance**: Global variables are merged with sensor-level variables
-- **Variable Precedence**: Local sensor variables override global variables with the same name
-- **Storage Fidelity**: Original YAML structure with global_settings is preserved for export
+- Global and sensor variables with the same name **must have identical values**
+- Different values for the same variable name cause validation errors
+- Use different variable names to avoid conflicts
 
 ## Entity Reference Patterns
 
@@ -317,12 +321,16 @@ Variables can be:
 - **Numeric Literals**: `42`, `3.14`, `-5.0` - Direct numeric values for constants
 - **Collection Patterns**: `"device_class:temperature"` - Dynamic entity aggregation
 
-**Important**: All variables must be defined at the sensor level in the `variables` section. Attribute-level variable
-definitions are not supported.
+**Variable Scope**: Variables can be defined at both the sensor level and attribute level:
 
-Once defined, a variable can be used in any formula whether in the main sensor state formula or attribute formula.
+- **Sensor-level variables**: Defined in the main sensor's `variables` section and available to all formulas
+- **Attribute-level variables**: Defined in an attribute's `variables` section and available only to that attribute
+- **Variable inheritance**: Attributes inherit all sensor-level variables and can add their own
+- **Variable precedence**: Attribute-level variables with the same name override sensor-level variables for that attribute
 
-Attribute formulas automatically inherit all variables from their parent sensor:
+Once defined, variables can be used in any formula whether in the main sensor state formula or attribute formulas.
+
+Attribute formulas inherit all variables from their parent sensor and can define additional ones:
 
 ```yaml
 sensors:
@@ -334,7 +342,6 @@ sensors:
       solar_power: "sensor.solar_inverter"
       efficiency_factor: 0.85                    # Numeric literal: efficiency constant
       tax_rate: 0.095                           # Numeric literal: tax percentage
-      battery_devices: "device_class:battery"
     attributes:
       daily_projection:
         formula: "energy_analysis * 24" # References main sensor by key
@@ -342,11 +349,19 @@ sensors:
         formula: "solar_power / (grid_power + solar_power) * efficiency_factor * 100"
         unit_of_measurement: "%"
       cost_with_tax:
-        formula: "energy_analysis * (1 + tax_rate)"  # Uses numeric literal
+        formula: "energy_analysis * (1 + tax_rate)"  # Uses sensor-level variable
         unit_of_measurement: "¢"
       low_battery_count:
-        formula: "count(battery_devices.battery_level<20)" # Uses collection variable with dot notation
+        formula: "count(battery_devices.battery_level<20)" # Uses attribute-level variable
+        variables:
+          battery_devices: "device_class:battery"  # Attribute-specific variable
         unit_of_measurement: "devices"
+      temperature_difference:
+        formula: "outdoor_temp - indoor_temp"  # Uses only attribute-level variables
+        variables:
+          outdoor_temp: "sensor.outdoor_temperature"
+          indoor_temp: "sensor.indoor_temperature"
+        unit_of_measurement: "°C"
     unit_of_measurement: "W"
     device_class: "power"
     state_class: "measurement"

@@ -1,0 +1,49 @@
+version: "1.0"
+global_settings:
+  device_identifier: "test_device:globals_123"
+  variables:
+    power_source: "sensor.new_power_meter"  # Changed entity reference
+    voltage_source: "sensor.main_voltage_meter"
+    efficiency_rate: 0.90  # Changed direct value
+    tax_multiplier: 1.10   # Changed direct value
+    base_offset: 15        # Changed direct value
+
+sensors:
+  calculated_power:
+    name: "Calculated Power"
+    formula: "power_source * efficiency_rate + base_offset"
+    unit_of_measurement: "W"
+    device_class: "power"
+
+  total_cost:
+    name: "Total Cost"
+    formula: "calculated_power_value * rate_per_kwh * tax_multiplier"
+    variables:
+      calculated_power_value: "sensor.calculated_power"
+      rate_per_kwh: 0.15  # Changed local variable
+    unit_of_measurement: "$/hr"
+
+  voltage_ratio:
+    name: "Voltage Efficiency"
+    formula: "voltage_source / reference_voltage * efficiency_rate"
+    variables:
+      reference_voltage: 230.0  # Changed local variable
+    unit_of_measurement: "ratio"
+
+  system_status:
+    name: "System Status"
+    formula: "power_source > threshold and voltage_source > min_voltage"
+    variables:
+      threshold: 600  # Changed local variable
+      min_voltage: 210  # Changed local variable
+    attributes:
+      power_percentage:
+        formula: "(power_source / max_power) * 100"
+        variables:
+          max_power: 6000  # Changed local variable
+        unit_of_measurement: "%"
+
+  new_efficiency_sensor:
+    name: "New Efficiency Sensor"
+    formula: "efficiency_rate * 100"
+    unit_of_measurement: "%"

@@ -1,0 +1,33 @@
+version: "1.0"
+
+global_settings:
+  variables:
+    power_source: "sensor.global_power_meter"
+    efficiency_rate: 0.85
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "power_source * efficiency_rate"
+    variables:
+      voltage: "sensor.main_voltage"
+    attributes:
+      power_analysis:
+        formula: "power_source / max_power * 100"
+        variables:
+          power_source: "sensor.global_power_meter"  # VALID: Same as global
+          max_power: 1000  # VALID: New variable
+        unit_of_measurement: "%"
+      efficiency_calc:
+        formula: "voltage * efficiency_rate / base_power"
+        variables:
+          voltage: "sensor.main_voltage"  # VALID: Same as sensor variable
+          base_power: 500  # VALID: New variable
+        unit_of_measurement: "W"
+      new_calculation:
+        formula: "custom_input * multiplier"
+        variables:
+          custom_input: "sensor.custom_sensor"  # VALID: Completely new variable
+          multiplier: 2.0  # VALID: New variable
+        unit_of_measurement: "units"
+    unit_of_measurement: "W"

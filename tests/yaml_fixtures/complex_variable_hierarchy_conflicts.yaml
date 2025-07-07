@@ -1,0 +1,47 @@
+version: "1.0"
+
+global_settings:
+  variables:
+    base_power: "sensor.global_power_meter"
+    efficiency: 0.85
+    voltage_source: "sensor.global_voltage"
+
+sensors:
+  main_sensor:
+    name: "Main Sensor"
+    formula: "base_power * efficiency"
+    variables:
+      temperature: "sensor.main_temperature"
+      pressure: "sensor.main_pressure"
+    attributes:
+      # Multiple conflict types in one attribute
+      complex_analysis:
+        formula: "base_power * efficiency * temperature / pressure"
+        variables:
+          base_power: "sensor.different_power_meter"  # CONFLICT: Different from global
+          efficiency: 0.90  # CONFLICT: Different from global (0.85)
+          temperature: "sensor.different_temperature"  # CONFLICT: Different from sensor
+        unit_of_measurement: "complex"
+
+      # Global vs sensor variable conflict
+      voltage_calc:
+        formula: "voltage_source * temperature"
+        variables:
+          voltage_source: "sensor.different_voltage"  # CONFLICT: Different from global
+          temperature: "sensor.different_temp"  # CONFLICT: Different from sensor
+        unit_of_measurement: "V"
+    unit_of_measurement: "W"
+
+  secondary_sensor:
+    name: "Secondary Sensor"
+    formula: "voltage_source / efficiency"
+    variables:
+      local_factor: 1.5
+    attributes:
+      mixed_conflicts:
+        formula: "voltage_source * efficiency * local_factor"
+        variables:
+          voltage_source: "sensor.alt_voltage"  # CONFLICT: Different from global
+          local_factor: 2.0  # CONFLICT: Different from sensor (1.5)
+        unit_of_measurement: "mixed"
+    unit_of_measurement: "ratio"

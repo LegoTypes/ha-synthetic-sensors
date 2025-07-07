@@ -113,6 +113,21 @@ sensors:
     unit_of_measurement: "%"
     device_class: "energy"
     state_class: "measurement"
+    attributes:
+      # Attribute with its own variables
+      power_factor:
+        formula: "active_power / apparent_power"
+        variables:
+          active_power: "sensor.active_power_meter"       # Attribute-specific variable
+          apparent_power: "sensor.apparent_power_meter"   # Attribute-specific variable
+        unit_of_measurement: "factor"
+
+      # Attribute using inherited variables plus its own
+      efficiency_grade:
+        formula: "if(internal_efficiency > threshold, 'Excellent', 'Good')"
+        variables:
+          threshold: 85  # Attribute-specific numeric literal
+        unit_of_measurement: ""
 
   temperature_analysis:
     name: "Temperature Analysis"
@@ -124,13 +139,25 @@ sensors:
     device_class: "temperature"
     state_class: "measurement"
     attributes:
+      # Attribute inheriting sensor variables
       temperature_ratio:
         formula: "internal_temp / external_temp"
         unit_of_measurement: "ratio"
+
+      # Attribute with its own variables
       device_status:
         formula: "device_status"
         variables:
           device_status: "binary_sensor.my_device_status"  # From integration
+        unit_of_measurement: ""
+
+      # Attribute mixing inherited and own variables
+      thermal_efficiency:
+        formula: "if(internal_temp > ambient_temp, (internal_temp - ambient_temp) / max_temp_diff * 100, 0)"
+        variables:
+          ambient_temp: "sensor.ambient_temperature"       # Attribute-specific variable
+          max_temp_diff: 50  # Attribute-specific numeric literal
+        unit_of_measurement: "%"
 """
 
         # Parse and load the configuration using our custom config manager
