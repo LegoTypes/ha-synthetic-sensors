@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.ha_synthetic_sensors.exceptions import SyntheticSensorsError
-from src.ha_synthetic_sensors.storage_manager import StorageManager
+from ha_synthetic_sensors.exceptions import SyntheticSensorsError
+from ha_synthetic_sensors.storage_manager import StorageManager
 
 
 class TestAttributeVariableConflicts:
