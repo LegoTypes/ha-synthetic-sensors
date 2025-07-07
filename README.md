@@ -17,7 +17,7 @@
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support%20development-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/cayossarian)
 
 A Python package for creating and managing synthetic, math-based, and hierarchical sensors in Home Assistant integrations
-using YAML configuration.
+using YAML definitions.
 
 ## What it does
 
@@ -26,11 +26,22 @@ using YAML configuration.
 - Maps variable names to Home Assistant entity IDs
 - Manages sensor lifecycle (creation, updates, removal)
 - Provides storage-based configuration with full CRUD operations via SensorSet interface
-- Tracks dependencies between sensors
-- Caches formula results
+- Optional file based YAML discovery
+- Tracks dependencies between sensors and attributes formulas
+- Compiles and caches formulas using abstract syntax trees (AST) and safe evaluation
 - Variable declarations for shortcut annotations in math formulas
 - Dynamic entity aggregation (regex, tags, areas, device_class patterns)
 - Dot notation for entity attribute access
+
+### Advantages
+
+- **Variable reuse**: Define sensor/attributes variables or globally to use across multiple sensors and attributes
+- **Dependency tracking**: Automatic sensor update ordering
+- **Type safety**: TypedDict interfaces for better IDE support
+- **Bulk management**: Multiple sensor sets for various groups
+- **Storage Import/Export**: bluk YAML load, modification, or sensor level CRUD
+- **Validation**: YAML validation avoids errors at runtime
+- **Services**: Built-in reload, update, and testing capabilities
 
 ## Installation
 
@@ -46,7 +57,7 @@ cd ha-synthetic-sensors
 poetry install --with dev
 ```
 
-**Key benefits of device integration:**
+**Benefits of device integration:**
 
 - **Unified Device View**: Synthetic sensors appear under your integration's device in HA UI
 - **Lifecycle Control**: Parent integration controls setup, reload, and teardown
@@ -584,16 +595,6 @@ value_template: >
     {{ (net_power|abs) * sell_rate / 1000 }}
   {% endif %}
 ```
-
-**Key advantages:**
-
-- **Variable reuse**: Define once, use in multiple sensors and attributes
-- **Bulk management**: Single YAML file for dozens of related sensors
-- **Easily Nested**: Sensors can reference other sensors/atributes with easy math calculations
-- **Simple Notation**: Easily understood dot notations
-- **Dependency tracking**: Automatic sensor update ordering
-- **Type safety**: TypedDict interfaces for better IDE support
-- **Services**: Built-in reload, update, and testing capabilities
 
 ## Home Assistant services
 
