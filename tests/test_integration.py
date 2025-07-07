@@ -756,7 +756,7 @@ class TestSensorSetIntegrationWorkflow:
             mock_store.async_save = AsyncMock()
             MockStore.return_value = mock_store
 
-            manager = StorageManager(mock_hass, "test_integration_synthetic")
+            manager = StorageManager(mock_hass, "test_integration_synthetic", enable_entity_listener=False)
             manager._store = mock_store
             await manager.async_load()
             return manager

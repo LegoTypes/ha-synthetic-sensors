@@ -54,13 +54,24 @@ class MockHomeAssistant:
     """Mock HomeAssistant instance for testing."""
 
     def __init__(self):
+        import tempfile
+
         self.states = Mock()
         self.config = Mock()
+        self.config.config_dir = tempfile.mkdtemp()  # Provide a real temp directory
         self.loop = Mock()
+        self.data = {}  # Add data attribute for Store support
+        self.bus = Mock()  # Add bus attribute for event handling
 
     def get_state(self, entity_id):
         """Mock get_state method."""
         return Mock(state="mocked_state", attributes={})
+
+    def async_create_task(self, coro):
+        """Mock async_create_task method."""
+        import asyncio
+
+        return asyncio.create_task(coro)
 
 
 class MockConfigEntryError(Exception):

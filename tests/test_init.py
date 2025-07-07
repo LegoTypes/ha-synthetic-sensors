@@ -143,15 +143,19 @@ class TestLoggingUtilities:
     def test_all_exports(self):
         """Test that __all__ contains expected exports."""
         expected_exports = [
-            "ConfigManager",
-            "Evaluator",
-            "NameResolver",
-            "SensorManager",
-            "ServiceLayer",
+            # Type definitions
+            "DataProviderResult",
+            # Core classes
+            "FormulaConfig",
+            "SensorConfig",
+            "SensorSet",
+            "StorageManager",
+            # Integration helpers
             "SyntheticSensorsIntegration",
             "async_reload_integration",
             "async_setup_integration",
             "async_unload_integration",
+            # Utility functions
             "configure_logging",
             "get_example_config",
             "get_integration",

@@ -45,7 +45,7 @@ class TestEntityIndexIntegration:
     @pytest.fixture
     def storage_manager(self, mock_hass):
         """Create a storage manager with mocked storage."""
-        manager = StorageManager(mock_hass, "test_entity_index_integration")
+        manager = StorageManager(mock_hass, "test_entity_index_integration", enable_entity_listener=False)
         return manager
 
     @pytest.fixture

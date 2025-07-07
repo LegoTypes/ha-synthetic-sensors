@@ -204,6 +204,98 @@ class SensorSet:
         sensors = self.list_sensors()
         return unique_id in [s.unique_id for s in sensors]
 
+    # Global Settings Operations
+
+    def get_global_settings(self) -> dict[str, Any]:
+        """
+        Get global settings for this sensor set.
+
+        Returns:
+            Dictionary of global settings (empty dict if none)
+        """
+        self._ensure_exists()
+
+        data = self.storage_manager._ensure_loaded()
+        global_settings: dict[str, Any] = data["sensor_sets"][self.sensor_set_id].get("global_settings", {})
+        return global_settings
+
+    async def async_set_global_settings(self, global_settings: dict[str, Any]) -> None:
+        """
+        Set global settings for this sensor set.
+
+        This will replace all existing global settings and trigger:
+        - Cache invalidation for affected entities
+        - Entity index rebuild to track new entity references
+        - Storage save
+
+        Args:
+            global_settings: New global settings to set
+        """
+        self._ensure_exists()
+
+        # Validate global settings don't conflict with sensor variables
+        current_sensors = {s.unique_id: s for s in self.list_sensors()}
+        if global_settings:
+            self.storage_manager._validate_no_global_conflicts(list(current_sensors.values()), global_settings)
+
+        # Update global settings
+        await self._update_global_settings(global_settings)
+
+        # Rebuild entity index to track new entity references
+        self._rebuild_entity_index()
+
+        # Invalidate cache for entities that might be affected
+        self._invalidate_cache_for_global_changes(global_settings)
+
+        _LOGGER.info("Updated global settings for sensor set %s", self.sensor_set_id)
+
+    async def async_update_global_settings(self, updates: dict[str, Any]) -> None:
+        """
+        Update specific global settings while preserving others.
+
+        This merges the updates with existing global settings and triggers:
+        - Cache invalidation for affected entities
+        - Entity index rebuild to track new entity references
+        - Storage save
+
+        Args:
+            updates: Dictionary of global setting updates to merge
+        """
+        current_global_settings = self.get_global_settings()
+        updated_global_settings = current_global_settings.copy()
+        updated_global_settings.update(updates)
+
+        await self.async_set_global_settings(updated_global_settings)
+
+    def _invalidate_cache_for_global_changes(self, global_settings: dict[str, Any]) -> None:
+        """
+        Invalidate formula caches for entities that might be affected by global setting changes.
+
+        Args:
+            global_settings: The new global settings
+        """
+        # Get entity change handler from storage manager
+        entity_change_handler = getattr(self.storage_manager, "_entity_change_handler", None)
+        if not entity_change_handler:
+            return
+
+        # Extract entity IDs from global variables
+        global_variables = global_settings.get("variables", {})
+        affected_entities = []
+
+        for var_value in global_variables.values():
+            if isinstance(var_value, str) and var_value.startswith(
+                ("sensor.", "input_", "binary_sensor.", "switch.", "light.", "climate.")
+            ):
+                affected_entities.append(var_value)
+
+        # Invalidate cache for each affected entity
+        for entity_id in affected_entities:
+            entity_change_handler.invalidate_cache(entity_id)
+
+        if affected_entities:
+            _LOGGER.debug("Invalidated cache for %d entities due to global settings change", len(affected_entities))
+
     # Bulk Operations
 
     async def async_replace_sensors(self, sensor_configs: list[SensorConfig]) -> None:
@@ -540,13 +632,11 @@ class SensorSet:
             # Entity registry not available (e.g., in tests) - continue without HA registry updates
             _LOGGER.debug("Entity registry not available, skipping HA registry updates: %s", e)
 
-        # Invalidate formula caches for the changed entities
+        # Invalidate formula caches for the changed entities using persistent handler
         if registry_updates:
-            from .entity_change_handler import EntityChangeHandler
-
-            temp_handler = EntityChangeHandler()
+            entity_change_handler = self.storage_manager.entity_change_handler
             for old_entity_id, new_entity_id in entity_id_changes.items():
-                temp_handler.handle_entity_id_change(old_entity_id, new_entity_id)
+                entity_change_handler.handle_entity_id_change(old_entity_id, new_entity_id)
 
             _LOGGER.info("Applied %d entity ID changes to HA registry: %s", len(registry_updates), ", ".join(registry_updates))
 

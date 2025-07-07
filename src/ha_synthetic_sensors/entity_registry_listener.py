@@ -156,6 +156,13 @@ class EntityRegistryListener:
         updated_sensors = []
         updated_sensor_sets = []
 
+        # Track which sensor sets need entity index rebuilding BEFORE we update storage
+        sensor_sets_needing_rebuild = []
+        for sensor_set_metadata in self.storage_manager.list_sensor_sets():
+            sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
+            if sensor_set.is_entity_tracked(old_entity_id):
+                sensor_sets_needing_rebuild.append(sensor_set)
+
         # Update sensor configurations
         for unique_id, stored_sensor in data["sensors"].items():
             config_data = stored_sensor.get("config_data")
@@ -220,19 +227,21 @@ class EntityRegistryListener:
         if updated_sensors or updated_sensor_sets:
             await self.storage_manager.async_save()
 
-            # Rebuild entity indexes for affected sensor sets
-            for sensor_set_metadata in self.storage_manager.list_sensor_sets():
-                sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
-                if sensor_set.is_entity_tracked(old_entity_id) or sensor_set.is_entity_tracked(new_entity_id):
-                    # Rebuild the entity index to reflect the changes
-                    sensor_set._rebuild_entity_index()
+            # Rebuild entity indexes for affected sensor sets (using pre-update tracking list)
+            for sensor_set in sensor_sets_needing_rebuild:
+                self._logger.debug(
+                    "Rebuilding entity index for sensor set %s due to entity ID change", sensor_set.sensor_set_id
+                )
+                sensor_set._rebuild_entity_index()
+                self._logger.debug("Rebuilt entity index for sensor set %s", sensor_set.sensor_set_id)
 
             self._logger.info(
-                "Updated entity ID %s -> %s in %d sensors and %d sensor sets",
+                "Updated entity ID %s -> %s in %d sensors, %d sensor sets, rebuilt %d entity indexes",
                 old_entity_id,
                 new_entity_id,
                 len(updated_sensors),
                 len(updated_sensor_sets),
+                len(sensor_sets_needing_rebuild),
             )
         else:
             self._logger.debug("No storage updates needed for entity ID change %s -> %s", old_entity_id, new_entity_id)

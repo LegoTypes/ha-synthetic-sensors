@@ -599,7 +599,7 @@ class TestSensorSetIntegration:
             mock_store = AsyncMock()
             MockStore.return_value = mock_store
 
-            storage_manager = StorageManager(mock_hass, "test_export_bug")
+            storage_manager = StorageManager(mock_hass, "test_export_bug", enable_entity_listener=False)
             storage_manager._store = mock_store
 
             # Initialize storage with empty data
@@ -677,7 +677,7 @@ class TestSensorSetIntegration:
             mock_store = AsyncMock()
             MockStore.return_value = mock_store
 
-            storage_manager = StorageManager(mock_hass, "test_export_update")
+            storage_manager = StorageManager(mock_hass, "test_export_update", enable_entity_listener=False)
             storage_manager._store = mock_store
 
             # Initialize storage with empty data
@@ -759,7 +759,7 @@ class TestSensorSetIntegration:
             mock_store = AsyncMock()
             MockStore.return_value = mock_store
 
-            storage_manager = StorageManager(mock_hass, "test_export_delete")
+            storage_manager = StorageManager(mock_hass, "test_export_delete", enable_entity_listener=False)
             storage_manager._store = mock_store
 
             # Initialize storage with empty data
@@ -845,7 +845,7 @@ class TestSensorSetIntegration:
             mock_store = AsyncMock()
             MockStore.return_value = mock_store
 
-            storage_manager = StorageManager(mock_hass, "test_export_multiple")
+            storage_manager = StorageManager(mock_hass, "test_export_multiple", enable_entity_listener=False)
             storage_manager._store = mock_store
 
             # Initialize storage with empty data
@@ -1007,7 +1007,7 @@ class TestSensorSetIntegration:
             mock_store = AsyncMock()
             MockStore.return_value = mock_store
 
-            storage_manager = StorageManager(mock_hass, "test_entity_id_preservation")
+            storage_manager = StorageManager(mock_hass, "test_entity_id_preservation", enable_entity_listener=False)
             storage_manager._store = mock_store
 
             # Initialize storage with empty data

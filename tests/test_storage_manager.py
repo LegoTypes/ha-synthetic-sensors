@@ -27,7 +27,7 @@ def storage_manager(mock_hass):
         mock_store = AsyncMock()
         MockStore.return_value = mock_store
 
-        manager = StorageManager(mock_hass, "test_storage")
+        manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
         # Set up the mock store
         manager._store = mock_store
         return manager
@@ -62,7 +62,7 @@ def storage_manager_real(mock_hass):
     mock_store.async_save = mock_save
 
     with patch("ha_synthetic_sensors.storage_manager.Store", return_value=mock_store):
-        manager = StorageManager(mock_hass, "test_storage_real")
+        manager = StorageManager(mock_hass, "test_storage_real", enable_entity_listener=False)
         yield manager
 
     # Cleanup
@@ -975,7 +975,7 @@ class TestStorageManagerIntegration:
         assert sensor_set_id in storage_manager_real._data["sensor_sets"]
 
         # Create a new storage manager instance with the same store
-        new_manager = StorageManager(storage_manager_real.hass, "test_storage_real")
+        new_manager = StorageManager(storage_manager_real.hass, "test_storage_real", enable_entity_listener=False)
         new_manager._store = storage_manager_real._store
 
         # Load data - should get the persisted data
@@ -1115,7 +1115,7 @@ class TestStorageManagerIntegration:
         assert len(initial_sensors) == 5
 
         # Create new manager and reload
-        new_manager = StorageManager(storage_manager_real.hass, "test_storage_real")
+        new_manager = StorageManager(storage_manager_real.hass, "test_storage_real", enable_entity_listener=False)
         new_manager._store = storage_manager_real._store
         await new_manager.async_load()
 
@@ -1132,7 +1132,7 @@ class TestStorageManagerIntegration:
 
         # Modify data and save again
         # Create final storage manager to test persistence
-        final_manager = StorageManager(storage_manager_real.hass, "test_storage_real")
+        final_manager = StorageManager(storage_manager_real.hass, "test_storage_real", enable_entity_listener=False)
         final_manager._store = storage_manager_real._store
 
         # Load and verify everything persisted

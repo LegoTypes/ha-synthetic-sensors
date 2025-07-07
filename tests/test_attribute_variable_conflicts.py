@@ -26,7 +26,7 @@ class TestAttributeVariableConflicts:
             mock_store = AsyncMock()
             MockStore.return_value = mock_store
 
-            manager = StorageManager(mock_hass, "test_storage")
+            manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
             # Set up the mock store
             manager._store = mock_store
             return manager

@@ -16,40 +16,38 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support%20development-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/cayossarian)
 
-A Python package for creating and managing synthetic, math-based, and hierarchical sensors in Home Assistant integrations
-using YAML definitions.
+A comprehensive Python package for creating formula-based synthetic sensors in Home Assistant integrations
+using YAML configuration and mathematical expressions.
 
 ## What it does
 
-- Creates Home Assistant sensor entities from mathematical formulas
-- Evaluates math expressions using `simpleeval` library
-- Maps variable names to Home Assistant entity IDs
-- Manages sensor lifecycle (creation, updates, removal)
-- Provides storage-based configuration with full CRUD operations via SensorSet interface
-- Optional file based YAML discovery
-- Tracks dependencies between sensors and attributes formulas
-- Compiles and caches formulas using abstract syntax trees (AST) and safe evaluation
-- Variable declarations for shortcut annotations in math formulas
-- Dynamic entity aggregation (regex, tags, areas, device_class patterns)
-- Dot notation for entity attribute access
+- **Creates formula-based sensors** from mathematical expressions
+- **YAML configuration** for easy sensor definition and management
+- **Advanced dependency resolution** with automatic entity discovery
+- **Storage-based configuration** with runtime modification capabilities
+- **Variable support** for reusable calculations and shared configuration
+- **Dynamic entity aggregation** using regex, tags, areas, and device class patterns
+- **Comprehensive caching** with AST compilation for optimal performance
+- **Integration with Home Assistant** device and entity registries
 
-### Advantages
+## Key Features
 
-- **Variable reuse**: Define sensor/attributes variables or globally to use across multiple sensors and attributes
-- **Dependency tracking**: Automatic sensor update ordering
-- **Type safety**: TypedDict interfaces for better IDE support
-- **Bulk management**: Multiple sensor sets for various groups
-- **Storage Import/Export**: bluk YAML load, modification, or sensor level CRUD
-- **Validation**: YAML validation avoids errors at runtime
-- **Services**: Built-in reload, update, and testing capabilities
+- **Variable reuse**: Define variables globally or per sensor for use across multiple formulas
+- **Dependency tracking**: Automatic sensor update ordering and hierarchical dependencies
+- **Type safety**: Complete TypedDict interfaces for better IDE support and validation
+- **Storage-first architecture**: Runtime configuration changes without file modifications
+- **Dot notation**: Easy access to entity attributes in formulas
+- **Collection functions**: Support for aggregating multiple entities with filtering
 
 ## Installation
+
+Install the package using pip:
 
 ```bash
 pip install ha-synthetic-sensors
 ```
 
-Development setup:
+For development setup:
 
 ```bash
 git clone https://github.com/SpanPanel/ha-synthetic-sensors
@@ -57,17 +55,22 @@ cd ha-synthetic-sensors
 poetry install --with dev
 ```
 
-**Benefits of device integration:**
+## Getting Started
 
-- **Unified Device View**: Synthetic sensors appear under your integration's device in HA UI
-- **Lifecycle Control**: Parent integration controls setup, reload, and teardown
-- **Update Coordination**: Synthetic sensors update within parent's async update routines
-- **Entity Naming**: Sensors use parent integration's naming conventions
-- **Resource Sharing**: Parent can provide its own HA dependencies (hass, coordinators, etc.)
+For detailed implementation examples, API documentation, and integration patterns,
+see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
 
-## YAML configuration
+The package provides a clean public API:
 
-### Simple calculated sensors
+- **StorageManager** - Manages sensor set storage and configuration
+- **SensorSet** - Handle for individual sensor set operations
+- **FormulaConfig/SensorConfig** - Configuration classes for sensors and formulas
+- **DataProviderResult** - Type definition for data provider callbacks
+- **SyntheticSensorsIntegration** - Main integration class for standalone use
+
+## YAML Configuration Examples
+
+### Simple Calculated Sensors
 
 ```yaml
 version: "1.0"
@@ -197,18 +200,8 @@ sensors:
 
 **Integration Domain:**
 
-Device association requires the integration to specify its `integration_domain` in the `SensorManagerConfig`:
-
-```python
-manager_config = SensorManagerConfig(
-    integration_domain="span",  # Your integration's domain
-    device_info=self.device_info,
-    lifecycle_managed_externally=True
-)
-```
-
-This ensures device lookups are isolated to your integration's namespace and prevents conflicts with other integrations
-that might use the same device identifiers.
+Device association requires specifying the integration domain. See the
+[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for implementation details.
 
 **Benefits of device association:**
 
@@ -475,7 +468,7 @@ min("state:>9999")                  # Returns: 0
 max("attribute:invalid<0")          # Returns: 0
 ```
 
-**Detecting Empty Collections (Advanced):**
+**Detecting Empty Collections:**
 
 If you need to distinguish between "no matching entities" and "entities with zero values", you can use a formula like this:
 
@@ -490,37 +483,12 @@ sensors:
     # but will show 0 when power entities exist but all have zero values
 ```
 
-## Formula examples
+## Formula Examples
 
-```python
-# Basic arithmetic and conditionals
-"circuit_1 + circuit_2 + circuit_3"
-"net_power * buy_rate / 1000 if net_power > 0 else abs(net_power) * sell_rate / 1000"
+For detailed formula examples and programming patterns, see the
+[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
 
-# Using numeric literals in formulas
-"sensor_value * 0.85 + 100"                     # Efficiency factor and offset
-"(temperature - 32) * 5 / 9"                    # Fahrenheit to Celsius conversion
-"power * 1.0955"                                 # Tax calculation with literal rate
-
-# Mathematical functions
-"sqrt(power_a**2 + power_b**2)"              # Square root, exponents
-"round(temperature, 1)"                      # Rounding
-"clamp(efficiency, 0, 100)"                  # Constrain to range
-"map(brightness, 0, 255, 0, 100)"            # Map from one range to another
-
-# Collection functions with OR patterns
-sum("device_class:power|energy")            # Sum all power OR energy entities
-count("device_class:door|window")           # Count all door OR window entities
-avg("device_class:temperature|humidity")    # Average temperature OR humidity sensors
-
-# Dot notation attribute access
-"sensor1.battery_level + climate.living_room.current_temperature"
-
-# Cross-sensor references
-"sensor.span_panel_main_hvac_total_power + sensor.span_panel_main_lighting_total_power"
-```
-
-### Numeric Literals in Variables
+## Variables and Configuration
 
 Numeric literals can be used directly in variable definitions for constants, conversion factors, and thresholds:
 
@@ -620,335 +588,31 @@ data:
   context: { A: 10, B: 5 }
 ```
 
-## Manual component setup
+## Development and Integration
 
-```python
-from ha_synthetic_sensors import (
-    ConfigManager, Evaluator, NameResolver, SensorManager, ServiceLayer
-)
+For detailed implementation examples, API documentation, and integration patterns, see the
+[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
 
-# Initialize and setup
-config_manager = ConfigManager(hass)
-name_resolver = NameResolver(hass, variables=variables)
-evaluator = Evaluator(hass)
-sensor_manager = SensorManager(hass, name_resolver, async_add_entities)
-service_layer = ServiceLayer(hass, config_manager, sensor_manager, name_resolver, evaluator)
+### Public API
 
-# Load configuration and setup services
-config = config_manager.load_from_file("config.yaml")
-await sensor_manager.load_configuration(config)
-await service_layer.async_setup_services()
-```
+The package provides a clean, stable public API:
 
-## Logging Configuration
+- **StorageManager** - Manages sensor set storage and configuration
+- **SensorSet** - Handle for individual sensor set operations
+- **FormulaConfig/SensorConfig** - Configuration classes for sensors and formulas
+- **DataProviderResult** - Type definition for data provider callbacks
+- **SyntheticSensorsIntegration** - Main integration class for standalone use
 
-The package provides logging utilities to help with debugging and troubleshooting. By default, the package uses
-Python's standard logging hierarchy, but you may need to explicitly configure it in Home Assistant environments.
+### Architecture
 
-### Enable Debug Logging
+The package uses a modular architecture with clear separation between configuration management,
+formula evaluation, and Home Assistant integration. All internal implementation details are
+encapsulated behind the public API.
 
-```python
-import logging
-import ha_synthetic_sensors
+## Contributing
 
-# Configure debug logging for the entire package
-ha_synthetic_sensors.configure_logging(logging.DEBUG)
-
-# Test that logging is working (optional)
-ha_synthetic_sensors.test_logging()
-
-# Check current logging configuration (optional)
-logging_info = ha_synthetic_sensors.get_logging_info()
-_LOGGER.debug("Synthetic sensors logging: %s", logging_info)
-```
-
-### Home Assistant Configuration
-
-Alternatively, you can configure logging in Home Assistant's `configuration.yaml`:
-
-```yaml
-logger:
-  default: info
-  logs:
-    # Your integration
-    custom_components.your_integration: debug
-    # The synthetic sensors package
-    ha_synthetic_sensors: debug
-    # Specific modules (optional)
-    ha_synthetic_sensors.evaluator: debug
-    ha_synthetic_sensors.service_layer: debug
-```
-
-### Troubleshooting Logging Issues
-
-If you're not seeing log output from the package:
-
-1. **Call the test function**: `ha_synthetic_sensors.test_logging()` outputs test messages to verify logging works
-2. **Check configuration**: `ha_synthetic_sensors.get_logging_info()` shows current logger levels and settings
-3. **Verify integration setup**: Ensure your integration is also set to debug level
-4. **Check HA logs**: Look for the configuration confirmation message from `configure_logging()`
-
-## Type safety
-
-Uses TypedDict for all data structures providing type safety and IDE support:
-
-```python
-from ha_synthetic_sensors.config_manager import FormulaConfigDict, SensorConfigDict
-from ha_synthetic_sensors.types import EvaluationResult, DataProviderResult
-
-# Typed configuration validation
-validation_result = validate_yaml_content(yaml_content)
-if validation_result["is_valid"]:
-    sensors_count = validation_result["sensors_count"]
-
-# Typed formula evaluation
-result = evaluator.evaluate_formula(formula_config)
-if result["success"]:
-    value = result["value"]
-
-# Typed data provider callback
-def my_data_provider(entity_id: str) -> DataProviderResult:
-    return {"value": get_sensor_value(entity_id), "exists": True}
-```
-
-**Available TypedDict interfaces:** Configuration structures, evaluation results, data provider callbacks, service responses,
-entity creation results, integration management, and more.
-
-## Configuration format
-
-**Required:** `formula` - Mathematical expression
-
-**Recommended:** `name`, `device_class`, `state_class`, `unit_of_measurement`
-
-**Optional:** `variables`, `attributes`, `enabled`, `icon`
-
-**Auto-configuration files:** `<config>/synthetic_sensors_config.yaml`, `<config>/syn2_config.yaml`, etc.
-
-**Entity ID format:** `sensor.{device_prefix}_{sensor_key}` (with device association) or `sensor.{sensor_key}` (without)
-
-## Integration Setup
-
-The package supports two configuration approaches:
-
-- **Storage-based**: Full CRUD operations on individual sensors via `StorageManager` and `SensorSet` interface
-- **YAML-based**: File-level configuration managed by the integration (auto-discovery available)
-
-### Storage-Based Integration (Recommended)
-
-For integrations requiring programmatic sensor management with full CRUD capabilities:
-
-```python
-import ha_synthetic_sensors
-from ha_synthetic_sensors.storage_manager import StorageManager
-from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
-
-# In __init__.py
-async def async_setup_entry(hass, entry, async_add_entities):
-    ha_synthetic_sensors.configure_logging(logging.DEBUG)
-
-    # Initialize storage manager
-    storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
-    await storage_manager.async_load()
-
-    # Store for sensor platform
-    hass.data[DOMAIN][entry.entry_id]["storage_manager"] = storage_manager
-
-# In sensor.py
-async def async_setup_entry(hass, entry, async_add_entities):
-    storage_manager = hass.data[DOMAIN][entry.entry_id]["storage_manager"]
-
-    # Create sensor set with integration-controlled ID and get handle
-    sensor_set = await storage_manager.async_create_sensor_set(
-        sensor_set_id=f"{device_identifier}_sensors",  # Integration controls format
-        device_identifier=device_identifier,
-        name=f"SPAN Panel {device_identifier}"
-    )
-
-    # Generate complete configuration and bulk import via SensorSet
-    sensor_configs = generate_sensor_configs(device_data, device_identifier)
-    await sensor_set.async_replace_sensors(sensor_configs)
-
-    # Create sensor manager and load from storage
-    synthetic_integration = SyntheticSensorsIntegration(hass, entry)
-    sensor_manager = await synthetic_integration.create_managed_sensor_manager(
-        add_entities_callback=async_add_entities,
-        manager_config=manager_config
-    )
-
-    # Register data provider and load from storage
-    sensor_manager.register_data_provider_entities(backing_entities)
-    config = storage_manager.to_config(device_identifier=device_identifier)
-    await sensor_manager.load_configuration(config)
-
-# Later, for individual sensor CRUD operations:
-async def update_sensor_config(hass, entry, device_identifier, sensor_unique_id, new_config):
-    storage_manager = hass.data[DOMAIN][entry.entry_id]["storage_manager"]
-
-    # Get sensor set handle - clean handle pattern
-    sensor_set = storage_manager.get_sensor_set(f"{device_identifier}_sensors")
-
-    # Individual operations via SensorSet
-    await sensor_set.async_update_sensor(new_config)
-
-    # Property access for debugging/logging
-    _LOGGER.debug(f"Sensor set {sensor_set.sensor_set_id} has {sensor_set.sensor_count} sensors")
-```
-
-### Bulk Modification and Entity ID Change Tracking
-
-The package provides advanced bulk modification capabilities and automatic entity ID change tracking:
-
-#### Bulk Sensor Set Modifications
-
-```python
-from ha_synthetic_sensors.sensor_set import SensorSetModification
-
-# Example: Bulk entity ID changes when device configuration changes
-entity_id_changes = {
-    "sensor.old_power_meter": "sensor.new_power_meter",
-    "sensor.old_energy_meter": "sensor.new_energy_meter",
-    "sensor.old_temperature": "sensor.new_temperature"
-}
-
-modification = SensorSetModification(
-    entity_id_changes=entity_id_changes,
-    global_settings={"variables": {"efficiency_factor": 0.92}},
-    add_sensors=[new_sensor_config],
-    remove_sensors=["outdated_sensor_id"],
-    update_sensors=[modified_sensor_config]
-)
-
-result = await sensor_set.async_modify(modification)
-print(f"Applied {result['entity_ids_changed']} entity ID changes, "
-      f"added {result['sensors_added']} sensors, "
-      f"removed {result['sensors_removed']} sensors")
-```
-
-#### Automatic Entity ID Change Detection
-
-The system automatically tracks entity ID changes in Home Assistant:
-
-```python
-# When entity IDs change in HA (e.g., user renames entities),
-# the system automatically updates:
-# 1. Sensor configurations and formulas
-# 2. Global settings variables
-# 3. Home Assistant entity registry
-# 4. Formula caches
-# 5. Registered callbacks
-
-# Check if an entity ID is being tracked
-if storage_manager.is_entity_tracked("sensor.power_meter"):
-    print("Changes to this entity ID will be automatically handled")
-
-# Register callback for entity ID changes
-def handle_entity_change(old_id: str, new_id: str) -> None:
-    _LOGGER.info("Entity ID changed: %s -> %s", old_id, new_id)
-    # Update your integration's references
-
-storage_manager.add_entity_change_callback(handle_entity_change)
-```
-
-#### Benefits of Entity ID Change Tracking
-
-- **Automatic Updates**: No manual intervention needed when entities are renamed
-- **Efficiency**: Only processes changes for entities actually used by synthetic sensors
-- **Self-Change Detection**: Prevents infinite loops when the system initiates changes
-- **Bulk Operation Support**: Handles multiple entity ID changes efficiently
-- **Cache Coordination**: Automatically invalidates formula caches
-- **Integration Callbacks**: Notifies your integration of changes
-
-### YAML-Based Integration
-
-For simple configurations or testing (integration maintains YAML files):
-
-```python
-from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
-
-class MyCustomIntegration:
-    async def async_setup_sensors(self, async_add_entities):
-        synthetic_integration = SyntheticSensorsIntegration(self.hass)
-        self.sensor_manager = await synthetic_integration.create_managed_sensor_manager(
-            add_entities_callback=async_add_entities,
-            manager_config=manager_config
-        )
-
-        # Load YAML config (integration manages file updates)
-        config = await self.sensor_manager.load_config_from_yaml(yaml_config)
-        await self.sensor_manager.apply_config(config)
-```
-
-### Standalone Integration
-
-```python
-from ha_synthetic_sensors import async_setup_integration
-
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    return await async_setup_integration(hass, config_entry, async_add_entities)
-```
-
-**For detailed integration patterns, storage management, device association, and data provider implementation:**
-
-**See [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for complete setup instructions.**
-
-## Exception Handling
-
-Follows Home Assistant coordinator patterns with **strict error handling**:
-
-**Fatal Errors** (permanent configuration issues):
-
-- Syntax errors, missing entities, invalid patterns, undefined variables
-- Triggers circuit breaker, sensor becomes "unavailable"
-- **Missing entities**: When a variable references a non-existent entity ID, a critical error is raised
-
-**Transitory Errors** (temporary conditions):
-
-- Unavailable entities (temporarily), non-numeric states, cache issues
-- Allows graceful degradation, sensor becomes "unknown"
-
-**Key Behavior Changes**:
-
-- **No silent fallbacks**: Missing entities or undefined variables cause immediate errors rather than defaulting to 0
-- **Strict validation**: All entity IDs in variables must exist, or the sensor will fail to evaluate
-- **Clear error messages**: Detailed error information helps identify configuration issues
-
-**Exception Types:**
-
-- `SyntheticSensorsError` - Base for all package errors
-- `SyntheticSensorsConfigError` - Configuration issues
-- `FormulaSyntaxError`, `MissingDependencyError` - Formula evaluation
-- `SensorConfigurationError`, `SensorCreationError` - Sensor management
-
-**Integration with parent coordinators:** Fatal errors are logged but don't crash coordinators; transitory errors result
-in "unknown" state until resolved.
-
-## Dependencies
-
-**Core:** `pyyaml`, `simpleeval`, `voluptuous`
-**Development:** `pytest`, `pytest-asyncio`, `pytest-cov`, `black`, `ruff`, `mypy`, `bandit`, `pre-commit`
-
-## Development
-
-```bash
-# Setup
-poetry install --with dev
-poetry run pre-commit install
-
-# Testing and quality
-poetry run pytest --cov=src/ha_synthetic_sensors
-poetry run ruff check --fix .
-poetry run mypy src/ha_synthetic_sensors
-poetry run pre-commit run --all-files
-
-# Fix markdown (if markdownlint fails)
-./scripts/fix-markdown.sh
-```
-
-**Important:** Pre-commit hooks check but don't auto-fix markdown. Run `./scripts/fix-markdown.sh` locally if markdownlint fails.
-
-## Architecture
-
-**Core components:** `ConfigManager`, `Evaluator`, `NameResolver`, `SensorManager`, `ServiceLayer`, `SyntheticSensorsIntegration`
+Contributions are welcome! Please see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md)
+for development setup and contribution guidelines.
 
 ## License
 

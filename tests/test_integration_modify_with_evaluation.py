@@ -24,7 +24,7 @@ class TestIntegrationModifyWithEvaluation:
             mock_store = AsyncMock()
             MockStore.return_value = mock_store
 
-            manager = StorageManager(mock_hass, "test_integration_modify")
+            manager = StorageManager(mock_hass, "test_integration_modify", enable_entity_listener=False)
             # Set up the mock store
             manager._store = mock_store
             return manager

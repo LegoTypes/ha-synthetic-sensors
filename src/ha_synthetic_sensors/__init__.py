@@ -6,8 +6,10 @@ integrations using formula-based calculations and YAML configuration.
 
 import logging
 
-from .config_manager import ConfigManager
-from .evaluator import Evaluator
+# Public API - Core classes needed by integrations
+from .config_manager import FormulaConfig, SensorConfig
+
+# Public API - Integration helpers
 from .integration import (
     SyntheticSensorsIntegration,
     async_reload_integration,
@@ -17,9 +19,11 @@ from .integration import (
     get_integration,
     validate_yaml_content,
 )
-from .name_resolver import NameResolver
-from .sensor_manager import SensorManager
-from .service_layer import ServiceLayer
+from .sensor_set import SensorSet
+from .storage_manager import StorageManager
+
+# Public API - Type definitions
+from .types import DataProviderResult
 
 
 def configure_logging(level: int = logging.DEBUG) -> None:
@@ -100,15 +104,19 @@ def test_logging() -> None:
 
 __version__ = "0.1.0"
 __all__ = [
-    "ConfigManager",
-    "Evaluator",
-    "NameResolver",
-    "SensorManager",
-    "ServiceLayer",
+    # Type definitions
+    "DataProviderResult",
+    # Core classes
+    "FormulaConfig",
+    "SensorConfig",
+    "SensorSet",
+    "StorageManager",
+    # Integration helpers
     "SyntheticSensorsIntegration",
     "async_reload_integration",
     "async_setup_integration",
     "async_unload_integration",
+    # Utility functions
     "configure_logging",
     "get_example_config",
     "get_integration",

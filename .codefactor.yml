@@ -10,7 +10,7 @@ engines:
   pylint:
     enabled: true
     config:
-      max-line-length: 999
+      max-line-length: 250
       disable:
         - attribute-defined-outside-init  # Common HA pattern for lazy initialization
         - too-many-instance-attributes    # HA entities often have many attributes
@@ -24,7 +24,7 @@ engines:
 
 # Disable overly strict engines that don't understand HA patterns
   radon:
-    enabled: false  # Complexity metrics not useful for HA components
+    enabled: true  # Complexity metrics not useful for HA components
   bandit:
     enabled: false  # Security scanner too strict for HA development patterns
 

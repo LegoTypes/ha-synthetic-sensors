@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .config_manager import ConfigManager
     from .evaluator import Evaluator
     from .name_resolver import NameResolver
+    from .storage_manager import StorageManager
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -802,12 +803,50 @@ class SensorManager:
         self.register_data_provider_entities(entity_ids)
 
     def get_registered_entities(self) -> set[str]:
-        """Get current registered entities.
+        """
+        Get all entities registered with the data provider.
 
         Returns:
-            Set of entity IDs currently registered with the integration
+            Set of entity IDs registered for integration data access
         """
         return self._registered_entities.copy()
+
+    def register_with_storage_manager(self, storage_manager: StorageManager) -> None:
+        """
+        Register this SensorManager and its Evaluator with a StorageManager's entity change handler.
+
+        Args:
+            storage_manager: StorageManager instance to register with
+        """
+        from .storage_manager import StorageManager
+
+        if not isinstance(storage_manager, StorageManager):
+            raise ValueError("storage_manager must be a StorageManager instance")
+
+        storage_manager.register_sensor_manager(self)
+        storage_manager.register_evaluator(self._evaluator)
+        self._logger.debug("Registered SensorManager and Evaluator with StorageManager")
+
+    def unregister_from_storage_manager(self, storage_manager: StorageManager) -> None:
+        """
+        Unregister this SensorManager and its Evaluator from a StorageManager's entity change handler.
+
+        Args:
+            storage_manager: StorageManager instance to unregister from
+        """
+        from .storage_manager import StorageManager
+
+        if not isinstance(storage_manager, StorageManager):
+            raise ValueError("storage_manager must be a StorageManager instance")
+
+        storage_manager.unregister_sensor_manager(self)
+        storage_manager.unregister_evaluator(self._evaluator)
+        self._logger.debug("Unregistered SensorManager and Evaluator from StorageManager")
+
+    @property
+    def evaluator(self) -> Evaluator:
+        """Get the evaluator instance used by this SensorManager."""
+        return self._evaluator
 
     def _resolve_device_name_prefix(self, device_identifier: str) -> str | None:
         """Resolve device name to slugified prefix for entity_id generation.

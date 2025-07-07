@@ -305,7 +305,7 @@ def storage_manager_real(mock_hass):
     with patch("ha_synthetic_sensors.storage_manager.Store", return_value=mock_store):
         from ha_synthetic_sensors.storage_manager import StorageManager
 
-        manager = StorageManager(mock_hass, "test_storage_real")
+        manager = StorageManager(mock_hass, "test_storage_real", enable_entity_listener=False)
         yield manager
 
     # Cleanup

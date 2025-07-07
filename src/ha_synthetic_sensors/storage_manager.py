@@ -13,16 +13,20 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, dataclass
 import logging
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, Callable, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 import yaml
 
 from .config_manager import Config, ConfigManager, FormulaConfig, SensorConfig
+from .entity_change_handler import EntityChangeHandler
+from .entity_registry_listener import EntityRegistryListener
 from .exceptions import SyntheticSensorsError
 
 if TYPE_CHECKING:
+    from .evaluator import Evaluator
+    from .sensor_manager import SensorManager
     from .sensor_set import SensorSet
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,18 +88,29 @@ class StorageManager:
     while maintaining compatibility with existing config structures.
     """
 
-    def __init__(self, hass: HomeAssistant, storage_key: str = STORAGE_KEY) -> None:
+    def __init__(self, hass: HomeAssistant, storage_key: str = STORAGE_KEY, enable_entity_listener: bool = True) -> None:
         """
-        Initialize the StorageManager.
+        Initialize StorageManager.
 
         Args:
             hass: Home Assistant instance
-            storage_key: Storage key for HA storage system
+            storage_key: Storage key for persistent data
+            enable_entity_listener: Whether to enable entity registry listener
         """
         self.hass = hass
+        self._storage_key = storage_key
         self._store: Store[StorageData] = Store(hass, STORAGE_VERSION, storage_key)
         self._data: StorageData | None = None
         self._lock = asyncio.Lock()
+
+        # Entity change handling components
+        self._entity_change_handler = EntityChangeHandler()
+        self._entity_registry_listener: EntityRegistryListener | None = None
+        self._enable_entity_listener = enable_entity_listener
+        self._logger = _LOGGER.getChild(self.__class__.__name__)
+
+        # Cache for SensorSet instances to ensure consistency
+        self._sensor_set_cache: dict[str, SensorSet] = {}
 
     async def async_load(self) -> None:
         """Load configuration from HA storage."""
@@ -117,6 +132,11 @@ class StorageManager:
                         len(stored_data.get("sensors", {})),
                         len(stored_data.get("sensor_sets", {})),
                     )
+
+                # Start entity registry listener after loading (if enabled)
+                if self._enable_entity_listener:
+                    await self._start_entity_registry_listener()
+
             except Exception as err:
                 _LOGGER.error("Failed to load synthetic sensor storage: %s", err)
                 # Initialize empty storage on error
@@ -126,6 +146,114 @@ class StorageManager:
                     sensor_sets=_default_sensor_sets(),
                 )
                 raise SyntheticSensorsError(f"Failed to load storage: {err}") from err
+
+    async def async_unload(self) -> None:
+        """Unload storage manager and cleanup entity change components."""
+        await self._stop_entity_registry_listener()
+        self._logger.debug("Storage manager unloaded")
+
+    async def _start_entity_registry_listener(self) -> None:
+        """Start the entity registry listener for tracking external entity ID changes."""
+        if self._entity_registry_listener is not None:
+            self._logger.warning("Entity registry listener already started")
+            return
+
+        self._entity_registry_listener = EntityRegistryListener(
+            self.hass,
+            self,  # StorageManager instance
+            self._entity_change_handler,
+        )
+
+        await self._entity_registry_listener.async_start()
+        self._logger.debug("Started entity registry listener")
+
+    async def _stop_entity_registry_listener(self) -> None:
+        """Stop the entity registry listener."""
+        if self._entity_registry_listener is not None:
+            await self._entity_registry_listener.async_stop()
+            self._entity_registry_listener = None
+            self._logger.debug("Stopped entity registry listener")
+
+    def register_evaluator(self, evaluator: Evaluator) -> None:
+        """
+        Register an evaluator for entity change notifications.
+
+        Args:
+            evaluator: Evaluator instance to register
+        """
+        self._entity_change_handler.register_evaluator(evaluator)
+
+    def unregister_evaluator(self, evaluator: Evaluator) -> None:
+        """
+        Unregister an evaluator from entity change notifications.
+
+        Args:
+            evaluator: Evaluator instance to unregister
+        """
+        self._entity_change_handler.unregister_evaluator(evaluator)
+
+    def register_sensor_manager(self, sensor_manager: SensorManager) -> None:
+        """
+        Register a sensor manager for entity change notifications.
+
+        Args:
+            sensor_manager: SensorManager instance to register
+        """
+        self._entity_change_handler.register_sensor_manager(sensor_manager)
+
+    def unregister_sensor_manager(self, sensor_manager: SensorManager) -> None:
+        """
+        Unregister a sensor manager from entity change notifications.
+
+        Args:
+            sensor_manager: SensorManager instance to unregister
+        """
+        self._entity_change_handler.unregister_sensor_manager(sensor_manager)
+
+    def add_entity_change_callback(self, callback: Callable[[str, str], None]) -> None:
+        """
+        Add a callback to be notified of entity ID changes.
+
+        Args:
+            callback: Function that takes (old_entity_id, new_entity_id) parameters
+        """
+        if self._entity_registry_listener:
+            self._entity_registry_listener.add_entity_change_callback(callback)
+
+    def remove_entity_change_callback(self, callback: Callable[[str, str], None]) -> None:
+        """
+        Remove an entity change callback.
+
+        Args:
+            callback: Function to remove from callbacks
+        """
+        if self._entity_registry_listener:
+            self._entity_registry_listener.remove_entity_change_callback(callback)
+
+    @property
+    def entity_change_handler(self) -> EntityChangeHandler:
+        """Get the entity change handler instance."""
+        return self._entity_change_handler
+
+    def is_entity_tracked(self, entity_id: str) -> bool:
+        """
+        Check if an entity ID is tracked by any sensor set.
+
+        Args:
+            entity_id: Entity ID to check
+
+        Returns:
+            True if the entity ID is tracked by any sensor set
+        """
+        try:
+            for sensor_set_id in self.list_sensor_sets():
+                sensor_set = self.get_sensor_set(sensor_set_id.sensor_set_id)
+                if sensor_set.is_entity_tracked(entity_id):
+                    return True
+            return False
+        except Exception:
+            # If there's any error checking, assume not tracked
+            return False
 
     async def async_save(self) -> None:
         """Save configuration to HA storage."""
@@ -311,6 +439,11 @@ class StorageManager:
                     # This is an attribute formula
                     attr_name = formula.id.replace(f"{sensor_config.unique_id}_", "")
                     attr_dict: dict[str, Any] = {"formula": formula.formula}
+
+                    # Add attribute variables if present
+                    if formula.variables:
+                        attr_dict["variables"] = formula.variables
+
                     if formula.unit_of_measurement:
                         attr_dict["unit_of_measurement"] = formula.unit_of_measurement
                     if formula.device_class:
@@ -423,6 +556,10 @@ class StorageManager:
 
         # Delete the sensor set metadata
         del data["sensor_sets"][sensor_set_id]
+
+        # Remove from cache
+        self._sensor_set_cache.pop(sensor_set_id, None)
+
         await self.async_save()
 
         _LOGGER.info(
@@ -602,6 +739,12 @@ class StorageManager:
         )
 
         await self.async_save()
+
+        # Rebuild entity index in cached sensor set if it exists
+        if sensor_set_id in self._sensor_set_cache:
+            sensor_set = self._sensor_set_cache[sensor_set_id]
+            sensor_set._rebuild_entity_index()
+
         _LOGGER.debug("Stored %d sensors in bulk for sensor set: %s", len(sensor_configs), sensor_set_id)
 
     def get_sensor(self, unique_id: str) -> SensorConfig | None:
@@ -844,6 +987,11 @@ class StorageManager:
             sensor_set_id,
             device_identifier,
         )
+
+        # Rebuild entity index in cached sensor set if it exists
+        if sensor_set_id in self._sensor_set_cache:
+            sensor_set = self._sensor_set_cache[sensor_set_id]
+            sensor_set._rebuild_entity_index()
 
     # Utility methods
 
@@ -1199,7 +1347,12 @@ class StorageManager:
         """
         from .sensor_set import SensorSet
 
-        return SensorSet(self, sensor_set_id)
+        if sensor_set_id in self._sensor_set_cache:
+            return self._sensor_set_cache[sensor_set_id]
+
+        sensor_set = SensorSet(self, sensor_set_id)
+        self._sensor_set_cache[sensor_set_id] = sensor_set
+        return sensor_set
 
     # Convenience methods for integration support
 
