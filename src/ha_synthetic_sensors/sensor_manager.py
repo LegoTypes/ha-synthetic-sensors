@@ -1,10 +1,4 @@
-"""
-Sensor Manager - Dynamic sensor creation and lifecycle management.
-
-This module handles the creation, updating, and removal of synthetic sensors
-based on YAML configuration, providing the bridge between configuration
-and Home Assistant sensor entities.
-"""
+"""Sensor manager for synthetic sensors."""
 
 from __future__ import annotations
 
@@ -13,29 +7,27 @@ from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from .config_manager import ConfigManager
-    from .evaluator import Evaluator
-    from .name_resolver import NameResolver
-    from .storage_manager import StorageManager
-
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.util import dt as dt_util
+from homeassistant.util import dt as dt_util, slugify
 
-from .config_manager import AttributeValue, Config, FormulaConfig, SensorConfig
+from .config_models import Config, FormulaConfig, SensorConfig
 from .evaluator import Evaluator
+from .exceptions import FormulaEvaluationError
 from .name_resolver import NameResolver
-from .types import DataProviderCallback
+from .type_definitions import DataProviderCallback
 
 if TYPE_CHECKING:
-    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+    from homeassistant.core import EventStateChangedData
+
+    from .config_manager import ConfigManager
+    from .storage_manager import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,7 +123,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._calculated_attributes: dict[str, Any] = {}
 
         # Set base extra state attributes
-        base_attributes: dict[str, AttributeValue] = {}
+        base_attributes: dict[str, Any] = {}
         base_attributes["formula"] = self._main_formula.formula
         base_attributes["dependencies"] = list(self._main_formula.dependencies)
         if config.category:
@@ -150,7 +142,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     def _update_extra_state_attributes(self) -> None:
         """Update the extra state attributes with current values."""
         # Start with main formula attributes
-        base_attributes: dict[str, AttributeValue] = self._main_formula.attributes.copy()
+        base_attributes: dict[str, Any] = self._main_formula.attributes.copy()
 
         # Add calculated attributes from other formulas
         base_attributes.update(self._calculated_attributes)
@@ -276,7 +268,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 error_msg = main_result.get("error", "Unknown evaluation error")
                 # Treat formula evaluation failure as a fatal error
                 _LOGGER.error("Formula evaluation failed for %s: %s", self.entity_id, error_msg)
-                raise Exception(f"Formula evaluation failed for {self.entity_id}: {error_msg}")
+                raise FormulaEvaluationError(f"Formula evaluation failed for {self.entity_id}: {error_msg}")
 
             # Schedule entity update
             self.async_write_ha_state()
@@ -432,12 +424,11 @@ class SensorManager:
                 sw_version=device_entry.sw_version,
                 hw_version=device_entry.hw_version,
             )
-        else:
-            _LOGGER.debug(
-                "DEVICE_LOOKUP_DEBUG: No existing device found for identifier %s",
-                lookup_identifier,
-            )
 
+        _LOGGER.debug(
+            "DEVICE_LOOKUP_DEBUG: No existing device found for identifier %s",
+            lookup_identifier,
+        )
         return None
 
     def _create_new_device_info(self, sensor_config: SensorConfig) -> DeviceInfo:
@@ -491,7 +482,7 @@ class SensorManager:
             _LOGGER.debug("Configuration loaded successfully")
 
         except Exception as err:
-            _LOGGER.error(f"Failed to load configuration: {err}")
+            _LOGGER.error("Failed to load configuration: %s", err)
             # Restore old configuration if possible
             if old_config:
                 self._current_config = old_config
@@ -519,7 +510,7 @@ class SensorManager:
         self._sensors_by_entity_id.pop(sensor.entity_id, None)
         self._sensor_states.pop(sensor_unique_id, None)
 
-        _LOGGER.debug(f"Removed sensor: {sensor_unique_id}")
+        _LOGGER.debug("Removed sensor: %s", sensor_unique_id)
         return True
 
     def get_sensor_statistics(self) -> dict[str, Any]:
@@ -587,7 +578,7 @@ class SensorManager:
         # Add entities to Home Assistant
         if new_entities:
             self._add_entities_callback(new_entities)
-            _LOGGER.debug(f"Created {len(new_entities)} sensor entities")
+            _LOGGER.debug("Created %d sensor entities", len(new_entities))
 
     async def _create_sensor_entity(self, sensor_config: SensorConfig) -> DynamicSensor:
         """Create a sensor entity from configuration."""
@@ -647,9 +638,9 @@ class SensorManager:
                     device_hw_version=sensor_config.device_hw_version,
                     suggested_area=sensor_config.suggested_area,
                 )
-                _LOGGER.debug(f"Generated entity_id '{generated_entity_id}' for sensor '{sensor_config.unique_id}'")
+                _LOGGER.debug("Generated entity_id '%s' for sensor '%s'", generated_entity_id, sensor_config.unique_id)
             except ValueError as e:
-                _LOGGER.error(f"Failed to generate entity_id for sensor '{sensor_config.unique_id}': {e}")
+                _LOGGER.error("Failed to generate entity_id for sensor '%s': %s", sensor_config.unique_id, e)
                 raise
 
         # Create manager config with device info
@@ -696,7 +687,7 @@ class SensorManager:
         # Add new entities
         if new_entities:
             self._add_entities_callback(new_entities)
-            _LOGGER.debug(f"Added {len(new_entities)} new sensor entities")
+            _LOGGER.debug("Added %d new sensor entities", len(new_entities))
 
     async def _update_sensor_config(self, old_config: SensorConfig, new_config: SensorConfig) -> None:
         """Update an existing sensor with new configuration."""
@@ -724,7 +715,7 @@ class SensorManager:
 
     async def create_sensors(self, config: Config) -> list[DynamicSensor]:
         """Create sensors from configuration - public interface for testing."""
-        _LOGGER.debug(f"Creating sensors from config with {len(config.sensors)} sensor configs")
+        _LOGGER.debug("Creating sensors from config with %d sensor configs", len(config.sensors))
 
         all_created_sensors: list[DynamicSensor] = []
 
@@ -736,7 +727,7 @@ class SensorManager:
                 self._sensors_by_unique_id[sensor_config.unique_id] = sensor
                 self._sensors_by_entity_id[sensor.entity_id] = sensor
 
-        _LOGGER.debug(f"Created {len(all_created_sensors)} sensor entities")
+        _LOGGER.debug("Created %d sensor entities", len(all_created_sensors))
         return all_created_sensors
 
     def update_sensor_states(
@@ -818,11 +809,6 @@ class SensorManager:
         Args:
             storage_manager: StorageManager instance to register with
         """
-        from .storage_manager import StorageManager
-
-        if not isinstance(storage_manager, StorageManager):
-            raise ValueError("storage_manager must be a StorageManager instance")
-
         storage_manager.register_sensor_manager(self)
         storage_manager.register_evaluator(self._evaluator)
         self._logger.debug("Registered SensorManager and Evaluator with StorageManager")
@@ -834,11 +820,6 @@ class SensorManager:
         Args:
             storage_manager: StorageManager instance to unregister from
         """
-        from .storage_manager import StorageManager
-
-        if not isinstance(storage_manager, StorageManager):
-            raise ValueError("storage_manager must be a StorageManager instance")
-
         storage_manager.unregister_sensor_manager(self)
         storage_manager.unregister_evaluator(self._evaluator)
         self._logger.debug("Unregistered SensorManager and Evaluator from StorageManager")
@@ -864,9 +845,6 @@ class SensorManager:
             # Use device name (user customizable) for prefix generation
             device_name = device_entry.name
             if device_name:
-                # Import slugify function for consistent HA entity_id generation
-                from homeassistant.util import slugify
-
                 return slugify(device_name)
 
         return None
@@ -893,13 +871,12 @@ class SensorManager:
             device_prefix = self._resolve_device_name_prefix(device_identifier)
             if device_prefix:
                 return f"sensor.{device_prefix}_{sensor_key}"
-            else:
-                # Device not found - this should raise an error per Phase 1 requirements
-                integration_domain = self._manager_config.integration_domain
-                raise ValueError(
-                    f"Device not found for identifier '{device_identifier}' in domain '{integration_domain}'. "
-                    f"Ensure the device is registered before creating synthetic sensors."
-                )
+            # Device not found - this should raise an error per Phase 1 requirements
+            integration_domain = self._manager_config.integration_domain
+            raise ValueError(
+                f"Device not found for identifier '{device_identifier}' in domain '{integration_domain}'. "
+                f"Ensure the device is registered before creating synthetic sensors."
+            )
 
         # Fallback for sensors without device association (legacy behavior)
         return f"sensor.{sensor_key}"

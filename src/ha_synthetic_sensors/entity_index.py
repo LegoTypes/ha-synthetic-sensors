@@ -7,7 +7,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .config_manager import SensorConfig
+from .config_models import SensorConfig
 from .name_resolver import NameResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -241,4 +241,4 @@ class EntityIndex:
 
         # Use NameResolver for validation
         temp_resolver = NameResolver(self._hass, {})
-        return temp_resolver._is_valid_entity_id(value)
+        return temp_resolver.is_valid_entity_id(value)

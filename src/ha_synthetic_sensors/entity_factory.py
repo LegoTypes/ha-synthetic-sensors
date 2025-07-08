@@ -11,7 +11,7 @@ from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 
-from .config_manager import AttributeConfigDict, SensorConfigDict
+from .config_types import AttributeConfigDict, SensorConfigDict
 from .name_resolver import NameResolver
 
 _LOGGER = logging.getLogger(__name__)

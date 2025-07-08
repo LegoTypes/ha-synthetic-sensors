@@ -1,0 +1,37 @@
+version: "1.0"
+sensors:
+  wrong_structure_sensor:
+    name: "Sensor With Wrong Structure"
+    entity_id: "sensor.wrong_structure"
+    # Using old nested formula structure - user confusion
+    formula:
+      formula: "power_value * 2"
+      variables:
+        power_value: "sensor.input_power"
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  mixed_structure_sensor:
+    name: "Mixed Structure Sensor"
+    entity_id: "sensor.mixed"
+    formula: "power_value * efficiency"
+    variables:
+      power_value: "sensor.input_power"
+    # Unit placed in wrong location
+    formula_config:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  duplicate_sensor_ids:
+    name: "First Duplicate Sensor"
+    entity_id: "sensor.duplicate"
+    formula: "power_value"
+    variables:
+      power_value: "sensor.input_power"
+
+  duplicate_sensor_ids:  # Same key - will overwrite
+    name: "Second Duplicate Sensor"
+    entity_id: "sensor.duplicate_different"
+    formula: "voltage_value"
+    variables:
+      voltage_value: "sensor.input_voltage"

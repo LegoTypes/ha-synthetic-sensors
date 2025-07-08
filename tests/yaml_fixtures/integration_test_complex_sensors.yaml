@@ -1,0 +1,75 @@
+version: "1.0"
+global_settings:
+  device_identifier: "device_123"
+
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    unique_id: "device_123_power"
+    entity_id: "sensor.device_123_power"
+    icon: "mdi:flash"
+    formula: "power_value"
+    variables:
+      power_value: "test_backing.device_123_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    attributes:
+      source_sensor: "test_backing.device_123_power"
+      calculation_type: "direct"
+
+  energy_sensor:
+    name: "Energy Sensor"
+    unique_id: "device_123_daily_energy"
+    entity_id: "sensor.device_123_daily_energy"
+    icon: "mdi:lightning-bolt"
+    formula: "power_value * hours / 1000"
+    variables:
+      power_value: "test_backing.device_123_power"
+      hours: "24"
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+    state_class: "total_increasing"
+    attributes:
+      calculation_period: "24 hours"
+      base_sensor: "test_backing.device_123_power"
+      conversion_factor: "0.001"
+
+  total_consumption:
+    name: "Total Consumption"
+    unique_id: "device_123_total_consumption"
+    entity_id: "sensor.device_123_total_consumption"
+    icon: "mdi:counter"
+    formula: "(current_power + historical_avg) * efficiency_factor"
+    variables:
+      current_power: "test_backing.device_123_power"
+      historical_avg: "sensor.device_123_power_average"
+      efficiency_factor: "0.95"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    attributes:
+      efficiency: "95%"
+      includes_losses: true
+      calculation_method: "weighted_average"
+
+  circuit_summary:
+    name: "Circuit Summary"
+    unique_id: "device_123_circuit_summary"
+    entity_id: "sensor.device_123_circuit_summary"
+    formula: "circuit_1 + circuit_2 + circuit_3 + circuit_4"
+    variables:
+      circuit_1: "test_backing.device_123_circuit_1_power"
+      circuit_2: "test_backing.device_123_circuit_2_power"
+      circuit_3: "test_backing.device_123_circuit_3_power"
+      circuit_4: "test_backing.device_123_circuit_4_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    attributes:
+      circuit_count: 4
+      circuit_names:
+        - "Main Panel"
+        - "HVAC System"
+        - "Kitchen Appliances"
+        - "Lighting"

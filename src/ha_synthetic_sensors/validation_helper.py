@@ -9,16 +9,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .exceptions import MissingDependencyError
-from .types import DataProviderResult
+from .exceptions import MissingDependencyError, NonNumericStateError
+from .type_definitions import DataProviderResult
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class DataValidationError(Exception):
     """Raised when data provider returns invalid data structure."""
-
-    pass
 
 
 def validate_data_provider_result(result: Any, entity_id: str, context: str = "data provider") -> DataProviderResult:
@@ -133,12 +131,12 @@ def convert_to_numeric(state: Any, entity_id: str) -> float:
         Numeric value
 
     Raises:
-        MissingDependencyError: If state cannot be converted to number
+        NonNumericStateError: If state cannot be converted to number
     """
     if state is None:
-        raise MissingDependencyError(f"Entity '{entity_id}' has None state - cannot convert to number")
+        raise NonNumericStateError(entity_id, "None")
 
     try:
         return float(state)
     except (ValueError, TypeError) as e:
-        raise MissingDependencyError(f"Entity '{entity_id}' state '{state}' cannot be converted to number: {e}") from e
+        raise NonNumericStateError(entity_id, str(state)) from e

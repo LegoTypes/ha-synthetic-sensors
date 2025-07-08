@@ -23,6 +23,7 @@ from .exceptions import IntegrationNotInitializedError, IntegrationSetupError
 from .name_resolver import NameResolver
 from .sensor_manager import SensorManager, SensorManagerConfig
 from .service_layer import ServiceLayer
+from .storage_manager import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ class SyntheticSensorsIntegration:
             return True
 
         except Exception as err:
-            _LOGGER.error(f"Failed to setup synthetic sensors integration: {err}")
+            _LOGGER.error("Failed to setup synthetic sensors integration: %s", err)
             await self._cleanup()
             raise IntegrationSetupError(str(err)) from err
 
@@ -198,11 +199,11 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.debug(f"Successfully loaded synthetic sensors configuration from {config_path}")
+            _LOGGER.debug("Successfully loaded synthetic sensors configuration from %s", config_path)
             return True
 
         except Exception as err:
-            _LOGGER.error(f"Failed to load synthetic sensors configuration from {config_path}: {err}")
+            _LOGGER.error("Failed to load synthetic sensors configuration from %s: %s", config_path, err)
             return False
 
     async def load_configuration_content(self, yaml_content: str) -> bool:
@@ -224,7 +225,7 @@ class SyntheticSensorsIntegration:
             return True
 
         except Exception as err:
-            _LOGGER.error(f"Failed to load synthetic sensors configuration from content: {err}")
+            _LOGGER.error("Failed to load synthetic sensors configuration from content: %s", err)
             return False
 
     async def _check_auto_configuration(self) -> None:
@@ -235,8 +236,6 @@ class SyntheticSensorsIntegration:
         """
         # Check if storage-based configuration exists
         try:
-            from .storage_manager import StorageManager
-
             # Create a temporary storage manager to check for existing data
             storage_manager = StorageManager(self._hass)
             await storage_manager.async_load()
@@ -264,15 +263,15 @@ class SyntheticSensorsIntegration:
 
         for path in potential_paths:
             if path.exists() and path.is_file():
-                _LOGGER.debug(f"Found auto-configuration file: {path}")
+                _LOGGER.debug("Found auto-configuration file: %s", path)
                 self._auto_config_path = path
 
                 try:
                     await self.load_configuration_file(str(path))
-                    _LOGGER.debug(f"Successfully loaded auto-configuration from {path}")
+                    _LOGGER.debug("Successfully loaded auto-configuration from %s", path)
                     break
                 except Exception as err:
-                    _LOGGER.warning(f"Failed to load auto-configuration from {path}: {err}")
+                    _LOGGER.warning("Failed to load auto-configuration from %s: %s", path, err)
                     continue
         else:
             _LOGGER.debug("No auto-configuration file found")
@@ -319,7 +318,7 @@ class SyntheticSensorsIntegration:
             errors.append(f"Failed to reset state: {err}")
 
         if errors:
-            _LOGGER.error(f"Errors during synthetic sensors cleanup: {errors}")
+            _LOGGER.error("Errors during synthetic sensors cleanup: %s", errors)
 
         return {
             "success": len(errors) == 0,
@@ -383,13 +382,13 @@ class SyntheticSensorsIntegration:
 
         # Create and return sensor manager
         sensor_manager = SensorManager(
-            effective_hass,
-            default_name_resolver,
-            add_entities_callback,
-            manager_config,
+            hass=effective_hass,
+            name_resolver=default_name_resolver,
+            add_entities_callback=add_entities_callback,
+            manager_config=manager_config,
         )
 
-        _LOGGER.debug(f"Created managed sensor manager for external integration domain: {integration_domain}")
+        _LOGGER.debug("Created managed sensor manager for external integration domain: %s", integration_domain)
         return sensor_manager
 
 
@@ -451,13 +450,13 @@ async def async_create_sensor_manager(
 
     # Create and return sensor manager
     sensor_manager = SensorManager(
-        hass,
-        name_resolver,
-        add_entities_callback,
-        manager_config,
+        hass=hass,
+        name_resolver=name_resolver,
+        add_entities_callback=add_entities_callback,
+        manager_config=manager_config,
     )
 
-    _LOGGER.debug(f"Created external sensor manager for integration: {integration_domain}")
+    _LOGGER.debug("Created external sensor manager for integration: %s", integration_domain)
     return sensor_manager
 
 
@@ -474,7 +473,7 @@ async def async_setup_integration(
     entry_id = config_entry.entry_id
 
     if entry_id in _integrations:
-        _LOGGER.warning(f"Synthetic sensors integration already exists for entry {entry_id}")
+        _LOGGER.warning("Synthetic sensors integration already exists for entry %s", entry_id)
         return True
 
     integration = SyntheticSensorsIntegration(hass, config_entry)

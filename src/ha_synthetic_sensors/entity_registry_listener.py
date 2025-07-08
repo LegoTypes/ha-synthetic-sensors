@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
 
 if TYPE_CHECKING:
     from .entity_change_handler import EntityChangeHandler
-    from .storage_manager import StorageManager
+    from .storage_manager import StorageData, StorageManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,23 +61,23 @@ class EntityRegistryListener:
 
         self._logger.debug("Stopped entity registry listener")
 
-    def add_entity_change_callback(self, callback: Callable[[str, str], None]) -> None:
+    def add_entity_change_callback(self, change_callback: Callable[[str, str], None]) -> None:
         """
         Add a callback to be notified of entity ID changes.
 
         Args:
-            callback: Function that takes (old_entity_id, new_entity_id) parameters
+            change_callback: Function that takes (old_entity_id, new_entity_id) parameters
         """
-        self.entity_change_handler.register_integration_callback(callback)
+        self.entity_change_handler.register_integration_callback(change_callback)
 
-    def remove_entity_change_callback(self, callback: Callable[[str, str], None]) -> None:
+    def remove_entity_change_callback(self, change_callback: Callable[[str, str], None]) -> None:
         """
         Remove an entity change callback.
 
         Args:
-            callback: Function to remove from callbacks
+            change_callback: Function to remove from callbacks
         """
-        self.entity_change_handler.unregister_integration_callback(callback)
+        self.entity_change_handler.unregister_integration_callback(change_callback)
 
     @callback
     def _handle_entity_registry_updated(self, event: Event) -> None:
@@ -152,24 +152,41 @@ class EntityRegistryListener:
             old_entity_id: Old entity ID to replace
             new_entity_id: New entity ID to use
         """
-        data = self.storage_manager._ensure_loaded()
-        updated_sensors = []
-        updated_sensor_sets = []
+        data = self.storage_manager.data
 
         # Track which sensor sets need entity index rebuilding BEFORE we update storage
+        sensor_sets_needing_rebuild = self._get_sensor_sets_needing_rebuild(old_entity_id)
+
+        # Update sensor configurations
+        updated_sensors = self._update_sensor_configurations(data, old_entity_id, new_entity_id)
+
+        # Update global settings in sensor sets
+        updated_sensor_sets = self._update_global_settings(data, old_entity_id, new_entity_id)
+
+        # Save changes if any updates were made
+        await self._save_and_rebuild_if_needed(
+            updated_sensors, updated_sensor_sets, sensor_sets_needing_rebuild, old_entity_id, new_entity_id
+        )
+
+    def _get_sensor_sets_needing_rebuild(self, old_entity_id: str) -> list[Any]:
+        """Get sensor sets that need entity index rebuilding."""
         sensor_sets_needing_rebuild = []
         for sensor_set_metadata in self.storage_manager.list_sensor_sets():
             sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
             if sensor_set.is_entity_tracked(old_entity_id):
                 sensor_sets_needing_rebuild.append(sensor_set)
+        return sensor_sets_needing_rebuild
 
-        # Update sensor configurations
+    def _update_sensor_configurations(self, data: StorageData, old_entity_id: str, new_entity_id: str) -> list[str]:
+        """Update sensor configurations with new entity ID."""
+        updated_sensors = []
+
         for unique_id, stored_sensor in data["sensors"].items():
             config_data = stored_sensor.get("config_data")
             if not config_data:
                 continue
 
-            sensor_config = self.storage_manager._deserialize_sensor_config(config_data)
+            sensor_config = self.storage_manager.deserialize_sensor_config(config_data)
             updated = False
 
             # Update sensor entity_id
@@ -179,28 +196,39 @@ class EntityRegistryListener:
                 self._logger.debug("Updated sensor %s entity_id: %s -> %s", unique_id, old_entity_id, new_entity_id)
 
             # Update formula variables
-            for formula in sensor_config.formulas:
-                if formula.variables:
-                    for var_name, var_value in formula.variables.items():
-                        if var_value == old_entity_id:
-                            formula.variables[var_name] = new_entity_id
-                            updated = True
-                            self._logger.debug(
-                                "Updated sensor %s formula %s variable %s: %s -> %s",
-                                unique_id,
-                                formula.id,
-                                var_name,
-                                old_entity_id,
-                                new_entity_id,
-                            )
+            updated = self._update_formula_variables(sensor_config, old_entity_id, new_entity_id, unique_id) or updated
 
             if updated:
                 # Update the stored sensor with new config
-                stored_sensor["config_data"] = self.storage_manager._serialize_sensor_config(sensor_config)
-                stored_sensor["updated_at"] = self.storage_manager._get_timestamp()
+                stored_sensor["config_data"] = self.storage_manager.serialize_sensor_config(sensor_config)
+                stored_sensor["updated_at"] = self.storage_manager.get_current_timestamp()
                 updated_sensors.append(unique_id)
 
-        # Update global settings in sensor sets
+        return updated_sensors
+
+    def _update_formula_variables(self, sensor_config: Any, old_entity_id: str, new_entity_id: str, unique_id: str) -> bool:
+        """Update formula variables in a sensor configuration."""
+        updated = False
+        for formula in sensor_config.formulas:
+            if formula.variables:
+                for var_name, var_value in formula.variables.items():
+                    if var_value == old_entity_id:
+                        formula.variables[var_name] = new_entity_id
+                        updated = True
+                        self._logger.debug(
+                            "Updated sensor %s formula %s variable %s: %s -> %s",
+                            unique_id,
+                            formula.id,
+                            var_name,
+                            old_entity_id,
+                            new_entity_id,
+                        )
+        return updated
+
+    def _update_global_settings(self, data: StorageData, old_entity_id: str, new_entity_id: str) -> list[str]:
+        """Update global settings in sensor sets."""
+        updated_sensor_sets = []
+
         for sensor_set_id, sensor_set_data in data["sensor_sets"].items():
             global_settings = sensor_set_data.get("global_settings", {})
             global_variables = global_settings.get("variables", {})
@@ -220,10 +248,20 @@ class EntityRegistryListener:
                         )
 
                 if updated:
-                    sensor_set_data["updated_at"] = self.storage_manager._get_timestamp()
+                    sensor_set_data["updated_at"] = self.storage_manager.get_current_timestamp()
                     updated_sensor_sets.append(sensor_set_id)
 
-        # Save changes if any updates were made
+        return updated_sensor_sets
+
+    async def _save_and_rebuild_if_needed(
+        self,
+        updated_sensors: list[str],
+        updated_sensor_sets: list[str],
+        sensor_sets_needing_rebuild: list[Any],
+        old_entity_id: str,
+        new_entity_id: str,
+    ) -> None:
+        """Save changes and rebuild entity indexes if needed."""
         if updated_sensors or updated_sensor_sets:
             await self.storage_manager.async_save()
 
@@ -232,7 +270,7 @@ class EntityRegistryListener:
                 self._logger.debug(
                     "Rebuilding entity index for sensor set %s due to entity ID change", sensor_set.sensor_set_id
                 )
-                sensor_set._rebuild_entity_index()
+                sensor_set.rebuild_entity_index()
                 self._logger.debug("Rebuilt entity index for sensor set %s", sensor_set.sensor_set_id)
 
             self._logger.info(

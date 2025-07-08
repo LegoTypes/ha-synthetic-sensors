@@ -4,29 +4,23 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import ast
-from dataclasses import dataclass
 import logging
 import re
+from typing import Any
 
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import HomeAssistant
 from simpleeval import SimpleEval
 
 from .cache import CacheConfig, FormulaCache
 from .collection_resolver import CollectionResolver
-from .config_manager import FormulaConfig
-from .data_validation import validate_data_provider_result, validate_entity_state_value
+from .config_models import FormulaConfig
 from .dependency_parser import DependencyParser
-from .exceptions import (
-    DataValidationError,
-    FormulaSyntaxError,
-    MissingDependencyError,
-    NonNumericStateError,
-    is_fatal_error,
-    is_retriable_error,
-)
+from .evaluator_cache import EvaluatorCache
+from .evaluator_config import CircuitBreakerConfig, RetryConfig
+from .evaluator_dependency import EvaluatorDependency
+from .exceptions import DataValidationError, is_fatal_error, is_retriable_error
 from .math_functions import MathFunctions
-from .types import CacheStats, ContextValue, DataProviderCallback, DependencyValidation, EvaluationResult
+from .type_definitions import CacheStats, ContextValue, DataProviderCallback, DependencyValidation, EvaluationResult
 from .variable_resolver import (
     ContextResolutionStrategy,
     HomeAssistantResolutionStrategy,
@@ -113,6 +107,10 @@ class Evaluator(FormulaEvaluator):
         self._circuit_breaker_config = circuit_breaker_config or CircuitBreakerConfig()
         self._retry_config = retry_config or RetryConfig()
 
+        # Initialize handler modules
+        self._dependency_handler = EvaluatorDependency(hass, data_provider_callback)
+        self._cache_handler = EvaluatorCache(cache_config)
+
         # TIER 1: Fatal Error Circuit Breaker (Traditional Pattern)
         # Tracks configuration errors, syntax errors, missing entities, etc.
         self._error_count: dict[str, int] = {}
@@ -121,565 +119,316 @@ class Evaluator(FormulaEvaluator):
         # Tracks temporary issues like unknown/unavailable entity states.
         self._transitory_error_count: dict[str, int] = {}
 
-        # Data provider callback for direct integration data access
-        self._data_provider_callback = data_provider_callback
-
         # Support for push-based entity registration (new pattern)
         self._registered_integration_entities: set[str] | None = None
 
-    def update_integration_entities(self, entity_ids: set[str]) -> None:
-        """Update the set of entities that the integration can provide (new push-based pattern).
+        # Store data provider callback for backward compatibility
+        self._data_provider_callback = data_provider_callback
 
-        Args:
-            entity_ids: Set of entity IDs that the integration can provide data for
-        """
+    @property
+    def _data_provider_callback(self) -> DataProviderCallback | None:
+        """Get the data provider callback for backward compatibility."""
+        return getattr(self._dependency_handler, "_data_provider_callback", None)
+
+    @_data_provider_callback.setter
+    def _data_provider_callback(self, value: DataProviderCallback | None) -> None:
+        """Set the data provider callback for backward compatibility."""
+        self._dependency_handler.data_provider_callback = value
+
+    def update_integration_entities(self, entity_ids: set[str]) -> None:
+        """Update the set of entities that the integration can provide (new push-based pattern)."""
         self._registered_integration_entities = entity_ids.copy()
+        self._dependency_handler.update_integration_entities(entity_ids)
         _LOGGER.debug("Updated integration entities: %d entities", len(entity_ids))
 
     def get_integration_entities(self) -> set[str]:
-        """Get the current set of integration entities using the push-based pattern.
-
-        Returns:
-            Set of entity IDs that the integration can provide data for
-        """
-        if self._registered_integration_entities is not None:
-            return self._registered_integration_entities.copy()
-
-        return set()
+        """Get the current set of integration entities using the push-based pattern."""
+        return self._dependency_handler.get_integration_entities()
 
     def evaluate_formula(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling."""
-        # Use either name or id as formula identifier for display/logging
         formula_name = config.name or config.id
-        # Use config.id for cache key generation to ensure uniqueness
-        # config.name is just for display and is not guaranteed to be unique
         cache_key_id = config.id
 
         try:
-            # Check if we should bail due to too many attempts
+            # Check circuit breaker
             if self._should_skip_evaluation(formula_name):
-                return {
-                    "success": False,
-                    "error": (f"Skipping formula '{formula_name}' due to repeated errors"),
-                    "value": None,
-                }
+                return self._create_error_result(f"Skipping formula '{formula_name}' due to repeated errors")
 
-            # Check cache first
-            filtered_context = self._filter_context_for_cache(context)
-            cached_result = self._cache.get_result(config.formula, filtered_context, cache_key_id)
-            if cached_result is not None:
-                return {
-                    "success": True,
-                    "value": cached_result,
-                    "cached": True,
-                    "state": "ok",
-                }
+            # Check cache
+            cache_result = self._cache_handler.check_cache(config, context, cache_key_id)
+            if cache_result:
+                return cache_result
 
-            # Extract dependencies using enhanced method that handles variables and collection functions
-            dependencies = self._extract_formula_dependencies(config, context)
+            # Extract and validate dependencies
+            dependencies, collection_pattern_entities = self._extract_and_prepare_dependencies(config, context)
+            missing_deps, unavailable_deps, unknown_deps = self._dependency_handler.check_dependencies(
+                dependencies, context, collection_pattern_entities
+            )
 
-            # Identify collection pattern entities that don't need numeric validation
-            parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
-            collection_pattern_entities = set()
-            for query in parsed_deps.dynamic_queries:
-                entity_refs = self._collection_resolver._entity_reference_pattern.findall(query.pattern)
-                collection_pattern_entities.update(entity_refs)
+            # Handle dependency issues
+            dependency_result = self._handle_dependency_issues(missing_deps, unavailable_deps, unknown_deps, formula_name)
+            if dependency_result:
+                return dependency_result
 
-            # Validate dependencies are available
-            missing_deps, unavailable_deps = self._check_dependencies(dependencies, context, collection_pattern_entities)
-
-            # Handle missing entities (fatal error)
-            if missing_deps:
-                # TIER 1 FATAL ERROR: Increment fatal error counter
-                # Missing entities indicate permanent configuration issues
-                error = MissingDependencyError(", ".join(missing_deps), formula_name)
-                self._increment_error_count(formula_name)
-                _LOGGER.error(
-                    "Missing dependencies in formula '%s': %s",
-                    formula_name,
-                    missing_deps,
-                )
-                return {
-                    "success": False,
-                    "error": str(error),
-                    "value": None,
-                    "state": "unavailable",
-                    "missing_dependencies": list(missing_deps),
-                }
-
-            # Handle unavailable entities (propagate unknown state)
-            if unavailable_deps:
-                # TIER 2 TRANSITORY HANDLING: Don't increment fatal error count
-                # Instead, track as transitory and propagate unknown state upward
-                # Allows the synthetic sensor to indicate temporary unavailability
-                if self._circuit_breaker_config.track_transitory_errors:
-                    self._increment_transitory_error_count(formula_name)
-                _LOGGER.info(
-                    "Formula '%s' has unavailable dependencies: %s. Setting synthetic sensor to unknown state.",
-                    formula_name,
-                    unavailable_deps,
-                )
-                return {
-                    "success": True,  # Not an error, but dependency unavailable
-                    "value": None,
-                    "state": "unknown",
-                    "unavailable_dependencies": list(unavailable_deps),
-                }
-
-            # Build evaluation context
+            # Build and validate evaluation context
             eval_context = self._build_evaluation_context(dependencies, context, config)
+            context_result = self._validate_evaluation_context(eval_context, formula_name)
+            if context_result:
+                return context_result
 
-            # Additional safety check: if any values in the context are unavailable/unknown/None,
-            # this is now a fatal error (no graceful handling)
-            for var_name, var_value in eval_context.items():
-                if var_value is None:
-                    # Use the validation helper to raise a fatal error
-                    validate_entity_state_value(var_value, f"variable '{var_name}' in formula '{formula_name}'")
-                elif isinstance(var_value, str) and var_value == STATE_UNAVAILABLE:
-                    # Treat unavailable as fatal error
-                    raise DataValidationError(
-                        f"Variable '{var_name}' in formula '{formula_name}' has unavailable state '{var_value}'. "
-                        f"This is a fatal error - all dependencies must be available."
-                    )
-                elif isinstance(var_value, str) and var_value == STATE_UNKNOWN:
-                    # Unknown state is always non-fatal - just propagate the unknown state
-                    return {
-                        "success": True,  # Not a failure, just temporarily unknown
-                        "value": None,
-                        "state": STATE_UNKNOWN,
-                    }
+            # Evaluate the formula
+            result = self._execute_formula_evaluation(config, eval_context, context, cache_key_id)
 
-            # Create evaluator with proper separation of names and functions
-            evaluator = SimpleEval()
-            evaluator.names = eval_context
-            evaluator.functions = self._math_functions.copy()
-
-            # Preprocess formula: resolve variables first, then collection functions, then normalize entity_ids
-            processed_formula = self._preprocess_formula_for_evaluation(config.formula, eval_context)
-
-            # Optimization: If the formula has been completely resolved to a literal,
-            # we can evaluate it directly without needing the complex evaluation context
-            try:
-                # Check if the processed formula is a simple numeric literal
-                result = float(processed_formula)
-                # If we get here, it's a pure number - no need for complex evaluation
-
-            except ValueError:
-                # Not a literal - proceed with normal evaluation
-                result = evaluator.eval(processed_formula)
-
-            # Cache the result
-            self._cache.store_result(config.formula, result, filtered_context, cache_key_id)
-
-            # Reset error count on success
-            # CIRCUIT BREAKER RESET: When a formula evaluates successfully,
-            # we reset BOTH error counters to allow recovery from previous issues
-            if self._circuit_breaker_config.reset_on_success:
-                self._error_count.pop(formula_name, None)
-                self._transitory_error_count.pop(formula_name, None)
-
-            return {
-                "success": True,
-                "value": result,
-                "cached": False,
-                "state": "ok",
-            }
+            # Handle success
+            self._handle_successful_evaluation(formula_name)
+            return self._create_success_result(result)
 
         except DataValidationError:
-            # DataValidationError should always be fatal and propagate up
-            # Don't catch or handle - let it bubble up to caller
             raise
         except Exception as err:
-            # TWO-TIER ERROR CLASSIFICATION following HA coordinator patterns:
-            # We analyze the exception to determine whether it represents a fatal
-            # error (configuration/syntax issues) or a transitory error (temporary
-            # runtime issues that might resolve themselves).
+            return self._handle_evaluation_error(err, formula_name)
 
-            if is_fatal_error(err):
-                # TIER 1: Fatal errors - permanent configuration issues
+    def _extract_and_prepare_dependencies(
+        self, config: FormulaConfig, context: dict[str, ContextValue] | None
+    ) -> tuple[set[str], set[str]]:
+        """Extract dependencies and prepare collection pattern entities."""
+        return self._dependency_handler.extract_and_prepare_dependencies(config, context)
+
+    def _handle_dependency_issues(
+        self, missing_deps: set[str], unavailable_deps: set[str], unknown_deps: set[str], formula_name: str
+    ) -> EvaluationResult | None:
+        """Handle missing, unavailable, and unknown dependencies with state reflection."""
+        # Only missing dependencies are truly fatal
+        if missing_deps:
+            return self._handle_missing_dependencies(missing_deps, formula_name)
+
+        # Handle non-fatal dependencies with state reflection
+        # Priority: unavailable > unknown (unavailable is worse)
+        if unavailable_deps or unknown_deps:
+            all_problematic_deps = list(unavailable_deps) + list(unknown_deps)
+
+            if unavailable_deps:
+                # If any dependencies are unavailable, reflect unavailable state
+                error_msg = f"Unavailable dependencies: {', '.join(sorted(unavailable_deps))}"
+                if unknown_deps:
+                    error_msg += f"; Unknown dependencies: {', '.join(sorted(unknown_deps))}"
+                _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
+                return self._create_success_result_with_state("unavailable", unavailable_dependencies=all_problematic_deps)
+
+            # Only unknown dependencies
+            error_msg = f"Unknown dependencies: {', '.join(sorted(unknown_deps))}"
+            _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
+            return self._create_success_result_with_state("unknown", unavailable_dependencies=all_problematic_deps)
+
+        return None
+
+    def _handle_missing_dependencies(self, missing_deps: set[str], formula_name: str) -> EvaluationResult:
+        """Handle missing dependencies (fatal error)."""
+        error_msg = f"Missing dependencies: {', '.join(sorted(missing_deps))}"
+        _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
+        self._increment_error_count(formula_name)
+        return self._create_error_result(error_msg, state="unavailable", missing_dependencies=list(missing_deps))
+
+    def _validate_evaluation_context(self, eval_context: dict[str, ContextValue], formula_name: str) -> EvaluationResult | None:
+        """Validate that evaluation context has all required variables."""
+        try:
+            # Check for any None values in the context that would break evaluation
+            none_variables = [var for var, value in eval_context.items() if value is None]
+            if none_variables:
+                error_msg = f"Variables with None values: {', '.join(none_variables)}"
+                _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
                 self._increment_error_count(formula_name)
-                _LOGGER.error("Fatal error in formula '%s': %s", formula_name, err)
+                return self._create_error_result(error_msg, state="unavailable")
+            return None
+        except Exception as err:
+            _LOGGER.error("Formula '%s': Context validation error: %s", formula_name, err)
+            self._increment_error_count(formula_name)
+            return self._create_error_result(f"Context validation error: {err}", state="unavailable")
 
-                # For fatal errors, we could raise UpdateFailed to trigger coordinator retry logic
-                # but for now we return error state to allow graceful degradation
-                return {
-                    "success": False,
-                    "error": f"Fatal error in formula '{formula_name}': {err}",
-                    "value": None,
-                    "state": "unavailable",
-                }
-            elif is_retriable_error(err):
-                # TIER 2: Transitory errors - temporary issues that might resolve
-                if self._circuit_breaker_config.track_transitory_errors:
-                    self._increment_transitory_error_count(formula_name)
-                _LOGGER.warning("Transitory error in formula '%s': %s", formula_name, err)
+    def _execute_formula_evaluation(
+        self,
+        config: FormulaConfig,
+        eval_context: dict[str, ContextValue],
+        context: dict[str, ContextValue] | None,
+        cache_key_id: str,
+    ) -> float:
+        """Execute the actual formula evaluation."""
+        # Preprocess formula for evaluation
+        processed_formula = self._preprocess_formula_for_evaluation(config.formula, eval_context)
 
-                return {
-                    "success": True,  # Not a failure, just temporarily unavailable
-                    "value": None,
-                    "state": "unknown",
-                    "error": f"Transitory error: {err}",
-                }
-            else:
-                # Unknown error type - treat as fatal for safety
-                error_message = str(err)
-                is_syntax_error = "not defined" in error_message.lower() or "syntax" in error_message.lower()
+        # Create evaluator with math functions and context
+        evaluator = SimpleEval(functions=self._math_functions)
+        evaluator.names = eval_context
 
-                if is_syntax_error:
-                    # Wrap in our exception type for better error handling
-                    syntax_error = FormulaSyntaxError(config.formula, str(err))
-                    self._increment_error_count(formula_name)
-                    _LOGGER.error("Syntax error in formula '%s': %s", formula_name, syntax_error)
+        # Evaluate the formula
+        result = evaluator.eval(processed_formula)
 
-                    return {
-                        "success": False,
-                        "error": str(syntax_error),
-                        "value": None,
-                        "state": "unavailable",
-                    }
-                else:
-                    # Unknown error - treat as transitory for graceful degradation
-                    if self._circuit_breaker_config.track_transitory_errors:
-                        self._increment_transitory_error_count(formula_name)
-                    _LOGGER.warning("Unknown error in formula '%s': %s", formula_name, err)
+        # Validate result
+        if not isinstance(result, (int, float)):
+            raise ValueError(f"Formula result must be numeric, got {type(result).__name__}: {result}")
 
-                    return {
-                        "success": False,
-                        "error": f"Unknown error in formula '{formula_name}': {err}",
-                        "value": None,
-                        "state": "unknown",
-                    }
+        # Cache the result using the cache handler
+        self._cache_handler.cache_result(config, context, cache_key_id, float(result))
 
+        return float(result)
+
+    def _handle_successful_evaluation(self, formula_name: str) -> None:
+        """Reset error counters on successful evaluation."""
+        self._error_count.pop(formula_name, None)
+        self._transitory_error_count.pop(formula_name, None)
+
+    def _create_success_result(self, result: float) -> EvaluationResult:
+        """Create a successful evaluation result."""
+        return {
+            "success": True,
+            "value": result,
+            "state": "ok",
+        }
+
+    def _create_success_result_with_state(self, state: str, **kwargs: Any) -> EvaluationResult:
+        """Create a successful result with specific state (for dependency state reflection)."""
+        result: EvaluationResult = {
+            "success": True,
+            "value": None,
+            "state": state,
+        }
+        # Add any additional fields from kwargs
+        for key, value in kwargs.items():
+            if key in ["unavailable_dependencies", "missing_dependencies"]:
+                result[key] = value  # type: ignore[literal-required]
+        return result
+
+    def _create_error_result(self, error_message: str, state: str = "unavailable", **kwargs: Any) -> EvaluationResult:
+        """Create an error evaluation result."""
+        result: EvaluationResult = {
+            "success": False,
+            "error": error_message,
+            "value": None,
+            "state": state,
+        }
+        # Add any additional fields from kwargs that are valid for EvaluationResult
+        for key, value in kwargs.items():
+            if key in ["cached", "unavailable_dependencies", "missing_dependencies"]:
+                result[key] = value  # type: ignore[literal-required]
+        return result
+
+    def _handle_evaluation_error(self, err: Exception, formula_name: str) -> EvaluationResult:
+        """Handle evaluation errors with appropriate error classification."""
+        if is_fatal_error(err):
+            return self._handle_fatal_error(err, formula_name)
+        if is_retriable_error(err):
+            return self._handle_retriable_error(err, formula_name)
+        return self._handle_unknown_error(err, formula_name)
+
+    def _handle_fatal_error(self, err: Exception, formula_name: str) -> EvaluationResult:
+        """Handle fatal errors that should trigger circuit breaker."""
+        _LOGGER.error("Formula '%s': Fatal error: %s", formula_name, err)
+        self._increment_error_count(formula_name)
+        return self._create_error_result(str(err), state="unavailable")
+
+    def _handle_retriable_error(self, err: Exception, formula_name: str) -> EvaluationResult:
+        """Handle retriable errors that should not trigger circuit breaker."""
+        _LOGGER.debug("Formula '%s': Retriable error: %s", formula_name, err)
+        self._increment_transitory_error_count(formula_name)
+        return self._create_error_result(str(err), state="unknown")
+
+    def _handle_unknown_error(self, err: Exception, formula_name: str) -> EvaluationResult:
+        """Handle unknown errors with conservative approach."""
+        _LOGGER.warning(
+            "Formula '%s': Unknown error type, treating as fatal: %s (%s)",
+            formula_name,
+            err,
+            type(err).__name__,
+        )
+        self._increment_error_count(formula_name)
+        return self._create_error_result(str(err), state="unavailable")
+
+    # Delegate dependency checking to handler
     def _check_dependencies(
         self,
         dependencies: set[str],
         context: dict[str, ContextValue] | None = None,
         collection_pattern_entities: set[str] | None = None,
-    ) -> tuple[set[str], set[str]]:
-        """Check which dependencies are missing or unavailable.
-
-        This method is a critical part of the two-tier circuit breaker system.
-        It distinguishes between two types of dependency issues:
-
-        1. MISSING ENTITIES: Entities that don't exist in Home Assistant
-           - These are FATAL errors (Tier 1)
-           - Usually indicate configuration mistakes or typos
-           - Will cause the formula to fail and increment fatal error count
-
-        2. UNAVAILABLE ENTITIES: Entities that exist but are unavailable/unknown/
-           non-numeric
-           - These are TRANSITORY errors (Tier 2)
-           - Usually indicate temporary issues (network, device offline, etc.)
-           - Formula evaluation continues but propagates unknown state upward
-
-        Args:
-            dependencies: Set of dependency names to check
-            context: Optional context dictionary with variable values
-
-        Returns:
-            Tuple of (missing_entities, unavailable_entities)
-        """
-        missing: set[str] = set()
-        unavailable: set[str] = set()
-        context = context or {}
-        collection_pattern_entities = collection_pattern_entities or set()
-
-        for entity_id in dependencies:
-            # First check if provided in context
-            if entity_id in context:
-                continue
-
-            # Determine if this entity should use the data provider callback
-            use_data_provider = False
-            if self._data_provider_callback:
-                integration_entities = self.get_integration_entities()
-                use_data_provider = entity_id in integration_entities
-
-            # Check if data provider callback can provide this entity
-            if use_data_provider and self._data_provider_callback:
-                try:
-                    raw_result = self._data_provider_callback(entity_id)
-                    # Use validation helper to ensure result is valid (raises DataValidationError for bad data)
-                    result = validate_data_provider_result(raw_result, f"dependency check for '{entity_id}'")
-
-                    if result["exists"]:
-                        # Entity is available from data provider, check if it's usable
-                        value = result["value"]
-                        # Per requirements: treat None or unavailable states as FATAL errors, not warnings
-                        if value is None:
-                            raise DataValidationError(
-                                f"Data provider returned None state value for entity '{entity_id}' - this is a fatal error. "
-                                "All data provider values must be non-None."
-                            )
-                        elif isinstance(value, str) and value in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                            raise DataValidationError(
-                                f"Data provider returned unavailable state '{value}' for entity '{entity_id}' - this is a fatal error. "
-                                "All data provider values must be available and valid."
-                            )
-                        # For data provider entities, assume they're providing the correct type
-                        continue
-                    else:
-                        # If integration claims to provide this entity but callback says it doesn't exist,
-                        # this is an error condition - treat as unavailable, don't fall back to HA
-                        _LOGGER.error(
-                            "Integration claims to provide entity '%s' but data provider callback returned exists=False",
-                            entity_id,
-                        )
-                        unavailable.add(entity_id)
-                        continue
-                except DataValidationError:
-                    # Re-raise DataValidationError as a fatal error - don't handle gracefully
-                    raise
-                except Exception as e:
-                    # Data provider callback failed - this is a fatal configuration error
-                    # The integration claims to provide this entity but the callback failed
-                    _LOGGER.error(
-                        "Data provider callback failed for entity '%s': %s - treating as fatal error",
-                        entity_id,
-                        e,
-                    )
-                    from .exceptions import MissingDependencyError
-
-                    raise MissingDependencyError(
-                        f"Data provider callback failed for entity '{entity_id}': {e}. "
-                        "This indicates a configuration or implementation error in the integration."
-                    ) from e
-
-            # Then check if it's a Home Assistant entity
-            state = self._hass.states.get(entity_id)
-            if state is None:
-                # FATAL ERROR: Entity doesn't exist in Home Assistant and not provided by callback
-                missing.add(entity_id)
-            elif state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN) or state.state is None:
-                # TRANSITORY ERROR: Entity exists but currently unavailable or has None state
-                unavailable.add(entity_id)
-            else:
-                # Special handling for collection pattern entities - they don't need numeric validation
-                if entity_id in collection_pattern_entities:
-                    # Collection pattern entities can have any state value (they're used as pattern sources)
-                    continue
-
-                # Check if the state can be converted to numeric (for mathematical operations)
-                try:
-                    self._convert_to_numeric(state.state, entity_id)
-                except NonNumericStateError:
-                    # Determine if this is a FATAL or TRANSITORY error based on
-                    # entity type
-                    if self._is_entity_supposed_to_be_numeric(state):
-                        # TRANSITORY ERROR: Entity should be numeric but currently isn't
-                        # (e.g., sensor.temperature returning "starting_up")
-                        unavailable.add(entity_id)
-                    else:
-                        # FATAL ERROR: Entity is fundamentally non-numeric
-                        # (e.g., binary_sensor.door, weather.current_condition)
-                        missing.add(entity_id)
-
-        return missing, unavailable
+    ) -> tuple[set[str], set[str], set[str]]:
+        """Check dependencies and return missing, unavailable, and unknown sets."""
+        return self._dependency_handler.check_dependencies(dependencies, context, collection_pattern_entities)
 
     def get_formula_dependencies(self, formula: str) -> set[str]:
-        """Extract and return all entity dependencies from a formula."""
-        # Check cache first
-        cached_deps = self._cache.get_dependencies(formula)
-        if cached_deps is not None:
-            return cached_deps
-
-        # Use dependency parser
-        dependencies = self._dependency_parser.extract_dependencies(formula)
-
-        # Cache the result
-        self._cache.store_dependencies(formula, dependencies)
-        return dependencies
+        """Get dependencies for a formula."""
+        return self._dependency_handler.get_formula_dependencies(formula)
 
     def _extract_formula_dependencies(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> set[str]:
-        """Extract dependencies from formula config, handling entity references in collection patterns.
-
-        This method extracts dependencies for the new design where entity references
-        can appear directly within collection patterns like sum("device_class: input_select.device_type").
-
-        Variables can be either:
-        1. Entity aliases: var: "sensor.some_entity" -> creates dependency on sensor.some_entity
-        2. Literal values: var: 1 -> no dependency, just a literal value
-
-        Args:
-            config: Formula configuration with variables
-            context: Optional evaluation context with literal values
-
-        Returns:
-            Set of actual entity dependencies needed for evaluation
-        """
-        dependencies: set[str] = set()
-        context = context or {}
-
-        # Add variable entity references as dependencies (for backward compatibility)
-        # Only add variables that map to entity IDs (not literal values)
-        if hasattr(config, "variables") and config.variables:
-            for _var_name, entity_id in config.variables.items():
-                # If the variable maps to a string that looks like an entity ID, it's a dependency
-                # Skip numeric literals (int/float)
-                if isinstance(entity_id, str) and "." in entity_id:
-                    dependencies.add(entity_id)
-                # If it's a literal value (number), it's not a dependency
-
-        # Extract entity references from collection patterns
-        parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
-
-        for query in parsed_deps.dynamic_queries:
-            # Look for entity references within the pattern using collection resolver's pattern
-            entity_refs = self._collection_resolver._entity_reference_pattern.findall(query.pattern)
-            dependencies.update(entity_refs)
-
-        # Extract regular dependencies (non-collection function entities)
-        static_deps = self._dependency_parser.extract_entity_references(config.formula)
-
-        # Filter out variables that are provided as literal values in context
-        # These are not entity dependencies, they're just literal values
-        for dep in static_deps:
-            if dep not in context and "." in dep:
-                # Only add as dependency if it looks like an entity ID
-                dependencies.add(dep)
-                # Single word variables (like A, B, C) without context are likely undefined variables
-                # and will cause evaluation errors, but that's the expected behavior
-
-        return dependencies
+        """Extract dependencies from formula config, handling entity references in collection patterns."""
+        # Use dependency handler for consistent extraction logic
+        return self._dependency_handler.extract_formula_dependencies(config, context)
 
     def validate_formula_syntax(self, formula: str) -> list[str]:
         """Validate formula syntax and return list of errors."""
         errors = []
 
         try:
-            # Basic syntax validation using simpleeval
-            evaluator = SimpleEval()
+            # Basic syntax validation using AST
+            ast.parse(formula, mode="eval")
+        except SyntaxError as err:
+            errors.append(f"Syntax error: {err.msg} at position {err.offset}")
+            return errors
 
-            # Add dummy functions for validation
-            evaluator.functions.update(
-                {
-                    "entity": lambda x: 0,
-                    "state": lambda x: 0,
-                    "float": float,
-                    "int": int,
-                    "abs": abs,
-                    "min": min,
-                    "max": max,
-                    "round": round,
-                    "sum": sum,
-                }
-            )
+        try:
+            # Check for valid variable names and function calls
+            dependencies = self.get_formula_dependencies(formula)
 
-            # Try to parse the expression (simpleeval doesn't have compile method)
-            evaluator.parse(formula)
+            # Validate each dependency
+            for dep in dependencies:
+                if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$", dep):
+                    errors.append(f"Invalid variable name: {dep}")
+
+            # Note: We don't require formulas to reference entities - they can use literal values in variables
 
         except Exception as err:
-            errors.append(f"Syntax error: {err}")
-
-        # Check for common issues
-        if "entity(" not in formula and "state(" not in formula and "states." not in formula:
-            errors.append("Formula does not reference any entities")
-
-        # Check for balanced parentheses
-        if formula.count("(") != formula.count(")"):
-            errors.append("Unbalanced parentheses")
+            errors.append(f"Validation error: {err}")
 
         return errors
 
     def validate_dependencies(self, dependencies: set[str]) -> DependencyValidation:
-        """Validate that all dependencies exist and return any issues."""
-        issues = {}
-        missing_entities = []
-        unavailable_entities = []
-
-        for entity_id in dependencies:
-            state = self._hass.states.get(entity_id)
-            if state is None:
-                issues[entity_id] = "Entity does not exist"
-                missing_entities.append(entity_id)
-            elif state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                issues[entity_id] = f"Entity state is {state.state}"
-                unavailable_entities.append(entity_id)
-
-        return {
-            "is_valid": len(issues) == 0,
-            "issues": issues,
-            "missing_entities": missing_entities,
-            "unavailable_entities": unavailable_entities,
-        }
+        """Validate dependencies and return validation result."""
+        return self._dependency_handler.validate_dependencies(dependencies)
 
     def get_evaluation_context(self, formula_config: FormulaConfig) -> dict[str, ContextValue]:
-        """Build evaluation context with entity states and helper functions."""
-        context: dict[str, ContextValue] = {}
+        """Get the evaluation context for a formula configuration."""
+        dependencies = self._extract_formula_dependencies(formula_config)
+        return self._build_evaluation_context(dependencies, None, formula_config)
 
-        # Add entity-specific context
-        for entity_id in formula_config.dependencies:
-            state = self._hass.states.get(entity_id)
-            if state:
-                # Add direct entity access - only add numeric entities
-                try:
-                    numeric_value = self._get_numeric_state(state)
-                    context[f"entity_{entity_id.replace('.', '_')}"] = numeric_value
-                except NonNumericStateError:
-                    # Skip non-numeric entities in the context
-                    # They will be handled properly by the dependency checking system
-                    _LOGGER.debug(
-                        "Skipping non-numeric entity '%s' in evaluation context",
-                        entity_id,
-                    )
-
-                # Add attribute access
-                for attr_name, attr_value in state.attributes.items():
-                    safe_attr_name = f"{entity_id.replace('.', '_')}_{attr_name.replace('.', '_')}"
-                    context[safe_attr_name] = attr_value
-
-        return context
-
+    # Delegate cache operations to handler
     def clear_cache(self, formula_name: str | None = None) -> None:
-        """Clear evaluation cache for specific formula or all formulas."""
-        if formula_name:
-            # For specific formula, we could implement formula-specific clearing
-            # For now, clear all as a simple implementation
-            self._cache.clear_all()
-        else:
-            self._cache.clear_all()
+        """Clear cache for specific formula or all formulas."""
+        self._cache_handler.clear_cache(formula_name)
 
     def get_cache_stats(self) -> CacheStats:
-        """Get cache statistics for monitoring.
+        """Get cache statistics."""
+        cache_stats = self._cache_handler.get_cache_stats()
+        # Add error counts from the evaluator's circuit breaker tracking
+        cache_stats["error_counts"] = self._error_count.copy()
+        return cache_stats
 
-        Returns statistics that include both cache performance metrics and
-        error tracking information from the two-tier circuit breaker system.
-        This allows monitoring of both successful operations and error patterns.
-        """
-        stats = self._cache.get_statistics()
-        return {
-            "total_cached_formulas": stats["dependency_entries"],
-            "total_cached_evaluations": stats["total_entries"],
-            "valid_cached_evaluations": stats["valid_entries"],
-            "error_counts": dict(self._error_count),  # Fatal errors only
-            "cache_ttl_seconds": stats["ttl_seconds"],
-            # Note: transitory_error_count is tracked but not exposed in stats
-            # as these are temporary issues that don't indicate system problems
-        }
-
+    # Configuration methods
     def get_circuit_breaker_config(self) -> CircuitBreakerConfig:
-        """Get the current circuit breaker configuration."""
+        """Get current circuit breaker configuration."""
         return self._circuit_breaker_config
 
     def get_retry_config(self) -> RetryConfig:
-        """Get the current retry configuration."""
+        """Get current retry configuration."""
         return self._retry_config
 
     def update_circuit_breaker_config(self, config: CircuitBreakerConfig) -> None:
-        """Update the circuit breaker configuration.
-
-        Args:
-            config: New circuit breaker configuration
-        """
+        """Update circuit breaker configuration."""
         self._circuit_breaker_config = config
+        _LOGGER.debug("Updated circuit breaker config: threshold=%d", config.max_fatal_errors)
 
     def update_retry_config(self, config: RetryConfig) -> None:
-        """Update the retry configuration.
-
-        Args:
-            config: New retry configuration
-        """
+        """Update retry configuration."""
         self._retry_config = config
+        _LOGGER.debug("Updated retry config: max_attempts=%d, backoff=%f", config.max_attempts, config.backoff_seconds)
 
     def _build_evaluation_context(
         self,
@@ -687,491 +436,158 @@ class Evaluator(FormulaEvaluator):
         context: dict[str, ContextValue] | None = None,
         config: FormulaConfig | None = None,
     ) -> dict[str, ContextValue]:
-        """Build the evaluation context using the new polymorphic resolution system."""
+        """Build evaluation context from dependencies and configuration."""
         eval_context: dict[str, ContextValue] = {}
 
-        # Create resolution strategies in priority order
-        strategies: list[VariableResolutionStrategy] = []
+        # Create variable resolver
+        resolver = self._create_variable_resolver(context)
 
-        # 1. Context strategy (highest priority - explicit values)
-        if context:
-            strategies.append(ContextResolutionStrategy(context))
+        # Add context variables first (highest priority)
+        self._add_context_variables(eval_context, context)
 
-        # 2. Integration strategy (if available)
-        if self._data_provider_callback:
-            strategies.append(IntegrationResolutionStrategy(self._data_provider_callback, evaluator=self))
+        # Resolve entity dependencies
+        self._resolve_entity_dependencies(eval_context, dependencies, resolver)
 
-        # 3. Home Assistant strategy (fallback)
-        strategies.append(HomeAssistantResolutionStrategy(self._hass))
-
-        # Create the resolver
-        resolver = VariableResolver(strategies)
-
-        # First, add all context variables directly to evaluation context
-        if context:
-            for var_name, value in context.items():
-                if isinstance(value, (int, float, str, bool)):
-                    eval_context[var_name] = value
-
-        # Second, resolve entity dependencies that are not in context
-        entity_vars: dict[str, str | int | float | None] = {entity_id: entity_id for entity_id in dependencies}
-        resolved_entities = resolver.resolve_variables(entity_vars)
-
-        for entity_id, (value, exists, source) in resolved_entities.items():
-            if exists and value is not None and entity_id not in eval_context:  # Don't override context values
-                eval_context[entity_id] = value
-                # Add normalized form for entities with dots
-                if "." in entity_id:
-                    normalized_name = entity_id.replace(".", "_")
-                    eval_context[normalized_name] = value
-
-                # Add state object for HA entities (for attribute access)
-                if source == "ha":
-                    state = self._hass.states.get(entity_id)
-                    if state:
-                        eval_context[f"{entity_id}_state"] = state
-            elif exists and value is None and entity_id not in eval_context:
-                # Entity exists but has None value - treat as unavailable dependency
-                raise MissingDependencyError(f"Entity '{entity_id}' has None value (unavailable)")
-            elif not exists and entity_id not in eval_context:
-                # Entity not found - this is a critical error
-                raise ValueError(f"Entity '{entity_id}' not found and is required for formula evaluation")
-
-        # Third, resolve variable mappings if config provides them
-        if config and hasattr(config, "variables") and config.variables:
-            variable_vars: dict[str, str | int | float | None] = dict(config.variables.items())
-            resolved_variables = resolver.resolve_variables(variable_vars)
-
-            for var_name, (value, exists, _source) in resolved_variables.items():
-                if exists and value is not None and var_name not in eval_context:  # Don't override context values
-                    eval_context[var_name] = value
-                elif exists and value is None and var_name not in eval_context:
-                    # Entity exists but has None value - treat as unavailable dependency
-                    original_value = config.variables.get(var_name) if config and hasattr(config, "variables") else None
-                    if isinstance(original_value, str):
-                        raise MissingDependencyError(
-                            f"Entity '{original_value}' referenced by variable '{var_name}' has None value (unavailable)"
-                        )
-                    else:
-                        raise MissingDependencyError(f"Variable '{var_name}' has None value (unavailable)")
-                elif not exists and var_name not in eval_context:
-                    # Variable could not be resolved - this is a critical error for entity references
-                    # Check if the original value was an entity reference (string) vs numeric literal
-                    original_value = config.variables.get(var_name) if config and hasattr(config, "variables") else None
-                    if isinstance(original_value, str):
-                        # This was an entity reference that couldn't be resolved
-                        raise ValueError(f"Entity '{original_value}' referenced by variable '{var_name}' not found")
-                    else:
-                        # This shouldn't happen for numeric literals, but it's still a critical error
-                        raise ValueError(f"Variable '{var_name}' could not be resolved and is required for formula evaluation")
+        # Resolve config variables (can override entity values)
+        self._resolve_config_variables(eval_context, config, resolver)
 
         return eval_context
 
-    def _increment_transitory_error_count(self, formula_name: str) -> None:
-        """Increment transitory error count for a formula.
+    def _create_variable_resolver(self, context: dict[str, ContextValue] | None) -> VariableResolver:
+        """Create variable resolver with appropriate strategies."""
+        strategies: list[VariableResolutionStrategy] = []
 
-        TIER 2 ERROR TRACKING: Transitory errors are tracked separately from
-        fatal errors. They represent temporary issues that might resolve on their
-        own (e.g., network connectivity, device availability). Unlike fatal errors,
-        these don't trigger the circuit breaker and don't prevent continued
-        evaluation attempts.
+        # Context resolution (highest priority)
+        if context:
+            strategies.append(ContextResolutionStrategy(context))
 
-        Examples of transitory errors:
-        - Entity states showing "unknown" or "unavailable"
-        - Temporary network connectivity issues
-        - Devices that are temporarily offline but will come back
+        # Integration resolution (for data provider callback)
+        if self._dependency_handler.data_provider_callback:
+            strategies.append(IntegrationResolutionStrategy(self._dependency_handler.data_provider_callback, self))
 
-        Args:
-            formula_name: Name/ID of the formula that encountered the error
-        """
-        current = self._transitory_error_count.get(formula_name, 0)
-        self._transitory_error_count[formula_name] = current + 1
+        # Home Assistant resolution (lowest priority)
+        strategies.append(HomeAssistantResolutionStrategy(self._hass))
 
-    def _should_skip_evaluation(self, formula_name: str) -> bool:
-        """Check if formula should be skipped due to repeated errors.
+        return VariableResolver(strategies)
 
-        CIRCUIT BREAKER LOGIC: This method implements the traditional circuit
-        breaker pattern but ONLY for fatal errors (Tier 1). Transitory errors
-        (Tier 2) are tracked separately and do NOT trigger the circuit breaker.
+    def _add_context_variables(self, eval_context: dict[str, ContextValue], context: dict[str, ContextValue] | None) -> None:
+        """Add context variables to evaluation context."""
+        if context:
+            for key, value in context.items():
+                if not key.startswith("entity_"):  # Skip entity references
+                    eval_context[key] = value
 
-        This intelligent approach allows the system to:
-        1. Stop wasting resources on permanently broken formulas (fatal errors)
-        2. Continue attempting evaluation for temporarily unavailable dependencies
-        3. Gracefully handle mixed scenarios where some dependencies are missing
-           and others are just temporarily unavailable
+    def _resolve_entity_dependencies(
+        self, eval_context: dict[str, ContextValue], dependencies: set[str], resolver: VariableResolver
+    ) -> None:
+        """Resolve entity dependencies using variable resolver."""
+        for entity_id in dependencies:
+            try:
+                value, exists, source = resolver.resolve_variable(entity_id)
+                if exists and value is not None:
+                    self._add_entity_to_context(eval_context, entity_id, value, source)
+                else:
+                    _LOGGER.debug("Could not resolve entity: %s", entity_id)
+            except Exception as err:
+                _LOGGER.warning("Error resolving entity %s: %s", entity_id, err)
 
-        Args:
-            formula_name: Name/ID of the formula to check
+    def _add_entity_to_context(
+        self, eval_context: dict[str, ContextValue], entity_id: str, value: ContextValue, source: str
+    ) -> None:
+        """Add entity value to evaluation context with proper variable name."""
+        # Convert entity_id to valid variable name
+        var_name = entity_id.replace(".", "_").replace("-", "_")
+        eval_context[var_name] = value
 
-        Returns:
-            True if evaluation should be skipped due to too many FATAL errors
-        """
-        fatal_errors = self._error_count.get(formula_name, 0)
-        return fatal_errors >= self._circuit_breaker_config.max_fatal_errors
+        # Also add with original entity_id for backward compatibility
+        eval_context[entity_id] = value
 
-    def _increment_error_count(self, formula_name: str) -> None:
-        """Increment fatal error count for a formula.
+        _LOGGER.debug("Added %s=%s to context (source: %s)", var_name, value, source)
 
-        TIER 1 ERROR TRACKING: Fatal errors represent permanent issues that
-        require manual intervention to resolve. These errors trigger the
-        traditional circuit breaker pattern to prevent wasting system resources.
+    def _resolve_config_variables(
+        self, eval_context: dict[str, ContextValue], config: FormulaConfig | None, resolver: VariableResolver
+    ) -> None:
+        """Resolve config variables using variable resolver."""
+        if not config:
+            return
 
-        Examples of fatal errors:
-        - Syntax errors in formula expressions
-        - References to non-existent entities (typos in entity_ids)
-        - Invalid mathematical operations or function calls
-        - Configuration errors that won't resolve automatically
+        for var_name, var_value in config.variables.items():
+            # Skip if this variable is already set in context (context has higher priority)
+            if var_name in eval_context:
+                _LOGGER.debug("Skipping config variable %s (already set in context)", var_name)
+                continue
 
-        When the fatal error count reaches the configured maximum (default: 5), the
-        circuit breaker opens and evaluation attempts are skipped entirely.
+            try:
+                if isinstance(var_value, str) and "." in var_value:
+                    # Variable references an entity
+                    value, exists, source = resolver.resolve_variable(var_value)
+                    if exists and value is not None:
+                        eval_context[var_name] = value
+                        _LOGGER.debug(
+                            "Added config variable %s=%s (entity: %s, source: %s)", var_name, value, var_value, source
+                        )
+                    else:
+                        self._handle_config_variable_none_value(var_name, config)
+                else:
+                    # Variable has a direct value
+                    eval_context[var_name] = var_value
+                    _LOGGER.debug("Added config variable %s=%s (direct value)", var_name, var_value)
+            except Exception as err:
+                _LOGGER.warning("Error resolving config variable %s: %s", var_name, err)
 
-        Args:
-            formula_name: Name/ID of the formula that encountered the error
-        """
-        self._error_count[formula_name] = self._error_count.get(formula_name, 0) + 1
+    def _handle_config_variable_none_value(self, var_name: str, config: FormulaConfig) -> None:
+        """Handle config variable with None value."""
+        _LOGGER.warning("Config variable '%s' in formula '%s' resolved to None", var_name, config.name or config.id)
 
-    def _get_numeric_state(self, state: State) -> float:
-        """Get numeric value from entity state, with proper error handling.
-
-        This method raises exceptions for non-numeric states to ensure proper
-        error classification by the two-tier circuit breaker system.
-        """
-        # Handle None state values (can happen during startup)
-        if state.state is None:
-            _LOGGER.debug(
-                "Entity '%s' has None state (startup race condition)",
-                getattr(state, "entity_id", "unknown"),
-            )
-            raise NonNumericStateError(getattr(state, "entity_id", "unknown"), "None")
-
-        # Convert to numeric, allowing NonNumericStateError to propagate
-        return self._convert_to_numeric(state.state, getattr(state, "entity_id", "unknown"))
-
-    def _convert_to_numeric(self, state_value: str | None, entity_id: str) -> float:
-        """Convert a state value to numeric, raising exception if not possible.
-
-        Args:
-            state_value: The state value to convert
-            entity_id: Entity ID for error reporting
-
-        Returns:
-            float: Numeric value
-
-        Raises:
-            NonNumericStateError: If the state cannot be converted to numeric
-        """
-        # Handle None values explicitly
-        if state_value is None:
-            raise NonNumericStateError(entity_id, "None")
-
-        try:
-            return float(state_value)
-        except (ValueError, TypeError) as err:
-            # Try to extract numeric value from common patterns (e.g., "25.5°C")
-            if isinstance(state_value, str):
-                # Remove common units and try again
-                cleaned = re.sub(r"[^\d.-]", "", state_value)
-                if cleaned:
-                    try:
-                        return float(cleaned)
-                    except ValueError:
-                        pass
-
-            # If we can't convert, raise an exception instead of returning 0
-            raise NonNumericStateError(entity_id, str(state_value)) from err
-
-    def _filter_context_for_cache(self, context: dict[str, ContextValue] | None) -> dict[str, str | float | int | bool] | None:
-        """Filter context to only include types that can be cached.
-
-        Args:
-            context: Original context which may include callables
-
-        Returns:
-            Filtered context with only cacheable types
-        """
-        if context is None:
-            return None
-
-        return {key: value for key, value in context.items() if isinstance(value, (str, float, int, bool))}
-
-    def _is_entity_supposed_to_be_numeric(self, state: State) -> bool:
-        """Determine if entity should be numeric based on domain and device_class.
-
-        This method implements smart error classification by analyzing entity
-        metadata to distinguish between:
-
-        NUMERIC entities (TRANSITORY when non-numeric):
-        - sensor.* with numeric device classes (power, energy, temperature, etc.)
-        - input_number.*
-        - counter.*
-        - number.*
-
-        NON-NUMERIC entities (FATAL when referenced in formulas):
-        - binary_sensor.* (returns "on"/"off")
-        - switch.* (returns "on"/"off")
-        - device_tracker.* (returns location names)
-        - sensor.* with non-numeric device classes (timestamp, date, etc.)
-
-        Args:
-            state: Home Assistant state object
-
-        Returns:
-            bool: True if entity should contain numeric values
-        """
-        entity_id = getattr(state, "entity_id", "")
-        domain = entity_id.split(".")[0] if "." in entity_id else ""
-        device_class = getattr(state, "attributes", {}).get("device_class")
-
-        # Domains that are always numeric
-        numeric_domains = {"input_number", "counter", "number"}
-
-        # Domains that are never numeric
-        non_numeric_domains = {
-            "binary_sensor",
-            "switch",
-            "input_boolean",
-            "device_tracker",
-            "weather",
-            "climate",
-            "media_player",
-            "light",
-            "fan",
-            "cover",
-            "alarm_control_panel",
-            "lock",
-            "vacuum",
-        }
-
-        # Check obvious cases first
-        if domain in numeric_domains:
-            return True
-        if domain in non_numeric_domains:
-            return False
-
-        # For sensors, analyze device_class
-        if domain == "sensor":
-            # Non-numeric sensor device classes
-            non_numeric_device_classes = {
-                "timestamp",
-                "date",
-                "enum",
-                "connectivity",
-                "moving",
-                "opening",
-                "presence",
-                "problem",
-                "safety",
-                "tamper",
-                "update",
-            }
-
-            if device_class in non_numeric_device_classes:
-                return False
-
-            # If no device_class, try to infer from state value patterns
-            if device_class is None:
-                # Check if current state looks numeric
-                try:
-                    float(state.state)
-                    # Current state is numeric, likely a numeric sensor
-                    return True
-                except (ValueError, TypeError):
-                    # Non-numeric state - could be temporary or permanent
-                    # Use heuristics based on common patterns
-                    state_value = str(state.state).lower()
-
-                    # Temporary states that indicate a normally numeric sensor
-                    temporary_states = {
-                        "unknown",
-                        "unavailable",
-                        "starting",
-                        "initializing",
-                        "calibrating",
-                        "loading",
-                        "connecting",
-                        "offline",
-                        "error",
-                    }
-
-                    if state_value in temporary_states:
-                        return True
-
-                    # Check for numeric patterns with units (e.g., "25.5°C")
-                    # Non-numeric descriptive states suggest non-numeric sensor
-                    return bool(re.search(r"\d+\.?\d*", state_value))
-
-            # If we have a device_class but it's not in our non-numeric list,
-            # assume it's numeric (most sensor device_classes are numeric)
-            return True
-
-        # For other domains, default to assuming non-numeric
-        return False
+    def _handle_config_variable_not_found(self, var_name: str, config: FormulaConfig) -> None:
+        """Handle config variable that could not be found."""
+        _LOGGER.warning("Config variable '%s' in formula '%s' has no entity_id or value", var_name, config.name or config.id)
 
     def _preprocess_formula_for_evaluation(self, formula: str, eval_context: dict[str, ContextValue] | None = None) -> str:
-        """Preprocess formula: resolve variables first, then collection functions, then normalize entity IDs.
+        """Preprocess formula for evaluation by resolving collection functions and normalizing entity IDs.
 
-        This method now implements variable-first processing to enable dynamic collection patterns.
         Processing order:
-        1. Resolve variables and string operations (enables dynamic pattern construction)
-        2. Resolve collection functions (with potentially variable-based patterns)
-        3. Normalize entity IDs for simpleeval compatibility
+        1. Resolve collection functions (replace with computed values)
+        2. Normalize entity IDs for simpleeval compatibility
 
         Args:
             formula: Original formula string
-            eval_context: Evaluation context with variable values (optional)
+            eval_context: Evaluation context (optional, not used in basic implementation)
 
         Returns:
-            Preprocessed formula with variables resolved, collection functions resolved, and normalized entity_id variable names
+            Formula with collection functions resolved and entity IDs normalized to valid variable names
         """
         processed_formula = formula
 
-        # Step 1: Resolve variables and string operations to enable dynamic collection patterns
-        if eval_context:
-            processed_formula = self._resolve_variables_and_strings(processed_formula, eval_context)
-
-        # Step 2: Resolve collection functions (now with potentially dynamic patterns)
+        # Step 1: Resolve collection functions
         processed_formula = self._resolve_collection_functions(processed_formula)
 
-        # Step 3: Find all entity references using dependency parser and normalize
-        entity_refs = self._dependency_parser.extract_entity_references(processed_formula)
+        # Step 2: Extract entity references and normalize them
+        entity_refs = self._dependency_parser.extract_dependencies(processed_formula)
 
         # Replace each entity_id with normalized version
         for entity_id in entity_refs:
             if "." in entity_id:
-                normalized_name = entity_id.replace(".", "_")
+                normalized_name = entity_id.replace(".", "_").replace("-", "_")
                 # Use word boundaries to ensure we only replace complete entity_ids
                 pattern = r"\b" + re.escape(entity_id) + r"\b"
                 processed_formula = re.sub(pattern, normalized_name, processed_formula)
 
         return processed_formula
 
-    def _resolve_variables_and_strings(self, formula: str, eval_context: dict[str, ContextValue]) -> str:
-        """Resolve variables and string operations in formula for dynamic pattern construction.
-
-        This method performs a limited evaluation that only resolves:
-        - Variable substitution
-        - String concatenation operations
-        - Basic string operations needed for collection pattern construction
-
-        It does NOT evaluate:
-        - Mathematical operations
-        - Collection functions (those are resolved later)
-        - Complex expressions
-
-        Args:
-            formula: Formula with potential variable references and string operations
-            eval_context: Context containing variable values
-
-        Returns:
-            Formula with variables and string operations resolved
-        """
-        try:
-            # Create a limited evaluator for string operations only
-            string_evaluator = SimpleEval()
-            string_evaluator.names = eval_context.copy()
-
-            # Only allow string operations and basic functions needed for pattern construction
-            string_evaluator.functions = {
-                "str": str,
-                "float": float,
-                "int": int,
-                # Note: We don't include mathematical functions here to avoid premature evaluation
-            }
-
-            # We need to be careful here - we want to resolve string concatenation
-            # but not evaluate collection functions or mathematical expressions yet.
-            #
-            # Strategy: Look for string concatenation patterns and resolve those,
-            # but leave everything else untouched.
-
-            # For now, implement a simple approach: try to evaluate string expressions only
-            # This is a starting implementation that can be enhanced later
-
-            # Look for quoted string concatenation patterns like "device_class:" + variable
-            # Parse the formula to find string concatenation
-            try:
-                tree = ast.parse(formula, mode="eval")
-                resolved_formula = self._resolve_string_concatenations(tree, eval_context)
-                return resolved_formula
-            except (SyntaxError, ValueError):
-                # If we can't parse it, return the original formula
-                _LOGGER.debug("Could not parse formula for string resolution: %s", formula)
-                return formula
-
-        except Exception as e:
-            # Error resolving variables and strings - this is a fatal syntax/configuration error
-            _LOGGER.error("Error resolving variables and strings in formula '%s': %s", formula, e)
-            from .exceptions import FormulaSyntaxError
-
-            raise FormulaSyntaxError(formula, f"Error resolving variables and strings: {e}") from e
-
-    def _resolve_string_concatenations(self, node: ast.AST, eval_context: dict[str, ContextValue]) -> str:
-        """Recursively resolve string concatenation operations in AST.
-
-        Args:
-            node: AST node to process
-            eval_context: Variable values
-
-        Returns:
-            String representation with concatenations resolved
-        """
-        if isinstance(node, ast.Expression):
-            return self._resolve_string_concatenations(node.body, eval_context)
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            # Handle string concatenation
-            left = self._resolve_string_concatenations(node.left, eval_context)
-            right = self._resolve_string_concatenations(node.right, eval_context)
-
-            # If both sides are strings (quoted), concatenate them
-            if left.startswith('"') and left.endswith('"') and right.startswith('"') and right.endswith('"'):
-                return f'"{left[1:-1]}{right[1:-1]}"'
-            # If left is string and right is a resolved variable value
-            elif left.startswith('"') and left.endswith('"'):
-                return f'"{left[1:-1]}{right}"'
-            # If right is string and left is a resolved variable value
-            elif right.startswith('"') and right.endswith('"'):
-                return f'"{left}{right[1:-1]}"'
-            else:
-                # Return as concatenation expression if not both strings
-                return f"{left} + {right}"
-        elif isinstance(node, ast.Constant):
-            # String literal
-            if isinstance(node.value, str):
-                return f'"{node.value}"'
-            else:
-                return str(node.value)
-        elif isinstance(node, ast.Name):
-            # Variable reference
-            var_name = node.id
-            if var_name in eval_context:
-                value = eval_context[var_name]
-                if isinstance(value, str):
-                    return value  # Don't quote it since it's a resolved variable value
-                else:
-                    return str(value)
-            else:
-                return var_name
-        elif isinstance(node, ast.Call):
-            # Function call - don't resolve these yet, leave as-is
-            func_name = ast.unparse(node)
-            return func_name
-        else:
-            # For other node types, return the unparsed version
-            return ast.unparse(node)
-
     def _resolve_collection_functions(self, formula: str) -> str:
-        r"""Resolve collection functions by replacing them with actual entity values.
+        """Resolve collection functions by replacing them with actual computed values.
 
-        Collections, unlike single entities use literal value replacement, not runtime variables.
-        Collection patterns like sum("regex:sensor\.circuit_.*") are resolved fresh on each
-        evaluation to actual values: sum(150.5, 225.3, 89.2). This eliminates cache staleness
-        issues when entities are added/removed and ensures dynamic discovery works correctly.
+        Collection patterns like sum("device_class:power") are resolved fresh on each
+        evaluation to actual values: sum(150.5, 225.3, 89.2) becomes the computed result.
+        This eliminates cache staleness issues when entities are added/removed and ensures
+        dynamic discovery works correctly.
 
         Args:
             formula: Formula containing collection functions
 
         Returns:
-            Formula with collection functions replaced by actual values
+            Formula with collection functions replaced by computed values
         """
         try:
             # Extract dynamic queries from the formula
@@ -1183,61 +599,7 @@ class Evaluator(FormulaEvaluator):
             resolved_formula = formula
 
             for query in parsed_deps.dynamic_queries:
-                # Resolve collection to get matching entity IDs
-                entity_ids = self._collection_resolver.resolve_collection(query)
-
-                # Get numeric values for the entities
-                values = self._collection_resolver.get_entity_values(entity_ids)
-
-                # Calculate the result based on function type
-                # For empty collections, aggregation functions return 0 for robustness
-                result: float | int | str
-                if query.function == "sum":
-                    result = sum(values) if values else 0
-                elif query.function == "max":
-                    result = max(values) if values else 0
-                elif query.function == "min":
-                    result = min(values) if values else 0
-                elif query.function == "avg" or query.function == "average":
-                    result = sum(values) / len(values) if values else 0
-                elif query.function == "count":
-                    result = len(values)
-                else:
-                    # For unknown functions, fall back to comma-separated values
-                    values_str = ", ".join(str(v) for v in values)
-                    result = f"{query.function}({values_str})"
-
-                # Handle both space formats that users might input in YAML
-                # Try both "device_class: power" and "device_class:power" patterns
-                pattern_with_space = f'{query.function}("{query.query_type}: {query.pattern}")'
-                pattern_without_space = f'{query.function}("{query.query_type}:{query.pattern}")'
-
-                # Replace whichever pattern exists in the formula
-                if pattern_with_space in resolved_formula:
-                    resolved_formula = resolved_formula.replace(pattern_with_space, str(result))
-                elif pattern_without_space in resolved_formula:
-                    resolved_formula = resolved_formula.replace(pattern_without_space, str(result))
-                else:
-                    # Could not find pattern to replace - this is a fatal error
-                    _LOGGER.error(
-                        "Could not find pattern to replace for %s:%s in formula",
-                        query.query_type,
-                        query.pattern,
-                    )
-                    from .exceptions import FormulaSyntaxError
-
-                    raise FormulaSyntaxError(
-                        resolved_formula,
-                        f"Could not find collection pattern {query.query_type}:{query.pattern} to replace in formula",
-                    )
-
-                _LOGGER.debug(
-                    "Resolved collection %s:%s to %d values with result: %s",
-                    query.query_type,
-                    query.pattern,
-                    len(values),
-                    str(result)[:100],
-                )
+                resolved_formula = self._resolve_single_collection_query(resolved_formula, query)
 
             return resolved_formula
 
@@ -1245,182 +607,212 @@ class Evaluator(FormulaEvaluator):
             _LOGGER.error("Error resolving collection functions in formula '%s': %s", formula, e)
             return formula  # Return original formula if resolution fails
 
-
-@dataclass
-class CircuitBreakerConfig:
-    """Configuration for the two-tier circuit breaker pattern."""
-
-    # TIER 1: Fatal Error Circuit Breaker
-    max_fatal_errors: int = 5  # Stop trying after this many fatal errors
-
-    # TIER 2: Transitory Error Handling
-    max_transitory_errors: int = 20  # Track but don't stop on transitory errors
-    track_transitory_errors: bool = True  # Whether to track transitory errors
-
-    # Error Reset Behavior
-    reset_on_success: bool = True  # Reset counters on successful evaluation
-
-
-@dataclass
-class RetryConfig:
-    """Configuration for handling unavailable dependencies and retry logic."""
-
-    enabled: bool = True
-    max_attempts: int = 3
-    backoff_seconds: float = 5.0
-    exponential_backoff: bool = True
-    retry_on_unknown: bool = True
-    retry_on_unavailable: bool = True
-
-
-class DependencyResolver:
-    """Resolves and tracks dependencies between synthetic sensors."""
-
-    def __init__(self, hass: HomeAssistant):
-        """Initialize the dependency resolver.
+    def _resolve_single_collection_query(self, formula: str, query: Any) -> str:
+        """Resolve a single collection query in the formula.
 
         Args:
-            hass: Home Assistant instance
-        """
-        self._hass = hass
-        self._dependency_graph: dict[str, set[str]] = {}
-        self._reverse_dependencies: dict[str, set[str]] = {}
-        self._logger = _LOGGER.getChild(self.__class__.__name__)
-
-    def add_sensor_dependencies(self, sensor_name: str, dependencies: set[str]) -> None:
-        """Add dependencies for a sensor."""
-        self._dependency_graph[sensor_name] = dependencies
-
-        # Update reverse dependencies
-        for dep in dependencies:
-            if dep not in self._reverse_dependencies:
-                self._reverse_dependencies[dep] = set()
-            self._reverse_dependencies[dep].add(sensor_name)
-
-    def get_dependencies(self, sensor_name: str) -> set[str]:
-        """Get direct dependencies for a sensor."""
-        return self._dependency_graph.get(sensor_name, set())
-
-    def get_dependent_sensors(self, entity_id: str) -> set[str]:
-        """Get all sensors that depend on a given entity."""
-        return self._reverse_dependencies.get(entity_id, set())
-
-    def get_update_order(self, sensor_names: set[str]) -> list[str]:
-        """Get the order in which sensors should be updated based on dependencies."""
-        # Topological sort to handle dependencies
-        visited = set()
-        temp_visited = set()
-        result = []
-
-        def visit(sensor: str) -> None:
-            if sensor in temp_visited:
-                # Circular dependency detected
-                return
-
-            if sensor in visited:
-                return
-
-            temp_visited.add(sensor)
-
-            # Visit dependencies first (only synthetic sensors)
-            deps = self.get_dependencies(sensor)
-            for dep in deps:
-                if dep in sensor_names:  # Only consider synthetic sensor dependencies
-                    visit(dep)
-
-            temp_visited.remove(sensor)
-            visited.add(sensor)
-            result.append(sensor)
-
-        for sensor in sensor_names:
-            if sensor not in visited:
-                visit(sensor)
-
-        return result
-
-    def detect_circular_dependencies(self) -> list[list[str]]:
-        """Detect circular dependencies in the sensor graph."""
-        cycles = []
-        visited = set()
-        rec_stack = set()
-
-        def dfs(sensor: str, path: list[str]) -> None:
-            if sensor in rec_stack:
-                # Found a cycle
-                cycle_start = path.index(sensor)
-                cycles.append([*path[cycle_start:], sensor])
-                return
-
-            if sensor in visited:
-                return
-
-            visited.add(sensor)
-            rec_stack.add(sensor)
-
-            deps = self.get_dependencies(sensor)
-            for dep in deps:
-                if dep in self._dependency_graph:  # Only follow synthetic sensor deps
-                    dfs(dep, [*path, sensor])
-
-            rec_stack.remove(sensor)
-
-        for sensor in self._dependency_graph:
-            if sensor not in visited:
-                dfs(sensor, [])
-
-        return cycles
-
-    def clear_dependencies(self, sensor_name: str) -> None:
-        """Clear dependencies for a sensor."""
-        if sensor_name in self._dependency_graph:
-            old_deps = self._dependency_graph[sensor_name]
-
-            # Remove from reverse dependencies
-            for dep in old_deps:
-                if dep in self._reverse_dependencies:
-                    self._reverse_dependencies[dep].discard(sensor_name)
-                    if not self._reverse_dependencies[dep]:
-                        del self._reverse_dependencies[dep]
-
-            del self._dependency_graph[sensor_name]
-
-    def evaluate(self, formula: str, context: dict[str, float | int | str] | None = None) -> float:
-        """Evaluate a formula with the given context.
-
-        Args:
-            formula: Formula to evaluate
-            context: Additional context variables
+            formula: Current formula string
+            query: DynamicQuery object to resolve
 
         Returns:
-            float: Evaluation result
+            Formula with this query resolved
         """
-        try:
-            evaluator = SimpleEval()
-            if context:
-                evaluator.names.update(context)
-            result = evaluator.eval(formula)
-            return float(result)
-        except Exception as exc:
-            self._logger.error("Formula evaluation failed: %s", exc)
-            return 0.0
+        # Resolve collection to get matching entity IDs
+        entity_ids = self._collection_resolver.resolve_collection(query)
 
-    def extract_variables(self, formula: str) -> set[str]:
-        """Extract variable names from a formula.
+        if not entity_ids:
+            return self._replace_with_default_value(formula, query, "no entities matched")
+
+        # Get numeric values for the entities
+        values = self._collection_resolver.get_entity_values(entity_ids)
+
+        if not values:
+            return self._replace_with_default_value(formula, query, "no numeric values found")
+
+        # Calculate the result based on the function
+        result = self._calculate_collection_result(query.function, values)
+
+        # Replace the pattern in the formula
+        return self._replace_collection_pattern(formula, query, str(result))
+
+    def _replace_with_default_value(self, formula: str, query: Any, reason: str) -> str:
+        """Replace collection query with default value when no data is available.
 
         Args:
-            formula: Formula to analyze
+            formula: Current formula string
+            query: DynamicQuery object
+            reason: Reason for using default value (for logging)
 
         Returns:
-            set: Set of variable names used in formula
+            Formula with query replaced by default value
         """
-        # Simple regex-based extraction - in real implementation would be more
-        # sophisticated
-        import re
+        _LOGGER.warning("Collection query %s:%s %s", query.query_type, query.pattern, reason)
+        default_value = "0"  # All functions return 0 for empty collections per README
+        return self._replace_collection_pattern(formula, query, default_value)
 
-        # Find potential variable names (alphanumeric + underscore, not starting
-        # with digit
-        variables = set(re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", formula))
+    def _calculate_collection_result(self, function: str, values: list[float]) -> float | int:
+        """Calculate the result for a collection function.
 
-        # Remove known built-in functions and operators
-        builtins = {"abs", "max", "min", "round", "int", "float", "str", "len", "sum"}
-        return variables - builtins
+        Args:
+            function: Function name (sum, avg, count, etc.)
+            values: List of numeric values
+
+        Returns:
+            Calculated result
+        """
+        # Try basic arithmetic functions first
+        basic_result = self._try_basic_arithmetic(function, values)
+        if basic_result is not None:
+            return basic_result
+
+        # Try statistical functions
+        statistical_result = self._try_statistical_functions(function, values)
+        if statistical_result is not None:
+            return statistical_result
+
+        # Unknown function fallback
+        _LOGGER.warning("Unknown collection function: %s", function)
+        return 0
+
+    def _try_basic_arithmetic(self, function: str, values: list[float]) -> float | int | None:
+        """Try to calculate basic arithmetic functions.
+
+        Args:
+            function: Function name
+            values: List of numeric values
+
+        Returns:
+            Calculated result or None if function not handled
+        """
+        if function == "sum":
+            return sum(values)
+        if function == "count":
+            return len(values)
+        if function == "max":
+            return max(values) if values else 0
+        if function == "min":
+            return min(values) if values else 0
+        if function in ("avg", "average", "mean"):
+            return sum(values) / len(values) if values else 0
+
+        return None
+
+    def _try_statistical_functions(self, function: str, values: list[float]) -> float | None:
+        """Try to calculate statistical functions.
+
+        Args:
+            function: Function name
+            values: List of numeric values
+
+        Returns:
+            Calculated result or None if function not handled
+        """
+        if function in ("std", "var"):
+            return self._calculate_statistical_function(function, values)
+
+        return None
+
+    def _calculate_statistical_function(self, function: str, values: list[float]) -> float:
+        """Calculate statistical functions (std, var).
+
+        Args:
+            function: Statistical function name
+            values: List of numeric values
+
+        Returns:
+            Calculated statistical result
+        """
+        if len(values) <= 1:
+            return 0
+
+        mean = sum(values) / len(values)
+        variance = sum((x - mean) ** 2 for x in values) / len(values)
+
+        if function == "var":
+            return float(variance)
+        if function == "std":
+            return float(variance**0.5)
+
+        return 0  # Fallback
+
+    def _replace_collection_pattern(self, formula: str, query: Any, replacement: str) -> str:
+        """Replace collection pattern in formula with replacement value.
+
+        Args:
+            formula: Current formula string
+            query: DynamicQuery object
+            replacement: Value to replace the pattern with
+
+        Returns:
+            Formula with pattern replaced
+        """
+        # Handle both space formats that users might input in YAML
+        pattern_with_space = f'{query.function}("{query.query_type}: {query.pattern}")'
+        pattern_without_space = f'{query.function}("{query.query_type}:{query.pattern}")'
+
+        # Replace whichever pattern exists in the formula
+        if pattern_with_space in formula:
+            return formula.replace(pattern_with_space, replacement)
+        if pattern_without_space in formula:
+            return formula.replace(pattern_without_space, replacement)
+
+        _LOGGER.warning("Could not find pattern to replace for %s:%s", query.query_type, query.pattern)
+        return formula
+
+    def _increment_transitory_error_count(self, formula_name: str) -> None:
+        """Increment transitory error count for a formula."""
+        current_count = self._transitory_error_count.get(formula_name, 0)
+        new_count = current_count + 1
+        self._transitory_error_count[formula_name] = new_count
+
+        _LOGGER.debug(
+            "Formula '%s': Transitory error count: %d/%d (threshold: %d)",
+            formula_name,
+            new_count,
+            self._retry_config.max_attempts,
+            self._retry_config.max_attempts,
+        )
+
+        # Log warning if approaching retry limit but don't trigger circuit breaker
+        if new_count >= self._retry_config.max_attempts:
+            _LOGGER.warning(
+                "Formula '%s': Reached transitory error limit (%d), but continuing evaluation attempts",
+                formula_name,
+                self._retry_config.max_attempts,
+            )
+
+    def _should_skip_evaluation(self, formula_name: str) -> bool:
+        """Check if evaluation should be skipped due to circuit breaker."""
+        error_count = self._error_count.get(formula_name, 0)
+        should_skip = error_count >= self._circuit_breaker_config.max_fatal_errors
+
+        if should_skip:
+            _LOGGER.debug(
+                "Formula '%s': Skipping evaluation due to circuit breaker (errors: %d/%d)",
+                formula_name,
+                error_count,
+                self._circuit_breaker_config.max_fatal_errors,
+            )
+
+        return should_skip
+
+    def _increment_error_count(self, formula_name: str) -> None:
+        """Increment error count for a formula."""
+        current_count = self._error_count.get(formula_name, 0)
+        new_count = current_count + 1
+        self._error_count[formula_name] = new_count
+
+        _LOGGER.debug(
+            "Formula '%s': Error count: %d/%d (threshold: %d)",
+            formula_name,
+            new_count,
+            self._circuit_breaker_config.max_fatal_errors,
+            self._circuit_breaker_config.max_fatal_errors,
+        )
+
+        if new_count >= self._circuit_breaker_config.max_fatal_errors:
+            _LOGGER.warning(
+                "Formula '%s': Circuit breaker triggered after %d errors",
+                formula_name,
+                new_count,
+            )

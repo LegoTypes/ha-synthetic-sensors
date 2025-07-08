@@ -1,240 +1,27 @@
 """
-Configuration Manager - Core configuration data structures and validation.
+Configuration Manager - Core configuration loading and management.
 
-This module provides the foundational data structures and validation logic
-for YAML-based synthetic sensor configuration.
+This module provides the ConfigManager class for loading, parsing, and managing
+YAML-based synthetic sensor configuration.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import logging
 from pathlib import Path
-from typing import Any, TypeAlias, TypedDict, cast
+from typing import Any, cast
 
-import aiofiles  # type: ignore[import-untyped]
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+import aiofiles  # type: ignore[import-untyped] # pylint: disable=import-error
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
+from .config_models import Config, FormulaConfig, SensorConfig
+from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, AttributeConfigDict, ConfigDict, SensorConfigDict
 from .dependency_parser import DependencyParser
 from .schema_validator import validate_yaml_config
 
 _LOGGER = logging.getLogger(__name__)
-
-# Default domain constant
-DEFAULT_DOMAIN = "synthetic_sensors"
-
-# Type alias for attribute values (allows complex types for formula metadata)
-AttributeValue = str | float | int | bool | list[str] | dict[str, Any]
-
-# Type aliases for Home Assistant constants - use the actual enum types
-DeviceClassType: TypeAlias = SensorDeviceClass | str  # str for YAML parsing, enum for runtime
-StateClassType: TypeAlias = SensorStateClass | str  # str for YAML parsing, enum for runtime
-
-
-# TypedDicts for v2.0 YAML config structures
-class AttributeConfigDict(TypedDict, total=False):
-    formula: str
-    unit_of_measurement: str
-    device_class: DeviceClassType
-    state_class: StateClassType
-    icon: str
-    variables: dict[str, str | int | float]  # Allow attributes to define additional variables
-
-
-class SensorConfigDict(TypedDict, total=False):
-    name: str
-    description: str
-    enabled: bool
-    update_interval: int
-    category: str
-    entity_id: str  # Optional: Explicit entity ID for the sensor
-    # Main formula syntax
-    formula: str
-    attributes: dict[str, AttributeConfigDict]
-    # Common properties
-    variables: dict[str, str | int | float]
-    unit_of_measurement: str
-    device_class: DeviceClassType
-    state_class: StateClassType
-    icon: str
-    extra_attributes: dict[str, AttributeValue]
-    # Device association fields
-    device_identifier: str  # Device identifier to associate with
-    device_name: str  # Optional device name override
-    device_manufacturer: str
-    device_model: str
-    device_sw_version: str
-    device_hw_version: str
-    suggested_area: str
-
-
-class ConfigDict(TypedDict, total=False):
-    version: str
-    global_settings: dict[str, AttributeValue]
-    sensors: dict[str, SensorConfigDict]
-
-
-def _default_attributes() -> dict[str, AttributeValue]:
-    """Default factory for attributes dictionary."""
-    return {}
-
-
-def _default_dependencies() -> set[str]:
-    """Default factory for dependencies set."""
-    return set()
-
-
-def _default_variables() -> dict[str, str | int | float]:
-    """Default factory for variables dictionary."""
-    return {}
-
-
-def _default_formulas() -> list[FormulaConfig]:
-    """Default factory for formulas list."""
-    return []
-
-
-def _default_sensors() -> list[SensorConfig]:
-    """Default factory for sensors list."""
-    return []
-
-
-def _default_global_settings() -> dict[str, AttributeValue]:
-    """Default factory for global settings dictionary."""
-    return {}
-
-
-@dataclass
-class FormulaConfig:
-    """Configuration for a single formula within a synthetic sensor."""
-
-    id: str  # REQUIRED: Formula identifier
-    formula: str
-    name: str | None = None  # OPTIONAL: Display name
-    unit_of_measurement: str | None = None
-    device_class: DeviceClassType | None = None
-    state_class: StateClassType | None = None
-    icon: str | None = None
-    attributes: dict[str, AttributeValue] = field(default_factory=_default_attributes)
-    dependencies: set[str] = field(default_factory=_default_dependencies)
-    variables: dict[str, str | int | float] = field(
-        default_factory=_default_variables
-    )  # Variable name -> entity_id mappings or numeric literals
-
-    def __post_init__(self) -> None:
-        """Extract dependencies from formula after initialization."""
-        if not self.dependencies:
-            self.dependencies = self._extract_dependencies()
-
-    def _extract_dependencies(self) -> set[str]:
-        """Extract entity dependencies from the formula string and variables."""
-        # Use enhanced dependency parser that handles:
-        # - Variable references
-        # - Direct entity_ids
-        # - Dot notation (sensor1.battery_level)
-        # - Dynamic queries (regex:, tags:, device_class:, etc.)
-        parser = DependencyParser()
-
-        # Extract static dependencies (direct entity references and variables)
-        static_deps = parser.extract_static_dependencies(self.formula, self.variables)
-
-        # Note: Dynamic query patterns are extracted but resolved at runtime by evaluator
-        # Dynamic dependencies cannot be pre-computed as they depend on HA state
-        return static_deps
-
-
-@dataclass
-class SensorConfig:
-    """Configuration for a complete synthetic sensor with multiple formulas."""
-
-    unique_id: str  # REQUIRED: Unique identifier for HA entity creation
-    formulas: list[FormulaConfig] = field(default_factory=_default_formulas)
-    name: str | None = None  # OPTIONAL: Display name
-    enabled: bool = True
-    update_interval: int | None = None
-    category: str | None = None
-    description: str | None = None
-    entity_id: str | None = None  # OPTIONAL: Explicit entity ID
-    # Device association fields
-    device_identifier: str | None = None  # Device identifier to associate with
-    device_name: str | None = None  # Optional device name override
-    device_manufacturer: str | None = None
-    device_model: str | None = None
-    device_sw_version: str | None = None
-    device_hw_version: str | None = None
-    suggested_area: str | None = None
-
-    def get_all_dependencies(self) -> set[str]:
-        """Get all entity dependencies across all formulas."""
-        deps: set[str] = set()
-        for formula in self.formulas:
-            deps.update(formula.dependencies)
-        return deps
-
-    def validate(self) -> list[str]:
-        """Validate sensor configuration and return list of errors."""
-        errors: list[str] = []
-
-        if not self.unique_id:
-            errors.append("Sensor unique_id is required")
-
-        if not self.formulas:
-            errors.append(f"Sensor '{self.unique_id}' must have at least one formula")
-
-        formula_ids = [f.id for f in self.formulas]
-        if len(formula_ids) != len(set(formula_ids)):
-            errors.append(f"Sensor '{self.unique_id}' has duplicate formula IDs")
-
-        return errors
-
-
-@dataclass
-class Config:
-    """Complete configuration containing all synthetic sensors."""
-
-    version: str = "1.0"
-    sensors: list[SensorConfig] = field(default_factory=_default_sensors)
-    global_settings: dict[str, AttributeValue] = field(default_factory=_default_global_settings)
-
-    def get_sensor_by_unique_id(self, unique_id: str) -> SensorConfig | None:
-        """Get a sensor configuration by unique_id."""
-        for sensor in self.sensors:
-            if sensor.unique_id == unique_id:
-                return sensor
-        return None
-
-    def get_sensor_by_name(self, name: str) -> SensorConfig | None:
-        """Get a sensor configuration by name."""
-        for sensor in self.sensors:
-            if sensor.name == name or sensor.unique_id == name:
-                return sensor
-        return None
-
-    def get_all_dependencies(self) -> set[str]:
-        """Get all entity dependencies across all sensors."""
-        deps: set[str] = set()
-        for sensor in self.sensors:
-            deps.update(sensor.get_all_dependencies())
-        return deps
-
-    def validate(self) -> list[str]:
-        """Validate the entire configuration and return list of errors."""
-        errors: list[str] = []
-
-        # Check for duplicate sensor unique_ids
-        sensor_unique_ids = [s.unique_id for s in self.sensors]
-        if len(sensor_unique_ids) != len(set(sensor_unique_ids)):
-            errors.append("Duplicate sensor unique_ids found")
-
-        # Validate each sensor
-        for sensor in self.sensors:
-            sensor_errors = sensor.validate()
-            errors.extend(sensor_errors)
-
-        return errors
 
 
 class ConfigManager:
@@ -423,7 +210,7 @@ class ConfigManager:
         # Parse sensors (v2.0 dict format)
         sensors_data = yaml_data.get("sensors", {})
         for sensor_key, sensor_data in sensors_data.items():
-            sensor = self._parse_sensor_config(sensor_key, sensor_data)
+            sensor = self._parse_sensor_config(sensor_key, sensor_data, config.global_settings)
             config.sensors.append(sensor)
 
         return config
@@ -584,8 +371,8 @@ class ConfigManager:
 
         if enabled_only:
             return [s for s in self._config.sensors if s.enabled]
-        else:
-            return self._config.sensors.copy()
+
+        return self._config.sensors.copy()
 
     def get_sensor_config(self, name: str) -> SensorConfig | None:
         """Get a specific sensor configuration by name.
@@ -793,45 +580,90 @@ class ConfigManager:
             yaml_data["global_settings"] = config.global_settings
 
         for sensor in config.sensors:
-            sensor_data: dict[str, Any] = {
-                "unique_id": sensor.unique_id,
-                "enabled": sensor.enabled,
-                "formulas": [],
-            }
-
-            if sensor.name:
-                sensor_data["name"] = sensor.name
-            if sensor.update_interval is not None:
-                sensor_data["update_interval"] = sensor.update_interval
-            if sensor.category:
-                sensor_data["category"] = sensor.category
-            if sensor.description:
-                sensor_data["description"] = sensor.description
-
-            for formula in sensor.formulas:
-                formula_data: dict[str, Any] = {
-                    "id": formula.id,
-                    "formula": formula.formula,
-                }
-
-                if formula.name:
-                    formula_data["name"] = formula.name
-                if formula.unit_of_measurement:
-                    formula_data["unit_of_measurement"] = formula.unit_of_measurement
-                if formula.device_class:
-                    formula_data["device_class"] = formula.device_class
-                if formula.state_class:
-                    formula_data["state_class"] = formula.state_class
-                if formula.icon:
-                    formula_data["icon"] = formula.icon
-                if formula.attributes:
-                    formula_data["attributes"] = formula.attributes
-
-                sensor_data["formulas"].append(formula_data)
-
+            sensor_data = self._sensor_to_yaml_dict(sensor)
             yaml_data["sensors"].append(sensor_data)
 
         return yaml_data
+
+    def _sensor_to_yaml_dict(self, sensor: SensorConfig) -> dict[str, Any]:
+        """Convert a sensor config to YAML dictionary.
+
+        Args:
+            sensor: Sensor configuration to convert
+
+        Returns:
+            dict: YAML-compatible sensor dictionary
+        """
+        sensor_data: dict[str, Any] = {
+            "unique_id": sensor.unique_id,
+            "enabled": sensor.enabled,
+            "formulas": [],
+        }
+
+        # Add optional sensor fields
+        self._add_optional_sensor_fields(sensor_data, sensor)
+
+        # Convert formulas
+        for formula in sensor.formulas:
+            formula_data = self._formula_to_yaml_dict(formula)
+            sensor_data["formulas"].append(formula_data)
+
+        return sensor_data
+
+    def _add_optional_sensor_fields(self, sensor_data: dict[str, Any], sensor: SensorConfig) -> None:
+        """Add optional sensor fields to the YAML dictionary.
+
+        Args:
+            sensor_data: Dictionary to add fields to
+            sensor: Sensor configuration
+        """
+        if sensor.name:
+            sensor_data["name"] = sensor.name
+        if sensor.update_interval is not None:
+            sensor_data["update_interval"] = sensor.update_interval
+        if sensor.category:
+            sensor_data["category"] = sensor.category
+        if sensor.description:
+            sensor_data["description"] = sensor.description
+
+    def _formula_to_yaml_dict(self, formula: FormulaConfig) -> dict[str, Any]:
+        """Convert a formula config to YAML dictionary.
+
+        Args:
+            formula: Formula configuration to convert
+
+        Returns:
+            dict: YAML-compatible formula dictionary
+        """
+        formula_data: dict[str, Any] = {
+            "id": formula.id,
+            "formula": formula.formula,
+        }
+
+        # Add optional formula fields
+        self._add_optional_formula_fields(formula_data, formula)
+
+        return formula_data
+
+    def _add_optional_formula_fields(self, formula_data: dict[str, Any], formula: FormulaConfig) -> None:
+        """Add optional formula fields to the YAML dictionary.
+
+        Args:
+            formula_data: Dictionary to add fields to
+            formula: Formula configuration
+        """
+        if formula.name:
+            formula_data["name"] = formula.name
+        if formula.unit_of_measurement:
+            formula_data["unit_of_measurement"] = formula.unit_of_measurement
+        if formula.device_class:
+            formula_data["device_class"] = formula.device_class
+        if formula.state_class:
+            formula_data["state_class"] = formula.state_class
+        if formula.icon:
+            formula_data["icon"] = formula.icon
+        if formula.attributes:
+            formula_data["attributes"] = formula.attributes
 
     def add_variable(self, name: str, entity_id: str) -> bool:
         """Add a variable to the global settings.
@@ -941,7 +773,6 @@ class ConfigManager:
                 "schema_version": str
             }
         """
-        from .schema_validator import validate_yaml_config
 
         schema_result = validate_yaml_config(yaml_data)
 
@@ -1029,17 +860,11 @@ class ConfigManager:
             return result
 
         except yaml.YAMLError as exc:
+            error_dict = YAML_SYNTAX_ERROR_TEMPLATE.copy()
+            error_dict["message"] = f"YAML parsing error: {exc}"
             return {
                 "valid": False,
-                "errors": [
-                    {
-                        "message": f"YAML parsing error: {exc}",
-                        "path": "file",
-                        "severity": "error",
-                        "schema_path": "",
-                        "suggested_fix": "Check YAML syntax and formatting",
-                    }
-                ],
+                "errors": [error_dict],
                 "warnings": [],
                 "schema_version": "unknown",
                 "file_path": str(path),
@@ -1078,7 +903,7 @@ class ConfigManager:
         # Only extract direct entity references from the formula itself,
         # not from variable values (which may contain collection queries)
         entity_matches = parser.ENTITY_PATTERN.findall(formula)
-        full_entity_matches = parser._direct_entity_pattern.findall(formula)
+        full_entity_matches = parser.direct_entity_pattern.findall(formula)
 
         direct_entities = set(entity_matches + full_entity_matches)
 

@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -281,8 +281,6 @@ class DeviceAssociationHelper:
             Area name or None if not assigned to an area
         """
         try:
-            from homeassistant.helpers import area_registry as ar
-
             device_info = self.get_device_info_from_identifier(device_identifier)
             if not device_info or not device_info.get("area_id"):
                 return None

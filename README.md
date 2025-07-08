@@ -53,7 +53,10 @@ For development setup:
 git clone https://github.com/SpanPanel/ha-synthetic-sensors
 cd ha-synthetic-sensors
 poetry install --with dev
+./setup-hooks.sh
 ```
+
+**Note**: The `setup-hooks.sh` script ensures pre-commit hooks are installed correctly to avoid migration mode issues.
 
 ## Getting Started
 
@@ -527,6 +530,40 @@ sensors:
 - **Integers**: `42`, `-10`, `0`
 - **Floats**: `3.14159`, `-2.5`, `0.001`
 - **Scientific notation**: `1.23e-4`, `2.5e6`
+
+**Boolean State Conversion:**
+
+Home Assistant's typical boolean states are automatically converted to numeric values for use in formulas:
+
+```yaml
+sensors:
+  device_activity_score:
+    name: "Device Activity Score"
+    formula: "motion_sensor * 10 + door_sensor * 5 + switch_state * 2"
+    variables:
+      motion_sensor: "binary_sensor.living_room_motion"    # "motion" → 1.0, "clear" → 0.0
+      door_sensor: "binary_sensor.front_door"              # "open" → 1.0, "closed" → 0.0
+      switch_state: "switch.living_room_light"             # "on" → 1.0, "off" → 0.0
+    unit_of_measurement: "points"
+```
+
+**Supported boolean states (→ 1.0):**
+
+- Basic: `on`, `true`, `yes`, `1`
+- Sensors: `open`, `opened`, `motion`, `detected`, `wet`, `heat`, `locked`
+- Presence: `home`, `present`
+- Activity: `active`, `running`, `charging`, `connected`, `online`
+- Security: `armed_home`, `armed_away`, `armed_night`
+
+**Supported boolean states (→ 0.0):**
+
+- Basic: `off`, `false`, `no`, `0`
+- Sensors: `closed`, `clear`, `no_motion`, `dry`, `cold`, `unlocked`
+- Presence: `away`, `not_home`, `absent`
+- Activity: `inactive`, `idle`, `stopped`, `not_charging`, `disconnected`, `offline`
+- Security: `disarmed`, `disabled`
+
+Device class-specific states are also supported (e.g., `normal`/`low` for battery sensors).
 
 **Available Mathematical Functions:**
 

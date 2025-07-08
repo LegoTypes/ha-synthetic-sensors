@@ -149,4 +149,7 @@ disable = [
     "invalid-name",                   # HA uses different naming conventions
     "broad-except",                   # Sometimes needed for robustness
     "unused-argument",                # HA callbacks often have unused params
+    "too-many-public-methods",        # Complex classes often need many methods
+    "too-many-positional-arguments",  # HA constructors often need many params
+    "too-many-locals",                # Complex functions often need many variables
 ]

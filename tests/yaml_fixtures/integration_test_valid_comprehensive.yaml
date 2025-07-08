@@ -1,0 +1,103 @@
+version: "1.0"
+global_settings:
+  device_identifier: "span_panel_123"
+  device_name: "SPAN Panel"
+
+sensors:
+  # Basic power sensor
+  main_power:
+    name: "Main Panel Power"
+    unique_id: "span_panel_123_main_power"
+    entity_id: "sensor.span_panel_main_power"
+    icon: "mdi:transmission-tower"
+    formula: "grid_import - grid_export"
+    variables:
+      grid_import: "span_backing.panel_123_grid_import_power"
+      grid_export: "span_backing.panel_123_grid_export_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    attributes:
+      calculation_type: "net_power"
+      import_sensor: "span_backing.panel_123_grid_import_power"
+      export_sensor: "span_backing.panel_123_grid_export_power"
+
+  # Energy calculation with time factor
+  daily_consumption:
+    name: "Daily Energy Consumption"
+    unique_id: "span_panel_123_daily_consumption"
+    entity_id: "sensor.span_panel_daily_consumption"
+    icon: "mdi:flash"
+    formula: "abs(net_power) * hours_per_day / 1000"
+    variables:
+      net_power: "sensor.span_panel_main_power"
+      hours_per_day: "24"
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+    state_class: "total_increasing"
+    attributes:
+      calculation_period: "24 hours"
+      source_sensor: "sensor.span_panel_main_power"
+      conversion_factor: "0.001"
+
+  # Complex mathematical formula
+  efficiency_rating:
+    name: "Panel Efficiency Rating"
+    unique_id: "span_panel_123_efficiency"
+    entity_id: "sensor.span_panel_efficiency"
+    icon: "mdi:gauge"
+    formula: "(actual_output / theoretical_max) * 100"
+    variables:
+      actual_output: "span_backing.panel_123_total_output"
+      theoretical_max: "span_backing.panel_123_rated_capacity"
+    unit_of_measurement: "%"
+    device_class: "power_factor"
+    state_class: "measurement"
+    attributes:
+      calculation_type: "efficiency_percentage"
+      max_capacity: "span_backing.panel_123_rated_capacity"
+      current_output: "span_backing.panel_123_total_output"
+
+  # Multi-circuit aggregation
+  total_circuit_load:
+    name: "Total Circuit Load"
+    unique_id: "span_panel_123_total_load"
+    entity_id: "sensor.span_panel_total_load"
+    icon: "mdi:sigma"
+    formula: "circuit_1 + circuit_2 + circuit_3 + circuit_4 + circuit_5"
+    variables:
+      circuit_1: "span_backing.panel_123_circuit_1_power"
+      circuit_2: "span_backing.panel_123_circuit_2_power"
+      circuit_3: "span_backing.panel_123_circuit_3_power"
+      circuit_4: "span_backing.panel_123_circuit_4_power"
+      circuit_5: "span_backing.panel_123_circuit_5_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    attributes:
+      circuit_count: 5
+      circuit_names:
+        - "Main HVAC"
+        - "Kitchen Appliances"
+        - "Living Room"
+        - "Master Bedroom"
+        - "Garage"
+
+  # Cost calculation
+  estimated_monthly_cost:
+    name: "Estimated Monthly Cost"
+    unique_id: "span_panel_123_monthly_cost"
+    entity_id: "sensor.span_panel_monthly_cost"
+    icon: "mdi:currency-usd"
+    formula: "(daily_kwh * days_per_month * rate_per_kwh)"
+    variables:
+      daily_kwh: "sensor.span_panel_daily_consumption"
+      days_per_month: "30.44"  # Average days per month
+      rate_per_kwh: "0.12"     # $0.12 per kWh
+    unit_of_measurement: "USD"
+    device_class: "monetary"
+    state_class: "total"
+    attributes:
+      rate_per_kwh: "$0.12"
+      billing_period: "monthly"
+      calculation_basis: "30.44 days average"

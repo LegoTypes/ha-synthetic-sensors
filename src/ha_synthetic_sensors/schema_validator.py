@@ -10,18 +10,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import logging
+import re
 from typing import Any, TypedDict
 
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES, DEVICE_CLASS_UNITS
+
 try:
-    import jsonschema
-    from jsonschema import Draft7Validator, validators
+    from jsonschema import Draft7Validator
 
     JSONSCHEMA_AVAILABLE = True
 except ImportError:
     JSONSCHEMA_AVAILABLE = False
-    jsonschema = None  # type: ignore[assignment]
     Draft7Validator = None  # type: ignore[assignment,misc]
-    validators = None  # type: ignore[assignment]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,13 +60,13 @@ class SchemaValidator:
     def __init__(self) -> None:
         """Initialize the schema validator."""
         self._logger = _LOGGER.getChild(self.__class__.__name__)
-        self._schemas: dict[str, dict[str, Any]] = {}
+        self.schemas: dict[str, dict[str, Any]] = {}
         self._load_schemas()
 
     def _load_schemas(self) -> None:
         """Load all schema definitions."""
         # Schema for version 1.0 (modernized format)
-        self._schemas["1.0"] = self._get_v1_schema()
+        self.schemas["1.0"] = self._get_v1_schema()
 
     def validate_config(self, config_data: dict[str, Any]) -> ValidationResult:
         """Validate configuration data against appropriate schema.
@@ -85,18 +86,18 @@ class SchemaValidator:
 
         # Determine schema version
         version = config_data.get("version", "1.0")
-        if version not in self._schemas:
+        if version not in self.schemas:
             errors.append(
                 ValidationError(
                     message=f"Unsupported schema version: {version}",
                     path="version",
                     severity=ValidationSeverity.ERROR,
-                    suggested_fix=(f"Use supported version: {', '.join(self._schemas.keys())}"),
+                    suggested_fix=(f"Use supported version: {', '.join(self.schemas.keys())}"),
                 )
             )
             return ValidationResult(valid=False, errors=errors, warnings=warnings)
 
-        schema = self._schemas[version]
+        schema = self.schemas[version]
 
         try:
             # Create validator with custom error handling
@@ -197,9 +198,6 @@ class SchemaValidator:
 
         # Import HA's official device class to state class mappings
         try:
-            from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-            from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES
-
             # Convert string values to enum instances for lookup
             try:
                 device_class_enum = SensorDeviceClass(device_class)
@@ -273,40 +271,47 @@ class SchemaValidator:
             formula_text = sensor_config.get("formula", "")
             variables = sensor_config.get("variables", {})
 
-            validation_result = self._validate_formula_variables(formula_text, variables)
-            for error_msg in validation_result:
-                warnings.append(
-                    ValidationError(
-                        message=error_msg,
-                        path=f"sensors.{sensor_key}.formula",
-                        severity=ValidationSeverity.WARNING,
-                        suggested_fix="Define all variables used in the formula",
+            # Skip validation if formula_text is not a string (schema validation will catch this)
+            if isinstance(formula_text, str):
+                validation_result = self._validate_formula_variables(formula_text, variables)
+                for error_msg in validation_result:
+                    warnings.append(
+                        ValidationError(
+                            message=error_msg,
+                            path=f"sensors.{sensor_key}.formula",
+                            severity=ValidationSeverity.WARNING,
+                            suggested_fix="Define all variables used in the formula",
+                        )
                     )
-                )
 
         # Validate calculated attributes (if present)
         attributes = sensor_config.get("attributes", {})
         if attributes:
             variables = sensor_config.get("variables", {})
             for attr_name, attr_config in attributes.items():
+                # Skip validation if attr_config is not a dict (schema validation will catch this)
+                if not isinstance(attr_config, dict):
+                    continue
                 attr_formula = attr_config.get("formula", "")
 
                 # Allow 'state' variable in attribute formulas
                 extended_variables = variables.copy()
                 extended_variables["state"] = "main_sensor_state"
 
-                validation_result = self._validate_formula_variables(attr_formula, extended_variables)
-                for error_msg in validation_result:
-                    warnings.append(
-                        ValidationError(
-                            message=error_msg,
-                            path=f"sensors.{sensor_key}.attributes.{attr_name}.formula",
-                            severity=ValidationSeverity.WARNING,
-                            suggested_fix=(
-                                "Define all variables used in attribute formulas (or use 'state' for main sensor value)"
-                            ),
+                # Skip validation if attr_formula is not a string (schema validation will catch this)
+                if isinstance(attr_formula, str):
+                    validation_result = self._validate_formula_variables(attr_formula, extended_variables)
+                    for error_msg in validation_result:
+                        warnings.append(
+                            ValidationError(
+                                message=error_msg,
+                                path=f"sensors.{sensor_key}.attributes.{attr_name}.formula",
+                                severity=ValidationSeverity.WARNING,
+                                suggested_fix=(
+                                    "Define all variables used in attribute formulas (or use 'state' for main sensor value)"
+                                ),
+                            )
                         )
-                    )
 
     def _validate_formula_variables(self, formula: str, variables: dict[str, str]) -> list[str]:
         """Validate that formula variables are properly defined.
@@ -315,9 +320,6 @@ class SchemaValidator:
             List of validation warning messages
         """
         warnings = []
-
-        # Basic check - this could be enhanced with proper parsing
-        import re
 
         # Find potential variable references (simple heuristic)
         potential_vars = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", formula)
@@ -368,9 +370,6 @@ class SchemaValidator:
 
         # Import HA's official device class to unit mappings
         try:
-            from homeassistant.components.sensor import SensorDeviceClass
-            from homeassistant.components.sensor.const import DEVICE_CLASS_UNITS
-
             # Convert string to enum for lookup
             try:
                 device_class_enum = SensorDeviceClass(device_class)
@@ -647,14 +646,10 @@ class SchemaValidator:
 
     def _get_device_class_enum(self) -> list[str]:
         """Get the list of valid device classes from Home Assistant constants."""
-        from homeassistant.components.sensor import SensorDeviceClass
-
         return [device_class.value for device_class in SensorDeviceClass.__members__.values()]
 
     def _get_state_class_enum(self) -> list[str]:
         """Get the list of valid state classes from Home Assistant constants."""
-        from homeassistant.components.sensor import SensorStateClass
-
         return [state_class.value for state_class in SensorStateClass.__members__.values()]
 
     def _get_v1_main_properties(
@@ -932,4 +927,4 @@ def get_schema_for_version(version: str) -> dict[str, Any] | None:
         Schema dictionary or None if version not found
     """
     validator = SchemaValidator()
-    return validator._schemas.get(version)
+    return validator.schemas.get(version)

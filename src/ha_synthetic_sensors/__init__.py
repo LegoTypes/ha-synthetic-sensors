@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 # Public API - Core classes needed by integrations
-from .config_manager import FormulaConfig, SensorConfig
+from .config_models import FormulaConfig, SensorConfig
 
 # Public API - Utility classes
 from .device_association import DeviceAssociationHelper
@@ -29,7 +29,7 @@ from .sensor_set import SensorSet
 from .storage_manager import StorageManager
 
 # Public API - Type definitions
-from .types import DataProviderCallback, DataProviderResult
+from .type_definitions import DataProviderCallback, DataProviderResult
 
 
 async def async_setup_synthetic_sensors(
@@ -77,7 +77,6 @@ async def async_setup_synthetic_sensors(
             )
         ```
     """
-    from .integration import async_create_sensor_manager
 
     # Get device info if available (integration-specific)
     device_info = None

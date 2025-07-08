@@ -12,7 +12,9 @@ from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from simpleeval import NameNotDefined
+from simpleeval import NameNotDefined, simple_eval
+
+from .device_classes import is_valid_ha_domain
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,7 +124,7 @@ class NameResolver:
         if variable_name in self._variables:
             entity_id = self._variables[variable_name]
         # Then check if it looks like a direct entity ID (contains dot)
-        elif "." in variable_name and self._is_valid_entity_id(variable_name):
+        elif "." in variable_name and self.is_valid_entity_id(variable_name):
             entity_id = variable_name
             self._logger.debug("Using direct entity ID reference: %s", variable_name)
         else:
@@ -314,7 +316,7 @@ class NameResolver:
             "total_dependencies": len(entity_ids),
         }
 
-    def _is_valid_entity_id(self, entity_id: str) -> bool:
+    def is_valid_entity_id(self, entity_id: str) -> bool:
         """Check if a string looks like a valid Home Assistant entity ID.
 
         Args:
@@ -335,68 +337,8 @@ class NameResolver:
         if not (domain and entity):
             return False
 
-        # Check domain format (Home Assistant built-in domains only)
-        valid_domains = {
-            # Core entity platforms
-            "sensor",
-            "binary_sensor",
-            "switch",
-            "light",
-            "fan",
-            "cover",
-            "climate",
-            "lock",
-            "vacuum",
-            "media_player",
-            "device_tracker",
-            "weather",
-            "camera",
-            "alarm_control_panel",
-            "button",
-            "number",
-            "select",
-            "text",
-            # Input helpers
-            "input_number",
-            "input_boolean",
-            "input_select",
-            "input_text",
-            "input_datetime",
-            # Other built-in domains
-            "counter",
-            "timer",
-            "automation",
-            "script",
-            "scene",
-            "group",
-            "zone",
-            "person",
-            "sun",
-            # Additional entity platforms
-            "air_quality",
-            "assist_satellite",
-            "calendar",
-            "conversation",
-            "date",
-            "datetime",
-            "event",
-            "humidifier",
-            "image",
-            "lawn_mower",
-            "notify",
-            "remote",
-            "siren",
-            "speech_to_text",
-            "time",
-            "todo",
-            "text_to_speech",
-            "update",
-            "valve",
-            "wake_word_detection",
-            "water_heater",
-        }
-
-        if domain not in valid_domains:
+        # Check domain format using centralized domain validation
+        if not is_valid_ha_domain(domain):
             return False
 
         # Basic format check: alphanumeric and underscores
@@ -452,9 +394,6 @@ class FormulaEvaluator:
             float: The calculated result or fallback_value if evaluation fails
         """
         try:
-            # Import simpleeval here to avoid import errors if not installed
-            from simpleeval import simple_eval
-
             # Use the name resolver function for dynamic entity state lookup
             result = simple_eval(self._formula, names=self._name_resolver.resolve_name)
 
@@ -498,8 +437,6 @@ class FormulaEvaluator:
 
         # Test formula syntax with dummy values
         try:
-            from simpleeval import simple_eval
-
             # Create dummy values for syntax testing
             dummy_names = dict.fromkeys(self._variables.keys(), 1.0)
             simple_eval(self._formula, names=dummy_names)

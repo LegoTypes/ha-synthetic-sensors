@@ -202,7 +202,7 @@ sys.meta_path.insert(0, HomeAssistantMockFinder())
 
 # Import all fixtures from test_fixtures.py to make them available globally
 # We need to use importlib to avoid relative import issues
-test_fixtures_path = Path(__file__).parent / "test_fixtures.py"
+test_fixtures_path = Path(__file__).parent / "integration" / "test_fixtures.py"
 spec = importlib.util.spec_from_file_location("test_fixtures", test_fixtures_path)
 if spec is not None and spec.loader is not None:
     test_fixtures_module = importlib.util.module_from_spec(spec)

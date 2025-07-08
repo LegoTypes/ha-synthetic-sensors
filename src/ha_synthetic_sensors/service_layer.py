@@ -5,7 +5,7 @@ and provides integration with Home Assistant's service system.
 """
 
 import logging
-from typing import TypedDict, cast
+from typing import Any, TypedDict, cast
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
@@ -13,6 +13,7 @@ import voluptuous as vol
 import yaml
 
 from .config_manager import ConfigManager
+from .config_models import FormulaConfig
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
 from .sensor_manager import SensorManager
@@ -147,6 +148,32 @@ GET_SENSOR_INFO_SCHEMA = vol.Schema(
         vol.Optional("entity_id"): cv.entity_id,
     }
 )
+
+
+def _create_yaml_validation_error(message: str, path: str = "config_data") -> dict[str, Any]:
+    """Create a standardized YAML validation error structure.
+
+    Args:
+        message: Error message
+        path: Path where error occurred
+
+    Returns:
+        Validation error dictionary
+    """
+    return {
+        "valid": False,
+        "errors": [
+            {
+                "message": message,
+                "path": path,
+                "severity": "error",
+                "schema_path": "",
+                "suggested_fix": "Check YAML syntax and formatting",
+            }
+        ],
+        "warnings": [],
+        "schema_version": "unknown",
+    }
 
 
 class ServiceLayer:
@@ -302,7 +329,7 @@ class ServiceLayer:
             sensor = self._sensor_manager.get_sensor_by_entity_id(entity_id)
             if sensor:
                 # Force a sensor update/re-evaluation
-                await sensor._async_update_sensor()
+                await sensor.async_update_sensor()
                 _LOGGER.debug("Triggered update for sensor: %s", entity_id)
 
                 # Log any additional parameters that were requested
@@ -377,8 +404,6 @@ class ServiceLayer:
             context = call.data.get("context", {})
 
             # Create a temporary formula config for evaluation
-            from .config_manager import FormulaConfig
-
             config = FormulaConfig(id="temp_eval", name="temp_eval", formula=formula, dependencies=set())
 
             # Evaluate formula
@@ -418,123 +443,133 @@ class ServiceLayer:
             validation_result = {}
 
             if config_file:
-                # Validate config file
-                file_result = self._config_manager.validate_config_file(config_file)
-                validation_result.update(file_result)
+                validation_result = self._validate_config_file(config_file)
             elif config_data:
-                # Validate raw config data
-                yaml_data = None
-                if isinstance(config_data, str):
-                    try:
-                        yaml_data = yaml.safe_load(config_data)
-                    except yaml.YAMLError as exc:
-                        validation_result = {
-                            "valid": False,
-                            "errors": [
-                                {
-                                    "message": f"YAML parsing error: {exc}",
-                                    "path": "config_data",
-                                    "severity": "error",
-                                    "schema_path": "",
-                                    "suggested_fix": "Check YAML syntax and formatting",
-                                }
-                            ],
-                            "warnings": [],
-                            "schema_version": "unknown",
-                        }
-                else:
-                    yaml_data = config_data
-
-                if yaml_data is not None and "valid" not in validation_result:
-                    schema_result = self._config_manager.validate_yaml_data(yaml_data)
-                    validation_result.update(schema_result)
+                validation_result = self._validate_config_data(config_data)
             else:
-                # Validate current configuration
-                current_issues = self._config_manager.validate_configuration()
-                validation_result = {
-                    "valid": len(current_issues["errors"]) == 0,
-                    "errors": [
-                        {
-                            "message": error,
-                            "path": "current_config",
-                            "severity": "error",
-                            "schema_path": "",
-                            "suggested_fix": "",
-                        }
-                        for error in current_issues["errors"]
-                    ],
-                    "warnings": [
-                        {
-                            "message": warning,
-                            "path": "current_config",
-                            "severity": "warning",
-                            "schema_path": "",
-                            "suggested_fix": "",
-                        }
-                        for warning in current_issues["warnings"]
-                    ],
-                    "schema_version": "current",
-                }
+                validation_result = self._validate_current_config()
 
             # Additional entity availability check if requested
-            if check_entity_availability and validation_result.get("valid", False):
-                # This would require integration with Home Assistant to check entities
-                # For now, just add a warning that this feature needs implementation
-                validation_result.setdefault("warnings", []).append(
-                    {
-                        "message": "Entity availability checking not yet implemented",
-                        "path": "check_entity_availability",
-                        "severity": "warning",
-                        "schema_path": "",
-                        "suggested_fix": "This feature will be implemented in future",
-                    }
-                )
+            self._add_entity_availability_check(validation_result, check_entity_availability)
 
-            # Log validation results
-            if validation_result["errors"]:
-                _LOGGER.error(
-                    "Configuration validation errors: %s",
-                    [error["message"] for error in validation_result["errors"]],
-                )
-            else:
-                _LOGGER.info("Configuration validation passed")
-
-            if validation_result["warnings"]:
-                _LOGGER.warning(
-                    "Configuration validation warnings: %s",
-                    [warning["message"] for warning in validation_result["warnings"]],
-                )
-
-            # Store validation results
-            if "synthetic_sensors_validation" not in self._hass.data:
-                self._hass.data["synthetic_sensors_validation"] = {}
-
-            self._hass.data["synthetic_sensors_validation"]["last_result"] = validation_result
-
-            # Fire event with validation results
-            self._hass.bus.async_fire(
-                "synthetic_sensors_config_validated",
-                {
-                    "valid": validation_result["valid"],
-                    "error_count": len(validation_result["errors"]),
-                    "warning_count": len(validation_result["warnings"]),
-                    "schema_version": validation_result.get("schema_version", "unknown"),
-                },
-            )
+            # Log and store validation results
+            self._process_validation_results(validation_result)
 
         except Exception as e:
             _LOGGER.error("Failed to validate configuration: %s", e)
-            # Fire error event
-            self._hass.bus.async_fire(
-                "synthetic_sensors_config_validated",
+            self._fire_validation_error_event(str(e))
+
+    def _validate_config_file(self, config_file: str) -> dict[str, Any]:
+        """Validate a config file."""
+        file_result = self._config_manager.validate_config_file(config_file)
+        return file_result
+
+    def _validate_config_data(self, config_data: str | dict[str, Any]) -> dict[str, Any]:
+        """Validate raw config data."""
+        yaml_data = None
+        validation_result = {}
+
+        if isinstance(config_data, str):
+            try:
+                yaml_data = yaml.safe_load(config_data)
+            except yaml.YAMLError as exc:
+                return _create_yaml_validation_error(f"YAML parsing error: {exc}")
+        else:
+            yaml_data = config_data
+
+        if yaml_data is not None:
+            schema_result = self._config_manager.validate_yaml_data(yaml_data)
+            validation_result.update(schema_result)
+
+        return validation_result
+
+    def _validate_current_config(self) -> dict[str, Any]:
+        """Validate current configuration."""
+        current_issues = self._config_manager.validate_configuration()
+        return {
+            "valid": len(current_issues["errors"]) == 0,
+            "errors": [
                 {
-                    "valid": False,
-                    "error_count": 1,
-                    "warning_count": 0,
-                    "schema_version": "unknown",
-                    "validation_error": str(e),
-                },
+                    "message": error,
+                    "path": "current_config",
+                    "severity": "error",
+                    "schema_path": "",
+                    "suggested_fix": "",
+                }
+                for error in current_issues["errors"]
+            ],
+            "warnings": [
+                {
+                    "message": warning,
+                    "path": "current_config",
+                    "severity": "warning",
+                    "schema_path": "",
+                    "suggested_fix": "",
+                }
+                for warning in current_issues["warnings"]
+            ],
+            "schema_version": "current",
+        }
+
+    def _add_entity_availability_check(self, validation_result: dict[str, Any], check_entity_availability: bool) -> None:
+        """Add entity availability check warning if requested."""
+        if check_entity_availability and validation_result.get("valid", False):
+            validation_result.setdefault("warnings", []).append(
+                {
+                    "message": "Entity availability checking not yet implemented",
+                    "path": "check_entity_availability",
+                    "severity": "warning",
+                    "schema_path": "",
+                    "suggested_fix": "This feature will be implemented in future",
+                }
             )
+
+    def _process_validation_results(self, validation_result: dict[str, Any]) -> None:
+        """Log validation results and store them."""
+        # Log validation results
+        if validation_result["errors"]:
+            _LOGGER.error(
+                "Configuration validation errors: %s",
+                [error["message"] for error in validation_result["errors"]],
+            )
+        else:
+            _LOGGER.info("Configuration validation passed")
+
+        if validation_result["warnings"]:
+            _LOGGER.warning(
+                "Configuration validation warnings: %s",
+                [warning["message"] for warning in validation_result["warnings"]],
+            )
+
+        # Store validation results
+        if "synthetic_sensors_validation" not in self._hass.data:
+            self._hass.data["synthetic_sensors_validation"] = {}
+
+        self._hass.data["synthetic_sensors_validation"]["last_result"] = validation_result
+
+        # Fire event with validation results
+        self._hass.bus.async_fire(
+            "synthetic_sensors_config_validated",
+            {
+                "valid": validation_result["valid"],
+                "error_count": len(validation_result["errors"]),
+                "warning_count": len(validation_result["warnings"]),
+                "schema_version": validation_result.get("schema_version", "unknown"),
+            },
+        )
+
+    def _fire_validation_error_event(self, error_message: str) -> None:
+        """Fire error event for validation failure."""
+        self._hass.bus.async_fire(
+            "synthetic_sensors_config_validated",
+            {
+                "valid": False,
+                "error_count": 1,
+                "warning_count": 0,
+                "schema_version": "unknown",
+                "validation_error": error_message,
+            },
+        )
 
     async def _async_get_sensor_info(self, call: ServiceCall) -> None:
         """Handle get sensor info service call."""
@@ -555,13 +590,13 @@ class ServiceLayer:
 
                     info = {
                         "entity_id": entity_id,
-                        "unique_id": sensor._attr_unique_id,
-                        "name": sensor._attr_name,
-                        "state": sensor._attr_native_value,
-                        "available": sensor._attr_available,
-                        "unit_of_measurement": sensor._attr_native_unit_of_measurement,
-                        "device_class": sensor._attr_device_class,
-                        "attributes": sensor._attr_extra_state_attributes,
+                        "unique_id": sensor.unique_id,
+                        "name": sensor.name,
+                        "state": sensor.native_value,
+                        "available": sensor.available,
+                        "unit_of_measurement": sensor.native_unit_of_measurement,
+                        "device_class": sensor.device_class,
+                        "attributes": sensor.extra_state_attributes,
                         "formula": formula_str,
                         "dependencies": dependencies,
                     }
@@ -588,10 +623,10 @@ class ServiceLayer:
 
                     sensor_info = {
                         "entity_id": sensor.entity_id,
-                        "unique_id": sensor._attr_unique_id,
-                        "name": sensor._attr_name,
-                        "state": sensor._attr_native_value,
-                        "available": sensor._attr_available,
+                        "unique_id": sensor.unique_id,
+                        "name": sensor.name,
+                        "state": sensor.native_value,
+                        "available": sensor.available,
                         "formula": formula_str,
                         "dependencies": dependencies,
                     }
@@ -642,8 +677,6 @@ class ServiceLayer:
         if self._config_manager.is_config_modified():
             _LOGGER.info("Configuration file modified, automatically reloading")
             # Create a dummy ServiceCall for internal reload
-            from homeassistant.core import ServiceCall
-
             dummy_call = ServiceCall(self._hass, self._domain, "reload_config", {})
             await self._async_reload_config(dummy_call)
 

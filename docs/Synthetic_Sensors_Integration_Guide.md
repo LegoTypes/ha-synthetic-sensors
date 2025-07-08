@@ -35,7 +35,7 @@ configurations with full reload capabilities.
 
 The `ha-synthetic-sensors` library provides a complete solution for creating synthetic sensors that can perform calculations
 
-- **Configuration Storage**: Persistent storage using HA's storage system OR YAML file discovery
+- **Configuration Storage**: Persistent storage using HA's storage system OR YAML content import
 - **Entity Creation**: Creates and manages actual Home Assistant sensor entities
 - **Formula Evaluation**: Real-time calculation of sensor values using live data
 - **Lifecycle Management**: Automatic entity updates, creation, and deletion
@@ -52,18 +52,153 @@ The library creates **actual Home Assistant sensor entities** that evaluate form
 - **Data Provider**: Supplies live data to synthetic sensors from your integration
 - **Formula Evaluator**: Calculates sensor values in real-time using formulas
 
-### Configuration Options
+### Configuration Approaches
 
-Choose between two configuration approaches:
+Choose between two main configuration approaches:
 
-1. **Storage-Based** (Recommended): Configurations stored in HA's storage system, preserves user customizations
-2. **YAML-Based**: Configurations in YAML files, supports file discovery and reload
+1. **API-Based Configuration**: Build configurations using Python objects and API methods
+2. **YAML-Based Configuration**: Create configurations using YAML content (from any source)
+
+Both approaches store configurations in HA's storage system and support user modifications.
 
 ### Integration Flow
 
 1. **Setup Phase** (`__init__.py`): Generate and store sensor configurations
 2. **Entity Creation Phase** (`sensor.py`): Create actual Home Assistant sensor entities
 3. **Runtime Phase**: Sensors evaluate formulas using live data from your integration
+
+## Configuration Approaches
+
+### Approach 1: API-Based Configuration (Recommended)
+
+**Best for**: Simple configurations, type safety, straightforward sensor setups
+
+Use Python objects and API methods to build configurations:
+
+```python
+from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
+
+def generate_default_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
+    """Generate default sensor configurations for a device."""
+    configs = []
+
+    # Create sensor configuration using Python objects
+    power_config = SensorConfig(
+        unique_id=f"{device_identifier}_current_power",
+        name=f"{device_data.name} Current Power",
+        entity_id=f"sensor.{device_identifier}_current_power",
+        device_identifier=device_identifier,
+        formulas=[
+            FormulaConfig(
+                id="main",
+                formula="voltage * current",
+                variables={
+                    "voltage": f"{DOMAIN}_backing.{device_identifier}_voltage",
+                    "current": f"{DOMAIN}_backing.{device_identifier}_current"
+                },
+                unit_of_measurement="W",
+                device_class="power",
+                state_class="measurement",
+            )
+        ],
+    )
+    configs.append(power_config)
+    return configs
+
+# Store using API methods
+await sensor_set.async_replace_sensors(default_configs)
+# OR add individually
+for config in default_configs:
+    await sensor_set.async_add_sensor(config)
+```
+
+### Approach 2: YAML-Based Configuration
+
+**Best for**: Complex configurations, template-driven setups, user-provided configurations
+
+Create YAML content and import it:
+
+```python
+# Option A: Generate YAML programmatically
+def generate_yaml_configuration(device_data, device_identifier):
+    yaml_content = f"""
+version: "1.0"
+sensors:
+  {device_identifier}_current_power:
+    name: "{device_data.name} Current Power"
+    entity_id: "sensor.{device_identifier}_current_power"
+    device_identifier: "{device_identifier}"
+    formulas:
+      - id: "main"
+        formula: "voltage * current"
+        variables:
+          voltage: "{DOMAIN}_backing.{device_identifier}_voltage"
+          current: "{DOMAIN}_backing.{device_identifier}_current"
+        unit_of_measurement: "W"
+        device_class: "power"
+"""
+
+    # Add energy sensor if supported
+    if device_data.supports_energy:
+        yaml_template += """
+  {device_id}_energy:
+    name: "{device_name} Energy"
+    entity_id: "sensor.{device_id}_energy"
+    device_identifier: "{device_id}"
+    formulas:
+      - id: "main"
+        formula: "power * time_hours / 1000"
+        variables:
+          power: "sensor.{device_id}_power"
+          time_hours: "24"
+        unit_of_measurement: "kWh"
+        device_class: "energy"
+"""
+
+    return yaml_template.format(
+        device_id=device_identifier,
+        device_name=device_data.name,
+        domain=DOMAIN
+    )
+
+# Option B: Load from file or template
+yaml_content = load_yaml_from_file("sensor_configs.yaml")
+
+# Option C: User-provided YAML (via config flow, UI, etc.)
+yaml_content = user_provided_yaml
+
+# Import YAML content
+await sensor_set.async_import_yaml(yaml_content)
+```
+
+**YAML Validation**: Always validate before importing:
+
+```python
+# Validate YAML before importing
+validation_result = await sensor_set.async_validate_import(yaml_content)
+
+if validation_result["yaml_errors"]:
+    _LOGGER.error("YAML parsing errors: %s", validation_result["yaml_errors"])
+    return
+
+if validation_result["config_errors"]:
+    _LOGGER.error("Configuration errors: %s", validation_result["config_errors"])
+    return
+
+if validation_result["sensor_errors"]:
+    _LOGGER.error("Sensor validation errors: %s", validation_result["sensor_errors"])
+    return
+
+# Safe to import
+await sensor_set.async_import_yaml(yaml_content)
+```
+
+### When to Use Each Approach
+
+| Approach | Best For | Pros | Cons |
+|----------|----------|------|------|
+| **API-Based** | Most integrations, simple configs | Type safety, IDE completion, straightforward | Less flexible for complex scenarios |
+| **YAML-Based** | Complex configs, templates, user input | Very flexible, familiar format, powerful | Requires validation, more complex |
 
 ## Standard Integration Pattern
 
@@ -130,11 +265,12 @@ async def setup_synthetic_sensors_config(
             _LOGGER.info(f"Added {len(new_sensors)} new synthetic sensors")
     else:
         # Fresh install - create sensor set with defaults
-        sensor_set = await storage_manager.async_create_sensor_set(
+        await storage_manager.async_create_sensor_set(
             sensor_set_id=sensor_set_id,
             device_identifier=device_identifier,
             name=f"{coordinator.device_name} Sensors",
         )
+        sensor_set = storage_manager.get_sensor_set(sensor_set_id)
 
         default_configs = generate_default_sensor_configs(coordinator.data, device_identifier)
         await sensor_set.async_replace_sensors(default_configs)
@@ -194,7 +330,7 @@ def create_native_sensors(coordinator):
 **Critical**: The data provider supplies live data to synthetic sensors:
 
 ```python
-from ha_synthetic_sensors.types import DataProviderCallback, DataProviderResult
+from ha_synthetic_sensors.type_definitions import DataProviderCallback, DataProviderResult
 
 def create_data_provider_callback(coordinator: YourCoordinator) -> DataProviderCallback:
     """Create data provider callback for synthetic sensors."""
@@ -241,7 +377,7 @@ def parse_backing_entity_id(backing_part: str) -> tuple[str, str]:
 ### 4. Sensor Configuration Generation
 
 ```python
-from ha_synthetic_sensors.config_manager import SensorConfig, FormulaConfig
+from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
 
 def generate_default_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
     """Generate default sensor configurations for a device."""
@@ -318,82 +454,112 @@ def generate_default_sensor_configs(device_data: Any, device_identifier: str) ->
     return configs
 ```
 
-## YAML-Based Configuration (Alternative)
+## Advanced YAML Configuration Examples
 
-For integrations that prefer YAML configuration files:
-
-### 1. Enable YAML Discovery
+### Template-Based YAML Generation
 
 ```python
-# In your __init__.py
-from ha_synthetic_sensors import async_setup_integration, async_reload_integration
+def generate_device_yaml_from_template(device_data, device_identifier):
+    """Generate YAML from templates based on device capabilities."""
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # Setup your coordinator...
-
-    # Use YAML-based setup instead of storage
-    success = await async_setup_integration(hass, entry, async_add_entities_callback)
-
-    if success:
-        # Register reload service for YAML files
-        async def reload_synthetic_sensors(call):
-            await async_reload_integration(hass, entry, async_add_entities_callback)
-
-        hass.services.async_register(DOMAIN, "reload_synthetic_sensors", reload_synthetic_sensors)
-
-    return success
-```
-
-### 2. YAML Configuration Files
-
-Place YAML files in your integration's config directory:
-
-```yaml
-# config/synthetic_sensors/your_integration.yaml
+    # Base template
+    yaml_template = """
 version: "1.0"
-
-global_settings:
-  device_identifier: "device_123"
-
 sensors:
-  device_123_power:
-    name: "Device Power"
-    entity_id: "sensor.device_123_power"
-    formula:
-      formula: "power_value"
-      variables:
-        power_value: "your_integration_backing.device_123_power"
-      unit_of_measurement: "W"
-      device_class: "power"
-      state_class: "measurement"
+  {device_id}_power:
+    name: "{device_name} Power"
+    entity_id: "sensor.{device_id}_power"
+    device_identifier: "{device_id}"
+    formulas:
+      - id: "main"
+        formula: "voltage * current"
+        variables:
+          voltage: "{domain}_backing.{device_id}_voltage"
+          current: "{domain}_backing.{device_id}_current"
+        unit_of_measurement: "W"
+        device_class: "power"
+"""
 
-  device_123_daily_energy:
-    name: "Device Daily Energy"
-    entity_id: "sensor.device_123_daily_energy"
-    formula:
-      formula: "power_value * 24 / 1000"
-      variables:
-        power_value: "your_integration_backing.device_123_power"
-      unit_of_measurement: "kWh"
-      device_class: "energy"
-      state_class: "total_increasing"
+    # Add energy sensor if supported
+    if device_data.supports_energy:
+        yaml_template += """
+  {device_id}_energy:
+    name: "{device_name} Energy"
+    entity_id: "sensor.{device_id}_energy"
+    device_identifier: "{device_id}"
+    formulas:
+      - id: "main"
+        formula: "power * time_hours / 1000"
+        variables:
+          power: "sensor.{device_id}_power"
+          time_hours: "24"
+        unit_of_measurement: "kWh"
+        device_class: "energy"
+"""
+
+    return yaml_template.format(
+        device_id=device_identifier,
+        device_name=device_data.name,
+        domain=DOMAIN
+    )
+
+# Use the template
+yaml_content = generate_device_yaml_from_template(coordinator.data, device_identifier)
+await sensor_set.async_import_yaml(yaml_content)
 ```
 
-### 3. Reload Support
+### Conditional YAML Configuration
 
 ```python
-# Add reload capability to your integration
-from ha_synthetic_sensors import async_reload_integration
+import yaml
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the integration and synthetic sensors."""
+async def setup_conditional_yaml_config(sensor_set, device_data, device_identifier):
+    """Setup configuration based on device capabilities."""
 
-    # Reload your integration's data
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    await coordinator.async_refresh()
+    sensors = {}
 
-    # Reload synthetic sensors from YAML
-    await async_reload_integration(hass, entry, async_add_entities_callback)
+    # Always add basic power sensor
+    sensors[f"{device_identifier}_power"] = {
+        "name": f"{device_data.name} Power",
+        "entity_id": f"sensor.{device_identifier}_power",
+        "device_identifier": device_identifier,
+        "formulas": [{
+            "id": "main",
+            "formula": "voltage * current",
+            "variables": {
+                "voltage": f"{DOMAIN}_backing.{device_identifier}_voltage",
+                "current": f"{DOMAIN}_backing.{device_identifier}_current"
+            },
+            "unit_of_measurement": "W",
+            "device_class": "power"
+        }]
+    }
+
+    # Add temperature sensor if device supports it
+    if device_data.has_temperature:
+        sensors[f"{device_identifier}_temperature"] = {
+            "name": f"{device_data.name} Temperature",
+            "entity_id": f"sensor.{device_identifier}_temperature",
+            "device_identifier": device_identifier,
+            "formulas": [{
+                "id": "main",
+                "formula": "temp_raw * 0.1 - 40",  # Convert raw to Celsius
+                "variables": {
+                    "temp_raw": f"{DOMAIN}_backing.{device_identifier}_temp_raw"
+                },
+                "unit_of_measurement": "°C",
+                "device_class": "temperature"
+            }]
+        }
+
+    # Build final YAML
+    yaml_dict = {
+        "version": "1.0",
+        "sensors": sensors
+    }
+
+    yaml_content = yaml.dump(yaml_dict, default_flow_style=False)
+    await sensor_set.async_import_yaml(yaml_content)
 ```
 
 ## Best Practices
@@ -463,7 +629,7 @@ except Exception as e:
 Validate configurations before storing:
 
 ```python
-from ha_synthetic_sensors.config_manager import SensorConfig
+from ha_synthetic_sensors.config_models import SensorConfig
 
 def create_sensor_config(device_data, device_id):
     try:
@@ -497,9 +663,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Reload from storage
                 config = storage_manager.to_config(device_identifier=coordinator.device_id)
                 await sensor_manager.load_configuration(config)
-            else:
-                # YAML-based reload
-                await async_reload_integration(hass, entry, async_add_entities_callback)
 
             _LOGGER.info("Synthetic sensors reloaded successfully")
         except Exception as e:
@@ -574,11 +737,12 @@ version: "1.0"
 sensors:
   test_sensor:
     name: "Test"
-    formula:
-      formula: "a + b"
-      variables:
-        a: "sensor.input_a"
-        b: "sensor.input_b"
+    formulas:
+      - id: "main"
+        formula: "a + b"
+        variables:
+          a: "sensor.input_a"
+          b: "sensor.input_b"
 """
 
 result = validate_yaml_content(yaml_content)
@@ -593,8 +757,8 @@ else:
 ### Main Functions
 
 - **`async_setup_synthetic_sensors()`**: Recommended one-function setup
-- **`async_setup_integration()`**: YAML-based integration setup
-- **`async_reload_integration()`**: Reload YAML configurations
+- **`async_setup_integration()`**: YAML file discovery-based setup
+- **`async_reload_integration()`**: Reload YAML file configurations
 - **`async_unload_integration()`**: Clean unload of integration
 
 ### Core Classes
@@ -604,6 +768,24 @@ else:
 - **`SensorConfig`**: Configuration for individual sensors
 - **`FormulaConfig`**: Configuration for sensor formulas
 - **`SyntheticSensorsIntegration`**: Advanced integration class
+
+### SensorSet Methods
+
+#### CRUD Operations
+
+- **`async_add_sensor(sensor_config)`**: Add individual sensor
+- **`async_update_sensor(sensor_config)`**: Update existing sensor
+- **`async_remove_sensor(unique_id)`**: Remove sensor by ID
+- **`get_sensor(unique_id)`**: Get sensor configuration
+- **`list_sensors()`**: List all sensors in set
+
+#### Bulk Operations
+
+- **`async_replace_sensors(sensor_configs)`**: Replace all sensors
+- **`async_modify(modification)`**: Bulk modifications (add/remove/update/entity changes)
+- **`async_import_yaml(yaml_content)`**: Import YAML configuration
+- **`export_yaml()`**: Export to YAML format
+- **`async_validate_import(yaml_content)`**: Validate YAML before import
 
 ### Utility Classes
 

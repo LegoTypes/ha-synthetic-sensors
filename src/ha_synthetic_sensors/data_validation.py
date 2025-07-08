@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .exceptions import DataValidationError
-from .types import DataProviderResult
+from .type_definitions import DataProviderResult
 
 
 def validate_data_provider_result(result: Any, context: str = "data provider") -> DataProviderResult:

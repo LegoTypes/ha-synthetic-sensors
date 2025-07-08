@@ -60,8 +60,13 @@ class DependencyParser:
     )
 
     # Pattern for dot notation attribute access - more specific to avoid conflicts with entity_ids
+    _entity_domains_pattern = (
+        r"sensor|binary_sensor|input_number|input_boolean|switch|light|climate|cover|fan|lock|"
+        r"alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|zone|"
+        r"automation|script|scene|group|timer|counter|sun"
+    )
     DOT_NOTATION_PATTERN = re.compile(
-        r"\b(?!(?:sensor|binary_sensor|input_number|input_boolean|switch|light|climate|cover|fan|lock|alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|zone|automation|script|scene|group|timer|counter|sun)\.)([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.(attributes\.)?([a-zA-Z0-9_]+)\b"
+        rf"\b(?!(?:{_entity_domains_pattern})\.)([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.(attributes\.)?([a-zA-Z0-9_]+)\b"
     )
 
     # Pattern for variable references (simple identifiers that aren't keywords)
@@ -92,7 +97,7 @@ class DependencyParser:
         self._states_pattern = re.compile(r"states\.([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)")
 
         # Pattern for direct entity ID references (domain.entity_name)
-        self._direct_entity_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_.]*)\b")
+        self.direct_entity_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_.]*)\b")
 
         # Pattern for variable names (after entity IDs are extracted)
         self._variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
@@ -119,7 +124,7 @@ class DependencyParser:
         dependencies.update(self._states_pattern.findall(formula))
 
         # Extract direct entity ID references (domain.entity_name)
-        dependencies.update(self._direct_entity_pattern.findall(formula))
+        dependencies.update(self.direct_entity_pattern.findall(formula))
 
         # Extract variable names (exclude keywords, functions, and entity IDs)
         all_entity_ids = self.extract_entity_references(formula)
@@ -161,7 +166,46 @@ class DependencyParser:
         entities.update(self._states_pattern.findall(formula))
 
         # Extract direct entity ID references (domain.entity_name)
-        entities.update(self._direct_entity_pattern.findall(formula))
+        # But exclude dot notation patterns that are likely variables
+        potential_entities = self.direct_entity_pattern.findall(formula)
+
+        # Known Home Assistant domains
+        known_domains = {
+            "sensor",
+            "binary_sensor",
+            "input_number",
+            "input_boolean",
+            "switch",
+            "light",
+            "climate",
+            "cover",
+            "fan",
+            "lock",
+            "alarm_control_panel",
+            "vacuum",
+            "media_player",
+            "camera",
+            "weather",
+            "device_tracker",
+            "person",
+            "zone",
+            "automation",
+            "script",
+            "scene",
+            "group",
+            "timer",
+            "counter",
+            "sun",
+            "input_text",
+            "input_select",
+            "input_datetime",
+        }
+
+        for entity_id in potential_entities:
+            # Only add if it starts with a known domain
+            domain = entity_id.split(".")[0] if "." in entity_id else ""
+            if domain in known_domains:
+                entities.add(entity_id)
 
         return entities
 
@@ -186,17 +230,73 @@ class DependencyParser:
         variables = set()
         variable_matches = self._variable_pattern.findall(formula)
 
-        for var in variable_matches:
+        # Extract variables from dot notation first to identify attribute parts to exclude
+        dot_notation_attributes = set()
+        dot_matches = self.DOT_NOTATION_PATTERN.findall(formula)
+        for match in dot_matches:
+            entity_part = match[0]  # The part before the dot (e.g., "battery_class")
+            attribute_part = match[2]  # The part after the dot (e.g., "battery_level")
+
+            # Add the attribute part to exclusion set
+            dot_notation_attributes.add(attribute_part)
+
+            # Check if the entity part could be a variable (not an entity ID)
             if (
-                var not in self._excluded_terms
-                and not keyword.iskeyword(var)
-                and var not in entities
-                and var not in entity_id_parts
-                and "." not in var
-            ):  # Exclude parts of entity IDs  # Skip dotted references
+                entity_part not in self._excluded_terms
+                and not keyword.iskeyword(entity_part)
+                and entity_part not in entities
+                and entity_part not in entity_id_parts
+                and not any(
+                    entity_part.startswith(domain + ".")
+                    for domain in [
+                        "sensor",
+                        "binary_sensor",
+                        "input_number",
+                        "input_boolean",
+                        "switch",
+                        "light",
+                        "climate",
+                        "cover",
+                        "fan",
+                        "lock",
+                    ]
+                )
+            ):
+                variables.add(entity_part)
+
+        # Now extract standalone variables, excluding attribute parts from dot notation
+        for var in variable_matches:
+            if self._is_valid_variable(var, entities, entity_id_parts, dot_notation_attributes):
                 variables.add(var)
 
         return variables
+
+    def _is_valid_variable(
+        self,
+        var: str,
+        entities: set[str],
+        entity_id_parts: set[str],
+        dot_notation_attributes: set[str],
+    ) -> bool:
+        """Check if a variable name is valid for extraction.
+
+        Args:
+            var: Variable name to check
+            entities: Set of known entity names
+            entity_id_parts: Set of entity ID parts to exclude
+            dot_notation_attributes: Set of dot notation attributes to exclude
+
+        Returns:
+            True if the variable is valid for extraction
+        """
+        return (
+            var not in self._excluded_terms
+            and not keyword.iskeyword(var)
+            and var not in entities
+            and var not in entity_id_parts
+            and var not in dot_notation_attributes
+            and "." not in var
+        )
 
     def validate_formula_syntax(self, formula: str) -> list[str]:
         """Validate basic formula syntax.
@@ -256,7 +356,7 @@ class DependencyParser:
             return True
 
         # Check direct entity ID references
-        return bool(self._direct_entity_pattern.search(formula))
+        return bool(self.direct_entity_pattern.search(formula))
 
     def _build_excluded_terms(self) -> set[str]:
         """Build set of terms to exclude from variable extraction.
@@ -323,7 +423,7 @@ class DependencyParser:
         dependencies.update(entity_matches)
 
         # Also use the direct entity pattern for full entity IDs
-        full_entity_matches = self._direct_entity_pattern.findall(formula)
+        full_entity_matches = self.direct_entity_pattern.findall(formula)
         dependencies.update(full_entity_matches)
 
         # Extract dot notation references and convert to entity_ids

@@ -16,13 +16,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.core import HomeAssistant, State
 
 from .data_validation import validate_data_provider_result, validate_entity_state_value
-from .exceptions import NonNumericStateError
-from .types import ContextValue, DataProviderCallback
+from .exceptions import MissingDependencyError, NonNumericStateError
+
+if TYPE_CHECKING:
+    from .type_definitions import ContextValue, DataProviderCallback
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,13 +93,10 @@ class ContextResolutionStrategy(VariableResolutionStrategy):
             # Validate that the value is numeric
             if isinstance(value, (int, float)):
                 return value, True, "context"
-            else:
-                from .exceptions import MissingDependencyError
-
-                raise MissingDependencyError(
-                    f"Context variable '{variable_name}' has non-numeric value '{value}' - "
-                    "all context variables must be numeric for use in formulas"
-                )
+            raise MissingDependencyError(
+                f"Context variable '{variable_name}' has non-numeric value '{value}' - "
+                "all context variables must be numeric for use in formulas"
+            )
         return None, False, "context"
 
 
@@ -181,30 +180,179 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
         if state is None:
             return None, False, "ha"
 
+        # Handle startup race conditions where state exists but state.state is None
+        if state.state is None:
+            return None, False, "ha"
+
+        # Handle clearly unavailable states
+        if str(state.state).lower() in ("unavailable", "unknown"):
+            return None, False, "ha"
+
         try:
             # Try to get numeric state value
             numeric_value = self._get_numeric_state(state)
             return numeric_value, True, "ha"
         except (ValueError, TypeError, NonNumericStateError):
-            # For non-numeric states, keep as string
-            return state.state, True, "ha"
+            # For truly non-numeric states that can't be converted, treat as unavailable
+            return None, False, "ha"
+
+    def get_numeric_state(self, state: State) -> float:
+        """Public method to get numeric state value.
+
+        Args:
+            state: Home Assistant state object
+
+        Returns:
+            Numeric value of the state
+
+        Raises:
+            NonNumericStateError: If state cannot be converted to numeric
+        """
+        return self._get_numeric_state(state)
 
     def _get_numeric_state(self, state: State) -> float:
-        """Extract numeric value from state object."""
+        """Extract numeric value from state object.
+
+        Converts boolean-like states to numeric values following HA conventions:
+        - Binary states: on/off, true/false, open/closed, etc. → 1.0/0.0
+        - Device presence: home/away, detected/clear → 1.0/0.0
+        - Lock states: locked/unlocked → 1.0/0.0
+        - Other boolean-like states based on device type
+        """
         try:
             return float(state.state)
         except (ValueError, TypeError):
-            # Check for common non-numeric states that should be converted
-            state_str = str(state.state).lower()
-            if state_str in ("on", "true", "open", "home"):
+            # Convert boolean-like states to numeric values
+            numeric_value = self._convert_boolean_state_to_numeric(state)
+            if numeric_value is not None:
+                return numeric_value
+
+            # If we can't convert the state, raise an error
+            raise NonNumericStateError(
+                state.entity_id,
+                f"Cannot convert state '{state.state}' to numeric value",
+            ) from None
+
+    def _convert_boolean_state_to_numeric(self, state: State) -> float | None:
+        """Convert boolean-like state to numeric value.
+
+        Args:
+            state: Home Assistant state object
+
+        Returns:
+            Numeric value (1.0 or 0.0) or None if not convertible
+        """
+        state_str = str(state.state).lower()
+        device_class = state.attributes.get("device_class", "").lower()
+
+        # Special handling for device_class-specific states (check first for priority)
+        device_class_value = self._get_device_class_specific_value(state_str, device_class)
+        if device_class_value is not None:
+            return device_class_value
+
+        # Standard boolean states (True = 1.0)
+        true_states = {
+            "on",
+            "true",
+            "yes",
+            "1",
+            "open",
+            "opened",  # Basic states and door/window sensors
+            "home",
+            "present",  # Presence detection
+            "locked",  # Lock states
+            "detected",
+            "motion",  # Motion/occupancy sensors
+            "wet",
+            "moisture",  # Moisture/leak sensors
+            "heat",
+            "fire",  # Safety sensors
+            "unsafe",
+            "problem",  # Problem/safety indicators
+            "active",
+            "running",  # Activity states
+            "connected",
+            "online",  # Connectivity states
+            "charging",  # Battery/power states
+            "armed_home",
+            "armed_away",
+            "armed_night",
+            "armed_vacation",  # Alarm states
+        }
+
+        # Standard boolean states (False = 0.0)
+        false_states = {
+            "off",
+            "false",
+            "no",
+            "0",
+            "closed",
+            "close",  # Basic states and door/window sensors
+            "away",
+            "not_home",
+            "absent",  # Presence detection
+            "unlocked",  # Lock states
+            "clear",
+            "no_motion",  # Motion/occupancy sensors
+            "dry",
+            "no_moisture",  # Moisture/leak sensors
+            "cool",
+            "cold",
+            "no_fire",  # Safety sensors
+            "safe",
+            "ok",  # Problem/safety indicators
+            "inactive",
+            "idle",
+            "stopped",  # Activity states
+            "disconnected",
+            "offline",  # Connectivity states
+            "not_charging",
+            "discharging",  # Battery/power states
+            "disarmed",
+            "disabled",  # Alarm states
+        }
+
+        if state_str in true_states:
+            return 1.0
+        if state_str in false_states:
+            return 0.0
+
+        return None  # Cannot convert
+
+    def _get_device_class_specific_value(self, state_str: str, device_class: str) -> float | None:
+        """Get device class specific numeric value.
+
+        Args:
+            state_str: Lowercase state string
+            device_class: Lowercase device class
+
+        Returns:
+            Numeric value or None if not device class specific
+        """
+        # Define device class specific state mappings
+        device_class_mappings: dict[str, dict[str, tuple[str, ...]]] = {
+            "battery": {
+                "true_states": ("normal", "high", "full"),
+                "false_states": ("low", "critical"),
+            },
+            "connectivity": {
+                "true_states": ("connected", "paired"),
+                "false_states": ("disconnected", "unpaired"),
+            },
+            "power": {
+                "true_states": ("power", "powered"),
+                "false_states": ("no_power", "unpowered"),
+            },
+        }
+
+        if device_class in device_class_mappings:
+            mapping = device_class_mappings[device_class]
+            if state_str in mapping["true_states"]:
                 return 1.0
-            elif state_str in ("off", "false", "closed", "away"):
+            if state_str in mapping["false_states"]:
                 return 0.0
-            else:
-                raise NonNumericStateError(
-                    state.state,
-                    f"Cannot convert state '{state.state}' to numeric value",
-                ) from None
+
+        return None
 
 
 class VariableResolver:

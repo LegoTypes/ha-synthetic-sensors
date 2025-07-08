@@ -1,0 +1,25 @@
+version: "1.0"
+global_settings:
+  device_identifier: "device_123"
+
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    entity_id: "sensor.power"
+    formula: "power_value"
+    variables:
+      power_value: "test_backing.device_123_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+
+  energy_sensor:
+    name: "Energy Sensor"
+    entity_id: "sensor.energy"
+    formula: "power_value * hours / 1000"
+    variables:
+      power_value: "test_backing.device_123_power"
+      hours: 24
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+    state_class: "total_increasing"
