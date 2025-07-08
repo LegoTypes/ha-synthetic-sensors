@@ -1,185 +1,218 @@
 # Synthetic Sensors Integration Guide
 
-This guide demonstrates how to integrate the `ha-synthetic-sensors` library into your Home Assistant custom integration to
-create dynamic, formula-based sensors.
+This guide demonstrates how to integrate the `ha-synthetic-sensors` library into your Home Assistant custom integration for
+creating dynamic, formula-based sensors.
+
+## Quick Start - Recommended Pattern
+
+For most integrations, use this simplified pattern with **one function call**:
+
+```python
+# In your sensor.py platform
+from ha_synthetic_sensors import async_setup_synthetic_sensors
+
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    # Create your native sensors first
+    native_entities = create_native_sensors(coordinator)
+    async_add_entities(native_entities)
+
+    # Then add synthetic sensors with one function call
+    storage_manager = hass.data[DOMAIN][config_entry.entry_id]["storage_manager"]
+    sensor_manager = await async_setup_synthetic_sensors(
+        hass=hass,
+        config_entry=config_entry,
+        async_add_entities=async_add_entities,
+        storage_manager=storage_manager,
+        device_identifier=coordinator.device_id,
+        data_provider_callback=create_data_provider(coordinator),
+    )
+```
+
+The `async_setup_synthetic_sensors()` function handles all complexity while supporting both storage-based and YAML-based
+configurations with full reload capabilities.
 
 ## Overview
 
-The `ha-synthetic-sensors` library provides a storage-based approach to creating synthetic sensors that can perform
-calculations using data from your integration's native sensors. This is particularly useful for:
+The `ha-synthetic-sensors` library provides a complete solution for creating synthetic sensors that can perform calculations
 
-- Creating derived sensors (e.g., power calculations from voltage/current)
-- Aggregating data across multiple devices
-- Providing user-customizable sensor formulas
-- Managing large numbers of dynamic sensors
+- **Configuration Storage**: Persistent storage using HA's storage system OR YAML file discovery
+- **Entity Creation**: Creates and manages actual Home Assistant sensor entities
+- **Formula Evaluation**: Real-time calculation of sensor values using live data
+- **Lifecycle Management**: Automatic entity updates, creation, and deletion
+- **Reload Support**: Dynamic configuration reloading without HA restart
 
 ## Key Concepts
 
-### Storage-First Architecture
+### Architecture
 
-The library uses Home Assistant's storage system to persist sensor configurations:
+The library creates **actual Home Assistant sensor entities** that evaluate formulas using live data from your integration:
 
-- **StorageManager**: Manages persistent storage and sensor set operations
-- **SensorSet**: Handle for a group of related sensors with CRUD operations
+- **StorageManager**: Manages persistent storage and sensor configurations
 - **SensorManager**: Creates and manages actual Home Assistant sensor entities
 - **Data Provider**: Supplies live data to synthetic sensors from your integration
+- **Formula Evaluator**: Calculates sensor values in real-time using formulas
 
-### Integration Patterns
+### Configuration Options
 
-1. **Storage-Based**: Sensors are defined in HA storage, user-customizable (recommended)
-2. **File-Based**: Sensors defined in YAML files, integration managed files
-3. **Hybrid**: Mix of storage-based and file-based sensors
+Choose between two configuration approaches:
 
-## Quick Start Integration Pattern
+1. **Storage-Based** (Recommended): Configurations stored in HA's storage system, preserves user customizations
+2. **YAML-Based**: Configurations in YAML files, supports file discovery and reload
 
-### 1. Basic Setup in `__init__.py`
+### Integration Flow
+
+1. **Setup Phase** (`__init__.py`): Generate and store sensor configurations
+2. **Entity Creation Phase** (`sensor.py`): Create actual Home Assistant sensor entities
+3. **Runtime Phase**: Sensors evaluate formulas using live data from your integration
+
+## Standard Integration Pattern
+
+### 1. Setup in `__init__.py`
 
 ```python
+import logging
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
 import ha_synthetic_sensors
-from ha_synthetic_sensors.storage_manager import StorageManager
+from ha_synthetic_sensors import StorageManager
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # Configure logging
+    """Set up your integration from a config entry."""
+
+    # Configure logging (optional)
     ha_synthetic_sensors.configure_logging(logging.DEBUG)
 
     # Create your coordinator
-    coordinator = YourIntegrationCoordinator(...)
+    coordinator = YourIntegrationCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
-    # Initialize storage manager
+    # Initialize storage manager for synthetic sensors
     storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
     await storage_manager.async_load()
 
-    # Generate synthetic sensor configurations
-    await setup_synthetic_sensors(coordinator, storage_manager, entry)
+    # Generate synthetic sensor configurations (storage-first approach)
+    await setup_synthetic_sensors_config(coordinator, storage_manager, entry)
 
     # Store for use in sensor platform
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
         "storage_manager": storage_manager,
     }
 
     # Forward to platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     return True
 
-async def setup_synthetic_sensors(
+async def setup_synthetic_sensors_config(
     coordinator: YourCoordinator,
     storage_manager: StorageManager,
     entry: ConfigEntry
 ) -> None:
-    """Generate and store synthetic sensor configurations."""
+    """Generate and store synthetic sensor configurations (storage-first approach)."""
 
-    # Generate sensor configurations from your device data
     device_identifier = coordinator.device_id
-    sensor_configs = generate_sensor_configs(coordinator.data, device_identifier)
+    sensor_set_id = f"{device_identifier}_sensors"
 
     # Create or get sensor set
-    sensor_set_id = f"{device_identifier}_sensors"
     if storage_manager.sensor_set_exists(sensor_set_id):
         sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+        # Existing storage - preserve user customizations
+        # Only add new sensors that don't exist
+        existing_sensor_ids = {s.unique_id for s in sensor_set.list_sensors()}
+        default_configs = generate_default_sensor_configs(coordinator.data, device_identifier)
+        new_sensors = [s for s in default_configs if s.unique_id not in existing_sensor_ids]
+
+        if new_sensors:
+            for sensor_config in new_sensors:
+                await sensor_set.async_add_sensor(sensor_config)
+            _LOGGER.info(f"Added {len(new_sensors)} new synthetic sensors")
     else:
+        # Fresh install - create sensor set with defaults
         sensor_set = await storage_manager.async_create_sensor_set(
             sensor_set_id=sensor_set_id,
             device_identifier=device_identifier,
             name=f"{coordinator.device_name} Sensors",
         )
 
-    # Check if this is a fresh install or existing storage
-    if sensor_set.sensor_count == 0:
-        # Fresh install - populate with defaults
-        await sensor_set.async_replace_sensors(sensor_configs)
-    else:
-        # Existing storage - preserve user customizations
-        # Only add new sensors, don't modify existing ones
-        existing_sensor_ids = {s.unique_id for s in sensor_set.list_sensors()}
-        new_sensors = [s for s in sensor_configs if s.unique_id not in existing_sensor_ids]
-        if new_sensors:
-            for sensor_config in new_sensors:
-                await sensor_set.async_add_sensor(sensor_config)
+        default_configs = generate_default_sensor_configs(coordinator.data, device_identifier)
+        await sensor_set.async_replace_sensors(default_configs)
+        _LOGGER.info(f"Created {len(default_configs)} default synthetic sensors")
 ```
 
 ### 2. Sensor Platform Setup in `sensor.py`
 
-**CRITICAL**: The sensor platform must create the actual Home Assistant sensor entities using the stored configurations.
+**Use the simplified one-function approach:**
 
 ```python
-from ha_synthetic_sensors.integration import SyntheticSensorsIntegration
-from ha_synthetic_sensors.sensor_manager import SensorManagerConfig
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from ha_synthetic_sensors import async_setup_synthetic_sensors
+from .const import DOMAIN
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback
+) -> None:
+    """Set up sensor platform."""
+
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
     storage_manager = data["storage_manager"]
 
-    # Create any native (non-synthetic) sensors first
+    # Create native (non-synthetic) sensors first
     native_entities = create_native_sensors(coordinator)
     async_add_entities(native_entities)
 
-    # Create synthetic sensors from stored configurations
-    await create_synthetic_sensor_entities(hass, entry, coordinator, storage_manager, async_add_entities)
-
-async def create_synthetic_sensor_entities(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    coordinator: YourCoordinator,
-    storage_manager: StorageManager,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    """Create synthetic sensor entities from stored configurations."""
-
-    # Create synthetic sensors integration
-    synthetic_integration = SyntheticSensorsIntegration(hass, entry)
-
-    # Configure sensor manager
-    manager_config = SensorManagerConfig(
-        integration_domain=DOMAIN,
-        device_info=coordinator.device_info,
-        lifecycle_managed_externally=True,
+    # Create synthetic sensors with one function call
+    sensor_manager = await async_setup_synthetic_sensors(
+        hass=hass,
+        config_entry=entry,
+        async_add_entities=async_add_entities,
+        storage_manager=storage_manager,
+        device_identifier=coordinator.device_id,
         data_provider_callback=create_data_provider_callback(coordinator),
     )
 
-    # Create managed sensor manager
-    sensor_manager = await synthetic_integration.create_managed_sensor_manager(
-        add_entities_callback=async_add_entities,
-        manager_config=manager_config
-    )
+    # Optional: Store sensor manager for reload functionality
+    data["sensor_manager"] = sensor_manager
 
-    # Convert storage to config format and load
-    device_identifier = coordinator.device_id
-    config = storage_manager.to_config(device_identifier=device_identifier)
-
-    # Register backing entities that provide data
-    backing_entities = generate_backing_entity_ids(coordinator.data, device_identifier)
-    sensor_manager.register_data_provider_entities(backing_entities)
-
-    # Load configuration to create actual sensor entities
-    await sensor_manager.load_configuration(config)
+def create_native_sensors(coordinator):
+    """Create your integration's native sensors."""
+    return [
+        YourNativeSensor(coordinator, "power"),
+        YourNativeSensor(coordinator, "energy"),
+        # ... other native sensors
+    ]
 ```
 
 ### 3. Data Provider Implementation
 
+**Critical**: The data provider supplies live data to synthetic sensors:
+
 ```python
+from ha_synthetic_sensors.types import DataProviderCallback, DataProviderResult
+
 def create_data_provider_callback(coordinator: YourCoordinator) -> DataProviderCallback:
     """Create data provider callback for synthetic sensors."""
 
     def data_provider_callback(entity_id: str) -> DataProviderResult:
-        """Provide live data for synthetic sensors."""
+        """Provide live data for synthetic sensors from coordinator."""
         try:
-            # Parse backing entity ID: "your_integration_backing.device_123_power"
+            # Parse backing entity ID format: "your_domain_backing.device_123_power"
             if not entity_id.startswith(f"{DOMAIN}_backing."):
                 return {"value": None, "exists": False}
 
-            # Extract device and sensor type
-            parts = entity_id.split(".")
-            if len(parts) != 2:
-                return {"value": None, "exists": False}
+            # Extract the backing entity part
+            backing_part = entity_id.split(".", 1)[1]  # "device_123_power"
 
-            # Parse device_123_power -> device_id=123, sensor_type=power
-            backing_part = parts[1]  # "device_123_power"
-            device_id, sensor_type = parse_backing_entity(backing_part)
+            # Parse device and sensor type from backing entity
+            device_id, sensor_type = parse_backing_entity_id(backing_part)
 
-            # Get current data from coordinator
+            # Get current data from coordinator (no API calls!)
             device_data = coordinator.data.get_device(device_id)
             if not device_data:
                 return {"value": None, "exists": False}
@@ -189,43 +222,45 @@ def create_data_provider_callback(coordinator: YourCoordinator) -> DataProviderC
             return {"value": value, "exists": value is not None}
 
         except Exception as e:
-            _LOGGER.error("Error in data provider callback: %s", e)
+            _LOGGER.error("Error in data provider callback for %s: %s", entity_id, e)
             return {"value": None, "exists": False}
 
     return data_provider_callback
 
-def generate_backing_entity_ids(device_data: Any, device_identifier: str) -> set[str]:
-    """Generate backing entity IDs that the data provider can supply."""
-    backing_entities = set()
-
-    # Add backing entities for each data point your integration provides
-    backing_entities.add(f"{DOMAIN}_backing.{device_identifier}_power")
-    backing_entities.add(f"{DOMAIN}_backing.{device_identifier}_energy")
-    backing_entities.add(f"{DOMAIN}_backing.{device_identifier}_voltage")
-
-    return backing_entities
+def parse_backing_entity_id(backing_part: str) -> tuple[str, str]:
+    """Parse 'device_123_power' -> ('123', 'power')"""
+    # Implement based on your entity ID format
+    parts = backing_part.rsplit("_", 1)
+    if len(parts) == 2:
+        device_id = parts[0].replace("device_", "")
+        sensor_type = parts[1]
+        return device_id, sensor_type
+    raise ValueError(f"Invalid backing entity format: {backing_part}")
 ```
 
 ### 4. Sensor Configuration Generation
 
 ```python
-def generate_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
-    """Generate sensor configurations from your device data."""
-    from ha_synthetic_sensors.config_manager import SensorConfig, FormulaConfig
+from ha_synthetic_sensors.config_manager import SensorConfig, FormulaConfig
+
+def generate_default_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
+    """Generate default sensor configurations for a device."""
 
     configs = []
 
-    # Example: Power sensor
+    # Example 1: Simple power sensor
     power_config = SensorConfig(
-        unique_id=f"{device_identifier}_power",
-        name=f"{device_data.name} Power",
-        entity_id=f"sensor.{device_identifier}_power",
+        unique_id=f"{device_identifier}_current_power",
+        name=f"{device_data.name} Current Power",
+        entity_id=f"sensor.{device_identifier}_current_power",
         device_identifier=device_identifier,
         formulas=[
             FormulaConfig(
                 id="main",
-                formula="power_value",
-                variables={"power_value": f"{DOMAIN}_backing.{device_identifier}_power"},
+                formula="power_watts",
+                variables={
+                    "power_watts": f"{DOMAIN}_backing.{device_identifier}_power"
+                },
                 unit_of_measurement="W",
                 device_class="power",
                 state_class="measurement",
@@ -234,8 +269,8 @@ def generate_sensor_configs(device_data: Any, device_identifier: str) -> list[Se
     )
     configs.append(power_config)
 
-    # Example: Energy sensor with calculation
-    energy_config = SensorConfig(
+    # Example 2: Calculated energy sensor
+    daily_energy_config = SensorConfig(
         unique_id=f"{device_identifier}_daily_energy",
         name=f"{device_data.name} Daily Energy",
         entity_id=f"sensor.{device_identifier}_daily_energy",
@@ -243,10 +278,10 @@ def generate_sensor_configs(device_data: Any, device_identifier: str) -> list[Se
         formulas=[
             FormulaConfig(
                 id="main",
-                formula="power_value * hours_per_day / 1000",
+                formula="power_watts * hours_in_day / 1000",  # Convert W to kWh
                 variables={
-                    "power_value": f"{DOMAIN}_backing.{device_identifier}_power",
-                    "hours_per_day": "24"
+                    "power_watts": f"{DOMAIN}_backing.{device_identifier}_power",
+                    "hours_in_day": "24"
                 },
                 unit_of_measurement="kWh",
                 device_class="energy",
@@ -254,504 +289,330 @@ def generate_sensor_configs(device_data: Any, device_identifier: str) -> list[Se
             )
         ],
     )
-    configs.append(energy_config)
+    configs.append(daily_energy_config)
+
+    # Example 3: Multi-device calculation
+    if device_data.has_multiple_circuits:
+        total_power_config = SensorConfig(
+            unique_id=f"{device_identifier}_total_power",
+            name=f"{device_data.name} Total Power",
+            entity_id=f"sensor.{device_identifier}_total_power",
+            device_identifier=device_identifier,
+            formulas=[
+                FormulaConfig(
+                    id="main",
+                    formula="circuit_1 + circuit_2 + circuit_3",
+                    variables={
+                        "circuit_1": f"{DOMAIN}_backing.{device_identifier}_circuit_1_power",
+                        "circuit_2": f"{DOMAIN}_backing.{device_identifier}_circuit_2_power",
+                        "circuit_3": f"{DOMAIN}_backing.{device_identifier}_circuit_3_power",
+                    },
+                    unit_of_measurement="W",
+                    device_class="power",
+                    state_class="measurement",
+                )
+            ],
+        )
+        configs.append(total_power_config)
 
     return configs
 ```
 
-## Storage-Based Configuration Management
+## YAML-Based Configuration (Alternative)
 
-### Storage Concepts
+For integrations that prefer YAML configuration files:
 
-1. **Sensor Sets**: Groups of sensors with integration-controlled identifiers
-2. **Storage Persistence**: Configuration stored in HA's storage system
-3. **SensorSet Interface**: Focused handle for individual sensor set operations
-
-### StorageManager and SensorSet API
+### 1. Enable YAML Discovery
 
 ```python
-# Initialize storage manager
-storage_manager = StorageManager(hass, "your_integration_synthetic")
-await storage_manager.async_load()
+# In your __init__.py
+from ha_synthetic_sensors import async_setup_integration, async_reload_integration
 
-# Create sensor set and get handle in one step
-sensor_set = await storage_manager.async_create_sensor_set(
-    sensor_set_id=f"{device_identifier}_sensors",  # Integration controls format
-    device_identifier="your_device_123",  # Optional - for entity ID generation
-    name=f"Device {device_identifier} Sensors",
-    description="Power monitoring sensors"
-)
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Setup your coordinator...
 
-# Individual operations via SensorSet
-sensor = sensor_set.get_sensor(unique_id)
-await sensor_set.async_update_sensor(modified_sensor)
-await sensor_set.async_remove_sensor(unique_id)
+    # Use YAML-based setup instead of storage
+    success = await async_setup_integration(hass, entry, async_add_entities_callback)
 
-# Property access for debugging/logging
-logger.debug(f"Sensor set {sensor_set.sensor_set_id} has {sensor_set.sensor_count} sensors")
+    if success:
+        # Register reload service for YAML files
+        async def reload_synthetic_sensors(call):
+            await async_reload_integration(hass, entry, async_add_entities_callback)
+
+        hass.services.async_register(DOMAIN, "reload_synthetic_sensors", reload_synthetic_sensors)
+
+    return success
 ```
 
-### Accessing StorageManager from SensorSet
+### 2. YAML Configuration Files
 
-**IMPORTANT**: If you need to access the underlying `StorageManager` from a `SensorSet` (e.g., for conversion operations),
-use the `storage_manager` property:
+Place YAML files in your integration's config directory:
 
-```python
-# Get sensor set from storage manager
-sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+```yaml
+# config/synthetic_sensors/your_integration.yaml
+version: "1.0"
 
-# Access the underlying storage manager
-underlying_storage = sensor_set.storage_manager
+global_settings:
+  device_identifier: "device_123"
 
-# Convert storage to config format
-config = underlying_storage.to_config(device_identifier=device_identifier)
+sensors:
+  device_123_power:
+    name: "Device Power"
+    entity_id: "sensor.device_123_power"
+    formula:
+      formula: "power_value"
+      variables:
+        power_value: "your_integration_backing.device_123_power"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
-# Or use the storage manager directly if you have a reference
-config = storage_manager.to_config(device_identifier=device_identifier)
+  device_123_daily_energy:
+    name: "Device Daily Energy"
+    entity_id: "sensor.device_123_daily_energy"
+    formula:
+      formula: "power_value * 24 / 1000"
+      variables:
+        power_value: "your_integration_backing.device_123_power"
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+      state_class: "total_increasing"
 ```
 
-### Storage-First vs Generate-and-Overwrite
-
-**WRONG - Generate and Overwrite Approach:**
+### 3. Reload Support
 
 ```python
-# This destroys user customizations!
-sensor_configs = generate_sensor_configs(device_data)
-await sensor_set.async_replace_sensors(sensor_configs)  # Overwrites everything
-```
+# Add reload capability to your integration
+from ha_synthetic_sensors import async_reload_integration
 
-**CORRECT - Storage-First Approach:**
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the integration and synthetic sensors."""
 
-```python
-# Preserve user customizations
-if sensor_set.sensor_count == 0:
-    # Fresh install - populate with defaults
-    await sensor_set.async_replace_sensors(default_configs)
-else:
-    # Existing storage - only add new sensors, preserve existing
-    await add_missing_sensors_only(sensor_set, default_configs)
+    # Reload your integration's data
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    await coordinator.async_refresh()
 
-# WRONG: Always overwrite
-await sensor_set.async_replace_sensors(default_configs)  # Destroys customizations
-```
-
-# Bulk setup or replacmemt operations on sensor set
-
-sensor_configs = generate_sensor_configs(device_data)
-await sensor_set.async_replace_sensors(sensor_configs)
-
-# Individual sensor CRUD operations
-
-await sensor_set.async_add_sensor(new_sensor_config)
-await sensor_set.async_update_sensor(modified_sensor_config)
-await sensor_set.async_remove_sensor("sensor_unique_id")
-
-# Get individual sensor
-
-sensor = sensor_set.get_sensor("sensor_unique_id")
-
-# List all sensors in set
-
-sensors = sensor_set.list_sensors()
-
-# YAML operations
-
-await sensor_set.async_import_yaml(yaml_content)
-yaml_content = sensor_set.export_yaml()
-
-# Sensor set management
-
-sensor_count = sensor_set.sensor_count
-metadata = sensor_set.metadata
-exists = sensor_set.exists
-
-# Delete entire sensor set
-
-await sensor_set.async_delete()
-
-# OR
-
-await storage_manager.async_delete_sensor_set(f"{device_identifier}_sensors")
-
-## Bulk Modification Operations
-
-The `SensorSet.async_modify()` method provides powerful bulk modification capabilities for complex operations:
-
-```python
-from ha_synthetic_sensors.sensor_set import SensorSetModification
-
-# Example: Bulk entity ID changes (e.g., when device entity IDs change)
-entity_id_changes = {
-    "sensor.old_power_meter": "sensor.new_power_meter",
-    "sensor.old_energy_meter": "sensor.new_energy_meter",
-    "sensor.old_temperature": "sensor.new_temperature"
-}
-
-modification = SensorSetModification(
-    entity_id_changes=entity_id_changes,
-    global_settings={"variables": {"efficiency_factor": 0.92}}  # Update global settings too
-)
-
-result = await sensor_set.async_modify(modification)
-print(f"Changed {result['entity_ids_changed']} entity IDs")
-
-# Example: Complex sensor set restructuring
-modification = SensorSetModification(
-    # Remove outdated sensors
-    remove_sensors=["old_sensor_1", "old_sensor_2"],
-
-    # Add new sensors
-    add_sensors=[new_sensor_config_1, new_sensor_config_2],
-
-    # Update existing sensors with new formulas
-    update_sensors=[updated_sensor_config],
-
-    # Change entity IDs and global settings
-    entity_id_changes={"sensor.old_reference": "sensor.new_reference"},
-    global_settings={"device_identifier": "new_device_id"}
-)
-
-result = await sensor_set.async_modify(modification)
-print(f"Modifications: {result['sensors_added']} added, {result['sensors_removed']} removed, "
-      f"{result['sensors_updated']} updated, {result['entity_ids_changed']} entity IDs changed")
-```
-
-**SensorSetModification Operations:**
-
-- **`add_sensors`**: List of new SensorConfig objects to add
-- **`remove_sensors`**: List of unique_ids to remove
-- **`update_sensors`**: List of SensorConfig objects to update (must preserve unique_id)
-- **`entity_id_changes`**: Dict mapping old entity IDs to new entity IDs
-- **`global_settings`**: Dict of new global settings to apply
-
-**Bulk Modification Benefits:**
-
-- **Atomic Operations**: All changes succeed or fail together
-- **Validation**: Comprehensive validation prevents conflicts
-- **Efficiency**: Single operation handles complex changes
-- **Entity ID Coordination**: Automatic Home Assistant entity registry updates
-- **Cache Management**: Coordinated formula cache invalidation
-
-### Working with Multiple Sensor Sets
-
-```python
-# Create multiple sensor sets for different purposes
-config_set = await storage_manager.async_create_sensor_set(
-    sensor_set_id=f"{device_identifier}_config_v1",  # Integration controls format
-    device_identifier="device_123",
-    name="Device Configuration"
-)
-
-monitoring_set = await storage_manager.async_create_sensor_set(
-    sensor_set_id=f"{device_identifier}_monitoring_v1",  # Integration controls format
-    device_identifier="device_123",
-    name="Device Monitoring"
-)
-
-# Later, get handles for existing sensor sets - clean handle pattern
-config_set = storage_manager.get_sensor_set(f"{device_identifier}_config_v1")
-monitoring_set = storage_manager.get_sensor_set(f"{device_identifier}_monitoring_v1")
-
-# Property access for debugging/logging
-_LOGGER.debug(f"Config set {config_set.sensor_set_id} has {config_set.sensor_count} sensors")
-_LOGGER.debug(f"Monitoring set {monitoring_set.sensor_set_id} has {monitoring_set.sensor_count} sensors")
-
-# Query all sensor sets
-all_sets = storage_manager.list_sensor_sets()
-device_sets = storage_manager.list_sensor_sets(device_identifier="device_123")
-```
-
-### StorageManager Direct Access
-
-```python
-# Convert between formats
-config = storage_manager.to_config(device_identifier="your_device_123")
-await storage_manager.async_from_config(config, sensor_set_id, device_identifier)
-
-# Query sensors across all sets
-sensors = storage_manager.list_sensors(device_identifier="your_device_123")
-specific_sensor = storage_manager.get_sensor("unique_id")
-
-# Global settings
-await storage_manager.async_set_global_setting("key", "value")
-value = storage_manager.get_global_setting("key", default="default")
-```
-
-### Enhanced SensorSet Features
-
-The SensorSet interface provides additional convenience methods for better integration experience:
-
-```python
-# SensorSet property getters
-sensor_set = storage_manager.get_sensor_set(sensor_set_id)
-
-# Access sensor set metadata
-sensor_set_id = sensor_set.sensor_set_id
-device_identifier = sensor_set.device_identifier
-name = sensor_set.name
-sensor_count = sensor_set.sensor_count
-
-# Check sensor existence
-if sensor_set.sensor_exists("unique_id"):
-    sensor = sensor_set.get_sensor("unique_id")
-
-# StorageManager convenience methods
-if storage_manager.sensor_set_exists(sensor_set_id):
-    sensor_set = storage_manager.get_sensor_set(sensor_set_id)
-
-# List sensor sets with optional filtering
-all_sets = await storage_manager.list_sensor_sets()
-device_sets = await storage_manager.list_sensor_sets(device_identifier="device_123")
-```
-
-### Error Handling Improvements
-
-The SensorSet architecture includes custom exceptions for better error handling:
-
-```python
-from ha_synthetic_sensors.exceptions import (
-    SensorSetNotFoundError,
-    SensorNotFoundError,
-    DuplicateSensorError
-)
-
-try:
-    sensor_set = storage_manager.get_sensor_set("nonexistent_set")
-except SensorSetNotFoundError:
-    _LOGGER.error("Sensor set not found")
-
-try:
-    await sensor_set.async_add_sensor(duplicate_config)
-except DuplicateSensorError:
-    _LOGGER.error("Sensor already exists in set")
-
-try:
-    sensor = sensor_set.get_sensor("nonexistent_sensor")
-except SensorNotFoundError:
-    _LOGGER.error("Sensor not found in set")
-```
-
-## Migration from File-Based Configuration
-
-### For Existing Integrations
-
-If you have existing YAML-based configurations, use the migration path:
-
-```python
-async def migrate_yaml_to_storage(
-    storage_manager: StorageManager,
-    yaml_file_path: str,
-    sensor_set_id: str,
-    device_identifier: str | None = None
-) -> None:
-    """Migrate YAML configuration to storage."""
-
-    # Load YAML configuration
-    with open(yaml_file_path, 'r') as f:
-        yaml_content = f.read()
-
-    # Create sensor set from YAML
-    sensor_set = await storage_manager.async_create_sensor_set(
-        sensor_set_id=sensor_set_id,
-        device_identifier=device_identifier,
-        name="Migrated Sensors"
-    )
-
-    # Import YAML content
-    await sensor_set.async_import_yaml(yaml_content)
-
-    # Optionally remove old YAML file
-    # os.remove(yaml_file_path)
-```
-
-## Common Integration Patterns
-
-### Pattern 1: Device-Based Sensor Sets
-
-Each device gets its own sensor set:
-
-```python
-async def setup_device_sensors(device_id: str, device_data: Any) -> None:
-    sensor_set_id = f"device_{device_id}_sensors"
-    sensor_set = await storage_manager.async_create_sensor_set(
-        sensor_set_id=sensor_set_id,
-        device_identifier=device_id,
-        name=f"Device {device_id} Sensors"
-    )
-
-    # Generate device-specific sensors
-    sensor_configs = generate_device_sensors(device_data)
-    await sensor_set.async_replace_sensors(sensor_configs)
-```
-
-### Pattern 2: Feature-Based Sensor Sets
-
-Group sensors by functionality:
-
-```python
-async def setup_feature_sensors(device_id: str) -> None:
-    # Power monitoring sensors
-    power_set = await storage_manager.async_create_sensor_set(
-        sensor_set_id=f"{device_id}_power_sensors",
-        device_identifier=device_id,
-        name="Power Monitoring"
-    )
-
-    # Environmental sensors
-    env_set = await storage_manager.async_create_sensor_set(
-        sensor_set_id=f"{device_id}_env_sensors",
-        device_identifier=device_id,
-        name="Environmental Monitoring"
-    )
-```
-
-### Pattern 3: Configuration-Driven Sensors
-
-Sensors based on user configuration:
-
-```python
-async def setup_configurable_sensors(entry: ConfigEntry) -> None:
-    config = entry.data
-
-    if config.get("enable_power_sensors", True):
-        await setup_power_sensors(entry)
-
-    if config.get("enable_environmental_sensors", False):
-        await setup_environmental_sensors(entry)
+    # Reload synthetic sensors from YAML
+    await async_reload_integration(hass, entry, async_add_entities_callback)
 ```
 
 ## Best Practices
 
-### 1. Storage-First Approach
+### 1. Storage-First Approach (Recommended)
 
-Always treat storage as the source of truth:
+Always preserve user customizations:
 
 ```python
-# CORRECT: Check storage first
+# CORRECT: Check existing storage first
 if sensor_set.sensor_count == 0:
-    # Fresh install - populate defaults
+    # Fresh install - populate with defaults
     await sensor_set.async_replace_sensors(default_configs)
 else:
-    # Existing storage - preserve user customizations
-    await add_missing_sensors_only(sensor_set, default_configs)
+    # Existing storage - only add missing sensors
+    existing_ids = {s.unique_id for s in sensor_set.list_sensors()}
+    new_sensors = [s for s in default_configs if s.unique_id not in existing_ids]
+    for sensor in new_sensors:
+        await sensor_set.async_add_sensor(sensor)
 
-# WRONG: Always overwrite
-await sensor_set.async_replace_sensors(default_configs)  # Destroys customizations
+# WRONG: Always overwrite (destroys user customizations)
+await sensor_set.async_replace_sensors(default_configs)
 ```
 
-### 2. Unique Sensor Keys
+### 2. Efficient Data Providers
 
-Use consistent, unique sensor keys:
+Use cached data, never make API calls in data providers:
 
 ```python
-# CORRECT: Consistent format
-sensor_key = f"{device_identifier}_{sensor_type}"
+def create_data_provider_callback(coordinator):
+    def data_provider_callback(entity_id: str):
+        # CORRECT: Use coordinator's cached data
+        return coordinator.get_cached_value(entity_id)
 
-# WRONG: Inconsistent or non-unique
-sensor_key = f"{sensor_type}"  # Not unique across devices
+        # WRONG: Make API calls (will block sensor updates)
+        # return api_client.get_live_value(entity_id)
+
+    return data_provider_callback
 ```
 
-### 3. Error Handling
+### 3. Unique Sensor IDs
 
-Always handle storage and sensor manager errors:
+Use consistent, globally unique sensor IDs:
+
+```python
+# CORRECT: Include device identifier
+unique_id = f"{device_identifier}_{sensor_type}"
+
+# WRONG: Not unique across devices
+unique_id = f"{sensor_type}"
+```
+
+### 4. Error Handling
+
+Handle configuration errors gracefully:
 
 ```python
 try:
-    await sensor_set.async_add_sensor(sensor_config)
-except DuplicateSensorError:
-    # Handle duplicate sensor
-    await sensor_set.async_update_sensor(sensor_config)
+    await async_setup_synthetic_sensors(...)
 except Exception as e:
-    _LOGGER.error("Failed to add sensor: %s", e)
+    _LOGGER.error("Failed to setup synthetic sensors: %s", e)
+    # Continue with native sensors only
 ```
 
-### 4. Performance Considerations
+### 5. Configuration Validation
 
-Use bulk operations when possible:
+Validate configurations before storing:
 
 ```python
-# CORRECT: Bulk operation
-await sensor_set.async_replace_sensors(sensor_configs)
+from ha_synthetic_sensors.config_manager import SensorConfig
 
-# WRONG: Individual operations in loop
-for config in sensor_configs:
-    await sensor_set.async_add_sensor(config)
+def create_sensor_config(device_data, device_id):
+    try:
+        return SensorConfig(
+            unique_id=f"{device_id}_power",
+            name=f"{device_data.name} Power",
+            # ... other fields
+        )
+    except ValueError as e:
+        _LOGGER.error("Invalid sensor config for %s: %s", device_id, e)
+        return None
 ```
 
-### 5. Data Provider Efficiency
+## Reload and Dynamic Updates
 
-Cache expensive operations in data providers:
+### Service-Based Reload
 
 ```python
-def create_data_provider_callback(coordinator: YourCoordinator) -> DataProviderCallback:
-    def data_provider_callback(entity_id: str) -> DataProviderResult:
-        # Use coordinator's cached data, don't make new API calls
-        return coordinator.get_cached_value(entity_id)
+# Register reload service in your integration
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # ... setup code ...
 
-    return data_provider_callback
+    async def reload_synthetic_sensors(call):
+        """Reload synthetic sensor configurations."""
+        try:
+            if "sensor_manager" in hass.data[DOMAIN][entry.entry_id]:
+                # Storage-based reload
+                storage_manager = hass.data[DOMAIN][entry.entry_id]["storage_manager"]
+                sensor_manager = hass.data[DOMAIN][entry.entry_id]["sensor_manager"]
+
+                # Reload from storage
+                config = storage_manager.to_config(device_identifier=coordinator.device_id)
+                await sensor_manager.load_configuration(config)
+            else:
+                # YAML-based reload
+                await async_reload_integration(hass, entry, async_add_entities_callback)
+
+            _LOGGER.info("Synthetic sensors reloaded successfully")
+        except Exception as e:
+            _LOGGER.error("Failed to reload synthetic sensors: %s", e)
+
+    hass.services.async_register(DOMAIN, "reload_synthetic_sensors", reload_synthetic_sensors)
+```
+
+### Configuration Updates
+
+```python
+# Update configurations programmatically
+async def update_sensor_configuration(sensor_set, unique_id, new_formula):
+    """Update a sensor's formula."""
+
+    sensor = sensor_set.get_sensor(unique_id)
+    if sensor:
+        # Modify the sensor configuration
+        sensor.formulas[0].formula = new_formula
+        await sensor_set.async_update_sensor(sensor)
+
+        # Trigger reload to apply changes
+        await reload_synthetic_sensors()
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Sensors not appearing**: Check that `sensor_manager.load_configuration()` is called
-2. **Data not updating**: Verify data provider callback is registered and working
-3. **Configuration lost**: Ensure storage-first approach, don't overwrite existing configs
-4. **Performance issues**: Use bulk operations and cache data in coordinator
+1. **Sensors not appearing**:
+   - Check that `async_setup_synthetic_sensors()` is called in sensor platform
+   - Verify storage manager is properly initialized
+
+2. **Data not updating**:
+   - Verify data provider callback returns correct format
+   - Check that backing entity IDs match what data provider expects
+
+3. **Configuration lost on restart**:
+   - Ensure storage-first approach (don't overwrite existing configs)
+   - Check storage manager is loaded before creating sensor sets
+
+4. **Performance issues**:
+   - Use cached data in data providers
+   - Avoid API calls in data provider callbacks
 
 ### Debug Logging
 
-Enable debug logging to troubleshoot:
+Enable comprehensive debug logging:
 
 ```python
 import ha_synthetic_sensors
 ha_synthetic_sensors.configure_logging(logging.DEBUG)
+
+# Check logging status
+info = ha_synthetic_sensors.get_logging_info()
+_LOGGER.debug("Logging configuration: %s", info)
+
+# Test logging
+ha_synthetic_sensors.test_logging()
 ```
 
 ### Validation
 
-Validate sensor configurations before storing:
+Test your integration with validation:
 
 ```python
-from ha_synthetic_sensors.config_manager import SensorConfig
+from ha_synthetic_sensors import validate_yaml_content
 
-try:
-    sensor_config = SensorConfig(...)
-    # Configuration is valid
-except ValueError as e:
-    _LOGGER.error("Invalid sensor configuration: %s", e)
+# Validate YAML configuration
+yaml_content = """
+version: "1.0"
+sensors:
+  test_sensor:
+    name: "Test"
+    formula:
+      formula: "a + b"
+      variables:
+        a: "sensor.input_a"
+        b: "sensor.input_b"
+"""
+
+result = validate_yaml_content(yaml_content)
+if result["is_valid"]:
+    _LOGGER.info("Configuration valid: %d sensors", result["sensors_count"])
+else:
+    _LOGGER.error("Configuration errors: %s", result["errors"])
 ```
 
 ## API Reference
 
-### Key Classes
+### Main Functions
+
+- **`async_setup_synthetic_sensors()`**: Recommended one-function setup
+- **`async_setup_integration()`**: YAML-based integration setup
+- **`async_reload_integration()`**: Reload YAML configurations
+- **`async_unload_integration()`**: Clean unload of integration
+
+### Core Classes
 
 - **`StorageManager`**: Manages persistent storage and sensor sets
 - **`SensorSet`**: Handle for a group of sensors with CRUD operations
-- **`SensorManager`**: Creates and manages Home Assistant sensor entities
-- **`SensorConfig`**: Configuration for a single sensor
+- **`SensorConfig`**: Configuration for individual sensors
 - **`FormulaConfig`**: Configuration for sensor formulas
-- **`SyntheticSensorsIntegration`**: Main integration class
+- **`SyntheticSensorsIntegration`**: Advanced integration class
 
-### Storage Manager Methods
+### Utility Classes
 
-- `async_load()`: Load storage from disk
-- `async_create_sensor_set()`: Create new sensor set
-- `get_sensor_set()`: Get existing sensor set handle
-- `sensor_set_exists()`: Check if sensor set exists
-- `to_config()`: Convert storage to config format
-- `list_sensor_sets()`: List all sensor sets
+- **`DeviceAssociationHelper`**: Device identification and association utilities
+- **`EntityFactory`**: Factory patterns for creating sensor entities
 
-### Sensor Set Methods
+### Type Definitions
 
-- `async_add_sensor()`: Add single sensor
-- `async_update_sensor()`: Update existing sensor
-- `async_remove_sensor()`: Remove sensor
-- `async_replace_sensors()`: Replace all sensors (bulk)
-- `get_sensor()`: Get single sensor
-- `list_sensors()`: List all sensors
-- `sensor_exists()`: Check if sensor exists
+- **`DataProviderCallback`**: Function signature for data providers
+- **`DataProviderResult`**: Return format for data provider callbacks
 
-This guide provides the foundation for integrating synthetic sensors into your Home Assistant integration.
-The storage-based approach ensures user customizations are preserved while providing a powerful framework for dynamic sensor creation.
+This guide provides the complete, current approach for integrating synthetic sensors into Home Assistant custom integrations.

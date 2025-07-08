@@ -29,6 +29,7 @@ pre-commit = "^4.0.0"
 ruff = "^0.12.1"
 mypy = "^1.15.0"
 radon = "*"
+pylint = "*"
 types-PyYAML = "^6.0.0"
 types-jsonschema = "^4.0.0"
 types-aiofiles = "^24.1.0.20250606"
@@ -134,3 +135,18 @@ exclude_lines = [
 
 [tool.bandit]
 exclude_dirs = ["tests"]
+
+[tool.pylint.format]
+max-line-length = 250
+
+[tool.pylint.messages_control]
+disable = [
+    "attribute-defined-outside-init",  # Common HA pattern for lazy initialization
+    "too-many-instance-attributes",    # HA entities often have many attributes
+    "too-many-arguments",             # HA constructors often need many params
+    "too-few-public-methods",         # HA entities/helpers are often simple
+    "missing-docstring",              # Not enforcing docstrings everywhere
+    "invalid-name",                   # HA uses different naming conventions
+    "broad-except",                   # Sometimes needed for robustness
+    "unused-argument",                # HA callbacks often have unused params
+]

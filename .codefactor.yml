@@ -20,7 +20,6 @@ engines:
         - invalid-name                   # HA uses different naming conventions
         - broad-except                   # Sometimes needed for robustness
         - unused-argument                # HA callbacks often have unused params
-        - no-self-use                    # HA methods often don't use self but need to be methods
 
 # Disable overly strict engines that don't understand HA patterns
   radon:

@@ -393,6 +393,74 @@ class SyntheticSensorsIntegration:
         return sensor_manager
 
 
+# External Integration Support Functions
+
+
+async def async_create_sensor_manager(
+    hass: HomeAssistant,
+    integration_domain: str,
+    add_entities_callback: AddEntitiesCallback,
+    device_info: DeviceInfo | None = None,
+    unique_id_prefix: str = "",
+    data_provider_callback: Any = None,
+) -> SensorManager:
+    """Create a sensor manager for external integrations.
+
+    This is the recommended way for external integrations (like SPAN) to create
+    sensor managers without dealing with the full SyntheticSensorsIntegration class.
+
+    Args:
+        hass: Home Assistant instance
+        integration_domain: The domain of the calling integration
+        add_entities_callback: Callback to add entities to HA
+        device_info: Device info for sensors (optional)
+        unique_id_prefix: Prefix for unique IDs (optional)
+        data_provider_callback: Callback for providing live data (optional)
+
+    Returns:
+        SensorManager: Ready-to-use sensor manager
+
+    Example:
+        ```python
+        sensor_manager = await async_create_sensor_manager(
+            hass=hass,
+            integration_domain=DOMAIN,
+            add_entities_callback=async_add_entities,
+            device_info=your_device_info,
+        )
+
+        # Register data sources
+        sensor_manager.register_data_provider_entities(backing_entities)
+
+        # Load configuration from storage
+        config = storage_manager.to_config(device_identifier="your_device")
+        await sensor_manager.load_configuration(config)
+        ```
+    """
+    # Create minimal components needed for sensor manager
+    name_resolver = NameResolver(hass, variables={})
+
+    # Create manager config for external integration
+    manager_config = SensorManagerConfig(
+        integration_domain=integration_domain,
+        device_info=device_info,
+        unique_id_prefix=unique_id_prefix,
+        lifecycle_managed_externally=True,
+        data_provider_callback=data_provider_callback,
+    )
+
+    # Create and return sensor manager
+    sensor_manager = SensorManager(
+        hass,
+        name_resolver,
+        add_entities_callback,
+        manager_config,
+    )
+
+    _LOGGER.debug(f"Created external sensor manager for integration: {integration_domain}")
+    return sensor_manager
+
+
 # Global instance management for integration with existing components
 _integrations: dict[str, SyntheticSensorsIntegration] = {}
 

@@ -144,16 +144,23 @@ class TestLoggingUtilities:
         """Test that __all__ contains expected exports."""
         expected_exports = [
             # Type definitions
+            "DataProviderCallback",
             "DataProviderResult",
             # Core classes
             "FormulaConfig",
             "SensorConfig",
             "SensorSet",
             "StorageManager",
+            # Utility classes
+            "DeviceAssociationHelper",
+            "EntityDescription",
+            "EntityFactory",
             # Integration helpers
             "SyntheticSensorsIntegration",
+            "async_create_sensor_manager",
             "async_reload_integration",
             "async_setup_integration",
+            "async_setup_synthetic_sensors",
             "async_unload_integration",
             # Utility functions
             "configure_logging",

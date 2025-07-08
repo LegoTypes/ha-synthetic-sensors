@@ -66,7 +66,6 @@ The package provides a clean public API:
 - **SensorSet** - Handle for individual sensor set operations
 - **FormulaConfig/SensorConfig** - Configuration classes for sensors and formulas
 - **DataProviderResult** - Type definition for data provider callbacks
-- **SyntheticSensorsIntegration** - Main integration class for standalone use
 
 ## YAML Configuration Examples
 

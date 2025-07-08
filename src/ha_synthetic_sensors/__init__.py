@@ -5,13 +5,19 @@ integrations using formula-based calculations and YAML configuration.
 """
 
 import logging
+from typing import Any
 
 # Public API - Core classes needed by integrations
 from .config_manager import FormulaConfig, SensorConfig
 
+# Public API - Utility classes
+from .device_association import DeviceAssociationHelper
+from .entity_factory import EntityDescription, EntityFactory
+
 # Public API - Integration helpers
 from .integration import (
     SyntheticSensorsIntegration,
+    async_create_sensor_manager,
     async_reload_integration,
     async_setup_integration,
     async_unload_integration,
@@ -23,7 +29,82 @@ from .sensor_set import SensorSet
 from .storage_manager import StorageManager
 
 # Public API - Type definitions
-from .types import DataProviderResult
+from .types import DataProviderCallback, DataProviderResult
+
+
+async def async_setup_synthetic_sensors(
+    hass: Any,
+    config_entry: Any,
+    async_add_entities: Any,
+    storage_manager: Any,
+    device_identifier: str,
+    data_provider_callback: DataProviderCallback | None = None,
+) -> Any:
+    """Recommended setup pattern for synthetic sensors in HA integrations.
+
+    This is the simplified, recommended way to integrate synthetic sensors
+    into your Home Assistant custom integration.
+
+    Args:
+        hass: Home Assistant instance
+        config_entry: Integration's ConfigEntry
+        async_add_entities: AddEntitiesCallback from sensor platform
+        storage_manager: StorageManager with sensor configurations
+        device_identifier: Device identifier for entity IDs
+        data_provider_callback: Optional callback for live data
+
+    Returns:
+        SensorManager: Configured sensor manager
+
+    Example:
+        ```python
+        # In your sensor.py platform
+        from ha_synthetic_sensors import async_setup_synthetic_sensors
+
+        async def async_setup_entry(hass, config_entry, async_add_entities):
+            # Your native sensors first
+            async_add_entities(native_sensors)
+
+            # Then synthetic sensors
+            storage_manager = hass.data[DOMAIN][config_entry.entry_id]["storage_manager"]
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=hass,
+                config_entry=config_entry,
+                async_add_entities=async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier=coordinator.device_id,
+                data_provider_callback=create_data_provider(coordinator),
+            )
+        ```
+    """
+    from .integration import async_create_sensor_manager
+
+    # Get device info if available (integration-specific)
+    device_info = None
+    if hasattr(config_entry, "data"):
+        # Let the integration provide device_info if needed
+        integration_data = hass.data.get(config_entry.domain, {}).get(config_entry.entry_id, {})
+        device_info = integration_data.get("device_info")
+
+    # Create sensor manager using the simple helper
+    sensor_manager = await async_create_sensor_manager(
+        hass=hass,
+        integration_domain=config_entry.domain,
+        add_entities_callback=async_add_entities,
+        device_info=device_info,
+        data_provider_callback=data_provider_callback,
+    )
+
+    # Register backing entities if available
+    if hasattr(storage_manager, "get_registered_entities"):
+        backing_entities = storage_manager.get_registered_entities()
+        sensor_manager.register_data_provider_entities(backing_entities)
+
+    # Load configuration from storage
+    config = storage_manager.to_config(device_identifier=device_identifier)
+    await sensor_manager.load_configuration(config)
+
+    return sensor_manager
 
 
 def configure_logging(level: int = logging.DEBUG) -> None:
@@ -104,19 +185,21 @@ def test_logging() -> None:
 
 __version__ = "0.1.0"
 __all__ = [
-    # Type definitions
+    "DataProviderCallback",
     "DataProviderResult",
-    # Core classes
+    "DeviceAssociationHelper",
+    "EntityDescription",
+    "EntityFactory",
     "FormulaConfig",
     "SensorConfig",
     "SensorSet",
     "StorageManager",
-    # Integration helpers
     "SyntheticSensorsIntegration",
+    "async_create_sensor_manager",
     "async_reload_integration",
     "async_setup_integration",
+    "async_setup_synthetic_sensors",
     "async_unload_integration",
-    # Utility functions
     "configure_logging",
     "get_example_config",
     "get_integration",
