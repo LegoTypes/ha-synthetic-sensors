@@ -179,9 +179,11 @@ async def test_end_to_end_sensor_creation_with_device_prefix(mock_hass):
         formula = FormulaConfig(
             id="main",
             formula="{{ circuits.main_breaker.instant_power_w }}",
-            unit_of_measurement="W",
-            device_class="power",
-            state_class="measurement",
+            metadata={
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+            },
         )
 
         sensor_config = SensorConfig(
@@ -278,7 +280,7 @@ async def test_error_message_includes_integration_domain(mock_hass):
     formula = FormulaConfig(
         id="main",
         formula="10 + 5",
-        unit_of_measurement="W",
+        metadata={"unit_of_measurement": "W"},
     )
 
     sensor_config = SensorConfig(

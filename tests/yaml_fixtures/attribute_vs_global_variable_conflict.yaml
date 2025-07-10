@@ -1,32 +1,34 @@
-version: "1.0"
-
+version: '1.0'
 global_settings:
   variables:
-    power_source: "sensor.global_power_meter"
+    power_source: sensor.global_power_meter
     efficiency_rate: 0.85
-    base_voltage: "sensor.global_voltage"
-
+    base_voltage: sensor.global_voltage
 sensors:
   test_sensor:
-    name: "Test Sensor"
-    formula: "power_source * efficiency_rate"
+    name: Test Sensor
+    formula: power_source * efficiency_rate
     attributes:
       power_analysis:
-        formula: "power_source / max_power * 100"
+        formula: power_source / max_power * 100
         variables:
-          power_source: "sensor.different_power_meter"  # CONFLICT: Different from global
+          power_source: sensor.different_power_meter
           max_power: 1000
-        unit_of_measurement: "%"
+        metadata:
+          unit_of_measurement: '%'
       efficiency_calc:
-        formula: "power_source * efficiency_rate / base_power"
+        formula: power_source * efficiency_rate / base_power
         variables:
-          efficiency_rate: 0.90  # CONFLICT: Different from global (0.85)
+          efficiency_rate: 0.9
           base_power: 500
-        unit_of_measurement: "W"
+        metadata:
+          unit_of_measurement: W
       voltage_analysis:
-        formula: "base_voltage * multiplier"
+        formula: base_voltage * multiplier
         variables:
-          base_voltage: "sensor.different_voltage"  # CONFLICT: Different from global
+          base_voltage: sensor.different_voltage
           multiplier: 2.0
-        unit_of_measurement: "V"
-    unit_of_measurement: "W"
+        metadata:
+          unit_of_measurement: V
+    metadata:
+      unit_of_measurement: W

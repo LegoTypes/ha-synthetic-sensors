@@ -217,9 +217,11 @@ class TestPublicAPIConfiguration:
                     id="main",
                     formula="power_watts",
                     variables={"power_watts": "test_integration_backing.device_123_power"},
-                    unit_of_measurement="W",
-                    device_class="power",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "W",
+                        "device_class": "power",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )
@@ -232,9 +234,9 @@ class TestPublicAPIConfiguration:
         assert len(config.formulas) == 1
         assert config.formulas[0].id == "main"
         assert config.formulas[0].formula == "power_watts"
-        assert config.formulas[0].unit_of_measurement == "W"
-        assert config.formulas[0].device_class == "power"
-        assert config.formulas[0].state_class == "measurement"
+        assert config.formulas[0].metadata["unit_of_measurement"] == "W"
+        assert config.formulas[0].metadata["device_class"] == "power"
+        assert config.formulas[0].metadata["state_class"] == "measurement"
 
     def test_formula_config_public_api(self):
         """Test FormulaConfig using public API only."""
@@ -243,18 +245,20 @@ class TestPublicAPIConfiguration:
             id="main",
             formula="power_watts * 24 / 1000",
             variables={"power_watts": "test_integration_backing.device_123_power"},
-            unit_of_measurement="kWh",
-            device_class="energy",
-            state_class="total_increasing",
+            metadata={
+                "unit_of_measurement": "kWh",
+                "device_class": "energy",
+                "state_class": "total_increasing",
+            },
         )
 
         # Test public properties
         assert formula.id == "main"
         assert formula.formula == "power_watts * 24 / 1000"
         assert formula.variables == {"power_watts": "test_integration_backing.device_123_power"}
-        assert formula.unit_of_measurement == "kWh"
-        assert formula.device_class == "energy"
-        assert formula.state_class == "total_increasing"
+        assert formula.metadata["unit_of_measurement"] == "kWh"
+        assert formula.metadata["device_class"] == "energy"
+        assert formula.metadata["state_class"] == "total_increasing"
 
     def test_yaml_validation_scenarios(self):
         """Test various YAML validation scenarios using public API."""

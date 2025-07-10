@@ -26,8 +26,10 @@ class TestSchemaValidation:
                         "temp": "sensor.temperature",
                         "humidity": "sensor.humidity",
                     },
-                    "unit_of_measurement": "index",
-                    "state_class": "measurement",
+                    "metadata": {
+                        "unit_of_measurement": "index",
+                        "state_class": "measurement",
+                    },
                 }
             },
         }
@@ -134,13 +136,15 @@ class TestSchemaValidation:
         assert result["valid"] is False
 
     def test_invalid_device_class(self):
-        """Test validation catches invalid device class values."""
+        """Test validation catches invalid device class values in metadata."""
         config_data = {
             "version": "1.0",
             "sensors": {
                 "test_sensor": {
                     "formula": "1 + 1",
-                    "device_class": "invalid_device_class",
+                    "metadata": {
+                        "device_class": "invalid_device_class",
+                    },
                 }
             },
         }
@@ -149,13 +153,15 @@ class TestSchemaValidation:
         assert result["valid"] is False
 
     def test_invalid_state_class(self):
-        """Test validation catches invalid state class values."""
+        """Test validation catches invalid state class values in metadata."""
         config_data = {
             "version": "1.0",
             "sensors": {
                 "test_sensor": {
                     "formula": "1 + 1",
-                    "state_class": "invalid_state_class",
+                    "metadata": {
+                        "state_class": "invalid_state_class",
+                    },
                 }
             },
         }
@@ -170,7 +176,9 @@ class TestSchemaValidation:
             "sensors": {
                 "test_sensor": {
                     "formula": "undefined_var + 5",  # Variable not defined
-                    "unit_of_measurement": "units",
+                    "metadata": {
+                        "unit_of_measurement": "units",
+                    },
                 }
             },
         }
@@ -226,7 +234,9 @@ class TestSchemaValidation:
             "sensors": {
                 "test_sensor": {
                     "formula": "1 + 1",
-                    "unit_of_measurement": "units",
+                    "metadata": {
+                        "unit_of_measurement": "units",
+                    },
                 }
             },
         }
@@ -335,9 +345,11 @@ class TestSchemaValidation:
                 "battery_sensor": {
                     "formula": "battery_level",
                     "variables": {"battery_level": "sensor.phone_battery"},
-                    "device_class": "battery",
-                    "state_class": "total_increasing",  # Bad: battery levels go up/down
-                    "unit_of_measurement": "%",
+                    "metadata": {
+                        "device_class": "battery",
+                        "state_class": "total_increasing",  # Bad: battery levels go up/down
+                        "unit_of_measurement": "%",
+                    },
                 }
             },
         }
@@ -358,9 +370,11 @@ class TestSchemaValidation:
                 "power_sensor": {
                     "formula": "hvac_power",
                     "variables": {"hvac_power": "sensor.hvac"},
-                    "device_class": "power",
-                    "unit_of_measurement": "¢",  # Wrong unit for power
-                    "state_class": "measurement",
+                    "metadata": {
+                        "device_class": "power",
+                        "unit_of_measurement": "¢",  # Wrong unit for power
+                        "state_class": "measurement",
+                    },
                 }
             },
         }
@@ -381,9 +395,11 @@ class TestSchemaValidation:
                 "cost_sensor": {
                     "formula": "energy_cost",
                     "variables": {"energy_cost": "sensor.energy_cost"},
-                    "device_class": "monetary",
-                    "unit_of_measurement": "JPY",  # Should be allowed (currency code)
-                    "state_class": "measurement",
+                    "metadata": {
+                        "device_class": "monetary",
+                        "unit_of_measurement": "JPY",  # Should be allowed (currency code)
+                        "state_class": "measurement",
+                    },
                 }
             },
         }
@@ -400,8 +416,10 @@ class TestSchemaValidation:
                 "date_sensor": {
                     "formula": "last_update",
                     "variables": {"last_update": "sensor.last_update"},
-                    "device_class": "date",
-                    "unit_of_measurement": "2024-01-01",  # Should be allowed (date format)
+                    "metadata": {
+                        "device_class": "date",
+                        "unit_of_measurement": "2024-01-01",  # Should be allowed (date format)
+                    },
                 }
             },
         }
@@ -427,9 +445,11 @@ class TestSchemaValidation:
                     "test_sensor": {
                         "formula": "test_var",
                         "variables": {"test_var": "sensor.test"},
-                        "device_class": device_class,
-                        "unit_of_measurement": unit,
-                        "state_class": "measurement",
+                        "metadata": {
+                            "device_class": device_class,
+                            "unit_of_measurement": unit,
+                            "state_class": "measurement",
+                        },
                     }
                 },
             }

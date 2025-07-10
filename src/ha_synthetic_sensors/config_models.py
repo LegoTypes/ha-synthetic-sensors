@@ -7,8 +7,9 @@ This module contains the dataclass models that represent the parsed configuratio
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
-from .config_types import AttributeValue, DeviceClassType, StateClassType
+from .config_types import AttributeValue, GlobalSettingsDict
 from .dependency_parser import DependencyParser
 
 # Default domain constant
@@ -40,8 +41,13 @@ def _default_sensors() -> list[SensorConfig]:
     return []
 
 
-def _default_global_settings() -> dict[str, AttributeValue]:
+def _default_global_settings() -> GlobalSettingsDict:
     """Default factory for global settings dictionary."""
+    return {}
+
+
+def _default_metadata() -> dict[str, Any]:
+    """Default factory for metadata dictionary."""
     return {}
 
 
@@ -52,10 +58,7 @@ class FormulaConfig:
     id: str  # REQUIRED: Formula identifier
     formula: str
     name: str | None = None  # OPTIONAL: Display name
-    unit_of_measurement: str | None = None
-    device_class: DeviceClassType | None = None
-    state_class: StateClassType | None = None
-    icon: str | None = None
+    metadata: dict[str, Any] = field(default_factory=_default_metadata)
     attributes: dict[str, AttributeValue] = field(default_factory=_default_attributes)
     dependencies: set[str] = field(default_factory=_default_dependencies)
     variables: dict[str, str | int | float] = field(
@@ -97,6 +100,8 @@ class SensorConfig:
     category: str | None = None
     description: str | None = None
     entity_id: str | None = None  # OPTIONAL: Explicit entity ID
+    # New metadata field
+    metadata: dict[str, Any] = field(default_factory=_default_metadata)
     # Device association fields
     device_identifier: str | None = None  # Device identifier to associate with
     device_name: str | None = None  # Optional device name override
@@ -136,7 +141,7 @@ class Config:
 
     version: str = "1.0"
     sensors: list[SensorConfig] = field(default_factory=_default_sensors)
-    global_settings: dict[str, AttributeValue] = field(default_factory=_default_global_settings)
+    global_settings: GlobalSettingsDict = field(default_factory=_default_global_settings)
 
     def get_sensor_by_unique_id(self, unique_id: str) -> SensorConfig | None:
         """Get a sensor configuration by unique_id."""

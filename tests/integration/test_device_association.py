@@ -54,9 +54,11 @@ async def test_sensor_with_device_association(mock_hass):
     formula = FormulaConfig(
         id="main",
         formula="10 + 5",
-        unit_of_measurement="W",
-        device_class="power",
-        state_class="measurement",
+        metadata={
+            "unit_of_measurement": "W",
+            "device_class": "power",
+            "state_class": "measurement",
+        },
     )
 
     sensor_config = SensorConfig(
@@ -122,8 +124,10 @@ async def test_sensor_with_existing_device(mock_hass):
     formula = FormulaConfig(
         id="main",
         formula="20 + 10",
-        unit_of_measurement="°C",
-        device_class="temperature",
+        metadata={
+            "unit_of_measurement": "°C",
+            "device_class": "temperature",
+        },
     )
 
     sensor_config = SensorConfig(
@@ -190,7 +194,7 @@ async def test_sensor_without_device_association(mock_hass):
     """Test creating a sensor without device association."""
 
     # Create a sensor config without device fields
-    formula = FormulaConfig(id="main", formula="5 * 3", unit_of_measurement="kWh", device_class="energy")
+    formula = FormulaConfig(id="main", formula="5 * 3", metadata={"unit_of_measurement": "kWh", "device_class": "energy"})
 
     sensor_config = SensorConfig(
         unique_id="test_sensor_no_device",
@@ -243,9 +247,11 @@ async def test_sensor_with_explicit_entity_id_and_device_association(mock_hass):
     formula = FormulaConfig(
         id="main",
         formula="10 + 5",
-        unit_of_measurement="W",
-        device_class="power",
-        state_class="measurement",
+        metadata={
+            "unit_of_measurement": "W",
+            "device_class": "power",
+            "state_class": "measurement",
+        },
     )
 
     sensor_config = SensorConfig(
@@ -325,9 +331,11 @@ async def test_sensor_without_entity_id_generates_device_prefix(mock_hass):
     formula = FormulaConfig(
         id="main",
         formula="20 + 10",
-        unit_of_measurement="A",
-        device_class="current",
-        state_class="measurement",
+        metadata={
+            "unit_of_measurement": "A",
+            "device_class": "current",
+            "state_class": "measurement",
+        },
     )
 
     sensor_config = SensorConfig(
@@ -398,7 +406,7 @@ async def test_device_lookup_fails_with_explicit_entity_id(mock_hass):
     test_integration_domain = "span"
 
     # Create a sensor config with explicit entity_id but non-existent device
-    formula = FormulaConfig(id="main", formula="100", unit_of_measurement="W")
+    formula = FormulaConfig(id="main", formula="100", metadata={"unit_of_measurement": "W"})
 
     sensor_config = SensorConfig(
         unique_id="phantom_power",

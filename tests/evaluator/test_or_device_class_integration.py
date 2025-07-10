@@ -395,7 +395,7 @@ class TestORDeviceClassIntegration:
 
         assert config["name"] == "Direct Device Class OR"
         assert config["formula"] == 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
-        assert config["unit_of_measurement"] == "devices"
+        assert config["metadata"]["unit_of_measurement"] == "devices"
         # Should have no variables section since it uses direct entity IDs
         assert "variables" not in config
 
@@ -410,7 +410,7 @@ class TestORDeviceClassIntegration:
 
         assert config["name"] == "Mixed Device Class OR"
         assert config["formula"] == 'count("device_class:variable_type|input_select.direct_device_type")'
-        assert config["unit_of_measurement"] == "devices"
+        assert config["metadata"]["unit_of_measurement"] == "devices"
 
         # Should have variables for the variable part only
         variables = config["variables"]
@@ -428,7 +428,7 @@ class TestORDeviceClassIntegration:
 
         assert config["name"] == "Direct Three-Way Device Class"
         assert config["formula"] == 'avg("device_class:input_select.type1|input_select.type2|input_select.type3")'
-        assert config["unit_of_measurement"] == "avg"
+        assert config["metadata"]["unit_of_measurement"] == "avg"
         # Should have no variables section
         assert "variables" not in config
 
@@ -538,7 +538,7 @@ class TestORPatternEdgeCases:
 
         assert config["name"] == "Direct Device Class OR"
         assert config["formula"] == 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
-        assert config["unit_of_measurement"] == "devices"
+        assert config["metadata"]["unit_of_measurement"] == "devices"
         # Should have no variables section since it uses direct entity IDs
         assert "variables" not in config
 
@@ -553,7 +553,7 @@ class TestORPatternEdgeCases:
 
         assert config["name"] == "Mixed Device Class OR"
         assert config["formula"] == 'count("device_class:variable_type|input_select.direct_device_type")'
-        assert config["unit_of_measurement"] == "devices"
+        assert config["metadata"]["unit_of_measurement"] == "devices"
 
         # Should have variables for the variable part only
         variables = config["variables"]
@@ -571,6 +571,6 @@ class TestORPatternEdgeCases:
 
         assert config["name"] == "Direct Three-Way Device Class"
         assert config["formula"] == 'avg("device_class:input_select.type1|input_select.type2|input_select.type3")'
-        assert config["unit_of_measurement"] == "avg"
+        assert config["metadata"]["unit_of_measurement"] == "avg"
         # Should have no variables section
         assert "variables" not in config

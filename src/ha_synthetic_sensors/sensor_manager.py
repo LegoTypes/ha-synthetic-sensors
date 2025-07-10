@@ -18,8 +18,10 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util, slugify
 
 from .config_models import Config, FormulaConfig, SensorConfig
+from .config_types import GlobalSettingsDict
 from .evaluator import Evaluator
 from .exceptions import FormulaEvaluationError
+from .metadata_handler import MetadataHandler
 from .name_resolver import NameResolver
 from .type_definitions import DataProviderCallback
 
@@ -61,7 +63,7 @@ class SensorState:
 
 
 class DynamicSensor(RestoreEntity, SensorEntity):
-    """A synthetic sensor entity with calculated attributes."""
+    """Dynamic sensor that evaluates formulas and updates state."""
 
     def __init__(
         self,
@@ -70,6 +72,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         evaluator: Evaluator,
         sensor_manager: SensorManager,
         manager_config: SensorManagerConfig | None = None,
+        global_settings: GlobalSettingsDict | None = None,
     ) -> None:
         """Initialize the dynamic sensor."""
         self._hass = hass
@@ -100,20 +103,8 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._main_formula = config.formulas[0]
         self._attribute_formulas = config.formulas[1:] if len(config.formulas) > 1 else []
 
-        # Set entity attributes from main formula
-        self._attr_native_unit_of_measurement = self._main_formula.unit_of_measurement
-
-        # Convert device_class string to enum if needed
-        if self._main_formula.device_class:
-            try:
-                self._attr_device_class = SensorDeviceClass(self._main_formula.device_class)
-            except ValueError:
-                self._attr_device_class = None
-        else:
-            self._attr_device_class = None
-
-        self._attr_state_class = self._main_formula.state_class
-        self._attr_icon = self._main_formula.icon
+        # Initialize metadata and apply to sensor
+        self._setup_metadata_properties(global_settings)
 
         # State management
         self._attr_native_value: Any = None
@@ -123,12 +114,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._calculated_attributes: dict[str, Any] = {}
 
         # Set base extra state attributes
-        base_attributes: dict[str, Any] = {}
-        base_attributes["formula"] = self._main_formula.formula
-        base_attributes["dependencies"] = list(self._main_formula.dependencies)
-        if config.category:
-            base_attributes["sensor_category"] = config.category
-        self._attr_extra_state_attributes = base_attributes
+        self._setup_base_attributes()
 
         # Tracking
         self._last_update: datetime | None = None
@@ -138,6 +124,61 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._dependencies: set[str] = set()
         for formula in config.formulas:
             self._dependencies.update(formula.dependencies)
+
+    def _setup_metadata_properties(self, global_settings: GlobalSettingsDict | None) -> None:
+        """Set up metadata properties for the sensor."""
+        metadata_handler = MetadataHandler()
+
+        # Get global metadata from global_settings (if available)
+        global_metadata = {}
+        if global_settings:
+            global_metadata = global_settings.get("metadata", {})
+
+        # Merge metadata: global -> sensor -> formula (main formula)
+        sensor_metadata = metadata_handler.merge_sensor_metadata(global_metadata, self._config)
+        # For main formula (sensor entity), use the merged sensor metadata directly
+        final_metadata = sensor_metadata.copy()
+
+        # Apply any formula-level metadata overrides
+        formula_metadata = getattr(self._main_formula, "metadata", {})
+        final_metadata.update(formula_metadata)
+
+        # Apply metadata properties to sensor
+        self._apply_metadata_to_sensor(final_metadata)
+
+    def _apply_metadata_to_sensor(self, metadata: dict[str, Any]) -> None:
+        """Apply metadata properties to the sensor entity."""
+        # Apply core metadata properties to sensor entity
+        self._attr_native_unit_of_measurement = metadata.get("unit_of_measurement")
+        self._attr_state_class = metadata.get("state_class")
+        self._attr_icon = metadata.get("icon")
+
+        # Convert device_class string to enum if needed
+        device_class = metadata.get("device_class")
+        if device_class:
+            try:
+                self._attr_device_class = SensorDeviceClass(device_class)
+            except ValueError:
+                self._attr_device_class = None
+        else:
+            self._attr_device_class = None
+
+        # Apply additional metadata properties as HA sensor attributes
+        # Skip the ones we've already handled above
+        handled_keys = {"unit_of_measurement", "state_class", "icon", "device_class"}
+        for key, value in metadata.items():
+            if key not in handled_keys:
+                attr_name = f"_attr_{key}"
+                setattr(self, attr_name, value)
+
+    def _setup_base_attributes(self) -> None:
+        """Set up base extra state attributes."""
+        base_attributes: dict[str, Any] = {}
+        base_attributes["formula"] = self._main_formula.formula
+        base_attributes["dependencies"] = list(self._main_formula.dependencies)
+        if self._config.category:
+            base_attributes["sensor_category"] = self._config.category
+        self._attr_extra_state_attributes = base_attributes
 
     def _update_extra_state_attributes(self) -> None:
         """Update the extra state attributes with current values."""
@@ -296,20 +337,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         for formula in all_formulas:
             self._dependencies.update(formula.dependencies)
 
-        # Update entity attributes from main formula
-        self._attr_native_unit_of_measurement = new_main_formula.unit_of_measurement
-
-        # Convert device_class string to enum if needed
-        if new_main_formula.device_class:
-            try:
-                self._attr_device_class = SensorDeviceClass(new_main_formula.device_class)
-            except ValueError:
-                self._attr_device_class = None
-        else:
-            self._attr_device_class = None
-
-        self._attr_state_class = new_main_formula.state_class
-        self._attr_icon = new_main_formula.icon
+        # Update entity attributes from formula metadata
+        formula_metadata = new_main_formula.metadata or {}
+        self._apply_metadata_to_sensor(formula_metadata)
 
         # Update dependency tracking if needed
         if old_dependencies != self._dependencies:
@@ -654,7 +684,10 @@ class SensorManager:
             name_resolver=self._manager_config.name_resolver,
         )
 
-        return DynamicSensor(self._hass, sensor_config, self._evaluator, self, manager_config)
+        # Get global settings from current config
+        global_settings = self._current_config.global_settings if self._current_config else {}
+
+        return DynamicSensor(self._hass, sensor_config, self._evaluator, self, manager_config, global_settings)
 
     async def _update_existing_sensors(self, old_config: Config, new_config: Config) -> None:
         """Update existing sensors based on configuration changes."""
@@ -717,18 +750,26 @@ class SensorManager:
         """Create sensors from configuration - public interface for testing."""
         _LOGGER.debug("Creating sensors from config with %d sensor configs", len(config.sensors))
 
+        # Store the config temporarily for global settings access
+        old_config = self._current_config
+        self._current_config = config
+
         all_created_sensors: list[DynamicSensor] = []
 
-        # Create one entity per sensor
-        for sensor_config in config.sensors:
-            if sensor_config.enabled:
-                sensor = await self._create_sensor_entity(sensor_config)
-                all_created_sensors.append(sensor)
-                self._sensors_by_unique_id[sensor_config.unique_id] = sensor
-                self._sensors_by_entity_id[sensor.entity_id] = sensor
+        try:
+            # Create one entity per sensor
+            for sensor_config in config.sensors:
+                if sensor_config.enabled:
+                    sensor = await self._create_sensor_entity(sensor_config)
+                    all_created_sensors.append(sensor)
+                    self._sensors_by_unique_id[sensor_config.unique_id] = sensor
+                    self._sensors_by_entity_id[sensor.entity_id] = sensor
 
-        _LOGGER.debug("Created %d sensor entities", len(all_created_sensors))
-        return all_created_sensors
+            _LOGGER.debug("Created %d sensor entities", len(all_created_sensors))
+            return all_created_sensors
+        finally:
+            # Restore the old config
+            self._current_config = old_config
 
     def update_sensor_states(
         self,

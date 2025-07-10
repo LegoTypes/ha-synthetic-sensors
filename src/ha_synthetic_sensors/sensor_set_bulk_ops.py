@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .config_types import GlobalSettingsDict
 from .exceptions import SyntheticSensorsError
 from .sensor_set_entity_utils import apply_entity_id_changes_to_sensors_util, update_formula_variables_for_entity_changes
 
@@ -215,4 +216,6 @@ class SensorSetBulkOps:
         """
         # Use storage manager's validation
         if final_global_settings:
-            self.storage_manager.validate_no_global_conflicts(list(final_sensors.values()), final_global_settings)
+            # Cast to GlobalSettingsDict since it's compatible
+            typed_global_settings: GlobalSettingsDict = final_global_settings  # type: ignore[assignment]
+            self.storage_manager.validate_no_global_conflicts(list(final_sensors.values()), typed_global_settings)

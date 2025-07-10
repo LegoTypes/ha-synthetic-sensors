@@ -105,8 +105,11 @@ class YamlHandler:
             sensor_dict["entity_id"] = sensor_config.entity_id
         if sensor_config.name:
             sensor_dict["name"] = sensor_config.name
-        # Note: unit_of_measurement, device_class, state_class, and icon are formula-level properties
-        # and are handled in _add_main_formula_details
+
+        # Add sensor-level metadata if present
+        if hasattr(sensor_config, "metadata") and sensor_config.metadata:
+            sensor_dict["metadata"] = sensor_config.metadata
+        # Note: Formula-level metadata is handled in _add_main_formula_details
 
     def _process_formulas(self, sensor_config: SensorConfig) -> tuple[FormulaConfig | None, dict[str, Any]]:
         """Process formulas and separate main formula from attributes."""
@@ -132,14 +135,24 @@ class YamlHandler:
         if formula.variables:
             variables_dict: dict[str, str | int | float] = dict(formula.variables)
             attr_dict["variables"] = variables_dict
-        if formula.unit_of_measurement:
-            attr_dict["unit_of_measurement"] = formula.unit_of_measurement
-        if formula.device_class:
-            attr_dict["device_class"] = formula.device_class
-        if formula.state_class:
-            attr_dict["state_class"] = formula.state_class
-        if formula.icon:
-            attr_dict["icon"] = formula.icon
+
+        # Add metadata if present
+        if hasattr(formula, "metadata") and formula.metadata:
+            attr_dict["metadata"] = formula.metadata
+        else:
+            # Legacy field support - migrate to metadata format
+            legacy_metadata = {}
+            if hasattr(formula, "unit_of_measurement") and formula.unit_of_measurement:
+                legacy_metadata["unit_of_measurement"] = formula.unit_of_measurement
+            if hasattr(formula, "device_class") and formula.device_class:
+                legacy_metadata["device_class"] = formula.device_class
+            if hasattr(formula, "state_class") and formula.state_class:
+                legacy_metadata["state_class"] = formula.state_class
+            if hasattr(formula, "icon") and formula.icon:
+                legacy_metadata["icon"] = formula.icon
+
+            if legacy_metadata:
+                attr_dict["metadata"] = legacy_metadata
 
         return attr_dict
 
@@ -150,12 +163,26 @@ class YamlHandler:
         if main_formula.variables:
             sensor_dict["variables"] = dict(main_formula.variables)
 
-        # Override sensor-level properties with formula-specific ones if present
-        if main_formula.unit_of_measurement:
-            sensor_dict["unit_of_measurement"] = main_formula.unit_of_measurement
-        if main_formula.device_class:
-            sensor_dict["device_class"] = main_formula.device_class
-        if main_formula.state_class:
-            sensor_dict["state_class"] = main_formula.state_class
-        if main_formula.icon:
-            sensor_dict["icon"] = main_formula.icon
+        # Add metadata if present (formula-level metadata overrides sensor-level metadata)
+        if hasattr(main_formula, "metadata") and main_formula.metadata:
+            # Merge with existing sensor metadata, with formula metadata taking precedence
+            existing_metadata = sensor_dict.get("metadata", {})
+            merged_metadata = {**existing_metadata, **main_formula.metadata}
+            sensor_dict["metadata"] = merged_metadata
+        else:
+            # Legacy field support - migrate to metadata format
+            legacy_metadata = {}
+            if hasattr(main_formula, "unit_of_measurement") and main_formula.unit_of_measurement:
+                legacy_metadata["unit_of_measurement"] = main_formula.unit_of_measurement
+            if hasattr(main_formula, "device_class") and main_formula.device_class:
+                legacy_metadata["device_class"] = main_formula.device_class
+            if hasattr(main_formula, "state_class") and main_formula.state_class:
+                legacy_metadata["state_class"] = main_formula.state_class
+            if hasattr(main_formula, "icon") and main_formula.icon:
+                legacy_metadata["icon"] = main_formula.icon
+
+            if legacy_metadata:
+                # Merge with existing sensor metadata, with formula metadata taking precedence
+                existing_metadata = sensor_dict.get("metadata", {})
+                merged_metadata = {**existing_metadata, **legacy_metadata}
+                sensor_dict["metadata"] = merged_metadata

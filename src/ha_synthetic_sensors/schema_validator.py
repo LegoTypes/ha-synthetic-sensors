@@ -190,8 +190,9 @@ class SchemaValidator:
         warnings: list[ValidationError],
     ) -> None:
         """Validate state_class compatibility with device_class using HA's mappings."""
-        state_class = sensor_config.get("state_class")
-        device_class = sensor_config.get("device_class", "")
+        metadata = sensor_config.get("metadata", {})
+        state_class = metadata.get("state_class")
+        device_class = metadata.get("device_class", "")
 
         if not state_class or not device_class:
             return
@@ -362,8 +363,9 @@ class SchemaValidator:
         errors: list[ValidationError],
     ) -> None:
         """Validate unit_of_measurement compatibility with device_class (ERROR level)."""
-        device_class = sensor_config.get("device_class")
-        unit = sensor_config.get("unit_of_measurement")
+        metadata = sensor_config.get("metadata", {})
+        device_class = metadata.get("device_class")
+        unit = metadata.get("unit_of_measurement")
 
         if not device_class or not unit:
             return
@@ -690,6 +692,32 @@ class SchemaValidator:
                         },
                         "additionalProperties": False,
                     },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Global metadata applied to all sensors",
+                        "properties": {
+                            "device_class": {
+                                "type": "string",
+                                "enum": self._get_device_class_enum(),
+                                "description": "Default device class for all sensors",
+                            },
+                            "state_class": {
+                                "type": "string",
+                                "enum": self._get_state_class_enum(),
+                                "description": "Default state class for all sensors",
+                            },
+                            "unit_of_measurement": {
+                                "type": "string",
+                                "description": "Default unit of measurement for all sensors",
+                            },
+                            "icon": {
+                                "type": "string",
+                                "pattern": icon_pattern,
+                                "description": "Default icon for all sensors",
+                            },
+                        },
+                        "additionalProperties": True,
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -780,28 +808,30 @@ class SchemaValidator:
                     },
                     "additionalProperties": False,
                 },
-                "unit_of_measurement": {
-                    "type": "string",
-                    "description": "Unit of measurement for the calculated value",
-                },
-                "device_class": {
-                    "type": "string",
-                    "description": "Home Assistant device class",
-                    "enum": self._get_device_class_enum(),
-                },
-                "state_class": {
-                    "type": "string",
-                    "description": "Home Assistant state class",
-                    "enum": self._get_state_class_enum(),
-                },
-                "icon": {
-                    "type": "string",
-                    "description": "Material Design icon identifier",
-                    "pattern": icon_pattern,
-                },
-                "extra_attributes": {
+                "metadata": {
                     "type": "object",
-                    "description": "Additional static attributes for the entity",
+                    "description": "Metadata dictionary for Home Assistant sensor properties",
+                    "properties": {
+                        "device_class": {
+                            "type": "string",
+                            "enum": self._get_device_class_enum(),
+                            "description": "Device class for the sensor",
+                        },
+                        "state_class": {
+                            "type": "string",
+                            "enum": self._get_state_class_enum(),
+                            "description": "State class for the sensor",
+                        },
+                        "unit_of_measurement": {
+                            "type": "string",
+                            "description": "Unit of measurement for the sensor",
+                        },
+                        "icon": {
+                            "type": "string",
+                            "pattern": icon_pattern,
+                            "description": "Icon for the sensor",
+                        },
+                    },
                     "additionalProperties": True,
                 },
                 # Device association properties
@@ -870,24 +900,31 @@ class SchemaValidator:
                     },
                     "additionalProperties": False,
                 },
-                "unit_of_measurement": {
-                    "type": "string",
-                    "description": "Unit of measurement for this attribute",
-                },
-                "device_class": {
-                    "type": "string",
-                    "description": "Home Assistant device class",
-                    "enum": self._get_device_class_enum(),
-                },
-                "state_class": {
-                    "type": "string",
-                    "description": "Home Assistant state class",
-                    "enum": self._get_state_class_enum(),
-                },
-                "icon": {
-                    "type": "string",
-                    "description": "Material Design icon identifier",
-                    "pattern": icon_pattern,
+                "metadata": {
+                    "type": "object",
+                    "description": "Metadata dictionary for Home Assistant attribute properties",
+                    "properties": {
+                        "device_class": {
+                            "type": "string",
+                            "enum": self._get_device_class_enum(),
+                            "description": "Device class for the attribute",
+                        },
+                        "state_class": {
+                            "type": "string",
+                            "enum": self._get_state_class_enum(),
+                            "description": "State class for the attribute",
+                        },
+                        "unit_of_measurement": {
+                            "type": "string",
+                            "description": "Unit of measurement for the attribute",
+                        },
+                        "icon": {
+                            "type": "string",
+                            "pattern": icon_pattern,
+                            "description": "Icon for the attribute",
+                        },
+                    },
+                    "additionalProperties": True,
                 },
             },
             "required": ["formula"],

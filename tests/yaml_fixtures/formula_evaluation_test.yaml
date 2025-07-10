@@ -1,39 +1,38 @@
-# Formula Evaluation Test Configuration
-version: "1.0"
-
+version: '1.0'
 sensors:
   formula_eval_basic:
-    name: "Formula Basic Test"
-    formula: "a + b + c"
+    name: Formula Basic Test
+    formula: a + b + c
     variables:
-      a: "sensor.test_value_a"
-      b: "sensor.test_value_b"
-      c: "sensor.test_value_c"
-    unit_of_measurement: "sum"
-    state_class: "measurement"
-
+      a: sensor.test_value_a
+      b: sensor.test_value_b
+      c: sensor.test_value_c
+    metadata:
+      unit_of_measurement: sum
+      state_class: measurement
   formula_eval_math:
-    name: "Formula Math Test"
-    formula: "sqrt(x * x + y * y)"
+    name: Formula Math Test
+    formula: sqrt(x * x + y * y)
     variables:
-      x: "sensor.test_coordinate_x"
-      y: "sensor.test_coordinate_y"
-    unit_of_measurement: "distance"
-    state_class: "measurement"
-
+      x: sensor.test_coordinate_x
+      y: sensor.test_coordinate_y
+    metadata:
+      unit_of_measurement: distance
+      state_class: measurement
   formula_eval_conditional:
-    name: "Formula Conditional Test"
-    formula: "if(temp > threshold, 'hot', if(temp < 15, 'cold', 'moderate'))"
+    name: Formula Conditional Test
+    formula: if(temp > threshold, 'hot', if(temp < 15, 'cold', 'moderate'))
     variables:
-      temp: "sensor.test_temperature"
-      threshold: "sensor.hot_threshold"
-    state_class: "measurement"
-
+      temp: sensor.test_temperature
+      threshold: sensor.hot_threshold
+    metadata:
+      state_class: measurement
   formula_eval_error:
-    name: "Formula Error Test"
-    formula: "value / divisor"  # May cause division by zero
+    name: Formula Error Test
+    formula: value / divisor
     variables:
-      value: "sensor.test_numerator"
-      divisor: "sensor.test_divisor"
-    unit_of_measurement: "ratio"
-    state_class: "measurement"
+      value: sensor.test_numerator
+      divisor: sensor.test_divisor
+    metadata:
+      unit_of_measurement: ratio
+      state_class: measurement

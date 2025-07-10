@@ -9,7 +9,8 @@ sensors:
       freezing_f: 32                     # Literal: Fahrenheit freezing point
       conversion_factor: 5               # Literal: F to C numerator
       celsius_factor: 9                  # Literal: F to C denominator
-    unit_of_measurement: "°C"
+    metadata:
+      unit_of_measurement: "°C"
 
   power_efficiency:
     name: "Power Efficiency"
@@ -18,7 +19,8 @@ sensors:
       actual_power: "sensor.current_power"
       rated_power: 1000                  # Literal: rated power in watts
       percentage: 100                    # Literal: convert to percentage
-    unit_of_measurement: "%"
+    metadata:
+      unit_of_measurement: "%"
 
   cost_calculator:
     name: "Energy Cost"
@@ -27,7 +29,8 @@ sensors:
       energy_kwh: "sensor.energy_usage"
       rate_per_kwh: 0.12                 # Literal: cost per kWh
       tax_rate: 0.085                    # Literal: tax percentage
-    unit_of_measurement: "$"
+    metadata:
+      unit_of_measurement: "$"
 
   mixed_calculations:
     name: "Mixed Calculations"
@@ -37,4 +40,5 @@ sensors:
       multiplier: 2.5                    # Literal: float multiplier
       offset: 10                         # Literal: integer offset
       discount: -5.0                     # Literal: negative float
-    unit_of_measurement: "units"
+    metadata:
+      unit_of_measurement: "units"

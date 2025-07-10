@@ -1,10 +1,11 @@
-version: "1.0"
+version: '1.0'
 sensors:
   existing_sensor:
-    name: "Existing Sensor"
-    formula: "temperature + humidity"
+    name: Existing Sensor
+    formula: temperature + humidity
     variables:
       temperature: sensor.temperature
       humidity: sensor.humidity
-    unit_of_measurement: "comfort"
     category: environmental
+    metadata:
+      unit_of_measurement: comfort

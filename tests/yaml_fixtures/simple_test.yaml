@@ -1,25 +1,22 @@
-# Simple Test Configuration for Basic Testing
-version: "1.0"
-
+version: '1.0'
 sensors:
-  # Single formula sensor (v2.0 format)
   simple_test_sensor:
-    name: "Simple Test Sensor"
-    formula: "var_a + var_b"
+    name: Simple Test Sensor
+    formula: var_a + var_b
     variables:
-      var_a: "sensor.test_value_a"
-      var_b: "sensor.test_value_b"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Single formula sensor with complex math
+      var_a: sensor.test_value_a
+      var_b: sensor.test_value_b
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   complex_test_sensor:
-    name: "Complex Test Sensor"
-    formula: "max(var_a, 0) + min(var_b, 1000) / 2 + abs(var_c)"
+    name: Complex Test Sensor
+    formula: max(var_a, 0) + min(var_b, 1000) / 2 + abs(var_c)
     variables:
-      var_a: "sensor.test_value_a"
-      var_b: "sensor.test_value_b"
-      var_c: "sensor.test_value_c"
-    unit_of_measurement: "units"
-    state_class: "measurement"
+      var_a: sensor.test_value_a
+      var_b: sensor.test_value_b
+      var_c: sensor.test_value_c
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement

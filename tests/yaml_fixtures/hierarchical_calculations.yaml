@@ -1,36 +1,35 @@
-# Hierarchical Calculations Test - Converting from v1.0 to v2.0
-version: "1.0"
-
+version: '1.0'
 sensors:
-  hvac_total_power:                      # Sensor key becomes the unique_id
-    name: "HVAC Total Power"             # OPTIONAL: Display name
-    formula: "hvac_heat + hvac_cool + hvac_fan"
+  hvac_total_power:
+    name: HVAC Total Power
+    formula: hvac_heat + hvac_cool + hvac_fan
     variables:
-      hvac_heat: "sensor.hvac_heating_power"
-      hvac_cool: "sensor.hvac_cooling_power"
-      hvac_fan: "sensor.hvac_fan_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  lighting_total_power:                  # Sensor key becomes the unique_id
-    name: "Lighting Total Power"         # OPTIONAL: Display name
-    formula: "living_room_lights + kitchen_lights + bedroom_lights"
+      hvac_heat: sensor.hvac_heating_power
+      hvac_cool: sensor.hvac_cooling_power
+      hvac_fan: sensor.hvac_fan_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  lighting_total_power:
+    name: Lighting Total Power
+    formula: living_room_lights + kitchen_lights + bedroom_lights
     variables:
-      living_room_lights: "sensor.living_room_light_power"
-      kitchen_lights: "sensor.kitchen_light_power"
-      bedroom_lights: "sensor.bedroom_light_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  total_home_consumption:                # Sensor key becomes the unique_id
-    name: "Total Home Power Consumption" # OPTIONAL: Display name
-    formula: "hvac_total + lighting_total + other_loads"
+      living_room_lights: sensor.living_room_light_power
+      kitchen_lights: sensor.kitchen_light_power
+      bedroom_lights: sensor.bedroom_light_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  total_home_consumption:
+    name: Total Home Power Consumption
+    formula: hvac_total + lighting_total + other_loads
     variables:
-      hvac_total: "sensor.hvac_total_power"        # References other synthetic sensor
-      lighting_total: "sensor.lighting_total_power" # References other synthetic sensor
-      other_loads: "sensor.other_electrical_loads"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "total_increasing"
+      hvac_total: sensor.hvac_total_power
+      lighting_total: sensor.lighting_total_power
+      other_loads: sensor.other_electrical_loads
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: total_increasing

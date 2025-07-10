@@ -80,11 +80,13 @@ class TestDynamicSensor:
             name="Test Formula",
             formula="a + b",
             dependencies={"sensor.test_a", "sensor.test_b"},
-            unit_of_measurement="W",
-            device_class="power",
-            state_class="measurement",
-            icon="mdi:power",
             attributes={"test_attr": "test_value"},
+            metadata={
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+                "icon": "mdi:power",
+            },
         )
 
     def test_dynamic_sensor_initialization(
@@ -325,10 +327,12 @@ class TestDynamicSensorExtended:
             id="test_formula",
             name="Test Formula",
             formula="sensor.test_a + sensor.test_b",
-            unit_of_measurement="W",
-            device_class="power",
-            state_class="measurement",
-            icon="mdi:power",
+            metadata={
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+                "icon": "mdi:power",
+            },
             attributes={"test_attr": "test_value"},
             dependencies={"sensor.test_a", "sensor.test_b"},
         )

@@ -1,95 +1,84 @@
-version: "1.0"
-
-# Test configuration for DeviceAssociationHelper functionality
-# This fixture defines various device association scenarios for testing
-
+version: '1.0'
 sensors:
-  # Sensor with complete device info for new device creation
   new_device_sensor:
-    name: "New Device Sensor"
-    formula: "base_power * efficiency"
+    name: New Device Sensor
+    formula: base_power * efficiency
     variables:
-      base_power: "sensor.test_power"
+      base_power: sensor.test_power
       efficiency: 0.95
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-    device_identifier: "test_domain:new_device_123"
-    device_name: "Test New Device"
-    device_manufacturer: "Test Manufacturer"
-    device_model: "Test Model v2.0"
-    device_sw_version: "2.1.0"
-    device_hw_version: "1.5"
-    suggested_area: "Test Lab"
-
-  # Sensor referencing existing device (minimal config)
+    device_identifier: test_domain:new_device_123
+    device_name: Test New Device
+    device_manufacturer: Test Manufacturer
+    device_model: Test Model v2.0
+    device_sw_version: 2.1.0
+    device_hw_version: '1.5'
+    suggested_area: Test Lab
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   existing_device_sensor:
-    name: "Existing Device Sensor"
-    formula: "temperature + offset"
+    name: Existing Device Sensor
+    formula: temperature + offset
     variables:
-      temperature: "sensor.ambient_temp"
+      temperature: sensor.ambient_temp
       offset: 2.5
-    unit_of_measurement: "°C"
-    device_class: "temperature"
-    device_identifier: "existing_domain:device_456"
-
-  # Sensor with device ID format (no domain prefix)
+    device_identifier: existing_domain:device_456
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
   device_id_sensor:
-    name: "Device ID Sensor"
-    formula: "humidity * factor"
+    name: Device ID Sensor
+    formula: humidity * factor
     variables:
-      humidity: "sensor.humidity_sensor"
+      humidity: sensor.humidity_sensor
       factor: 1.1
-    unit_of_measurement: "%"
-    device_class: "humidity"
-    device_identifier: "abcd1234-5678-90ef-ghij-klmnopqrstuv"
-
-  # Sensor for pattern-based device grouping test
+    device_identifier: abcd1234-5678-90ef-ghij-klmnopqrstuv
+    metadata:
+      unit_of_measurement: '%'
+      device_class: humidity
   pattern_grouped_sensor:
-    name: "Pattern Grouped Sensor"
-    formula: "sum(energy_meters)"
+    name: Pattern Grouped Sensor
+    formula: sum(energy_meters)
     variables:
-      energy_meters: "device_class:energy"
-    unit_of_measurement: "kWh"
-    device_class: "energy"
-    # No device_identifier - should be grouped by pattern
-
-  # Sensor with invalid device identifier for validation testing
+      energy_meters: device_class:energy
+    metadata:
+      unit_of_measurement: kWh
+      device_class: energy
   invalid_device_sensor:
-    name: "Invalid Device Sensor"
-    formula: "invalid_value"
+    name: Invalid Device Sensor
+    formula: invalid_value
     variables:
-      invalid_value: "sensor.nonexistent"
-    unit_of_measurement: "units"
-    device_identifier: "nonexistent_domain:invalid_device"
-
-  # Sensor for area association testing
+      invalid_value: sensor.nonexistent
+    device_identifier: nonexistent_domain:invalid_device
+    metadata:
+      unit_of_measurement: units
   area_device_sensor:
-    name: "Area Device Sensor"
-    formula: "area_power"
+    name: Area Device Sensor
+    formula: area_power
     variables:
-      area_power: "sensor.living_room_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    device_identifier: "area_test:living_room_device"
-    device_name: "Living Room Device"
-    suggested_area: "Living Room"
-
-  # Multiple sensors for same device (device grouping test)
+      area_power: sensor.living_room_power
+    device_identifier: area_test:living_room_device
+    device_name: Living Room Device
+    suggested_area: Living Room
+    metadata:
+      unit_of_measurement: W
+      device_class: power
   device_group_sensor_1:
-    name: "Device Group Sensor 1"
-    formula: "power_reading"
+    name: Device Group Sensor 1
+    formula: power_reading
     variables:
-      power_reading: "sensor.group_power_1"
-    unit_of_measurement: "W"
-    device_class: "power"
-    device_identifier: "group_test:shared_device"
-
+      power_reading: sensor.group_power_1
+    device_identifier: group_test:shared_device
+    metadata:
+      unit_of_measurement: W
+      device_class: power
   device_group_sensor_2:
-    name: "Device Group Sensor 2"
-    formula: "energy_reading"
+    name: Device Group Sensor 2
+    formula: energy_reading
     variables:
-      energy_reading: "sensor.group_energy_1"
-    unit_of_measurement: "kWh"
-    device_class: "energy"
-    device_identifier: "group_test:shared_device"
+      energy_reading: sensor.group_energy_1
+    device_identifier: group_test:shared_device
+    metadata:
+      unit_of_measurement: kWh
+      device_class: energy

@@ -20,6 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .config_models import Config, SensorConfig
+from .config_types import GlobalSettingsDict
 from .entity_change_handler import EntityChangeHandler
 from .entity_registry_listener import EntityRegistryListener
 from .exceptions import SyntheticSensorsError
@@ -295,7 +296,7 @@ class StorageManager:
         device_identifier: str | None = None,
         name: str | None = None,
         description: str | None = None,
-        global_settings: dict[str, Any] | None = None,
+        global_settings: GlobalSettingsDict | None = None,
     ) -> SensorSetMetadata:
         """Create a new sensor set."""
         await self._sensor_set_ops_handler.async_create_sensor_set(
@@ -380,7 +381,7 @@ class StorageManager:
         return self._sensor_ops_handler.deserialize_sensor_config(config_data)
 
     # Validation Methods (delegated to ValidationHandler)
-    def validate_no_global_conflicts(self, sensors: list[SensorConfig], global_settings: dict[str, Any]) -> None:
+    def validate_no_global_conflicts(self, sensors: list[SensorConfig], global_settings: GlobalSettingsDict) -> None:
         """Validate that global variables don't conflict with sensor formulas."""
         self._validation_handler.validate_no_global_conflicts(sensors, global_settings)
 
@@ -403,7 +404,7 @@ class StorageManager:
 
         # Filter sensors by criteria
         sensors = []
-        global_settings = {}
+        global_settings: GlobalSettingsDict = {}
 
         for stored_sensor in data["sensors"].values():
             # Apply device identifier filter
@@ -465,7 +466,7 @@ class StorageManager:
 
     def prepare_sensor_set_creation_params(
         self, config: Config, sensor_set_id: str, device_identifier: str | None = None
-    ) -> tuple[str | None, str, dict[str, Any]]:
+    ) -> tuple[str | None, str, GlobalSettingsDict]:
         """Prepare parameters for sensor set creation from config.
 
         Args:
@@ -486,7 +487,7 @@ class StorageManager:
 
     def _prepare_sensor_set_creation_params(
         self, config: Config, sensor_set_id: str, device_identifier: str | None = None
-    ) -> tuple[str | None, str, dict[str, Any]]:
+    ) -> tuple[str | None, str, GlobalSettingsDict]:
         """Prepare parameters for sensor set creation from config (deprecated).
 
         Args:

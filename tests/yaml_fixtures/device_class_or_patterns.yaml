@@ -1,82 +1,74 @@
-# Device Class OR Patterns Test Configuration
-# Tests OR-style logic for multiple device classes using pipe (|) syntax
-version: "1.0"
-
+version: '1.0'
 sensors:
-  # Test basic OR pattern with two device classes
   door_window_count:
-    name: "Door and Window Count"
-    formula: 'count("device_class:door|window")'
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Test OR pattern with three device classes
+    name: Door and Window Count
+    formula: count("device_class:door|window")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   security_device_sum:
-    name: "Security Device Sum"
-    formula: 'sum("device_class:door|window|lock")'
-    unit_of_measurement: "count"
-    state_class: "measurement"
-
-  # Test OR pattern with avg function
+    name: Security Device Sum
+    formula: sum("device_class:door|window|lock")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
   climate_average:
-    name: "Climate Average"
-    formula: 'avg("device_class:temperature|humidity")'
-    unit_of_measurement: "°C"
-    device_class: "temperature"
-    state_class: "measurement"
-
-  # Test OR pattern with power-related device classes
+    name: Climate Average
+    formula: avg("device_class:temperature|humidity")
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement
   power_monitoring_total:
-    name: "Power Monitoring Total"
-    formula: 'sum("device_class:power|energy")'
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Test OR pattern with quoted syntax (should also work)
+    name: Power Monitoring Total
+    formula: sum("device_class:power|energy")
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   quoted_or_pattern:
-    name: "Quoted OR Pattern"
-    formula: 'max("device_class:battery|voltage")'
-    unit_of_measurement: "%"
-    device_class: "battery"
-    state_class: "measurement"
-
-  # Test complex formula with OR pattern
+    name: Quoted OR Pattern
+    formula: max("device_class:battery|voltage")
+    metadata:
+      unit_of_measurement: '%'
+      device_class: battery
+      state_class: measurement
   security_efficiency:
-    name: "Security Efficiency"
-    formula: 'count("device_class:door|window") / total_openings * 100'
+    name: Security Efficiency
+    formula: count("device_class:door|window") / total_openings * 100
     variables:
-      total_openings: "input_number.total_openings"
-    unit_of_measurement: "%"
-    state_class: "measurement"
-
-  # Test multiple OR patterns in same formula
+      total_openings: input_number.total_openings
+    metadata:
+      unit_of_measurement: '%'
+      state_class: measurement
   comprehensive_monitoring:
-    name: "Comprehensive Monitoring"
-    formula: 'sum("device_class:power|energy") + count("device_class:door|window|lock")'
-    unit_of_measurement: "units"
-    state_class: "measurement"
-
-  # Test OR pattern with more than 3 device classes
+    name: Comprehensive Monitoring
+    formula: sum("device_class:power|energy") + count("device_class:door|window|lock")
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
   multi_sensor_average:
-    name: "Multi-Sensor Average"
-    formula: 'avg("device_class:temperature|humidity|pressure|illuminance")'
-    unit_of_measurement: "units"
-    state_class: "measurement"
-
-  # Test with attributes - calculated attributes using OR patterns
+    name: Multi-Sensor Average
+    formula: avg("device_class:temperature|humidity|pressure|illuminance")
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
   advanced_security_analysis:
-    name: "Advanced Security Analysis"
-    formula: 'count("device_class:door|window|lock")'
+    name: Advanced Security Analysis
+    formula: count("device_class:door|window|lock")
     attributes:
       open_devices:
-        formula: 'count("device_class:door|window" > 0)'
-        unit_of_measurement: "devices"
+        formula: count("device_class:door|window" > 0)
+        metadata:
+          unit_of_measurement: devices
       security_percentage:
-        formula: 'state / 10 * 100'
-        unit_of_measurement: "%"
+        formula: state / 10 * 100
+        metadata:
+          unit_of_measurement: '%'
       daily_average:
-        formula: 'state * 24'
-        unit_of_measurement: "device-hours"
-    unit_of_measurement: "devices"
-    state_class: "measurement"
+        formula: state * 24
+        metadata:
+          unit_of_measurement: device-hours
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement

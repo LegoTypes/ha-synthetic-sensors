@@ -1,22 +1,22 @@
-version: "1.0"
-
+version: '1.0'
 sensors:
   local_power_sensor:
-    name: "Local Power Sensor"
-    device_identifier: "local_device:test_456"
-    formula: "local_power_meter"
+    name: Local Power Sensor
+    device_identifier: local_device:test_456
+    formula: local_power_meter
     variables:
-      local_power_meter: "sensor.local_power_meter"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
+      local_power_meter: sensor.local_power_meter
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   local_temperature_sensor:
-    name: "Local Temperature Sensor"
-    device_identifier: "local_device:test_456"
-    formula: "temp_reading"
+    name: Local Temperature Sensor
+    device_identifier: local_device:test_456
+    formula: temp_reading
     variables:
-      temp_reading: "sensor.local_temperature"
-    unit_of_measurement: "°C"
-    device_class: "temperature"
-    state_class: "measurement"
+      temp_reading: sensor.local_temperature
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement

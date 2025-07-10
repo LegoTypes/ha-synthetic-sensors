@@ -79,9 +79,11 @@ def sample_sensor_config() -> SensorConfig:
         id="main",
         formula="source_value",
         variables={"source_value": "sensor.test_source"},
-        unit_of_measurement="W",
-        device_class="power",
-        state_class="measurement",
+        metadata={
+            "unit_of_measurement": "W",
+            "device_class": "power",
+            "state_class": "measurement",
+        },
     )
 
     return SensorConfig(
@@ -1055,9 +1057,9 @@ class TestStorageManagerIntegration:
         assert dynamic_sensor["formula"] == 'sum("device_class:device_type")'
         assert "variables" in dynamic_sensor
         assert dynamic_sensor["variables"]["device_type"] == "input_select.monitoring_device_class"
-        assert dynamic_sensor["unit_of_measurement"] == "W"
-        assert dynamic_sensor["device_class"] == "power"
-        assert dynamic_sensor["state_class"] == "measurement"
+        assert dynamic_sensor["metadata"]["unit_of_measurement"] == "W"
+        assert dynamic_sensor["metadata"]["device_class"] == "power"
+        assert dynamic_sensor["metadata"]["state_class"] == "measurement"
 
         # Verify complex multi-formula sensor with attributes
         analysis_sensor = exported_data["sensors"]["energy_analysis_suite"]

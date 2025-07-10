@@ -16,6 +16,7 @@ import yaml as yaml_lib
 
 from .config_manager import ConfigManager
 from .config_models import FormulaConfig, SensorConfig
+from .config_types import GlobalSettingsDict
 from .entity_index import EntityIndex
 from .exceptions import SyntheticSensorsError
 from .sensor_set_bulk_ops import SensorSetBulkOps
@@ -305,7 +306,7 @@ class SensorSet:
         self._ensure_exists()
         return self._global_settings.get_global_settings()
 
-    async def async_set_global_settings(self, global_settings: dict[str, Any]) -> None:
+    async def async_set_global_settings(self, global_settings: GlobalSettingsDict) -> None:
         """
         Set global settings for this sensor set.
 
@@ -456,7 +457,9 @@ class SensorSet:
 
         # 3. Update global settings if specified (BEFORE entity ID changes to avoid conflicts)
         if modification.global_settings is not None:
-            await self._global_settings.update_global_settings_direct(modification.global_settings)
+            # Cast to GlobalSettingsDict since it's compatible
+            typed_global_settings: GlobalSettingsDict = modification.global_settings  # type: ignore[assignment]
+            await self._global_settings.update_global_settings_direct(typed_global_settings)
             changes_summary["global_settings_updated"] = True
 
         # 4. Apply entity ID changes (but don't update HA registry yet - collect changes)
@@ -543,7 +546,9 @@ class SensorSet:
             return
 
         final_sensor_list = list(final_sensors.values())
-        self.storage_manager.validate_no_global_conflicts(final_sensor_list, final_global_settings)
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = final_global_settings  # type: ignore[assignment]
+        self.storage_manager.validate_no_global_conflicts(final_sensor_list, typed_global_settings)
         self.storage_manager.validate_no_attribute_variable_conflicts(final_sensor_list)
 
     async def _apply_entity_id_changes_deferred(

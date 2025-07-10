@@ -17,7 +17,7 @@ from homeassistant.exceptions import ConfigEntryError
 import yaml
 
 from .config_models import Config, FormulaConfig, SensorConfig
-from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, AttributeConfigDict, ConfigDict, SensorConfigDict
+from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, AttributeConfigDict, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .dependency_parser import DependencyParser
 from .schema_validator import validate_yaml_config
 
@@ -216,7 +216,7 @@ class ConfigManager:
         return config
 
     def _parse_sensor_config(
-        self, sensor_key: str, sensor_data: SensorConfigDict, global_settings: dict[str, Any] | None = None
+        self, sensor_key: str, sensor_data: SensorConfigDict, global_settings: GlobalSettingsDict | None = None
     ) -> SensorConfig:
         """Parse sensor configuration from v2.0 dict format.
 
@@ -248,6 +248,9 @@ class ConfigManager:
         sensor.device_sw_version = sensor_data.get("device_sw_version")
         sensor.device_hw_version = sensor_data.get("device_hw_version")
         sensor.suggested_area = sensor_data.get("suggested_area")
+
+        # Copy sensor-level metadata
+        sensor.metadata = sensor_data.get("metadata", {})
 
         # Parse main formula (required)
         formula = self._parse_single_formula(sensor_key, sensor_data)
@@ -286,12 +289,9 @@ class ConfigManager:
             id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
             name=sensor_data.get("name"),
             formula=formula_str,
-            unit_of_measurement=sensor_data.get("unit_of_measurement"),
-            device_class=sensor_data.get("device_class"),
-            state_class=sensor_data.get("state_class"),
-            icon=sensor_data.get("icon"),
             attributes=sensor_data.get("extra_attributes", {}),
             variables=variables,
+            metadata=sensor_data.get("metadata", {}),
         )
 
     def _parse_attribute_formula(
@@ -335,12 +335,9 @@ class ConfigManager:
             id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
             name=f"{sensor_data.get('name', sensor_key)} - {attr_name}",
             formula=attr_formula,
-            unit_of_measurement=attr_config.get("unit_of_measurement"),
-            device_class=None,  # Attributes don't typically have device classes
-            state_class=None,  # Attributes don't typically have state classes
-            icon=attr_config.get("icon"),
             attributes={},
             variables=merged_variables,
+            metadata=attr_config.get("metadata", {}),
         )
 
     async def async_reload_config(self) -> Config:
@@ -654,14 +651,8 @@ class ConfigManager:
         """
         if formula.name:
             formula_data["name"] = formula.name
-        if formula.unit_of_measurement:
-            formula_data["unit_of_measurement"] = formula.unit_of_measurement
-        if formula.device_class:
-            formula_data["device_class"] = formula.device_class
-        if formula.state_class:
-            formula_data["state_class"] = formula.state_class
-        if formula.icon:
-            formula_data["icon"] = formula.icon
+        if formula.metadata:
+            formula_data["metadata"] = formula.metadata
         if formula.attributes:
             formula_data["attributes"] = formula.attributes
 

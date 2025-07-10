@@ -1,36 +1,36 @@
-version: "1.0"
-
+version: '1.0'
 sensors:
   test_entity_lifecycle:
-    name: "Entity Lifecycle Test"
-    description: "Test sensor for entity lifecycle management"
-    formula: "temp + humidity"
-    unit_of_measurement: "index"
-    state_class: "measurement"
+    name: Entity Lifecycle Test
+    description: Test sensor for entity lifecycle management
+    formula: temp + humidity
     variables:
-      temp: "sensor.temperature"
-      humidity: "sensor.humidity"
+      temp: sensor.temperature
+      humidity: sensor.humidity
     enabled: true
-
+    metadata:
+      unit_of_measurement: index
+      state_class: measurement
   test_dynamic_creation:
-    name: "Dynamic Creation Test"
-    description: "Test sensor for dynamic entity creation"
-    formula: "power * status"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    name: Dynamic Creation Test
+    description: Test sensor for dynamic entity creation
+    formula: power * status
     variables:
-      power: "sensor.power_meter"
-      status: "sensor.status_indicator"
+      power: sensor.power_meter
+      status: sensor.status_indicator
     enabled: true
-
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   test_configuration_reload:
-    name: "Configuration Reload Test"
-    description: "Test sensor for configuration reload functionality"
-    formula: "load + efficiency"
-    unit_of_measurement: "%"
-    state_class: "measurement"
+    name: Configuration Reload Test
+    description: Test sensor for configuration reload functionality
+    formula: load + efficiency
     variables:
-      load: "sensor.system_load"
-      efficiency: "sensor.efficiency_rating"
+      load: sensor.system_load
+      efficiency: sensor.efficiency_rating
     enabled: true
+    metadata:
+      unit_of_measurement: '%'
+      state_class: measurement

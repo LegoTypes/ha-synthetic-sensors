@@ -238,9 +238,9 @@ class TestOrRegexIntegration:
 
         assert config["name"] == "Circuit or Kitchen Power Sum"
         assert config["formula"] == 'sum("regex:circuit_pattern|kitchen_pattern")'
-        assert config["unit_of_measurement"] == "W"
-        assert config["device_class"] == "power"
-        assert config["state_class"] == "measurement"
+        assert config["metadata"]["unit_of_measurement"] == "W"
+        assert config["metadata"]["device_class"] == "power"
+        assert config["metadata"]["state_class"] == "measurement"
 
     def test_yaml_multi_room_temperature_config(self):
         """Test YAML configuration for multi-room temperature."""
@@ -248,8 +248,8 @@ class TestOrRegexIntegration:
 
         assert config["name"] == "Multi-Room Temperature Average"
         assert config["formula"] == 'avg("regex:kitchen_pattern|living_pattern|bedroom_pattern")'
-        assert config["unit_of_measurement"] == "°C"
-        assert config["device_class"] == "temperature"
+        assert config["metadata"]["unit_of_measurement"] == "°C"
+        assert config["metadata"]["device_class"] == "temperature"
 
     def test_yaml_comprehensive_regex_analysis_config(self):
         """Test YAML configuration for comprehensive regex analysis with OR patterns in attributes."""
@@ -354,8 +354,8 @@ class TestOrRegexIntegration:
 
         assert config["name"] == "Direct Regex OR"
         assert config["formula"] == 'sum("regex:input_text.circuit_regex|input_text.kitchen_regex")'
-        assert config["unit_of_measurement"] == "W"
-        assert config["device_class"] == "power"
+        assert config["metadata"]["unit_of_measurement"] == "W"
+        assert config["metadata"]["device_class"] == "power"
         # Should have no variables section since it uses direct entity IDs
         assert "variables" not in config
 
@@ -365,8 +365,8 @@ class TestOrRegexIntegration:
 
         assert config["name"] == "Mixed Regex OR"
         assert config["formula"] == 'sum("regex:variable_pattern|input_text.direct_regex_pattern")'
-        assert config["unit_of_measurement"] == "W"
-        assert config["device_class"] == "power"
+        assert config["metadata"]["unit_of_measurement"] == "W"
+        assert config["metadata"]["device_class"] == "power"
 
         # Should have variables for the variable part only
         variables = config["variables"]
@@ -379,6 +379,6 @@ class TestOrRegexIntegration:
 
         assert config["name"] == "Direct Three-Way Regex"
         assert config["formula"] == 'count("regex:input_text.pattern1|input_text.pattern2|input_text.pattern3")'
-        assert config["unit_of_measurement"] == "entities"
+        assert config["metadata"]["unit_of_measurement"] == "entities"
         # Should have no variables section
         assert "variables" not in config

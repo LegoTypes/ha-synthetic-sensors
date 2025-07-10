@@ -86,8 +86,11 @@ sensors:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
       conversion_factor: 1000                    # Literal: watts to kilowatts
-    unit_of_measurement: "¢/h"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "¢/h"
+      state_class: "measurement"
+      device_class: "monetary"
+      icon: "mdi:currency-usd"
 
   # Another simple sensor with numeric literals
   solar_sold_power:
@@ -96,9 +99,12 @@ sensors:
     variables:
       grid_power: "sensor.span_panel_current_power"
       zero_threshold: 0                         # Literal: threshold value
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      suggested_display_precision: 0
+      icon: "mdi:solar-power"
 ```
 
 ### Rich sensors with calculated attributes
@@ -113,35 +119,51 @@ sensors:
     attributes:
       daily_projected:
         formula: "state * 24" # ref by main state alias
-        unit_of_measurement: "¢"
+        metadata:
+          unit_of_measurement: "¢"
+          suggested_display_precision: 2
       monthly_projected:
         formula: "energy_cost_analysis * 24 * 30" # ref by main sensor key
-        unit_of_measurement: "¢"
+        metadata:
+          unit_of_measurement: "¢"
+          suggested_display_precision: 2
       annual_projected:
         formula: "sensor.energy_cost_analysis * 24 * 365" # ref by entity_id
-        unit_of_measurement: "¢"
+        metadata:
+          unit_of_measurement: "¢"
+          suggested_display_precision: 0
       battery_efficiency:
         formula: "current_power * device.battery_level / 100" # using attribute access
         variables:
           device: "sensor.backup_device"
-        unit_of_measurement: "W"
+        metadata:
+          unit_of_measurement: "W"
+          device_class: "power"
       efficiency:
         formula: "state / max_capacity * 100"
         variables:
           max_capacity: "sensor.max_power_capacity"
-        unit_of_measurement: "%"
+        metadata:
+          unit_of_measurement: "%"
+          suggested_display_precision: 1
       temperature_analysis:
         formula: "outdoor_temp - indoor_temp"
         variables:
           outdoor_temp: "sensor.outdoor_temperature"
           indoor_temp: "sensor.indoor_temperature"
-        unit_of_measurement: "°C"
+        metadata:
+          unit_of_measurement: "°C"
+          device_class: "temperature"
+          suggested_display_precision: 1
     variables:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
-    unit_of_measurement: "¢/h"
-    device_class: "monetary"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "¢/h"
+      device_class: "monetary"
+      state_class: "measurement"
+      icon: "mdi:currency-usd"
+      attribution: "Calculated from SPAN Panel data"
 ```
 
 ### Device Association
@@ -157,9 +179,12 @@ sensors:
     variables:
       solar_output: "sensor.solar_current_power"
       solar_capacity: "sensor.solar_max_capacity"
-    unit_of_measurement: "%"
-    device_class: "power_factor"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "%"
+      device_class: "power_factor"
+      state_class: "measurement"
+      suggested_display_precision: 1
+      icon: "mdi:solar-panel"
     # Device association fields
     device_identifier: "solar_inverter_001"
     device_name: "Solar Inverter"
@@ -176,9 +201,12 @@ sensors:
     variables:
       battery_level: "sensor.battery_percentage"
       battery_capacity: "sensor.battery_total_capacity"
-    unit_of_measurement: "kWh"
-    device_class: "energy_storage"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy_storage"
+      state_class: "measurement"
+      suggested_display_precision: 2
+      icon: "mdi:battery"
     # Only device_identifier needed for existing devices
     device_identifier: "solar_inverter_001"
 ```
@@ -238,6 +266,155 @@ while avoiding conflicts between sensors from different devices.
 - Attributes can also reference other entities directly (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
 
+### Metadata Dictionary
+
+The `metadata` dictionary provides extensible support for all Home Assistant sensor propertiesl.
+This metadata is added directly to the sensor when the sensor is created in Home Assistant.
+
+```yaml
+sensors:
+  comprehensive_sensor:
+    name: "Comprehensive Sensor Example"
+    formula: "power_input * efficiency_factor"
+    variables:
+      power_input: "sensor.input_power"
+      efficiency_factor: 0.95
+    metadata:
+      # Core sensor properties
+      unit_of_measurement: "W"
+      native_unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+      # Display properties
+      suggested_display_precision: 2
+      suggested_unit_of_measurement: "kW"
+      icon: "mdi:flash"
+      attribution: "Data from SPAN Panel"
+
+      # Entity registry properties
+      entity_category: "diagnostic"
+      entity_registry_enabled_default: true
+      entity_registry_visible_default: true
+
+      # Advanced properties
+      assumed_state: false
+      last_reset: null
+      options: ["low", "medium", "high"]  # for enum device classes
+
+      # Custom properties (passed through to HA)
+      custom_property: "custom_value"
+```
+
+**Examples of Metadata Properties:**
+
+**Core Sensor Properties:**
+
+- `unit_of_measurement` - Primary unit for the sensor value
+- `native_unit_of_measurement` - Native unit before conversion
+- `device_class` - HA device class (power, energy, temperature, etc.)
+- `state_class` - How HA should handle the state (measurement, total, total_increasing)
+
+**Display Properties:**
+
+- `suggested_display_precision` - Number of decimal places to show
+- `suggested_unit_of_measurement` - Preferred unit for display
+- `icon` - Material Design icon (mdi:icon-name)
+- `attribution` - Data source attribution text
+
+**Entity Registry Properties:**
+
+- `entity_category` - Category for grouping (config, diagnostic, system)
+- `entity_registry_enabled_default` - Whether enabled by default
+- `entity_registry_visible_default` - Whether visible by default
+
+**Advanced Properties:**
+
+- `assumed_state` - Whether the state is assumed or confirmed
+- `last_reset` - When the sensor was last reset (for totals)
+- `options` - List of valid options for enum device classes
+
+**Extensibility:**
+
+- Any additional properties are passed through to Home Assistant
+- Custom properties can be added for integration-specific needs
+- Properties are validated against Home Assistant's entity model
+
+## Metadata Architecture
+
+### Metadata Inheritance Rules
+
+The metadata system follows a clear hierarchy:
+
+1. **Global Metadata** (lowest precedence): Defined in `global_settings.metadata`
+   - Applied to all sensors in the YAML file
+   - Only affects sensors, never attributes
+
+2. **Sensor Metadata** (medium precedence): Defined in sensor `metadata` section
+   - Overrides global metadata for the same property
+   - Merged with global metadata during sensor creation
+
+3. **Attribute Metadata** (independent): Defined in attribute `metadata` section
+   - Completely independent from global and sensor metadata
+   - No inheritance or merging with sensor-level metadata
+
+### Validation Rules
+
+**Entity-Only Properties:**
+These properties are only valid for sensors and will cause validation errors if used in attribute metadata:
+
+- **Device Properties**: `device_class`, `state_class`
+- **Registry Properties**: `entity_category`, `entity_registry_enabled_default`, `entity_registry_visible_default`
+- **Behavior Properties**: `assumed_state`, `last_reset`, `force_update`, `available`, `options`
+
+**Attribute-Safe Properties:**
+These properties are valid for both sensors and attributes:
+
+- **Display Properties**: `unit_of_measurement`, `icon`, `suggested_display_precision`, `suggested_unit_of_measurement`
+- **Attribution**: `attribution`
+- **Custom Properties**: Any custom properties specific to your integration
+
+**Example of Validation Errors:**
+
+```yaml
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    formula: "base_power"
+    metadata:
+      device_class: "power"  # ✅ Valid for sensors
+      unit_of_measurement: "W"
+    attributes:
+      daily_total:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "Wh"  # ✅ Valid for attributes
+          device_class: "energy"     # ❌ ERROR: Not allowed for attributes
+```
+
+**Attribute Metadata:**
+Attributes define their own metadata independently. Attributes cannot use entity-specific metadata properties:
+
+```yaml
+attributes:
+  daily_total:
+    formula: "state * 24"
+    metadata:
+      unit_of_measurement: "kWh"
+      suggested_display_precision: 3
+      icon: "mdi:lightning-bolt"
+      # device_class: "energy"  # ERROR: Not allowed for attributes
+```
+
+**Attribute Metadata Restrictions:**
+The following properties are only valid for sensors, not attributes:
+
+- `device_class`, `state_class`, `entity_category`
+- `entity_registry_enabled_default`, `entity_registry_visible_default`
+- `assumed_state`, `last_reset`, `force_update`, `available`, `options`
+
+Attempting to use these properties in attribute metadata will cause validation errors.
+
 ### Global YAML Settings
 
 Global settings allow you to define common configuration that applies to all sensors in a YAML file, reducing duplication
@@ -252,6 +429,11 @@ global_settings:
     electricity_rate: "input_number.electricity_rate_cents_kwh"
     base_power_meter: "sensor.span_panel_instantaneous_power"
     conversion_factor: 1000
+  metadata:
+    # Common metadata applied to all sensors
+    attribution: "Data from SPAN Panel"
+    entity_registry_enabled_default: true
+    suggested_display_precision: 2
 
 sensors:
   # These sensors inherit global settings
@@ -260,17 +442,20 @@ sensors:
     # No device_identifier needed - inherits from global_settings
     formula: "base_power_meter"
     # No variables needed - inherits from global_settings
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      # Inherits attribution, entity_registry_enabled_default, suggested_display_precision from global
 
   energy_cost:
     name: "Energy Cost"
     # No device_identifier needed - inherits from global_settings
     formula: "base_power_meter * electricity_rate / conversion_factor"
     # Uses global variables: base_power_meter, electricity_rate, conversion_factor
-    unit_of_measurement: "¢/h"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "¢/h"
+      state_class: "measurement"
 
   mixed_variables_sensor:
     name: "Mixed Variables"
@@ -279,21 +464,37 @@ sensors:
     variables:
       local_adjustment: "sensor.local_adjustment_value"
     # Uses base_power_meter from global, local_adjustment from local
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 ```
 
 **Supported Global Settings:**
 
 - **`device_identifier`**: Applied to sensors that don't specify their own device_identifier
 - **`variables`**: Available to all sensors in the YAML file
+- **`metadata`**: Applied to all sensors, with sensor-level metadata taking precedence
+
+**Global Metadata Inheritance:**
+
+- Global metadata applies only to sensors, not attributes
+- Sensor-level metadata overrides global metadata for the same property
+- Attributes define their own metadata independently with no inheritance
+- Global metadata is merged at the sensor level during sensor creation
 
 **Variable Conflict Rules:**
 
 - Global and sensor variables with the same name **must have identical values**
 - Different values for the same variable name cause validation errors
 - Use different variable names to avoid conflicts
+
+**Metadata Architecture:**
+
+- **Global metadata**: Applied to all sensors in the YAML file
+- **Sensor metadata**: Overrides global metadata for specific sensors
+- **Attribute metadata**: Independent of global and sensor metadata
+- **Validation**: Entity-only properties rejected in attribute metadata
 
 ## Entity Reference Patterns
 
@@ -351,26 +552,39 @@ sensors:
     attributes:
       daily_projection:
         formula: "energy_analysis * 24" # References main sensor by key
+        metadata:
+          unit_of_measurement: "Wh"
+          device_class: "energy"
       efficiency_percent:
         formula: "solar_power / (grid_power + solar_power) * efficiency_factor * 100"
-        unit_of_measurement: "%"
+        metadata:
+          unit_of_measurement: "%"
+          suggested_display_precision: 1
       cost_with_tax:
         formula: "energy_analysis * (1 + tax_rate)"  # Uses sensor-level variable
-        unit_of_measurement: "¢"
+        metadata:
+          unit_of_measurement: "¢"
+          suggested_display_precision: 2
       low_battery_count:
         formula: "count(battery_devices.battery_level<20)" # Uses attribute-level variable
         variables:
           battery_devices: "device_class:battery"  # Attribute-specific variable
-        unit_of_measurement: "devices"
+        metadata:
+          unit_of_measurement: "devices"
+          icon: "mdi:battery-alert"
       temperature_difference:
         formula: "outdoor_temp - indoor_temp"  # Uses only attribute-level variables
         variables:
           outdoor_temp: "sensor.outdoor_temperature"
           indoor_temp: "sensor.indoor_temperature"
-        unit_of_measurement: "°C"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+        metadata:
+          unit_of_measurement: "°C"
+          device_class: "temperature"
+          suggested_display_precision: 1
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 ```
 
 ```yaml
@@ -384,9 +598,10 @@ sensors:
       local_meter_power: "span.meter_001"  # From integration callback
       grid_power: "sensor.grid_power"      # From Home Assistant
       solar_power: "sensor.solar_inverter" # From Home Assistant
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # Purely integration data
   internal_efficiency:
@@ -395,7 +610,9 @@ sensors:
     variables:
       internal_sensor_a: "span.efficiency_input"   # From integration
       internal_sensor_b: "span.efficiency_baseline" # From integration
-    unit_of_measurement: "%"
+    metadata:
+      unit_of_measurement: "%"
+      suggested_display_precision: 1
 ```
 
 **Data Source Resolution:**
@@ -417,18 +634,26 @@ sensors:
     formula: sum("regex:circuit_pattern")
     variables:
       circuit_pattern: "input_text.circuit_regex_pattern"
-    unit_of_measurement: "W"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # OR patterns for multiple conditions
   security_monitoring:
     name: "Security Device Count"
     formula: count("device_class:door|window|lock")
-    unit_of_measurement: "devices"
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:security"
 
   main_floor_power:
     name: "Main Floor Power"
     formula: sum("area:living_room|kitchen|dining_room")
-    unit_of_measurement: "W"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # Attribute filtering with collection variables
   low_battery_devices:
@@ -436,13 +661,17 @@ sensors:
     formula: count("battery_devices.battery_level<20")
     variables:
       battery_devices: "device_class:battery"
-    unit_of_measurement: "count"
+    metadata:
+      unit_of_measurement: "count"
+      icon: "mdi:battery-alert"
 
   # Complex mixed patterns
   comprehensive_analysis:
     name: "Comprehensive Analysis"
     formula: 'sum("device_class:power|energy") + count("area:upstairs|downstairs")'
-    unit_of_measurement: "mixed"
+    metadata:
+      unit_of_measurement: "mixed"
+      icon: "mdi:chart-line"
 ```
 
 **Available Functions:** `sum()`, `avg()`/`mean()`, `count()`, `min()`/`max()`, `std()`/`var()`
@@ -481,6 +710,10 @@ sensors:
     formula: "count(power_pattern) > 0 ? sum(power_pattern) : null"
     variables:
       power_pattern: "device_class:power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
     # This sensor will be unavailable when no power entities exist,
     # but will show 0 when power entities exist but all have zero values
 ```
@@ -504,7 +737,10 @@ sensors:
       freezing_f: 32                     # Literal: Fahrenheit freezing point
       conversion_factor: 5               # Literal: F to C numerator
       celsius_factor: 9                  # Literal: F to C denominator
-    unit_of_measurement: "°C"
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+      suggested_display_precision: 1
 
   power_efficiency:
     name: "Power Efficiency"
@@ -513,7 +749,9 @@ sensors:
       actual_power: "sensor.current_power"
       rated_power: 1000                  # Literal: rated power in watts
       percentage: 100                    # Literal: convert to percentage
-    unit_of_measurement: "%"
+    metadata:
+      unit_of_measurement: "%"
+      suggested_display_precision: 1
 
   cost_calculator:
     name: "Energy Cost"
@@ -522,7 +760,10 @@ sensors:
       energy_kwh: "sensor.energy_usage"
       rate_per_kwh: 0.12                 # Literal: cost per kWh
       tax_rate: 0.085                    # Literal: tax percentage
-    unit_of_measurement: "$"
+    metadata:
+      unit_of_measurement: "$"
+      device_class: "monetary"
+      suggested_display_precision: 2
 ```
 
 **Supported literal types:**
@@ -544,7 +785,9 @@ sensors:
       motion_sensor: "binary_sensor.living_room_motion"    # "motion" → 1.0, "clear" → 0.0
       door_sensor: "binary_sensor.front_door"              # "open" → 1.0, "closed" → 0.0
       switch_state: "switch.living_room_light"             # "on" → 1.0, "off" → 0.0
-    unit_of_measurement: "points"
+    metadata:
+      unit_of_measurement: "points"
+      icon: "mdi:chart-line"
 ```
 
 **Supported boolean states (→ 1.0):**

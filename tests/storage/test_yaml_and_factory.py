@@ -80,8 +80,8 @@ class TestYamlConfigurationLoading:
         sensors = config["sensors"]
         assert "current_energy_cost_rate" in sensors
         sensor = sensors["current_energy_cost_rate"]
-        assert sensor["device_class"] == "monetary"
-        assert sensor["unit_of_measurement"] == "$/h"
+        assert sensor["metadata"]["device_class"] == "monetary"
+        assert sensor["metadata"]["unit_of_measurement"] == "$/h"
 
     def test_load_simple_test_yaml(self, simple_test_yaml):
         """Test loading simple test YAML configuration."""
@@ -193,10 +193,12 @@ class TestEntityFactory:
         formula_config = {
             "id": "test_formula",
             "name": "Test Formula",
-            "unit_of_measurement": "W",
-            "device_class": "power",
-            "state_class": "measurement",
-            "icon": "mdi:flash",
+            "metadata": {
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+                "icon": "mdi:flash",
+            },
         }
 
         description = entity_factory.create_entity_description(sensor_config, formula_config)
@@ -205,17 +207,51 @@ class TestEntityFactory:
         assert description.unique_id == "test_sensor_test_formula"
         assert description.entity_id == "sensor.test_sensor_test_formula"
         assert description.name == "Test Formula"  # Formula name takes priority
+
+        # Verify metadata extraction works correctly
         assert description.unit_of_measurement == "W"
         assert description.device_class == "power"
         assert description.state_class == "measurement"
         assert description.icon == "mdi:flash"
+
+    def test_create_entity_description_metadata_merging(self, entity_factory):
+        """Test that sensor and formula metadata are properly merged with formula taking priority."""
+        sensor_config = {
+            "unique_id": "test_sensor",
+            "name": "Test Sensor",
+            "metadata": {
+                "unit_of_measurement": "V",  # Will be overridden by formula
+                "device_class": "voltage",  # Will be overridden by formula
+                "attribution": "Sensor level attribution",  # Will be kept
+                "suggested_display_precision": 2,  # Will be kept
+            },
+        }
+
+        formula_config = {
+            "id": "test_formula",
+            "name": "Test Formula",
+            "metadata": {
+                "unit_of_measurement": "W",  # Overrides sensor
+                "device_class": "power",  # Overrides sensor
+                "state_class": "measurement",  # New from formula
+                "icon": "mdi:flash",  # New from formula
+            },
+        }
+
+        description = entity_factory.create_entity_description(sensor_config, formula_config)
+
+        # Verify formula metadata takes priority
+        assert description.unit_of_measurement == "W"  # From formula
+        assert description.device_class == "power"  # From formula
+        assert description.state_class == "measurement"  # From formula
+        assert description.icon == "mdi:flash"  # From formula
 
     def test_create_entity_description_fallback_names(self, entity_factory):
         """Test entity description with fallback naming."""
         # Test with sensor name only (no formula name)
         sensor_config = {"unique_id": "test_sensor", "name": "Test Sensor"}
 
-        formula_config = {"id": "test_formula", "unit_of_measurement": "W"}
+        formula_config = {"id": "test_formula", "metadata": {"unit_of_measurement": "W"}}
 
         description = entity_factory.create_entity_description(sensor_config, formula_config)
         assert description.name == "Test Sensor"  # Falls back to sensor name

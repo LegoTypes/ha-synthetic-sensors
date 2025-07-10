@@ -83,9 +83,11 @@ def sample_sensor_config():
                 id="main",
                 formula="source_value",
                 variables={"source_value": "sensor.source_1"},
-                unit_of_measurement="W",
-                device_class="power",
-                state_class="measurement",
+                metadata={
+                    "unit_of_measurement": "W",
+                    "device_class": "power",
+                    "state_class": "measurement",
+                },
             )
         ],
         device_identifier="test-device-123",
@@ -629,9 +631,11 @@ class TestSensorSetIntegration:
                             id="new_crud_sensor",  # Formula ID must match sensor unique_id for main formula
                             formula="crud_value",
                             variables={"crud_value": "sensor.crud_source"},
-                            unit_of_measurement="A",
-                            device_class="current",
-                            state_class="measurement",
+                            metadata={
+                                "unit_of_measurement": "A",
+                                "device_class": "current",
+                                "state_class": "measurement",
+                            },
                         )
                     ],
                     enabled=True,
@@ -659,8 +663,9 @@ class TestSensorSetIntegration:
                 assert new_sensor_data["name"] == "New CRUD Sensor"
                 assert new_sensor_data["formula"] == "crud_value"
                 assert new_sensor_data["variables"]["crud_value"] == "sensor.crud_source"
-                assert new_sensor_data["unit_of_measurement"] == "A"
-                assert new_sensor_data["device_class"] == "current"
+                assert new_sensor_data["metadata"]["unit_of_measurement"] == "A"
+                assert new_sensor_data["metadata"]["device_class"] == "current"
+                assert new_sensor_data["metadata"]["state_class"] == "measurement"
 
                 # Verify the sensor count increased
                 assert len(final_data["sensors"]) == len(initial_data["sensors"]) + 1
@@ -713,9 +718,11 @@ class TestSensorSetIntegration:
                             id=original_sensor_key,  # Formula ID must match sensor unique_id for main formula
                             formula="updated_source_value",  # Changed formula
                             variables={"updated_source_value": "sensor.updated_source"},  # Changed variables
-                            unit_of_measurement="V",  # Changed unit
-                            device_class="voltage",  # Changed device class
-                            state_class="measurement",
+                            metadata={
+                                "unit_of_measurement": "V",  # Changed unit
+                                "device_class": "voltage",  # Changed device class
+                                "state_class": "measurement",
+                            },
                         )
                     ],
                     enabled=True,
@@ -738,8 +745,9 @@ class TestSensorSetIntegration:
                 assert updated_sensor_data["name"] == "Updated Sensor Name"
                 assert updated_sensor_data["formula"] == "updated_source_value"
                 assert updated_sensor_data["variables"]["updated_source_value"] == "sensor.updated_source"
-                assert updated_sensor_data["unit_of_measurement"] == "V"
-                assert updated_sensor_data["device_class"] == "voltage"
+                assert updated_sensor_data["metadata"]["unit_of_measurement"] == "V"
+                assert updated_sensor_data["metadata"]["device_class"] == "voltage"
+                assert updated_sensor_data["metadata"]["state_class"] == "measurement"
 
                 # Verify the sensor count stayed the same
                 assert len(final_data["sensors"]) == len(initial_data["sensors"])
@@ -788,9 +796,11 @@ class TestSensorSetIntegration:
                             id="second_sensor",
                             formula="second_value",
                             variables={"second_value": "sensor.second_source"},
-                            unit_of_measurement="W",
-                            device_class="power",
-                            state_class="measurement",
+                            metadata={
+                                "unit_of_measurement": "W",
+                                "device_class": "power",
+                                "state_class": "measurement",
+                            },
                         )
                     ],
                     enabled=True,
@@ -880,8 +890,7 @@ class TestSensorSetIntegration:
                             id="new_sensor",
                             formula="new_value",
                             variables={"new_value": "sensor.new_source"},
-                            unit_of_measurement="A",
-                            device_class="current",
+                            metadata={"unit_of_measurement": "A", "device_class": "current"},
                         )
                     ],
                     enabled=True,
@@ -898,8 +907,7 @@ class TestSensorSetIntegration:
                             id=original_sensor_key,
                             formula="updated_original_value",
                             variables={"updated_original_value": "sensor.updated_original_source"},
-                            unit_of_measurement="V",
-                            device_class="voltage",
+                            metadata={"unit_of_measurement": "V", "device_class": "voltage"},
                         )
                     ],
                     enabled=True,
@@ -941,13 +949,13 @@ class TestSensorSetIntegration:
                 updated_data = final_data["sensors"][original_sensor_key]
                 assert updated_data["name"] == "Updated Original Sensor"
                 assert updated_data["formula"] == "updated_original_value"
-                assert updated_data["device_class"] == "voltage"
+                assert updated_data["metadata"]["device_class"] == "voltage"
 
                 # Verify new sensor
                 new_data = final_data["sensors"]["new_sensor"]
                 assert new_data["name"] == "New Sensor"
                 assert new_data["formula"] == "new_value"
-                assert new_data["device_class"] == "current"
+                assert new_data["metadata"]["device_class"] == "current"
 
     @pytest.mark.asyncio
     async def test_error_handling_sensor_not_exists(self, storage_manager):
@@ -1037,17 +1045,21 @@ class TestSensorSetIntegration:
                                 "entity_id": "sensor.custom_power_monitor",
                                 "formula": "power_value",
                                 "variables": {"power_value": "sensor.source_power"},
-                                "unit_of_measurement": "W",
-                                "device_class": "power",
-                                "state_class": "measurement",
+                                "metadata": {
+                                    "unit_of_measurement": "W",
+                                    "device_class": "power",
+                                    "state_class": "measurement",
+                                },
                             },
                             "sensor_without_entity_id": {
                                 "name": "Sensor Without Custom Entity ID",
                                 "formula": "energy_value",
                                 "variables": {"energy_value": "sensor.source_energy"},
-                                "unit_of_measurement": "kWh",
-                                "device_class": "energy",
-                                "state_class": "total_increasing",
+                                "metadata": {
+                                    "unit_of_measurement": "kWh",
+                                    "device_class": "energy",
+                                    "state_class": "total_increasing",
+                                },
                             },
                         },
                     }

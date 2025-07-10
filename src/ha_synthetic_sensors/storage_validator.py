@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .config_models import SensorConfig
+from .config_types import GlobalSettingsDict
 from .exceptions import SyntheticSensorsConfigError
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ class ValidationHandler:
         """Initialize validation handler."""
         self.storage_manager = storage_manager
 
-    def validate_no_global_conflicts(self, sensors: list[SensorConfig], global_settings: dict[str, Any]) -> None:
+    def validate_no_global_conflicts(self, sensors: list[SensorConfig], global_settings: GlobalSettingsDict) -> None:
         """Validate that global variables don't conflict with sensor formulas.
 
         Args:

@@ -863,7 +863,10 @@ class TestAsyncMethods:
     def test_config_to_yaml_conversion(self, config_manager):
         """Test conversion of config to YAML format."""
         formula = FormulaConfig(
-            id="test", formula="A + B", variables={"A": "sensor.test_a", "B": "sensor.test_b"}, unit_of_measurement="W"
+            id="test",
+            formula="A + B",
+            variables={"A": "sensor.test_a", "B": "sensor.test_b"},
+            metadata={"unit_of_measurement": "W"},
         )
         sensor = SensorConfig(unique_id="test_sensor", name="Test Sensor", formulas=[formula], device_identifier="test_device")
         config = Config(version="1.0", sensors=[sensor])

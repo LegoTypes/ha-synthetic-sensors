@@ -9,8 +9,9 @@ sensors:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
       conversion_factor: 1000                    # Literal: watts to kilowatts
-    unit_of_measurement: "¢/h"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "¢/h"
+      state_class: "measurement"
 
   # Another simple sensor with numeric literals
   solar_sold_power:
@@ -19,9 +20,10 @@ sensors:
     variables:
       grid_power: "sensor.span_panel_current_power"
       zero_threshold: 0                         # Literal: threshold value
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   temperature_converter:
     name: "Temperature Converter"
@@ -31,7 +33,8 @@ sensors:
       freezing_f: 32                     # Literal: Fahrenheit freezing point
       conversion_factor: 5               # Literal: F to C numerator
       celsius_factor: 9                  # Literal: F to C denominator
-    unit_of_measurement: "°C"
+    metadata:
+      unit_of_measurement: "°C"
 
   power_efficiency:
     name: "Power Efficiency"
@@ -40,4 +43,5 @@ sensors:
       actual_power: "sensor.current_power"
       rated_power: 1000                  # Literal: rated power in watts
       percentage: 100                    # Literal: convert to percentage
-    unit_of_measurement: "%"
+    metadata:
+      unit_of_measurement: "%"

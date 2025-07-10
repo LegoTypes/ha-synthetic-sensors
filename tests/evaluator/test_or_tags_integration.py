@@ -432,7 +432,7 @@ class TestORTagsIntegration:
         assert 'count("tags:variable_tag|input_select.direct_tag")' in content
 
         # Should have variable definition
-        assert 'variable_tag: "input_select.variable_tag_type"' in content
+        assert "variable_tag: input_select.variable_tag_type" in content
 
     def test_yaml_direct_three_way_tags_config(self, yaml_config_path):
         """Test YAML configuration with direct three-way tags OR pattern."""

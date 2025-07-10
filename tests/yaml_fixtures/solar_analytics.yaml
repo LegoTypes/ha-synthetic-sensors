@@ -1,21 +1,21 @@
-# Solar Analytics Example - Based on Feature Planning Document
-version: "1.0"
-
+version: '1.0'
 sensors:
-  solar_sold_positive:                    # Sensor key becomes the unique_id
-    name: "Solar Sold (Positive Value)"   # OPTIONAL: Display name only
-    formula: "abs(min(grid_power, 0))"
+  solar_sold_positive:
+    name: Solar Sold (Positive Value)
+    formula: abs(min(grid_power, 0))
     variables:
-      grid_power: "sensor.span_panel_current_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  solar_self_consumption_rate:           # Sensor key becomes the unique_id
-    name: "Solar Self-Consumption Rate"  # OPTIONAL: Display name
-    formula: "if(solar_production > 0, (solar_production - solar_export) / solar_production * 100, 0)"
+      grid_power: sensor.span_panel_current_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  solar_self_consumption_rate:
+    name: Solar Self-Consumption Rate
+    formula: if(solar_production > 0, (solar_production - solar_export) / solar_production
+      * 100, 0)
     variables:
-      solar_production: "sensor.span_panel_solar_inverter_instant_power"
-      solar_export: "sensor.solar_sold_positive"  # References by entity ID (now simplified)
-    unit_of_measurement: "%"
-    state_class: "measurement"
+      solar_production: sensor.span_panel_solar_inverter_instant_power
+      solar_export: sensor.solar_sold_positive
+    metadata:
+      unit_of_measurement: '%'
+      state_class: measurement

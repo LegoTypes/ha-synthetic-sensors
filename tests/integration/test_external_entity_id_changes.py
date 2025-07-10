@@ -432,9 +432,11 @@ class TestExternalEntityIdChanges:
                     id="test_power_sensor",
                     formula="power_meter * efficiency",
                     variables={"power_meter": "sensor.test_power_meter", "efficiency": 0.95},
-                    unit_of_measurement="W",
-                    device_class="power",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "W",
+                        "device_class": "power",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )

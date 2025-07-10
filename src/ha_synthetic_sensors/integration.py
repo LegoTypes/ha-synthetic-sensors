@@ -573,14 +573,16 @@ sensors:
         formula: >-
           entity('sensor.electricity_rate') *
           entity('sensor.span_panel_instantaneous_power') / 1000
-        unit_of_measurement: "$/h"
-        device_class: "monetary"
-        icon: "mdi:currency-usd"
+        metadata:
+          unit_of_measurement: "$/h"
+          device_class: "monetary"
+          icon: "mdi:currency-usd"
 
       - name: "daily_projected_cost"
         formula: "entity('sensor.cost_analysis_current_cost_rate') * 24"
-        unit_of_measurement: "$"
-        device_class: "monetary"
+        metadata:
+          unit_of_measurement: "$"
+          device_class: "monetary"
 
   - name: "solar_analytics"
     friendly_name: "Solar Analytics"
@@ -592,16 +594,18 @@ sensors:
         formula: >-
           entity('sensor.solar_production') /
           max(entity('sensor.solar_irradiance'), 1) * 100
-        unit_of_measurement: "%"
-        device_class: "energy"
+        metadata:
+          unit_of_measurement: "%"
+          device_class: "energy"
 
       - name: "net_energy_flow"
         formula: >-
           entity('sensor.solar_production') -
           entity('sensor.span_panel_instantaneous_power')
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+        metadata:
+          unit_of_measurement: "W"
+          device_class: "power"
+          state_class: "measurement"
 
 global_settings:
   default_update_interval: 30

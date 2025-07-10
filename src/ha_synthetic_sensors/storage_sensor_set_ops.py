@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .config_manager import ConfigManager
+from .config_types import GlobalSettingsDict
 from .exceptions import SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -34,7 +35,7 @@ class SensorSetOpsHandler:
         device_identifier: str | None = None,
         name: str | None = None,
         description: str | None = None,
-        global_settings: dict[str, Any] | None = None,
+        global_settings: GlobalSettingsDict | None = None,
     ) -> None:
         """Create a new sensor set.
 

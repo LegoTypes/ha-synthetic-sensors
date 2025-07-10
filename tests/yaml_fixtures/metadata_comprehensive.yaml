@@ -1,0 +1,76 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+  metadata:
+    attribution: "Data from Test Device"
+    entity_registry_enabled_default: true
+    suggested_display_precision: 2
+
+sensors:
+  # Sensor with comprehensive metadata
+  comprehensive_sensor:
+    name: "Comprehensive Sensor"
+    formula: "power_input * efficiency_factor"
+    variables:
+      power_input: "sensor.input_power"
+      efficiency_factor: 0.95
+    metadata:
+      # Core sensor properties
+      unit_of_measurement: "W"
+      native_unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+      # Display properties
+      suggested_display_precision: 1  # Overrides global
+      suggested_unit_of_measurement: "kW"
+      icon: "mdi:flash"
+
+      # Entity registry properties
+      entity_category: "diagnostic"
+      entity_registry_enabled_default: true
+      entity_registry_visible_default: true
+
+      # Advanced properties
+      assumed_state: false
+      options: ["low", "medium", "high"]
+
+      # Custom properties
+      custom_property: "custom_value"
+      integration_specific: "test_integration"
+
+    attributes:
+      daily_projection:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "Wh"
+          device_class: "energy"
+          suggested_display_precision: 0  # Overrides sensor and global
+          icon: "mdi:lightning-bolt"
+
+      efficiency_percent:
+        formula: "state / max_capacity * 100"
+        variables:
+          max_capacity: "sensor.max_capacity"
+        metadata:
+          unit_of_measurement: "%"
+          suggested_display_precision: 1
+          icon: "mdi:gauge"
+
+  # Sensor inheriting mostly from global metadata
+  simple_sensor:
+    name: "Simple Sensor"
+    formula: "sensor.test_value * 2"
+    metadata:
+      unit_of_measurement: "V"
+      device_class: "voltage"
+      # Inherits attribution, entity_registry_enabled_default, suggested_display_precision from global
+
+  # Sensor with minimal metadata
+  minimal_sensor:
+    name: "Minimal Sensor"
+    formula: "sensor.minimal_value"
+    metadata:
+      unit_of_measurement: "A"
+      device_class: "current"

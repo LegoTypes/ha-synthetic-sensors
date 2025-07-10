@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .config_types import GlobalSettingsDict
+
 if TYPE_CHECKING:
     from .config_models import SensorConfig
     from .storage_manager import StorageManager
@@ -39,7 +41,7 @@ class SensorSetGlobalSettings:
         global_settings: dict[str, Any] = sensor_set_data.get("global_settings", {})
         return global_settings
 
-    async def async_set_global_settings(self, global_settings: dict[str, Any], current_sensors: list[SensorConfig]) -> None:
+    async def async_set_global_settings(self, global_settings: GlobalSettingsDict, current_sensors: list[SensorConfig]) -> None:
         """
         Set global settings for this sensor set.
 
@@ -66,9 +68,11 @@ class SensorSetGlobalSettings:
         updated_global_settings = current_global_settings.copy()
         updated_global_settings.update(updates)
 
-        await self.async_set_global_settings(updated_global_settings, current_sensors)
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = updated_global_settings  # type: ignore[assignment]
+        await self.async_set_global_settings(typed_global_settings, current_sensors)
 
-    async def _update_global_settings(self, global_settings: dict[str, Any]) -> None:
+    async def _update_global_settings(self, global_settings: GlobalSettingsDict) -> None:
         """
         Update global settings in storage.
 
@@ -131,6 +135,6 @@ class SensorSetGlobalSettings:
 
         return updated_variables
 
-    async def update_global_settings_direct(self, global_settings: dict[str, Any]) -> None:
+    async def update_global_settings_direct(self, global_settings: GlobalSettingsDict) -> None:
         """Update global settings directly (public method)."""
         await self._update_global_settings(global_settings)

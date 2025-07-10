@@ -1,95 +1,82 @@
-version: "1.0"
-
-# Test configuration for validation helper functionality
-# This fixture defines scenarios for testing data provider validation and entity state validation
-
+version: '1.0'
 sensors:
-  # Basic sensor for valid data provider testing
   valid_data_sensor:
-    name: "Valid Data Sensor"
-    formula: "valid_value * multiplier"
+    name: Valid Data Sensor
+    formula: valid_value * multiplier
     variables:
-      valid_value: "integration.valid_sensor"
+      valid_value: integration.valid_sensor
       multiplier: 2.0
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Sensor for testing missing entity scenarios
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   missing_entity_sensor:
-    name: "Missing Entity Sensor"
-    formula: "missing_value + offset"
+    name: Missing Entity Sensor
+    formula: missing_value + offset
     variables:
-      missing_value: "integration.nonexistent_sensor"
+      missing_value: integration.nonexistent_sensor
       offset: 10
-    unit_of_measurement: "units"
-
-  # Sensor for testing None value scenarios
+    metadata:
+      unit_of_measurement: units
   none_value_sensor:
-    name: "None Value Sensor"
-    formula: "none_value * factor"
+    name: None Value Sensor
+    formula: none_value * factor
     variables:
-      none_value: "integration.none_sensor"
+      none_value: integration.none_sensor
       factor: 1.5
-    unit_of_measurement: "units"
-
-  # Sensor for testing numeric conversion scenarios
+    metadata:
+      unit_of_measurement: units
   numeric_conversion_sensor:
-    name: "Numeric Conversion Sensor"
-    formula: "string_number + numeric_value"
+    name: Numeric Conversion Sensor
+    formula: string_number + numeric_value
     variables:
-      string_number: "integration.string_numeric_sensor"
-      numeric_value: "integration.numeric_sensor"
-    unit_of_measurement: "units"
-
-  # Sensor for testing invalid numeric values
+      string_number: integration.string_numeric_sensor
+      numeric_value: integration.numeric_sensor
+    metadata:
+      unit_of_measurement: units
   invalid_numeric_sensor:
-    name: "Invalid Numeric Sensor"
-    formula: "invalid_text + fallback"
+    name: Invalid Numeric Sensor
+    formula: invalid_text + fallback
     variables:
-      invalid_text: "integration.text_sensor"
+      invalid_text: integration.text_sensor
       fallback: 0
-    unit_of_measurement: "units"
-
-  # Sensor for testing mixed data sources (integration + HA entities)
+    metadata:
+      unit_of_measurement: units
   mixed_sources_sensor:
-    name: "Mixed Sources Sensor"
-    formula: "integration_data + ha_entity_data"
+    name: Mixed Sources Sensor
+    formula: integration_data + ha_entity_data
     variables:
-      integration_data: "integration.local_sensor"
-      ha_entity_data: "sensor.home_assistant_entity"
-    unit_of_measurement: "units"
-
-  # Sensor for testing data provider callback structure validation
+      integration_data: integration.local_sensor
+      ha_entity_data: sensor.home_assistant_entity
+    metadata:
+      unit_of_measurement: units
   callback_structure_sensor:
-    name: "Callback Structure Sensor"
-    formula: "callback_value"
+    name: Callback Structure Sensor
+    formula: callback_value
     variables:
-      callback_value: "integration.callback_test_sensor"
-    unit_of_measurement: "units"
-
-  # Sensor for testing entity state validation edge cases
+      callback_value: integration.callback_test_sensor
+    metadata:
+      unit_of_measurement: units
   edge_case_sensor:
-    name: "Edge Case Sensor"
-    formula: "edge_value"
+    name: Edge Case Sensor
+    formula: edge_value
     variables:
-      edge_value: "integration.edge_case_sensor"
-    unit_of_measurement: "units"
-
-  # Sensor with attribute access for validation testing
+      edge_value: integration.edge_case_sensor
+    metadata:
+      unit_of_measurement: units
   attribute_validation_sensor:
-    name: "Attribute Validation Sensor"
-    formula: "device_data.battery_level + threshold"
+    name: Attribute Validation Sensor
+    formula: device_data.battery_level + threshold
     variables:
-      device_data: "integration.device_with_attributes"
+      device_data: integration.device_with_attributes
       threshold: 20
-    unit_of_measurement: "%"
-
-  # Sensor for testing unavailable entity handling
+    metadata:
+      unit_of_measurement: '%'
   unavailable_entity_sensor:
-    name: "Unavailable Entity Sensor"
-    formula: "unavailable_value + default"
+    name: Unavailable Entity Sensor
+    formula: unavailable_value + default
     variables:
-      unavailable_value: "integration.unavailable_sensor"
+      unavailable_value: integration.unavailable_sensor
       default: 100
-    unit_of_measurement: "units"
+    metadata:
+      unit_of_measurement: units

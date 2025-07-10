@@ -23,10 +23,7 @@ class AttributeConfigDict(TypedDict, total=False):
     """TypedDict for attribute configuration in YAML."""
 
     formula: str
-    unit_of_measurement: str
-    device_class: DeviceClassType
-    state_class: StateClassType
-    icon: str
+    metadata: dict[str, Any]
     variables: dict[str, str | int | float]  # Allow attributes to define additional variables
 
 
@@ -44,10 +41,7 @@ class SensorConfigDict(TypedDict, total=False):
     attributes: dict[str, AttributeConfigDict]
     # Common properties
     variables: dict[str, str | int | float]
-    unit_of_measurement: str
-    device_class: DeviceClassType
-    state_class: StateClassType
-    icon: str
+    metadata: dict[str, Any]
     extra_attributes: dict[str, AttributeValue]
     # Device association fields
     device_identifier: str  # Device identifier to associate with
@@ -59,11 +53,25 @@ class SensorConfigDict(TypedDict, total=False):
     suggested_area: str
 
 
+class GlobalSettingsDict(TypedDict, total=False):
+    """TypedDict for global settings in YAML."""
+
+    device_identifier: str
+    device_name: str
+    device_manufacturer: str
+    device_model: str
+    device_sw_version: str
+    device_hw_version: str
+    suggested_area: str
+    variables: dict[str, str | int | float]
+    metadata: dict[str, Any]
+
+
 class ConfigDict(TypedDict, total=False):
     """TypedDict for complete configuration in YAML."""
 
     version: str
-    global_settings: dict[str, AttributeValue]
+    global_settings: GlobalSettingsDict
     sensors: dict[str, SensorConfigDict]
 
 

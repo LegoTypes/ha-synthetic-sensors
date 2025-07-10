@@ -1,33 +1,32 @@
-version: "1.0"
-
+version: '1.0'
 global_settings:
-  device_identifier: "multi_test:default_device"
-
+  device_identifier: multi_test:default_device
 sensors:
   device_a_power:
-    name: "Device A Power"
-    device_identifier: "multi_test:device_a"
-    formula: "base_power_a"
+    name: Device A Power
+    device_identifier: multi_test:device_a
+    formula: base_power_a
     variables:
-      base_power_a: "sensor.device_a_raw_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-
+      base_power_a: sensor.device_a_raw_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
   device_b_power:
-    name: "Device B Power"
-    device_identifier: "multi_test:device_b"
-    formula: "base_power_b"
+    name: Device B Power
+    device_identifier: multi_test:device_b
+    formula: base_power_b
     variables:
-      base_power_b: "sensor.device_b_raw_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-
+      base_power_b: sensor.device_b_raw_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
   device_c_energy:
-    name: "Device C Energy"
-    device_identifier: "multi_test:device_c"
-    formula: "cumulative_energy"
+    name: Device C Energy
+    device_identifier: multi_test:device_c
+    formula: cumulative_energy
     variables:
-      cumulative_energy: "sensor.device_c_energy_total"
-    unit_of_measurement: "kWh"
-    device_class: "energy"
-    state_class: "total_increasing"
+      cumulative_energy: sensor.device_c_energy_total
+    metadata:
+      unit_of_measurement: kWh
+      device_class: energy
+      state_class: total_increasing

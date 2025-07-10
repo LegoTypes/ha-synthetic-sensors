@@ -60,9 +60,11 @@ class TestVariableResolution:
                 "leg1_power": "sensor.span_panel_circuit_30_power",
                 "leg2_power": "sensor.span_panel_circuit_32_power",
             },
-            unit_of_measurement="W",
-            device_class="power",
-            state_class="measurement",
+            metadata={
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+            },
         )
 
         # Test 1: Automatic variable resolution should work now

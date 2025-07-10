@@ -1,11 +1,12 @@
-version: "1.0"
+version: '1.0'
 sensors:
   test_sensor:
-    name: "Test Sensor"
-    formula: "a + b"
+    name: Test Sensor
+    formula: a + b
     variables:
-      a: "sensor.input_a"
-      b: "sensor.input_b"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+      a: sensor.input_a
+      b: sensor.input_b
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

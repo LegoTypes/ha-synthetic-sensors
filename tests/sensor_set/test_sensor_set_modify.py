@@ -107,9 +107,11 @@ class TestSensorSetModifyComprehensive:
                 FormulaConfig(
                     id="total_power",
                     formula='state("main_power") * efficiency_factor * new_multiplier',
-                    unit_of_measurement="W",
-                    device_class="power",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "W",
+                        "device_class": "power",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )
@@ -123,9 +125,11 @@ class TestSensorSetModifyComprehensive:
                     id="local_sensor",
                     formula='state("local_var") + 15',
                     variables={"local_var": "sensor.local_temperature"},
-                    unit_of_measurement="°C",
-                    device_class="temperature",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "°C",
+                        "device_class": "temperature",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )
@@ -140,8 +144,10 @@ class TestSensorSetModifyComprehensive:
                     id="new_power_factor",
                     formula='state("main_power") / (state("main_voltage") * state("current_var"))',
                     variables={"current_var": "sensor.house_current"},
-                    unit_of_measurement="",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )
@@ -155,8 +161,10 @@ class TestSensorSetModifyComprehensive:
                     id="energy_cost",
                     formula='(state("main_power") / 1000) * efficiency_factor * cost_per_kwh',
                     variables={"cost_per_kwh": 0.12},
-                    unit_of_measurement="$/hr",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "$/hr",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )
@@ -263,9 +271,11 @@ class TestSensorSetModifyComprehensive:
                 FormulaConfig(
                     id="voltage_monitor",
                     formula='state("main_voltage")',
-                    unit_of_measurement="V",
-                    device_class="voltage",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "V",
+                        "device_class": "voltage",
+                        "state_class": "measurement",
+                    },
                     attributes={"source_entity": "main_voltage", "monitor_type": "direct_passthrough", "restored": True},
                 )
             ],
@@ -280,9 +290,11 @@ class TestSensorSetModifyComprehensive:
                 FormulaConfig(
                     id="complex_calculation",  # Main formula - determines sensor state
                     formula='state("main_power") * 0.9',  # Changed from 0.8
-                    unit_of_measurement="W",
-                    device_class="power",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "W",
+                        "device_class": "power",
+                        "state_class": "measurement",
+                    },
                     attributes={
                         "phase": "primary",
                         "multiplier": 0.9,
@@ -293,7 +305,7 @@ class TestSensorSetModifyComprehensive:
                     id="voltage_percentage",
                     formula='state("main_voltage") / 120 * 100',
                     variables={"reference_voltage": 120},
-                    unit_of_measurement="%",
+                    metadata={"unit_of_measurement": "%"},
                     attributes={"reference": "120V"},
                 ),
             ],
@@ -401,9 +413,11 @@ class TestSensorSetModifyComprehensive:
                 FormulaConfig(
                     id="voltage_monitor",
                     formula='state("main_voltage")',
-                    unit_of_measurement="V",
-                    device_class="voltage",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "V",
+                        "device_class": "voltage",
+                        "state_class": "measurement",
+                    },
                     attributes={"source_entity": "main_voltage", "monitor_type": "direct_passthrough"},
                 )
             ],
@@ -418,9 +432,11 @@ class TestSensorSetModifyComprehensive:
                 FormulaConfig(
                     id="total_power",
                     formula='state("main_power") * efficiency_factor',
-                    unit_of_measurement="W",
-                    device_class="power",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "W",
+                        "device_class": "power",
+                        "state_class": "measurement",
+                    },
                     attributes={
                         "source": "main_power",
                         "efficiency": "efficiency_factor",
@@ -440,9 +456,11 @@ class TestSensorSetModifyComprehensive:
                     id="local_sensor",
                     formula='state("local_var") + 10',
                     variables={"local_var": "sensor.local_temperature"},
-                    unit_of_measurement="°C",
-                    device_class="temperature",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "°C",
+                        "device_class": "temperature",
+                        "state_class": "measurement",
+                    },
                     attributes={"offset": 10, "source": "local_temperature"},
                 )
             ],
@@ -640,9 +658,11 @@ sensors:
                 FormulaConfig(
                     id="new_sensor",
                     formula='state("main_power") * 2',
-                    unit_of_measurement="W",
-                    device_class="power",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "W",
+                        "device_class": "power",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )
@@ -918,7 +938,7 @@ class TestSensorSetFormulaEvaluationAfterModify:
                 FormulaConfig(
                     id="simple_math_test",
                     formula="10 + 5 * 2",
-                    unit_of_measurement="units",
+                    metadata={"unit_of_measurement": "units"},
                 )
             ],
         )
@@ -945,7 +965,7 @@ class TestSensorSetFormulaEvaluationAfterModify:
                 FormulaConfig(
                     id="simple_math_test",
                     formula="20 + 3 * 4",  # Should equal 32
-                    unit_of_measurement="units",
+                    metadata={"unit_of_measurement": "units"},
                 )
             ],
         )

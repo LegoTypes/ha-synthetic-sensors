@@ -397,9 +397,11 @@ def generate_default_sensor_configs(device_data: Any, device_identifier: str) ->
                 variables={
                     "power_watts": f"{DOMAIN}_backing.{device_identifier}_power"
                 },
-                unit_of_measurement="W",
-                device_class="power",
-                state_class="measurement",
+                metadata={
+                    "unit_of_measurement": "W",
+                    "device_class": "power",
+                    "state_class": "measurement",
+                },
             )
         ],
     )
@@ -419,9 +421,11 @@ def generate_default_sensor_configs(device_data: Any, device_identifier: str) ->
                     "power_watts": f"{DOMAIN}_backing.{device_identifier}_power",
                     "hours_in_day": "24"
                 },
-                unit_of_measurement="kWh",
-                device_class="energy",
-                state_class="total_increasing",
+                metadata={
+                    "unit_of_measurement": "kWh",
+                    "device_class": "energy",
+                    "state_class": "total_increasing",
+                },
             )
         ],
     )
@@ -443,9 +447,11 @@ def generate_default_sensor_configs(device_data: Any, device_identifier: str) ->
                         "circuit_2": f"{DOMAIN}_backing.{device_identifier}_circuit_2_power",
                         "circuit_3": f"{DOMAIN}_backing.{device_identifier}_circuit_3_power",
                     },
-                    unit_of_measurement="W",
-                    device_class="power",
-                    state_class="measurement",
+                    metadata={
+                        "unit_of_measurement": "W",
+                        "device_class": "power",
+                        "state_class": "measurement",
+                    },
                 )
             ],
         )
@@ -476,8 +482,9 @@ sensors:
         variables:
           voltage: "{domain}_backing.{device_id}_voltage"
           current: "{domain}_backing.{device_id}_current"
-        unit_of_measurement: "W"
-        device_class: "power"
+        metadata:
+          unit_of_measurement: "W"
+          device_class: "power"
 """
 
     # Add energy sensor if supported
@@ -493,8 +500,9 @@ sensors:
         variables:
           power: "sensor.{device_id}_power"
           time_hours: "24"
-        unit_of_measurement: "kWh"
-        device_class: "energy"
+        metadata:
+          unit_of_measurement: "kWh"
+          device_class: "energy"
 """
 
     return yaml_template.format(
@@ -530,8 +538,10 @@ async def setup_conditional_yaml_config(sensor_set, device_data, device_identifi
                 "voltage": f"{DOMAIN}_backing.{device_identifier}_voltage",
                 "current": f"{DOMAIN}_backing.{device_identifier}_current"
             },
-            "unit_of_measurement": "W",
-            "device_class": "power"
+            "metadata": {
+                "unit_of_measurement": "W",
+                "device_class": "power"
+            }
         }]
     }
 
@@ -547,8 +557,10 @@ async def setup_conditional_yaml_config(sensor_set, device_data, device_identifi
                 "variables": {
                     "temp_raw": f"{DOMAIN}_backing.{device_identifier}_temp_raw"
                 },
-                "unit_of_measurement": "°C",
-                "device_class": "temperature"
+                "metadata": {
+                    "unit_of_measurement": "°C",
+                    "device_class": "temperature"
+                }
             }]
         }
 
@@ -560,6 +572,119 @@ async def setup_conditional_yaml_config(sensor_set, device_data, device_identifi
 
     yaml_content = yaml.dump(yaml_dict, default_flow_style=False)
     await sensor_set.async_import_yaml(yaml_content)
+```
+
+## Metadata Configuration
+
+### Metadata Architecture
+
+The metadata system provides a clean way to define Home Assistant sensor properties with proper inheritance and validation:
+
+**Metadata Hierarchy:**
+
+1. **Global Metadata**: Defined in `global_settings.metadata`, applies to all sensors
+2. **Sensor Metadata**: Defined in sensor `metadata` section, overrides global metadata
+3. **Attribute Metadata**: Independent metadata for attributes, no inheritance
+
+**API-Based Metadata Configuration:**
+
+```python
+from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
+
+# Sensor with metadata
+sensor_config = SensorConfig(
+    unique_id="power_sensor",
+    name="Power Sensor",
+    formulas=[
+        FormulaConfig(
+            id="main",
+            formula="voltage * current",
+            variables={"voltage": "sensor.voltage", "current": "sensor.current"},
+            metadata={
+                "unit_of_measurement": "W",
+                "device_class": "power",
+                "state_class": "measurement",
+                "icon": "mdi:flash",
+            }
+        )
+    ],
+    metadata={
+        "attribution": "Generated by MyIntegration",
+        "entity_registry_enabled_default": True,
+    }
+)
+
+# Attribute with independent metadata
+attribute_formula = FormulaConfig(
+    id="daily_total",
+    formula="state * 24",
+    metadata={
+        "unit_of_measurement": "Wh",  # Valid for attributes
+        "suggested_display_precision": 2,
+        # "device_class": "energy"  # ERROR: Not allowed for attributes
+    }
+)
+```
+
+**YAML-Based Metadata Configuration:**
+
+```yaml
+version: "1.0"
+
+global_settings:
+  metadata:
+    attribution: "Generated by MyIntegration"
+    entity_registry_enabled_default: true
+    suggested_display_precision: 2
+
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    formula: "voltage * current"
+    variables:
+      voltage: "sensor.voltage"
+      current: "sensor.current"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      # Inherits attribution, entity_registry_enabled_default, suggested_display_precision
+    attributes:
+      daily_total:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "Wh"
+          suggested_display_precision: 3
+          # No inheritance from global or sensor metadata
+```
+
+### Metadata Validation Rules
+
+**Entity-Only Properties (Sensors Only):**
+
+- `device_class`, `state_class`, `entity_category`
+- `entity_registry_enabled_default`, `entity_registry_visible_default`
+- `assumed_state`, `last_reset`, `force_update`, `available`, `options`
+
+**Attribute-Safe Properties:**
+
+- `unit_of_measurement`, `icon`, `suggested_display_precision`, `suggested_unit_of_measurement`
+- `attribution`, custom properties
+
+**Validation Example:**
+
+```python
+# This will cause validation errors:
+invalid_attribute = FormulaConfig(
+    id="invalid",
+    formula="state",
+    metadata={
+        "device_class": "power",  # ERROR: Entity-only property
+        "unit_of_measurement": "W"  # OK: Attribute-safe property
+    }
+)
+
+# Validation errors will be reported during sensor creation or YAML import
 ```
 
 ## Best Practices
@@ -629,18 +754,50 @@ except Exception as e:
 Validate configurations before storing:
 
 ```python
-from ha_synthetic_sensors.config_models import SensorConfig
+from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
+from ha_synthetic_sensors.metadata_handler import MetadataHandler
 
 def create_sensor_config(device_data, device_id):
     try:
+        # Validate metadata before creating config
+        metadata_handler = MetadataHandler()
+
+        sensor_metadata = {
+            "device_class": "power",
+            "unit_of_measurement": "W",
+            "attribution": f"Data from {device_data.name}"
+        }
+
+        # Validate sensor metadata
+        errors = metadata_handler.validate_metadata(sensor_metadata, is_attribute=False)
+        if errors:
+            _LOGGER.error("Invalid sensor metadata for %s: %s", device_id, errors)
+            return None
+
         return SensorConfig(
             unique_id=f"{device_id}_power",
             name=f"{device_data.name} Power",
-            # ... other fields
+            formulas=[
+                FormulaConfig(
+                    id="main",
+                    formula="power_value",
+                    variables={"power_value": f"sensor.{device_id}_power"},
+                    metadata=sensor_metadata
+                )
+            ]
         )
     except ValueError as e:
         _LOGGER.error("Invalid sensor config for %s: %s", device_id, e)
         return None
+
+def validate_attribute_metadata(attribute_metadata):
+    """Validate attribute metadata separately."""
+    metadata_handler = MetadataHandler()
+    errors = metadata_handler.validate_metadata(attribute_metadata, is_attribute=True)
+    if errors:
+        _LOGGER.error("Invalid attribute metadata: %s", errors)
+        return False
+    return True
 ```
 
 ## Reload and Dynamic Updates
@@ -707,6 +864,11 @@ async def update_sensor_configuration(sensor_set, unique_id, new_formula):
 4. **Performance issues**:
    - Use cached data in data providers
    - Avoid API calls in data provider callbacks
+
+5. **Metadata validation errors**:
+   - Check that entity-only properties are not used in attribute metadata
+   - Verify metadata property types (strings, integers, booleans as appropriate)
+   - Use MetadataHandler.validate_metadata() to check metadata before creating configs
 
 ### Debug Logging
 
@@ -791,6 +953,7 @@ else:
 
 - **`DeviceAssociationHelper`**: Device identification and association utilities
 - **`EntityFactory`**: Factory patterns for creating sensor entities
+- **`MetadataHandler`**: Metadata merging, validation, and HA property extraction
 
 ### Type Definitions
 

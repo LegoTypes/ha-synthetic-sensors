@@ -14,7 +14,7 @@ def test_simple_variable_reference() -> None:
                 "name": "Simple Passthrough Sensor",
                 "formula": "source_value",
                 "variables": {"source_value": "sensor.original_sensor"},
-                "unit_of_measurement": "W",
+                "metadata": {"unit_of_measurement": "W"},
             }
         },
     }  # Just the variable name
@@ -45,7 +45,7 @@ def test_various_simple_references() -> None:
                     "name": f"Test Sensor {i}",
                     "formula": config_data["formula"],
                     "variables": config_data["variables"],
-                    "unit_of_measurement": "test",
+                    "metadata": {"unit_of_measurement": "test"},
                 }
             },
         }

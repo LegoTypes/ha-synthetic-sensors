@@ -16,7 +16,9 @@ def test_unique_id_allows_hyphens() -> None:
             "span_nj-4919-005k6_select_795e8eddb4f448af9625130332a41df8": {
                 "name": "Test Sensor with Hyphens",
                 "formula": "5 + 3",
-                "unit_of_measurement": "test",
+                "metadata": {
+                    "unit_of_measurement": "test",
+                },
             }
         },
     }
@@ -64,7 +66,9 @@ def test_unique_id_patterns() -> None:
                 pattern: {
                     "name": f"Test sensor {pattern}",
                     "formula": "5 + 3",
-                    "unit_of_measurement": "test",
+                    "metadata": {
+                        "unit_of_measurement": "test",
+                    },
                 }
             },
         }

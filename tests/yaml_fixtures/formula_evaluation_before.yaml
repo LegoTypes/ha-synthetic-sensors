@@ -1,46 +1,48 @@
-version: "1.0"
+version: '1.0'
 global_settings:
-  device_identifier: "test_device:eval_123"
+  device_identifier: test_device:eval_123
   variables:
-    base_power: "sensor.power_meter"
-    base_voltage: "sensor.voltage_meter"
+    base_power: sensor.power_meter
+    base_voltage: sensor.voltage_meter
     efficiency_factor: 0.95
     tax_rate: 0.08
-
 sensors:
   simple_math:
-    name: "Simple Math Sensor"
-    formula: "10 + 5 * 2"
-    unit_of_measurement: "units"
-
+    name: Simple Math Sensor
+    formula: 10 + 5 * 2
+    metadata:
+      unit_of_measurement: units
   power_calculation:
-    name: "Power Calculation"
-    formula: "base_power * efficiency_factor"
-    unit_of_measurement: "W"
-    device_class: "power"
-
+    name: Power Calculation
+    formula: base_power * efficiency_factor
+    metadata:
+      unit_of_measurement: W
+      device_class: power
   cost_calculator:
-    name: "Cost Calculator"
-    formula: "(base_power / 1000) * rate_per_kwh * (1 + tax_rate)"
+    name: Cost Calculator
+    formula: (base_power / 1000) * rate_per_kwh * (1 + tax_rate)
     variables:
       rate_per_kwh: 0.15
-    unit_of_measurement: "$/hr"
-
+    metadata:
+      unit_of_measurement: $/hr
   voltage_ratio:
-    name: "Voltage Ratio"
-    formula: "base_voltage / 240.0"
-    unit_of_measurement: "ratio"
-
+    name: Voltage Ratio
+    formula: base_voltage / 240.0
+    metadata:
+      unit_of_measurement: ratio
   complex_calculation:
-    name: "Complex Multi-Step"
-    formula: "sqrt(pow(base_power, 2) + pow(reactive_power, 2))"
+    name: Complex Multi-Step
+    formula: sqrt(pow(base_power, 2) + pow(reactive_power, 2))
     variables:
-      reactive_power: "sensor.reactive_power"
-    unit_of_measurement: "VA"
+      reactive_power: sensor.reactive_power
     attributes:
       power_factor:
-        formula: "base_power / state"
-        unit_of_measurement: "pf"
+        formula: base_power / state
+        metadata:
+          unit_of_measurement: pf
       efficiency_percentage:
-        formula: "efficiency_factor * 100"
-        unit_of_measurement: "%"
+        formula: efficiency_factor * 100
+        metadata:
+          unit_of_measurement: '%'
+    metadata:
+      unit_of_measurement: VA
