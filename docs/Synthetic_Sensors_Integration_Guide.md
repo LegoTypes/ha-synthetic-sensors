@@ -21,12 +21,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         hass=hass,
         config_entry=config_entry,
         async_add_entities=async_add_entities,
-        data_provider_callback=create_data_provider_callback(coordinator),
+        storage_manager=storage_manager,
         device_identifier=coordinator.device_id,
+        data_provider_callback=create_data_provider_callback(coordinator),
     )
 ```
 
 This approach handles everything automatically using storage-based configuration.
+
+## Data Provider Callback Pattern
+
+When you provide a `data_provider_callback`, the synthetic sensors package automatically switches to **virtual entity mode**:
+
+- **Variables are resolved through your data provider callback**
+- **No lookups in Home Assistant's entity registry**
+- **Virtual backing entities don't pollute the registry**
+- **Better performance and cleaner architecture**
+
+This means your variable entity IDs can reference virtual entities that don't exist in HA's state registry - the synthetic
+sensors package will use your data provider exclusively for resolution.
 
 ## Recommended Architecture: YAML Templates with Virtual Backing Entities
 
@@ -36,6 +49,7 @@ The cleanest approach for creating synthetic sensors uses **YAML templates** wit
 - **Type-safe helpers** for all ID generation
 - **No string parsing** or manual YAML construction
 - **Maintainable** template-driven configuration
+- **Virtual entities** that don't pollute HA's entity registry
 
 ### Complete Implementation Example
 
@@ -426,3 +440,51 @@ def create_data_provider_callback(main_coordinator: YourCoordinator) -> DataProv
 - All ID generation logic is centralized in helpers
 
 This pattern scales well and provides the cleanest integration with the synthetic sensors package.
+
+## Virtual Entity Resolution Behavior
+
+### With Data Provider Callback (Recommended)
+
+When you provide a `data_provider_callback`, the synthetic sensors package:
+
+1. **Skips HA entity registry lookups** for variable resolution
+2. **Uses your data provider exclusively** through the `IntegrationResolutionStrategy`
+3. **Allows virtual entity IDs** that don't exist in HA's state registry
+4. **Provides better performance** by avoiding registry overhead
+
+```python
+# Your variables can reference virtual entities
+variables:
+  source_value: "sensor.my_device_0_backing_power"  # Virtual - doesn't exist in HA registry
+
+# Your data provider handles the resolution
+def data_provider_callback(entity_id: str) -> DataProviderResult:
+    if entity_id == "sensor.my_device_0_backing_power":
+        return {"value": get_live_power_value(), "exists": True}
+    return {"value": None, "exists": False}
+```
+
+### Without Data Provider Callback (Legacy)
+
+When no `data_provider_callback` is provided, the synthetic sensors package:
+
+1. **Uses HA entity registry lookups** for variable resolution
+2. **Requires real entities** to exist in Home Assistant
+3. **Falls back to HomeAssistantResolutionStrategy** for entity state access
+
+```python
+# Your variables must reference real HA entities
+variables:
+  source_value: "sensor.real_ha_entity"  # Must exist in HA registry
+```
+
+### Migration Guide
+
+To migrate from real entities to virtual entities:
+
+1. **Add a data provider callback** to your `async_setup_synthetic_sensors` call
+2. **Update your variable entity IDs** to use virtual backing entity naming
+3. **Remove real backing entities** from your integration (they're no longer needed)
+4. **Implement the data provider** to return live values for virtual entity IDs
+
+This migration improves performance and reduces entity registry pollution.

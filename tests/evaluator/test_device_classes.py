@@ -1,20 +1,40 @@
-"""Tests for device class functionality."""
+"""Test device class functionality."""
+
+import sys
+from pathlib import Path
+
+# Add the tests directory to the path so we can import test_utils
+tests_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(tests_dir))
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 
 from ha_synthetic_sensors.device_classes import (
     ALL_NON_NUMERIC_DEVICE_CLASSES,
-    ALWAYS_NUMERIC_DOMAINS,
-    COMMON_NUMERIC_SENSOR_DEVICE_CLASSES,
-    NEVER_NUMERIC_DOMAINS,
     NON_NUMERIC_BINARY_SENSOR_DEVICE_CLASSES,
     NON_NUMERIC_SENSOR_DEVICE_CLASSES,
-    VALID_HA_DOMAINS,
-    classify_domain_numeric_expectation,
-    is_device_class_numeric,
     is_valid_ha_domain,
 )
+
+# Try to import test utilities, adding path if needed
+try:
+    from test_utils.device_class_utils import (
+        ALWAYS_NUMERIC_DOMAINS,
+        NEVER_NUMERIC_DOMAINS,
+        classify_domain_numeric_expectation,
+        is_device_class_numeric,
+    )
+except ImportError:
+    # Add the tests directory to the path so we can import test_utils
+    tests_dir = Path(__file__).parent.parent
+    sys.path.insert(0, str(tests_dir))
+    from test_utils.device_class_utils import (
+        ALWAYS_NUMERIC_DOMAINS,
+        NEVER_NUMERIC_DOMAINS,
+        classify_domain_numeric_expectation,
+        is_device_class_numeric,
+    )
 
 
 class TestDeviceClassConstants:
@@ -51,15 +71,10 @@ class TestDeviceClassConstants:
             )
 
     def test_combined_non_numeric_classes(self):
-        """Test that combined set includes both sensor and binary sensor classes."""
+        """Test that combined non-numeric classes include both sensor and binary sensor classes."""
+        # Combined set should include both sensor and binary sensor non-numeric classes
         expected = NON_NUMERIC_SENSOR_DEVICE_CLASSES | NON_NUMERIC_BINARY_SENSOR_DEVICE_CLASSES
         assert expected == ALL_NON_NUMERIC_DEVICE_CLASSES
-
-    def test_numeric_sensor_classes_are_actually_numeric(self):
-        """Test that numeric sensor classes don't overlap with non-numeric ones."""
-        # There should be no overlap between numeric and non-numeric sensor classes
-        overlap = COMMON_NUMERIC_SENSOR_DEVICE_CLASSES & NON_NUMERIC_SENSOR_DEVICE_CLASSES
-        assert len(overlap) == 0, f"Found overlap: {overlap}"
 
 
 class TestIsDeviceClassNumeric:
@@ -263,11 +278,20 @@ class TestDomainClassification:
 
         for domain in valid_domains:
             assert is_valid_ha_domain(domain), f"Domain {domain} should be valid"
-            assert domain in VALID_HA_DOMAINS, f"Domain {domain} should be in VALID_HA_DOMAINS"
 
     def test_invalid_ha_domains(self):
         """Test that invalid domains are correctly identified."""
-        invalid_domains = ["invalid_domain", "custom", "", "not_a_domain"]
+        invalid_domains = [
+            "Invalid_Domain",  # Contains uppercase
+            "1sensor",  # Starts with number
+            "_sensor",  # Starts with underscore
+            "sensor-device",  # Contains hyphen
+            "sensor.device",  # Contains dot
+            "sensor device",  # Contains space
+            "",  # Empty string
+            "a",  # Too short
+            "a" * 51,  # Too long
+        ]
 
         for domain in invalid_domains:
             assert not is_valid_ha_domain(domain), f"Domain {domain} should be invalid"
@@ -278,9 +302,9 @@ class TestDomainClassification:
         overlap = ALWAYS_NUMERIC_DOMAINS & NEVER_NUMERIC_DOMAINS
         assert len(overlap) == 0, f"Found overlap between always and never numeric domains: {overlap}"
 
-        # All domain constants should be valid HA domains
+        # All domain constants should be valid HA domains (format-wise)
         for domain in ALWAYS_NUMERIC_DOMAINS:
-            assert domain in VALID_HA_DOMAINS, f"Always numeric domain {domain} should be in valid domains"
+            assert is_valid_ha_domain(domain), f"Always numeric domain {domain} should be valid format"
 
         for domain in NEVER_NUMERIC_DOMAINS:
-            assert domain in VALID_HA_DOMAINS, f"Never numeric domain {domain} should be in valid domains"
+            assert is_valid_ha_domain(domain), f"Never numeric domain {domain} should be valid format"

@@ -5,8 +5,14 @@ device class enums, making them easier to maintain and update when HA adds new
 device classes.
 """
 
+import re
+from typing import TYPE_CHECKING
+
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 # Non-numeric sensor device classes
 # These sensor device classes represent non-numeric data
@@ -18,8 +24,9 @@ NON_NUMERIC_SENSOR_DEVICE_CLASSES = frozenset(
     }
 )
 
-# All binary sensor device classes are non-numeric by definition
-# Binary sensors can only have on/off states, never numeric values
+# Non-numeric binary sensor device classes
+# Binary sensors represent on/off, true/false, open/closed states
+# All binary sensor device classes are inherently non-numeric
 NON_NUMERIC_BINARY_SENSOR_DEVICE_CLASSES = frozenset(
     {
         BinarySensorDeviceClass.BATTERY,
@@ -57,221 +64,68 @@ NON_NUMERIC_BINARY_SENSOR_DEVICE_CLASSES = frozenset(
 ALL_NON_NUMERIC_DEVICE_CLASSES = NON_NUMERIC_SENSOR_DEVICE_CLASSES | NON_NUMERIC_BINARY_SENSOR_DEVICE_CLASSES
 
 
-def is_device_class_numeric(device_class: str) -> bool:
-    """Check if a device class indicates numeric sensor data.
+def get_domains_from_hass(hass: "HomeAssistant") -> set[str]:
+    """Get all domains from the Home Assistant instance states.
+
+    This function extracts domains from all entities in the current HA instance,
+    similar to the template: {%- for d, es in states | groupby('domain') %}
 
     Args:
-        device_class: The device class string to check
+        hass: The Home Assistant instance
 
     Returns:
-        True if the device class typically contains numeric data, False otherwise
-
-    Note:
-        This function uses Home Assistant's official device class definitions
-        to determine if a device class is expected to contain numeric data.
-        Binary sensors are always considered non-numeric since they can only
-        have on/off states.
+        set[str]: Set of all domain names found in the current HA instance
     """
-    return device_class not in ALL_NON_NUMERIC_DEVICE_CLASSES
+    domains = set()
+    try:
+        states = hass.states.async_all()
+        # Handle case where async_all() returns a Mock object (in tests)
+        if hasattr(states, "__iter__"):
+            for state in states:
+                # Ensure state has entity_id attribute (not a Mock)
+                if hasattr(state, "entity_id") and isinstance(state.entity_id, str):
+                    domain = state.entity_id.split(".", 1)[0]
+                    domains.add(domain)
+    except (AttributeError, TypeError):
+        # If we can't get states (mock objects, missing attributes, etc.),
+        # return empty set so fallback validation is used
+        pass
+
+    return domains
 
 
-# Numeric sensor device classes for reference
-# These are the most common device classes that contain numeric data
-def _build_numeric_sensor_device_classes() -> frozenset[SensorDeviceClass]:
-    """Build the set of numeric sensor device classes, handling version differences."""
-    classes = {
-        SensorDeviceClass.APPARENT_POWER,
-        SensorDeviceClass.AQI,
-        SensorDeviceClass.AREA,
-        SensorDeviceClass.ATMOSPHERIC_PRESSURE,
-        SensorDeviceClass.BATTERY,
-        SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION,
-        SensorDeviceClass.CO2,
-        SensorDeviceClass.CO,
-        SensorDeviceClass.CONDUCTIVITY,
-        SensorDeviceClass.CURRENT,
-        SensorDeviceClass.DATA_RATE,
-        SensorDeviceClass.DATA_SIZE,
-        SensorDeviceClass.DISTANCE,
-        SensorDeviceClass.DURATION,
-        SensorDeviceClass.ENERGY,
-        SensorDeviceClass.ENERGY_DISTANCE,
-        SensorDeviceClass.ENERGY_STORAGE,
-        SensorDeviceClass.FREQUENCY,
-        SensorDeviceClass.GAS,
-        SensorDeviceClass.HUMIDITY,
-        SensorDeviceClass.ILLUMINANCE,
-        SensorDeviceClass.IRRADIANCE,
-        SensorDeviceClass.MOISTURE,
-        SensorDeviceClass.MONETARY,
-        SensorDeviceClass.NITROGEN_DIOXIDE,
-        SensorDeviceClass.NITROGEN_MONOXIDE,
-        SensorDeviceClass.NITROUS_OXIDE,
-        SensorDeviceClass.OZONE,
-        SensorDeviceClass.PH,
-        SensorDeviceClass.PM1,
-        SensorDeviceClass.PM25,
-        SensorDeviceClass.PM10,
-        SensorDeviceClass.POWER,
-        SensorDeviceClass.POWER_FACTOR,
-        SensorDeviceClass.PRECIPITATION,
-        SensorDeviceClass.PRECIPITATION_INTENSITY,
-        SensorDeviceClass.PRESSURE,
-        SensorDeviceClass.REACTIVE_POWER,
-        SensorDeviceClass.SIGNAL_STRENGTH,
-        SensorDeviceClass.SOUND_PRESSURE,
-        SensorDeviceClass.SPEED,
-        SensorDeviceClass.SULPHUR_DIOXIDE,
-        SensorDeviceClass.TEMPERATURE,
-        SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS,
-        SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS,
-        SensorDeviceClass.VOLTAGE,
-        SensorDeviceClass.VOLUME,
-        SensorDeviceClass.VOLUME_FLOW_RATE,
-        SensorDeviceClass.VOLUME_STORAGE,
-        SensorDeviceClass.WATER,
-        SensorDeviceClass.WEIGHT,
-        SensorDeviceClass.WIND_DIRECTION,
-        SensorDeviceClass.WIND_SPEED,
-    }
-
-    # Add REACTIVE_ENERGY if it exists (newer HA versions)
-    if hasattr(SensorDeviceClass, "REACTIVE_ENERGY"):
-        classes.add(SensorDeviceClass.REACTIVE_ENERGY)
-
-    return frozenset(classes)
-
-
-COMMON_NUMERIC_SENSOR_DEVICE_CLASSES = _build_numeric_sensor_device_classes()
-
-
-# Home Assistant Domain Classifications
-# These classifications help determine if entities from specific domains
-# are expected to contain numeric or non-numeric data
-
-# Domains that always contain numeric data
-ALWAYS_NUMERIC_DOMAINS = frozenset(
-    {
-        "input_number",  # Number input helpers
-        "counter",  # Counter helpers
-        "number",  # Number entities
-    }
-)
-
-# Domains that never contain numeric data
-NEVER_NUMERIC_DOMAINS = frozenset(
-    {
-        "binary_sensor",  # Binary sensors (on/off, true/false)
-        "switch",  # Switches (on/off)
-        "input_boolean",  # Boolean input helpers
-        "device_tracker",  # Device tracking (home/away/zones)
-        "weather",  # Weather entities (conditions like sunny/cloudy)
-        "climate",  # Climate entities (heat/cool/auto modes)
-        "media_player",  # Media players (playing/paused/idle)
-        "light",  # Lights (on/off, though attributes may be numeric)
-        "fan",  # Fans (on/off, though attributes may be numeric)
-        "cover",  # Covers (open/closed/opening/closing)
-        "alarm_control_panel",  # Alarm panels (armed/disarmed/pending)
-        "lock",  # Locks (locked/unlocked)
-        "vacuum",  # Vacuums (cleaning/docked/returning)
-    }
-)
-
-# All valid Home Assistant domains
-# This is used for entity ID validation
-VALID_HA_DOMAINS = frozenset(
-    {
-        # Core entity platforms
-        "sensor",
-        "binary_sensor",
-        "switch",
-        "light",
-        "fan",
-        "cover",
-        "climate",
-        "lock",
-        "vacuum",
-        "media_player",
-        "device_tracker",
-        "weather",
-        "camera",
-        "alarm_control_panel",
-        "button",
-        "number",
-        "select",
-        "text",
-        # Input helpers
-        "input_number",
-        "input_boolean",
-        "input_select",
-        "input_text",
-        "input_datetime",
-        # Other built-in domains
-        "counter",
-        "timer",
-        "automation",
-        "script",
-        "scene",
-        "group",
-        "zone",
-        "person",
-        "sun",
-        # Additional entity platforms
-        "air_quality",
-        "assist_satellite",
-        "calendar",
-        "conversation",
-        "date",
-        "datetime",
-        "event",
-        "humidifier",
-        "image",
-        "lawn_mower",
-        "notify",
-        "remote",
-        "siren",
-        "speech_to_text",
-        "time",
-        "todo",
-        "text_to_speech",
-        "update",
-        "valve",
-        "wake_word_detection",
-        "water_heater",
-    }
-)
-
-
-def classify_domain_numeric_expectation(domain: str) -> bool | None:
-    """Classify domain's numeric expectation using centralized definitions.
-
-    Args:
-        domain: The Home Assistant domain to classify
-
-    Returns:
-        True: Domain always contains numeric data
-        False: Domain never contains numeric data
-        None: Domain requires further analysis (e.g., sensor domain)
-
-    Note:
-        This function centralizes domain classification logic that was
-        previously scattered throughout the codebase.
-    """
-    if domain in ALWAYS_NUMERIC_DOMAINS:
-        return True
-    if domain in NEVER_NUMERIC_DOMAINS:
-        return False
-    # Domain requires further analysis (e.g., sensor domain with device_class)
-    return None
-
-
-def is_valid_ha_domain(domain: str) -> bool:
+def is_valid_ha_domain(domain: str, hass: "HomeAssistant | None" = None) -> bool:
     """Check if a domain is a valid Home Assistant domain.
+
+    This function checks against domains from the actual Home Assistant instance
+    if available, or falls back to format validation.
 
     Args:
         domain: The domain string to validate
+        hass: Optional Home Assistant instance to check against
 
     Returns:
-        True if the domain is a valid Home Assistant domain, False otherwise
+        bool: True if the domain is valid, False otherwise
     """
-    return domain in VALID_HA_DOMAINS
+    if not domain:
+        return False
+
+    # If we have a Home Assistant instance, check against actual domains
+    if hass is not None:
+        available_domains = get_domains_from_hass(hass)
+
+        # If the HA instance has states, use them for validation
+        if available_domains:
+            return domain in available_domains
+
+        # If HA instance has no states (common in testing), fall back to format validation
+        # This prevents rejecting all domains when testing with empty mock instances
+
+    # Fallback to format validation when no HA instance is available
+    # or when HA instance has no states
+    # HA domains follow these conventions:
+    # - Start with a lowercase letter
+    # - Contain only lowercase letters, numbers, and underscores
+    # - Be between 2-50 characters long
+    pattern = r"^[a-z][a-z0-9_]{1,49}$"
+    return bool(re.match(pattern, domain))

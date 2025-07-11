@@ -126,6 +126,11 @@ class Evaluator(FormulaEvaluator):
         self._data_provider_callback = data_provider_callback
 
     @property
+    def data_provider_callback(self) -> DataProviderCallback | None:
+        """Get the current data provider callback."""
+        return self._data_provider_callback
+
+    @property
     def _data_provider_callback(self) -> DataProviderCallback | None:
         """Get the data provider callback for backward compatibility."""
         return getattr(self._dependency_handler, "_data_provider_callback", None)

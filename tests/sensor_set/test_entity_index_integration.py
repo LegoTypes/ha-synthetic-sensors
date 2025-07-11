@@ -281,8 +281,12 @@ sensors:
                     entity_references.update(formula.variables.values())
 
             # Verify entity extraction logic
-            expected_entities = {"sensor.power_meter", "sensor.voltage"}  # Base entity IDs
-            expected_non_entities = {"backup_device.battery_level"}  # Variable references
+            expected_entities = {
+                "sensor.power_meter",
+                "sensor.voltage",
+                "backup_device.battery_level",
+            }  # All valid entity ID formats
+            expected_non_entities = set()  # No non-entities in this test
 
             # Check what the entity index actually tracks
             stats = sensor_set.get_entity_index_stats()
@@ -291,18 +295,19 @@ sensors:
             assert sensor_set.is_entity_tracked("sensor.power_meter")
             assert sensor_set.is_entity_tracked("sensor.voltage")
 
-            # This should NOT be tracked as an entity (it's a variable reference without domain.entity format)
-            assert not sensor_set.is_entity_tracked("backup_device.battery_level")
+            # This should also be tracked as it has valid entity ID format (domain.entity)
+            # Even though backup_device is not a standard HA domain, it follows the format
+            assert sensor_set.is_entity_tracked("backup_device.battery_level")
 
             # Verify stats show correct entity count
-            # Should track at least the valid entity IDs
+            # Should track all the valid entity ID formats
             assert stats["total_entities"] >= len(expected_entities)
 
             # Verify all expected entities are in the tracked set
             for entity_id in expected_entities:
                 assert sensor_set.is_entity_tracked(entity_id), f"Expected entity {entity_id} to be tracked"
 
-            # Verify non-entities are not tracked
+            # Verify non-entities are not tracked (none in this test)
             for non_entity in expected_non_entities:
                 assert not sensor_set.is_entity_tracked(non_entity), f"Non-entity {non_entity} should not be tracked"
 

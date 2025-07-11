@@ -239,8 +239,14 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         Returns:
             Dictionary mapping variable names to entity state values, or None if no variables
+            or if data provider callback is available (let evaluator handle resolution)
         """
         if not formula_config.variables:
+            return None
+
+        # If data provider callback is available, let the evaluator handle variable resolution
+        # through the IntegrationResolutionStrategy instead of using HA state registry
+        if self._evaluator.data_provider_callback:
             return None
 
         context: dict[str, Any] = {}

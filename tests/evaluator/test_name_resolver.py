@@ -399,6 +399,20 @@ class TestNameResolver:
 
     def test_is_valid_entity_id(self, mock_hass):
         """Test entity ID validation."""
+        # Set up mock states for domain validation
+        mock_state1 = MagicMock()
+        mock_state1.entity_id = "sensor.temperature"
+        mock_state2 = MagicMock()
+        mock_state2.entity_id = "binary_sensor.door"
+        mock_state3 = MagicMock()
+        mock_state3.entity_id = "switch.light_1"
+        mock_state4 = MagicMock()
+        mock_state4.entity_id = "input_number.rate"
+        mock_state5 = MagicMock()
+        mock_state5.entity_id = "custom_domain.entity"
+
+        mock_hass.states.async_all.return_value = [mock_state1, mock_state2, mock_state3, mock_state4, mock_state5]
+
         resolver = NameResolver(mock_hass, {})
 
         # Valid entity IDs
@@ -406,6 +420,7 @@ class TestNameResolver:
         assert resolver.is_valid_entity_id("binary_sensor.door") is True
         assert resolver.is_valid_entity_id("switch.light_1") is True
         assert resolver.is_valid_entity_id("input_number.rate") is True
+        assert resolver.is_valid_entity_id("custom_domain.entity") is True  # Valid format
 
         # Invalid entity IDs
         assert resolver.is_valid_entity_id("no_dot") is False
@@ -415,7 +430,9 @@ class TestNameResolver:
         assert resolver.is_valid_entity_id("") is False
         assert resolver.is_valid_entity_id("domain-with-dash.entity") is False
         assert resolver.is_valid_entity_id("domain.entity-with-dash") is False
-        assert resolver.is_valid_entity_id("custom_domain.entity") is False  # Invalid domain
+        assert resolver.is_valid_entity_id("Invalid_Domain.entity") is False  # Invalid domain format
+        assert resolver.is_valid_entity_id("1sensor.entity") is False  # Domain starts with number
+        assert resolver.is_valid_entity_id("nonexistent_domain.entity") is False  # Domain not in HA instance
 
     def test_resolve_name_error_scenarios(self, mock_hass):
         """Test error handling in resolve_name method."""

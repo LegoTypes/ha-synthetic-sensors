@@ -332,19 +332,15 @@ class NameResolver:
         domain, entity = entity_id.split(".")
 
         # Basic validation of domain and entity parts
-        # Domain: lowercase letters, numbers, underscores
-        # Entity: letters, numbers, underscores
         if not (domain and entity):
             return False
 
-        # Check domain format using centralized domain validation
-        if not is_valid_ha_domain(domain):
+        # Check domain format using centralized domain validation with HA instance
+        if not is_valid_ha_domain(domain, self._hass):
             return False
 
-        # Basic format check: alphanumeric and underscores
-        if not re.match(r"^[a-zA-Z0-9_]+$", domain):
-            return False
-        return bool(re.match(r"^[a-zA-Z0-9_]+$", entity))
+        # Entity part: letters, numbers, underscores, hyphens (basic validation)
+        return entity.replace("_", "").replace("-", "").isalnum()
 
 
 class FormulaEvaluator:
