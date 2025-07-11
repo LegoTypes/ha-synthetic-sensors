@@ -33,7 +33,7 @@ from .sensor_set import SensorSet
 from .storage_manager import StorageManager
 
 # Public API - Type definitions
-from .type_definitions import DataProviderCallback, DataProviderResult
+from .type_definitions import DataProviderCallback, DataProviderChangeNotifier, DataProviderResult
 
 
 async def async_setup_synthetic_sensors(
@@ -122,6 +122,7 @@ async def async_setup_synthetic_sensors_with_entities(
     data_provider_callback: DataProviderCallback | None = None,
     backing_entity_ids: set[str] | None = None,
     allow_ha_lookups: bool = False,
+    change_notifier: DataProviderChangeNotifier | None = None,
 ) -> SensorManager:
     """Simplified setup pattern for synthetic sensors with explicit backing entities.
 
@@ -139,6 +140,8 @@ async def async_setup_synthetic_sensors_with_entities(
         allow_ha_lookups: If True, backing entities can fall back to HA state lookups
                         when not found in data provider. If False (default), backing
                         entities are always virtual and only use data provider callback.
+        change_notifier: Optional callback that the integration can call when backing
+                       entity data changes to trigger selective sensor updates.
 
     Returns:
         SensorManager: Configured sensor manager
@@ -162,7 +165,7 @@ async def async_setup_synthetic_sensors_with_entities(
 
     # Register explicit backing entities if provided
     if backing_entity_ids:
-        sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups)
+        sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
 
     # CRITICAL: Register sensor manager with storage manager for entity change notifications
     # This must happen before loading configuration to ensure proper dependency tracking
@@ -186,6 +189,7 @@ async def async_setup_synthetic_integration(
     data_provider_callback: DataProviderCallback | None = None,
     sensor_set_name: str | None = None,
     allow_ha_lookups: bool = False,
+    change_notifier: DataProviderChangeNotifier | None = None,
 ) -> tuple[StorageManager, SensorManager]:
     """Complete setup pattern for synthetic sensors following logical flow.
 
@@ -208,6 +212,8 @@ async def async_setup_synthetic_integration(
         allow_ha_lookups: If True, backing entities can fall back to HA state lookups
                         when not found in data provider. If False (default), backing
                         entities are always virtual and only use data provider callback.
+        change_notifier: Optional callback that the integration can call when backing
+                       entity data changes to trigger selective sensor updates.
 
     Returns:
         Tuple of (StorageManager, SensorManager): Both configured and ready
@@ -302,7 +308,7 @@ async def async_setup_synthetic_integration(
 
     # Register backing entities if provided
     if backing_entity_ids:
-        sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups)
+        sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
 
     # Register with storage manager for entity change notifications
     sensor_manager.register_with_storage_manager(storage_manager)
@@ -539,6 +545,7 @@ except ImportError:
     __version__ = "unknown"
 __all__ = [
     "DataProviderCallback",
+    "DataProviderChangeNotifier",
     "DataProviderResult",
     "DeviceAssociationHelper",
     "EntityDescription",

@@ -32,6 +32,10 @@ class DataProviderResult(TypedDict):
 # Type alias for data provider callback
 DataProviderCallback = Callable[[str], DataProviderResult]
 
+# Type alias for data provider change notification callback
+# Called when backing entity data changes to trigger selective sensor updates
+DataProviderChangeNotifier = Callable[[set[str]], None]
+
 # Type alias for callback to get list of entity IDs that the integration can provide
 EntityListCallback = Callable[[], set[str]]  # Returns set of entity IDs that integration can provide
 

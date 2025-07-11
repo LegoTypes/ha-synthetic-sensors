@@ -24,7 +24,7 @@ from .evaluator import Evaluator
 from .exceptions import FormulaEvaluationError
 from .metadata_handler import MetadataHandler
 from .name_resolver import NameResolver
-from .type_definitions import DataProviderCallback
+from .type_definitions import DataProviderCallback, DataProviderChangeNotifier
 
 if TYPE_CHECKING:
     from homeassistant.core import EventStateChangedData
@@ -438,6 +438,7 @@ class SensorManager:
         # Integration data provider tracking
         self._registered_entities: set[str] = set()  # entity_ids registered by integration
         self._allow_ha_lookups: bool = False  # Whether backing entities can fall back to HA lookups
+        self._change_notifier: DataProviderChangeNotifier | None = None  # Callback for data change notifications
 
         # Configuration tracking
         self._current_config: Config | None = None
@@ -841,7 +842,9 @@ class SensorManager:
         self._logger.debug("Completed async sensor updates")
 
     # New push-based registration API
-    def register_data_provider_entities(self, entity_ids: set[str], allow_ha_lookups: bool = False) -> None:
+    def register_data_provider_entities(
+        self, entity_ids: set[str], allow_ha_lookups: bool = False, change_notifier: DataProviderChangeNotifier | None = None
+    ) -> None:
         """Register entities that the integration can provide data for.
 
         This replaces any existing entity list with the new one.
@@ -851,20 +854,28 @@ class SensorManager:
             allow_ha_lookups: If True, backing entities can fall back to HA state lookups
                             when not found in data provider. If False (default), backing
                             entities are always virtual and only use data provider callback.
+            change_notifier: Optional callback that the integration can call when backing
+                           entity data changes to trigger selective sensor updates.
         """
         _LOGGER.debug(
-            "Registered %d entities for integration data provider (allow_ha_lookups=%s)", len(entity_ids), allow_ha_lookups
+            "Registered %d entities for integration data provider (allow_ha_lookups=%s, change_notifier=%s)",
+            len(entity_ids),
+            allow_ha_lookups,
+            change_notifier is not None,
         )
 
         # Store the registered entities and lookup preference
         self._registered_entities = entity_ids.copy()
         self._allow_ha_lookups = allow_ha_lookups
+        self._change_notifier = change_notifier
 
         # Update the evaluator if it has the new registration support
         if hasattr(self._evaluator, "update_integration_entities"):
             self._evaluator.update_integration_entities(entity_ids)
 
-    def update_data_provider_entities(self, entity_ids: set[str], allow_ha_lookups: bool = False) -> None:
+    def update_data_provider_entities(
+        self, entity_ids: set[str], allow_ha_lookups: bool = False, change_notifier: DataProviderChangeNotifier | None = None
+    ) -> None:
         """Update the registered entity list (replaces existing list).
 
         Args:
@@ -872,8 +883,10 @@ class SensorManager:
             allow_ha_lookups: If True, backing entities can fall back to HA state lookups
                             when not found in data provider. If False (default), backing
                             entities are always virtual and only use data provider callback.
+            change_notifier: Optional callback that the integration can call when backing
+                           entity data changes to trigger selective sensor updates.
         """
-        self.register_data_provider_entities(entity_ids, allow_ha_lookups)
+        self.register_data_provider_entities(entity_ids, allow_ha_lookups, change_notifier)
 
     def get_registered_entities(self) -> set[str]:
         """
@@ -883,6 +896,35 @@ class SensorManager:
             Set of entity IDs registered for integration data access
         """
         return self._registered_entities.copy()
+
+    async def async_update_sensors_for_entities(self, changed_entity_ids: set[str]) -> None:
+        """Update only sensors that use the specified backing entities.
+
+        This method provides selective sensor updates based on which backing entities
+        have changed, improving efficiency over updating all sensors.
+
+        Args:
+            changed_entity_ids: Set of backing entity IDs that have changed
+        """
+        if not changed_entity_ids:
+            return
+
+        # Find sensors that use any of the changed backing entities
+        affected_sensor_configs = []
+        for sensor in self._sensors_by_unique_id.values():
+            sensor_backing_entities = self._extract_backing_entities_from_sensor(sensor.config)
+            if sensor_backing_entities.intersection(changed_entity_ids):
+                affected_sensor_configs.append(sensor.config)
+
+        if affected_sensor_configs:
+            await self.async_update_sensors(affected_sensor_configs)
+            _LOGGER.debug(
+                "Updated %d sensors affected by changes to backing entities: %s",
+                len(affected_sensor_configs),
+                changed_entity_ids,
+            )
+        else:
+            _LOGGER.debug("No sensors affected by changes to backing entities: %s", changed_entity_ids)
 
     def _extract_backing_entities_from_sensor(self, sensor_config: SensorConfig) -> set[str]:
         """Extract backing entity IDs from a sensor configuration.
