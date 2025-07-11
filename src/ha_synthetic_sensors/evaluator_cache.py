@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from .cache import FormulaCache
 
@@ -40,7 +40,9 @@ class EvaluatorCache:
             Cached result if found, None otherwise
         """
         filtered_context = self.filter_context_for_cache(context)
-        cached_result = self._cache.get_result(config.formula, filtered_context, cache_key_id)
+        # Include formula variables in cache key to distinguish same formula with different variables
+        variables = cast(dict[str, str | int | float | None] | None, config.variables if hasattr(config, "variables") else None)
+        cached_result = self._cache.get_result(config.formula, filtered_context, cache_key_id, variables)
         if cached_result is not None:
             return {
                 "success": True,
@@ -62,7 +64,9 @@ class EvaluatorCache:
             result: Result to cache
         """
         filtered_context = self.filter_context_for_cache(context)
-        self._cache.store_result(config.formula, result, filtered_context, cache_key_id)
+        # Include formula variables in cache key to distinguish same formula with different variables
+        variables = cast(dict[str, str | int | float | None] | None, config.variables if hasattr(config, "variables") else None)
+        self._cache.store_result(config.formula, result, filtered_context, cache_key_id, variables)
 
     def clear_cache(self, formula_name: str | None = None) -> None:
         """Clear cached results.
