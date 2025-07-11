@@ -17,24 +17,140 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities(native_entities)
 
     # Then add synthetic sensors with one call
-    await async_setup_synthetic_sensors(
+    sensor_manager = await async_setup_synthetic_sensors(
         hass=hass,
         config_entry=config_entry,
         async_add_entities=async_add_entities,
         storage_manager=storage_manager,
         device_identifier=coordinator.device_id,
         data_provider_callback=create_data_provider_callback(coordinator),
+        allow_ha_lookups=False,  # Use virtual entities only (recommended)
     )
 ```
 
 This approach handles everything automatically using storage-based configuration.
+
+## Interface Functions Overview
+
+The library provides several interface functions with proper typing:
+
+### Core Setup Function
+
+```python
+async def async_setup_synthetic_sensors(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+    storage_manager: StorageManager,
+    device_identifier: str,
+    data_provider_callback: DataProviderCallback | None = None,
+) -> SensorManager
+```
+
+### Extended Setup with Backing Entities
+
+```python
+async def async_setup_synthetic_sensors_with_entities(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+    storage_manager: StorageManager,
+    device_identifier: str,
+    data_provider_callback: DataProviderCallback | None = None,
+    backing_entity_ids: set[str] | None = None,
+    allow_ha_lookups: bool = False,
+) -> SensorManager
+```
+
+### Complete Integration Setup
+
+```python
+async def async_setup_synthetic_integration(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+    integration_domain: str,
+    device_identifier: str,
+    sensor_configs: list[SensorConfig],
+    backing_entity_ids: set[str] | None = None,
+    data_provider_callback: DataProviderCallback | None = None,
+    sensor_set_name: str | None = None,
+    allow_ha_lookups: bool = False,
+) -> tuple[StorageManager, SensorManager]
+```
+
+### Auto-Backing Entity Setup
+
+```python
+async def async_setup_synthetic_integration_with_auto_backing(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+    integration_domain: str,
+    device_identifier: str,
+    sensor_configs: list[SensorConfig],
+    data_provider_callback: DataProviderCallback | None = None,
+    sensor_set_name: str | None = None,
+    allow_ha_lookups: bool = False,
+) -> tuple[StorageManager, SensorManager]
+```
+
+## Virtual Entity Resolution with `allow_ha_lookups`
+
+The `allow_ha_lookups` parameter controls how backing entities are resolved:
+
+### Virtual-Only Mode (Recommended): `allow_ha_lookups=False`
+
+```python
+# Default behavior - virtual entities only
+sensor_manager = await async_setup_synthetic_sensors(
+    # ... other parameters ...
+    data_provider_callback=create_data_provider_callback(coordinator),
+    allow_ha_lookups=False,  # Default
+)
+```
+
+**Benefits:**
+
+- No entity registry pollution
+- Better performance (no HA state lookups)
+- Clean architecture with virtual backing entities
+- Variables can reference entities that don't exist in HA
+
+### Hybrid Mode: `allow_ha_lookups=True`
+
+```python
+# Allow fallback to HA state lookups
+sensor_manager = await async_setup_synthetic_sensors(
+    # ... other parameters ...
+    data_provider_callback=create_data_provider_callback(coordinator),
+    allow_ha_lookups=True,
+)
+```
+
+**Use Cases:**
+
+- Mixing virtual and real HA entities
+- Migration scenarios
+- Legacy integrations
+
+### HA-Only Mode: No Data Provider
+
+```python
+# Traditional HA entity lookups only
+sensor_manager = await async_setup_synthetic_sensors(
+    # ... other parameters ...
+    data_provider_callback=None,  # No data provider
+    # allow_ha_lookups setting ignored when no data provider
+)
+```
 
 ## Data Provider Callback Pattern
 
 When you provide a `data_provider_callback`, the synthetic sensors package automatically switches to **virtual entity mode**:
 
 - **Variables are resolved through your data provider callback**
-- **No lookups in Home Assistant's entity registry**
+- **No lookups in Home Assistant's entity registry** (when `allow_ha_lookups=False`)
 - **Virtual backing entities don't pollute the registry**
 - **Better performance and cleaner architecture**
 
@@ -413,6 +529,41 @@ def create_data_provider_callback(main_coordinator: YourCoordinator) -> DataProv
     return data_provider_callback
 ```
 
+## CRUD Operations for Dynamic Sensor Management
+
+For adding optional sensor configurations (like solar or battery sensors), use the CRUD interface:
+
+```python
+# Adding solar sensors dynamically
+async def add_solar_sensors(sensor_manager: SensorManager, leg1_circuit: str, leg2_circuit: str):
+    """Add solar sensors using CRUD interface."""
+
+    # Generate solar sensor configurations
+    solar_configs = await generate_solar_sensor_configs(leg1_circuit, leg2_circuit)
+
+    # Extract backing entity IDs from configurations
+    backing_entity_ids = extract_backing_entities_from_configs(solar_configs)
+
+    # Add sensors with backing entities
+    for sensor_config in solar_configs:
+        success = await sensor_manager.add_sensor_with_backing_entities(
+            sensor_config=sensor_config,
+            backing_entity_ids=backing_entity_ids,
+            allow_ha_lookups=False,  # Use virtual entities
+        )
+        if not success:
+            _LOGGER.error("Failed to add solar sensor: %s", sensor_config.unique_id)
+
+# Removing solar sensors dynamically
+async def remove_solar_sensors(sensor_manager: SensorManager, solar_sensor_ids: list[str]):
+    """Remove solar sensors using CRUD interface."""
+
+    for sensor_id in solar_sensor_ids:
+        success = await sensor_manager.remove_sensor_with_backing_entities(sensor_id)
+        if not success:
+            _LOGGER.error("Failed to remove solar sensor: %s", sensor_id)
+```
+
 ## Benefits of This Approach
 
 ### 1. **Clean Architecture**
@@ -432,6 +583,7 @@ def create_data_provider_callback(main_coordinator: YourCoordinator) -> DataProv
 - `BackingEntity` TypedDict ensures consistency
 - Helper functions prevent ID conflicts
 - Template placeholders are validated
+- Proper typing throughout the interface
 
 ### 4. **Maintainability**
 
@@ -439,52 +591,23 @@ def create_data_provider_callback(main_coordinator: YourCoordinator) -> DataProv
 - YAML structure changes only require template updates
 - All ID generation logic is centralized in helpers
 
+### 5. **Dynamic Management**
+
+- CRUD operations allow runtime sensor addition/removal
+- Perfect for optional configurations (solar, battery, etc.)
+- Preserves user customizations during updates
+
 This pattern scales well and provides the cleanest integration with the synthetic sensors package.
 
-## Virtual Entity Resolution Behavior
-
-### With Data Provider Callback (Recommended)
-
-When you provide a `data_provider_callback`, the synthetic sensors package:
-
-1. **Skips HA entity registry lookups** for variable resolution
-2. **Uses your data provider exclusively** through the `IntegrationResolutionStrategy`
-3. **Allows virtual entity IDs** that don't exist in HA's state registry
-4. **Provides better performance** by avoiding registry overhead
-
-```python
-# Your variables can reference virtual entities
-variables:
-  source_value: "sensor.my_device_0_backing_power"  # Virtual - doesn't exist in HA registry
-
-# Your data provider handles the resolution
-def data_provider_callback(entity_id: str) -> DataProviderResult:
-    if entity_id == "sensor.my_device_0_backing_power":
-        return {"value": get_live_power_value(), "exists": True}
-    return {"value": None, "exists": False}
-```
-
-### Without Data Provider Callback (Legacy)
-
-When no `data_provider_callback` is provided, the synthetic sensors package:
-
-1. **Uses HA entity registry lookups** for variable resolution
-2. **Requires real entities** to exist in Home Assistant
-3. **Falls back to HomeAssistantResolutionStrategy** for entity state access
-
-```python
-# Your variables must reference real HA entities
-variables:
-  source_value: "sensor.real_ha_entity"  # Must exist in HA registry
-```
-
-### Migration Guide
+## Migration Guide
 
 To migrate from real entities to virtual entities:
 
 1. **Add a data provider callback** to your `async_setup_synthetic_sensors` call
-2. **Update your variable entity IDs** to use virtual backing entity naming
-3. **Remove real backing entities** from your integration (they're no longer needed)
-4. **Implement the data provider** to return live values for virtual entity IDs
+2. **Set `allow_ha_lookups=False`** for pure virtual mode
+3. **Update your variable entity IDs** to use virtual backing entity naming
+4. **Remove real backing entities** from your integration (they're no longer needed)
+5. **Implement the data provider** to return live values for virtual entity IDs
+6. **Use CRUD operations** for dynamic sensor management instead of recreation
 
 This migration improves performance and reduces entity registry pollution.

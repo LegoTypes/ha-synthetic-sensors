@@ -1,4 +1,5 @@
 """Sensor manager for synthetic sensors."""
+# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
@@ -125,6 +126,21 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         for formula in config.formulas:
             self._dependencies.update(formula.dependencies)
 
+        # IMPORTANT: When using data provider callbacks, we still need to listen to state changes
+        # to trigger re-evaluation. Add variable entity IDs to dependencies for state tracking.
+        if self._evaluator.data_provider_callback:
+            for formula in config.formulas:
+                if formula.variables:
+                    for _var_name, var_value in formula.variables.items():
+                        if isinstance(var_value, str) and "." in var_value:
+                            # This looks like an entity_id, add it to dependencies for state tracking
+                            self._dependencies.add(var_value)
+                            _LOGGER.debug(
+                                "Added variable entity %s to dependencies for sensor %s (data provider mode)",
+                                var_value,
+                                self._attr_unique_id,
+                            )
+
     def _setup_metadata_properties(self, global_settings: GlobalSettingsDict | None) -> None:
         """Set up metadata properties for the sensor."""
         metadata_handler = MetadataHandler()
@@ -239,18 +255,20 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         Returns:
             Dictionary mapping variable names to entity state values, or None if no variables
-            or if data provider callback is available (let evaluator handle resolution)
+            or if data provider callback is available and HA lookups are disabled
         """
         if not formula_config.variables:
             return None
 
-        # If data provider callback is available, let the evaluator handle variable resolution
-        # through the IntegrationResolutionStrategy instead of using HA state registry
-        if self._evaluator.data_provider_callback:
+        # If data provider callback is available and HA lookups are disabled,
+        # let the evaluator handle variable resolution through IntegrationResolutionStrategy
+        if self._evaluator.data_provider_callback and not self._sensor_manager.allow_ha_lookups:
             return None
 
         context: dict[str, Any] = {}
         for var_name, entity_id in formula_config.variables.items():
+            # If HA lookups are allowed or no data provider callback is available,
+            # try to get values from HA state registry
             state = self._hass.states.get(entity_id)
             if state is not None:
                 try:
@@ -375,6 +393,11 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         """Get the unique ID from the sensor configuration."""
         return self._config.unique_id
 
+    @property
+    def config(self) -> SensorConfig:
+        """Get the sensor configuration."""
+        return self._config
+
     async def async_update_sensor(self) -> None:
         """Update the sensor value and calculated attributes (public method)."""
         await self._async_update_sensor()
@@ -414,6 +437,7 @@ class SensorManager:
 
         # Integration data provider tracking
         self._registered_entities: set[str] = set()  # entity_ids registered by integration
+        self._allow_ha_lookups: bool = False  # Whether backing entities can fall back to HA lookups
 
         # Configuration tracking
         self._current_config: Config | None = None
@@ -691,7 +715,9 @@ class SensorManager:
         )
 
         # Get global settings from current config
-        global_settings = self._current_config.global_settings if self._current_config else {}
+        global_settings: GlobalSettingsDict | None = None
+        if self._current_config and self._current_config.global_settings:
+            global_settings = self._current_config.global_settings
 
         return DynamicSensor(self._hass, sensor_config, self._evaluator, self, manager_config, global_settings)
 
@@ -815,30 +841,39 @@ class SensorManager:
         self._logger.debug("Completed async sensor updates")
 
     # New push-based registration API
-    def register_data_provider_entities(self, entity_ids: set[str]) -> None:
+    def register_data_provider_entities(self, entity_ids: set[str], allow_ha_lookups: bool = False) -> None:
         """Register entities that the integration can provide data for.
 
         This replaces any existing entity list with the new one.
 
         Args:
             entity_ids: Set of entity IDs that the integration can provide data for
+            allow_ha_lookups: If True, backing entities can fall back to HA state lookups
+                            when not found in data provider. If False (default), backing
+                            entities are always virtual and only use data provider callback.
         """
-        _LOGGER.debug("Registered %d entities for integration data provider", len(entity_ids))
+        _LOGGER.debug(
+            "Registered %d entities for integration data provider (allow_ha_lookups=%s)", len(entity_ids), allow_ha_lookups
+        )
 
-        # Store the registered entities
+        # Store the registered entities and lookup preference
         self._registered_entities = entity_ids.copy()
+        self._allow_ha_lookups = allow_ha_lookups
 
         # Update the evaluator if it has the new registration support
         if hasattr(self._evaluator, "update_integration_entities"):
             self._evaluator.update_integration_entities(entity_ids)
 
-    def update_data_provider_entities(self, entity_ids: set[str]) -> None:
+    def update_data_provider_entities(self, entity_ids: set[str], allow_ha_lookups: bool = False) -> None:
         """Update the registered entity list (replaces existing list).
 
         Args:
             entity_ids: Updated set of entity IDs the integration can provide data for
+            allow_ha_lookups: If True, backing entities can fall back to HA state lookups
+                            when not found in data provider. If False (default), backing
+                            entities are always virtual and only use data provider callback.
         """
-        self.register_data_provider_entities(entity_ids)
+        self.register_data_provider_entities(entity_ids, allow_ha_lookups)
 
     def get_registered_entities(self) -> set[str]:
         """
@@ -848,6 +883,155 @@ class SensorManager:
             Set of entity IDs registered for integration data access
         """
         return self._registered_entities.copy()
+
+    def _extract_backing_entities_from_sensor(self, sensor_config: SensorConfig) -> set[str]:
+        """Extract backing entity IDs from a sensor configuration.
+
+        This analyzes the sensor's formulas and variables to find entity IDs that
+        would be resolved by the IntegrationResolutionStrategy (i.e., backing entities).
+
+        Args:
+            sensor_config: The sensor configuration to analyze
+
+        Returns:
+            Set of entity IDs that are backing entities for this sensor
+        """
+        backing_entities = set()
+
+        for formula in sensor_config.formulas:
+            if formula.variables:
+                for _var_name, var_value in formula.variables.items():
+                    # Check if this looks like an entity ID that would use integration data provider
+                    if (
+                        isinstance(var_value, str)
+                        and var_value.startswith("sensor.")
+                        and var_value in self._registered_entities
+                    ):
+                        backing_entities.add(var_value)
+                        _LOGGER.debug("Found backing entity %s for sensor %s", var_value, sensor_config.unique_id)
+
+        return backing_entities
+
+    def _extract_backing_entities_from_sensors(self, sensor_configs: list[SensorConfig]) -> set[str]:
+        """Extract all backing entity IDs from a list of sensor configurations.
+
+        Args:
+            sensor_configs: List of sensor configurations to analyze
+
+        Returns:
+            Set of all entity IDs that are backing entities for these sensors
+        """
+        all_backing_entities = set()
+        for sensor_config in sensor_configs:
+            backing_entities = self._extract_backing_entities_from_sensor(sensor_config)
+            all_backing_entities.update(backing_entities)
+
+        return all_backing_entities
+
+    async def add_sensor_with_backing_entities(self, sensor_config: SensorConfig, allow_ha_lookups: bool | None = None) -> bool:
+        """Add a sensor and automatically register its backing entities.
+
+        This is the enhanced CRUD method that makes backing entity management invisible.
+
+        Args:
+            sensor_config: The sensor configuration to add
+            allow_ha_lookups: If specified, overrides the current HA lookup setting for backing entities.
+                            If None, uses the current setting.
+
+        Returns:
+            True if sensor was added successfully
+        """
+        try:
+            # Extract backing entities from this sensor
+            backing_entities = self._extract_backing_entities_from_sensor(sensor_config)
+
+            # Add backing entities to our registered entities
+            if backing_entities:
+                updated_entities = self._registered_entities.union(backing_entities)
+                # Use provided allow_ha_lookups or keep current setting
+                lookup_setting = allow_ha_lookups if allow_ha_lookups is not None else self._allow_ha_lookups
+                self.register_data_provider_entities(updated_entities, lookup_setting)
+                _LOGGER.debug(
+                    "Auto-registered %d backing entities for sensor %s: %s (allow_ha_lookups=%s)",
+                    len(backing_entities),
+                    sensor_config.unique_id,
+                    backing_entities,
+                    lookup_setting,
+                )
+
+            # Create the sensor entity
+            if sensor_config.enabled:
+                sensor = await self._create_sensor_entity(sensor_config)
+                self._sensors_by_unique_id[sensor_config.unique_id] = sensor
+                self._sensors_by_entity_id[sensor.entity_id] = sensor
+                self._add_entities_callback([sensor])
+                _LOGGER.debug("Added sensor %s with automatic backing entity registration", sensor_config.unique_id)
+                return True
+
+            _LOGGER.debug("Sensor %s is disabled, not creating entity", sensor_config.unique_id)
+            return True
+
+        except Exception as e:
+            _LOGGER.error("Failed to add sensor %s: %s", sensor_config.unique_id, e)
+            return False
+
+    async def remove_sensor_with_backing_entities(
+        self, sensor_unique_id: str, cleanup_orphaned_backing_entities: bool = True
+    ) -> bool:
+        """Remove a sensor and optionally clean up orphaned backing entities.
+
+        This is the enhanced CRUD method that makes backing entity management invisible.
+
+        Args:
+            sensor_unique_id: The unique ID of the sensor to remove
+            cleanup_orphaned_backing_entities: Whether to remove backing entities that are no longer used
+
+        Returns:
+            True if sensor was removed successfully
+        """
+        if sensor_unique_id not in self._sensors_by_unique_id:
+            return False
+
+        sensor = self._sensors_by_unique_id[sensor_unique_id]
+
+        # Get the sensor's configuration to find its backing entities
+        sensor_config = sensor.config
+
+        # Clean up our tracking
+        del self._sensors_by_unique_id[sensor_unique_id]
+        self._sensors_by_entity_id.pop(sensor.entity_id, None)
+        self._sensor_states.pop(sensor_unique_id, None)
+
+        # If requested, clean up orphaned backing entities
+        if cleanup_orphaned_backing_entities and sensor_config:
+            # Find backing entities that were used by this sensor
+            removed_sensor_backing_entities = self._extract_backing_entities_from_sensor(sensor_config)
+
+            if removed_sensor_backing_entities:
+                # Find which backing entities are still needed by remaining sensors
+                remaining_sensor_configs = []
+                for remaining_sensor in self._sensors_by_unique_id.values():
+                    if hasattr(remaining_sensor, "config"):
+                        remaining_sensor_configs.append(remaining_sensor.config)
+
+                still_needed_backing_entities = self._extract_backing_entities_from_sensors(remaining_sensor_configs)
+
+                # Find orphaned backing entities (used by removed sensor but not by any remaining sensor)
+                orphaned_backing_entities = removed_sensor_backing_entities - still_needed_backing_entities
+
+                if orphaned_backing_entities:
+                    # Remove orphaned backing entities from registered entities
+                    updated_entities = self._registered_entities - orphaned_backing_entities
+                    self.register_data_provider_entities(updated_entities, self._allow_ha_lookups)
+                    _LOGGER.debug(
+                        "Auto-removed %d orphaned backing entities after removing sensor %s: %s",
+                        len(orphaned_backing_entities),
+                        sensor_unique_id,
+                        orphaned_backing_entities,
+                    )
+
+        _LOGGER.debug("Removed sensor: %s", sensor_unique_id)
+        return True
 
     def register_with_storage_manager(self, storage_manager: StorageManager) -> None:
         """
@@ -875,6 +1059,11 @@ class SensorManager:
     def evaluator(self) -> Evaluator:
         """Get the evaluator instance used by this SensorManager."""
         return self._evaluator
+
+    @property
+    def allow_ha_lookups(self) -> bool:
+        """Get whether backing entities can fall back to HA state lookups."""
+        return self._allow_ha_lookups
 
     def _resolve_device_name_prefix(self, device_identifier: str) -> str | None:
         """Resolve device name to slugified prefix for entity_id generation.

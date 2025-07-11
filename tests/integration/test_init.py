@@ -135,10 +135,15 @@ class TestLoggingUtilities:
             mock_logger.debug.assert_called()
 
     def test_version_attribute(self):
-        """Test that __version__ is defined."""
+        """Test that __version__ is defined and matches package metadata."""
         assert hasattr(ha_synthetic_sensors, "__version__")
         assert isinstance(ha_synthetic_sensors.__version__, str)
-        assert ha_synthetic_sensors.__version__ == "0.1.0"
+        # Version should be read from package metadata, not hardcoded
+        assert ha_synthetic_sensors.__version__ != "unknown"  # Should not be fallback
+        # Version should follow semantic versioning pattern
+        import re
+        version_pattern = r'^\d+\.\d+\.\d+.*$'
+        assert re.match(version_pattern, ha_synthetic_sensors.__version__), f"Version '{ha_synthetic_sensors.__version__}' should follow semver pattern"
 
     def test_all_exports(self):
         """Test that __all__ contains expected exports."""
