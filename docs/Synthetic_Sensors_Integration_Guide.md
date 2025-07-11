@@ -16,948 +16,413 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     native_entities = create_native_sensors(coordinator)
     async_add_entities(native_entities)
 
-    # Then add synthetic sensors with one function call
-    storage_manager = hass.data[DOMAIN][config_entry.entry_id]["storage_manager"]
-    sensor_manager = await async_setup_synthetic_sensors(
+    # Then add synthetic sensors with one call
+    await async_setup_synthetic_sensors(
         hass=hass,
         config_entry=config_entry,
         async_add_entities=async_add_entities,
-        storage_manager=storage_manager,
+        data_provider_callback=create_data_provider_callback(coordinator),
         device_identifier=coordinator.device_id,
-        data_provider_callback=create_data_provider(coordinator),
     )
 ```
 
-The `async_setup_synthetic_sensors()` function handles all complexity while supporting both storage-based and YAML-based
-configurations with full reload capabilities.
+This approach handles everything automatically using storage-based configuration.
 
-## Overview
+## Recommended Architecture: YAML Templates with Virtual Backing Entities
 
-The `ha-synthetic-sensors` library provides a complete solution for creating synthetic sensors that can perform calculations
+The cleanest approach for creating synthetic sensors uses **YAML templates** with **virtual backing entities**. This pattern provides:
 
-- **Configuration Storage**: Persistent storage using HA's storage system OR YAML content import
-- **Entity Creation**: Creates and manages actual Home Assistant sensor entities
-- **Formula Evaluation**: Real-time calculation of sensor values using live data
-- **Lifecycle Management**: Automatic entity updates, creation, and deletion
-- **Reload Support**: Dynamic configuration reloading without HA restart
+- **Clean separation** between templates and data
+- **Type-safe helpers** for all ID generation
+- **No string parsing** or manual YAML construction
+- **Maintainable** template-driven configuration
 
-## Key Concepts
+### Complete Implementation Example
 
-### Architecture
+Here's how to implement this pattern using a real-world example from the SPAN Panel integration:
 
-The library creates **actual Home Assistant sensor entities** that evaluate formulas using live data from your integration:
-
-- **StorageManager**: Manages persistent storage and sensor configurations
-- **SensorManager**: Creates and manages actual Home Assistant sensor entities
-- **Data Provider**: Supplies live data to synthetic sensors from your integration
-- **Formula Evaluator**: Calculates sensor values in real-time using formulas
-
-### Configuration Approaches
-
-Choose between two main configuration approaches:
-
-1. **API-Based Configuration**: Build configurations using Python objects and API methods
-2. **YAML-Based Configuration**: Create configurations using YAML content (from any source)
-
-Both approaches store configurations in HA's storage system and support user modifications.
-
-### Integration Flow
-
-1. **Setup Phase** (`__init__.py`): Generate and store sensor configurations
-2. **Entity Creation Phase** (`sensor.py`): Create actual Home Assistant sensor entities
-3. **Runtime Phase**: Sensors evaluate formulas using live data from your integration
-
-## Configuration Approaches
-
-### Approach 1: API-Based Configuration (Recommended)
-
-**Best for**: Simple configurations, type safety, straightforward sensor setups
-
-Use Python objects and API methods to build configurations:
+#### 1. Helper Functions for ID Generation
 
 ```python
-from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
+# helpers.py
+def construct_backing_entity_id(
+    device: DeviceData,
+    circuit_id: str | None = None,
+    suffix: str = "",
+) -> str:
+    """Construct backing entity ID for synthetic sensor references.
 
-def generate_default_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
-    """Generate default sensor configurations for a device."""
-    configs = []
+    These are virtual entities used only within synthetic sensor YAML configuration.
+    They follow the pattern: sensor.{domain}_{serial}_{circuit_id}_backing_{suffix}
+    """
+    serial = device.serial_number.lower()
+    circuit_part = circuit_id if circuit_id is not None else "0"
+    return f"sensor.{domain}_{serial}_{circuit_part}_backing_{suffix}"
 
-    # Create sensor configuration using Python objects
-    power_config = SensorConfig(
-        unique_id=f"{device_identifier}_current_power",
-        name=f"{device_data.name} Current Power",
-        entity_id=f"sensor.{device_identifier}_current_power",
-        device_identifier=device_identifier,
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="voltage * current",
-                variables={
-                    "voltage": f"{DOMAIN}_backing.{device_identifier}_voltage",
-                    "current": f"{DOMAIN}_backing.{device_identifier}_current"
-                },
-                unit_of_measurement="W",
-                device_class="power",
-                state_class="measurement",
-            )
-        ],
-    )
-    configs.append(power_config)
-    return configs
+def construct_panel_unique_id(device: DeviceData, api_key: str) -> str:
+    """Build unique ID for panel-level sensors."""
+    entity_suffix = get_entity_suffix(api_key)
+    return f"{domain}_{device.serial_number.lower()}_{entity_suffix}"
 
-# Store using API methods
-await sensor_set.async_replace_sensors(default_configs)
-# OR add individually
-for config in default_configs:
-    await sensor_set.async_add_sensor(config)
+def construct_panel_entity_id(
+    coordinator: YourCoordinator,
+    device: DeviceData,
+    platform: str,
+    suffix: str,
+    unique_id: str | None = None,
+) -> str | None:
+    """Construct entity ID for panel-level sensors."""
+    # Check registry for existing customizations
+    if unique_id:
+        entity_registry = er.async_get(coordinator.hass)
+        existing = entity_registry.async_get_entity_id(platform, DOMAIN, unique_id)
+        if existing:
+            return existing
+
+    # Build new entity ID
+    return f"{platform}.{device.name_slug}_{suffix}"
 ```
 
-### Approach 2: YAML-Based Configuration
+#### 2. YAML Templates
 
-**Best for**: Complex configurations, template-driven setups, user-provided configurations
+Create template files in `yaml_templates/` directory:
 
-Create YAML content and import it:
-
-```python
-# Option A: Generate YAML programmatically
-def generate_yaml_configuration(device_data, device_identifier):
-    yaml_content = f"""
+```yaml
+# yaml_templates/sensor_set_header.yaml.txt
 version: "1.0"
-sensors:
-  {device_identifier}_current_power:
-    name: "{device_data.name} Current Power"
-    entity_id: "sensor.{device_identifier}_current_power"
-    device_identifier: "{device_identifier}"
-    formulas:
-      - id: "main"
-        formula: "voltage * current"
-        variables:
-          voltage: "{DOMAIN}_backing.{device_identifier}_voltage"
-          current: "{DOMAIN}_backing.{device_identifier}_current"
-        unit_of_measurement: "W"
-        device_class: "power"
-"""
 
-    # Add energy sensor if supported
-    if device_data.supports_energy:
-        yaml_template += """
-  {device_id}_energy:
-    name: "{device_name} Energy"
-    entity_id: "sensor.{device_id}_energy"
-    device_identifier: "{device_id}"
-    formulas:
-      - id: "main"
-        formula: "power * time_hours / 1000"
-        variables:
-          power: "sensor.{device_id}_power"
-          time_hours: "24"
-        unit_of_measurement: "kWh"
-        device_class: "energy"
-"""
+global_settings:
+  device_identifier: "{{device_identifier}}"
+  metadata:
+    attribution: "Data from Your Device"
+    entity_registry_enabled_default: true
+    suggested_display_precision: 2
 
-    return yaml_template.format(
-        device_id=device_identifier,
-        device_name=device_data.name,
-        domain=DOMAIN
-    )
-
-# Option B: Load from file or template
-yaml_content = load_yaml_from_file("sensor_configs.yaml")
-
-# Option C: User-provided YAML (via config flow, UI, etc.)
-yaml_content = user_provided_yaml
-
-# Import YAML content
-await sensor_set.async_import_yaml(yaml_content)
+sensors: {}
 ```
 
-**YAML Validation**: Always validate before importing:
-
-```python
-# Validate YAML before importing
-validation_result = await sensor_set.async_validate_import(yaml_content)
-
-if validation_result["yaml_errors"]:
-    _LOGGER.error("YAML parsing errors: %s", validation_result["yaml_errors"])
-    return
-
-if validation_result["config_errors"]:
-    _LOGGER.error("Configuration errors: %s", validation_result["config_errors"])
-    return
-
-if validation_result["sensor_errors"]:
-    _LOGGER.error("Sensor validation errors: %s", validation_result["sensor_errors"])
-    return
-
-# Safe to import
-await sensor_set.async_import_yaml(yaml_content)
+```yaml
+# yaml_templates/power_sensor.yaml.txt
+{{sensor_key}}:
+  name: "{{sensor_name}}"
+  entity_id: "{{entity_id}}"
+  formula: "source_value"
+  variables:
+    source_value: "{{backing_entity_id}}"
+  metadata:
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
 ```
 
-### When to Use Each Approach
+```yaml
+# yaml_templates/energy_sensor.yaml.txt
+{{sensor_key}}:
+  name: "{{sensor_name}}"
+  entity_id: "{{entity_id}}"
+  formula: "source_value"
+  variables:
+    source_value: "{{backing_entity_id}}"
+  metadata:
+    unit_of_measurement: "Wh"
+    device_class: "energy"
+    state_class: "total_increasing"
+```
 
-| Approach | Best For | Pros | Cons |
-|----------|----------|------|------|
-| **API-Based** | Most integrations, simple configs | Type safety, IDE completion, straightforward | Less flexible for complex scenarios |
-| **YAML-Based** | Complex configs, templates, user input | Very flexible, familiar format, powerful | Requires validation, more complex |
-
-## Standard Integration Pattern
-
-### 1. Setup in `__init__.py`
+#### 3. Template Loading Utilities
 
 ```python
-import logging
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-import ha_synthetic_sensors
-from ha_synthetic_sensors import StorageManager
+# synthetic_utils.py
+from typing import TypedDict
+from pathlib import Path
+import aiofiles
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up your integration from a config entry."""
+class BackingEntity(TypedDict):
+    """Structure for backing entity data used by ha-synthetic-sensors."""
+    entity_id: str
+    value: float | int | str | None
+    data_path: str
 
-    # Configure logging (optional)
-    ha_synthetic_sensors.configure_logging(logging.DEBUG)
+async def load_template(template_name: str) -> str:
+    """Load a YAML template from the yaml_templates directory."""
+    template_dir = Path(__file__).parent / "yaml_templates"
 
-    # Create your coordinator
-    coordinator = YourIntegrationCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
+    if not template_name.endswith(".yaml.txt"):
+        template_name = f"{template_name}.yaml.txt"
 
-    # Initialize storage manager for synthetic sensors
+    template_path = template_dir / template_name
+
+    async with aiofiles.open(template_path, mode="r", encoding="utf-8") as f:
+        return await f.read()
+
+def fill_template(template: str, replacements: dict[str, str]) -> str:
+    """Fill template placeholders with actual values."""
+    result = template
+    for placeholder, replacement in replacements.items():
+        result = result.replace(f"{{{{{placeholder}}}}}", replacement)
+    return result
+```
+
+#### 4. Sensor Generation with Templates
+
+```python
+# synthetic_panel_sensors.py
+import yaml
+from .synthetic_utils import BackingEntity, load_template, fill_template
+
+# Define your sensors as clean data structures
+PANEL_SENSOR_DEFINITIONS = [
+    {
+        "key": "instantGridPowerW",
+        "name": "Current Power",
+        "template": "power_sensor",
+        "data_path": "instantGridPowerW",
+    },
+    {
+        "key": "mainMeterEnergyConsumedWh",
+        "name": "Main Meter Consumed Energy",
+        "template": "energy_sensor",
+        "data_path": "mainMeterEnergyConsumedWh",
+    },
+]
+
+async def generate_panel_sensors(
+    coordinator: YourCoordinator,
+    device: DeviceData
+) -> tuple[dict[str, Any], list[BackingEntity]]:
+    """Generate panel-level synthetic sensors using templates."""
+    sensor_configs: dict[str, Any] = {}
+    backing_entities: list[BackingEntity] = []
+
+    for sensor_def in PANEL_SENSOR_DEFINITIONS:
+        # Load the appropriate template
+        template = await load_template(sensor_def["template"])
+
+        # Generate IDs using helper functions
+        entity_suffix = get_entity_suffix(sensor_def["key"])
+        entity_id = construct_panel_entity_id(coordinator, device, "sensor", entity_suffix)
+        backing_entity_id = construct_backing_entity_id(device, "0", entity_suffix)
+        sensor_unique_id = construct_panel_unique_id(device, sensor_def["key"])
+
+        # Get current data value
+        data_value = get_device_data_value(device, sensor_def["data_path"])
+
+        # Fill template placeholders
+        placeholders = {
+            "sensor_key": sensor_unique_id,
+            "sensor_name": sensor_def["name"],
+            "entity_id": entity_id,
+            "backing_entity_id": backing_entity_id,
+        }
+
+        # Generate YAML from template
+        filled_template = fill_template(template, placeholders)
+        sensor_yaml = yaml.safe_load(filled_template)
+
+        # Add to collection
+        sensor_configs[sensor_unique_id] = sensor_yaml[sensor_unique_id]
+
+        # Create backing entity
+        backing_entity = BackingEntity(
+            entity_id=backing_entity_id,
+            value=data_value,
+            data_path=sensor_def["data_path"]
+        )
+        backing_entities.append(backing_entity)
+
+    return sensor_configs, backing_entities
+
+async def generate_complete_sensor_set_yaml(
+    device: DeviceData,
+    sensor_configs: dict[str, Any]
+) -> str:
+    """Generate complete sensor set YAML using header template."""
+    # Load header template
+    header_template = await load_template("sensor_set_header")
+
+    # Fill header placeholders
+    header_placeholders = {
+        "device_identifier": device.serial_number,
+    }
+
+    # Generate header YAML
+    filled_header = fill_template(header_template, header_placeholders)
+    header_yaml = yaml.safe_load(filled_header)
+
+    # Merge sensors into the header structure
+    header_yaml["sensors"] = sensor_configs
+
+    # Return complete YAML
+    return yaml.dump(header_yaml, default_flow_style=False)
+```
+
+#### 5. Virtual Backing Entity Coordinator
+
+**This is the missing piece** - how virtual backing entities get populated with live data:
+
+```python
+# synthetic_sensors.py
+class SyntheticSensorCoordinator:
+    """Coordinator for synthetic sensor data updates.
+
+    This class listens to your main coordinator updates and ensures
+    virtual backing entities are populated with live data.
+    """
+
+    def __init__(self, hass: HomeAssistant, main_coordinator: YourCoordinator):
+        """Initialize the synthetic sensor coordinator."""
+        self.hass = hass
+        self.main_coordinator = main_coordinator
+        self.backing_entities: dict[str, Any] = {}
+
+        # Listen for main coordinator updates
+        self._unsub = main_coordinator.async_add_listener(self._handle_coordinator_update)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator updates by refreshing virtual backing data."""
+        if not self.main_coordinator.last_update_success:
+            return
+
+        try:
+            device_data = self.main_coordinator.data
+            if not device_data:
+                return
+
+            # Update ALL virtual backing entity values with live data
+            for entity_id, entity_info in self.backing_entities.items():
+                api_key = entity_info["api_key"]
+                try:
+                    # Get live value from your device data
+                    value = getattr(device_data, api_key, None)
+                    entity_info["value"] = value
+                    _LOGGER.debug("Updated virtual backing entity %s: %s = %s",
+                                entity_id, api_key, value)
+                except AttributeError:
+                    _LOGGER.warning("Failed to get value for %s from device data", api_key)
+
+        except Exception as e:
+            _LOGGER.error("Error updating synthetic sensor backing data: %s", e)
+
+    def register_backing_entity(self, entity_id: str, api_key: str) -> None:
+        """Register a virtual backing entity for data updates."""
+        self.backing_entities[entity_id] = {"api_key": api_key, "value": None}
+        _LOGGER.debug("Registered virtual backing entity: %s -> %s", entity_id, api_key)
+
+    def get_backing_value(self, entity_id: str) -> Any:
+        """Get the current value for a virtual backing entity."""
+        entity_info = self.backing_entities.get(entity_id)
+        return entity_info["value"] if entity_info else None
+
+    def shutdown(self) -> None:
+        """Clean up the coordinator."""
+        if self._unsub:
+            self._unsub()
+```
+
+#### 6. Setup Integration
+
+```python
+# synthetic_sensors.py continued
+async def setup_synthetic_configuration(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    main_coordinator: YourCoordinator
+) -> StorageManager:
+    """Set up synthetic sensor configuration using storage manager."""
+
+    # Initialize storage manager
     storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
     await storage_manager.async_load()
 
-    # Generate synthetic sensor configurations (storage-first approach)
-    await setup_synthetic_sensors_config(coordinator, storage_manager, entry)
-
-    # Store for use in sensor platform
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
-        "coordinator": coordinator,
-        "storage_manager": storage_manager,
-    }
-
-    # Forward to platforms
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
-    return True
-
-async def setup_synthetic_sensors_config(
-    coordinator: YourCoordinator,
-    storage_manager: StorageManager,
-    entry: ConfigEntry
-) -> None:
-    """Generate and store synthetic sensor configurations (storage-first approach)."""
-
-    device_identifier = coordinator.device_id
+    device_identifier = main_coordinator.data.serial_number
     sensor_set_id = f"{device_identifier}_sensors"
 
-    # Create or get sensor set
-    if storage_manager.sensor_set_exists(sensor_set_id):
-        sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+    # Create synthetic sensor coordinator for virtual backing entities
+    synthetic_coord = SyntheticSensorCoordinator(hass, main_coordinator)
 
-        # Existing storage - preserve user customizations
-        # Only add new sensors that don't exist
-        existing_sensor_ids = {s.unique_id for s in sensor_set.list_sensors()}
-        default_configs = generate_default_sensor_configs(coordinator.data, device_identifier)
-        new_sensors = [s for s in default_configs if s.unique_id not in existing_sensor_ids]
+    # Generate sensors and backing entities using templates
+    device_data = main_coordinator.data
+    sensor_configs, backing_entities = await generate_panel_sensors(main_coordinator, device_data)
+
+    # Register virtual backing entities with the synthetic coordinator
+    for backing_entity in backing_entities:
+        entity_id = backing_entity["entity_id"]
+        api_key = get_api_key_from_data_path(backing_entity["data_path"])
+        synthetic_coord.register_backing_entity(entity_id, api_key)
+
+    # Create or update sensor set
+    if storage_manager.sensor_set_exists(sensor_set_id):
+        # Existing - preserve user customizations, add new sensors only
+        sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+        existing_ids = {s.unique_id for s in sensor_set.list_sensors()}
+        default_configs = await generate_default_sensor_configs(sensor_configs, device_identifier)
+        new_sensors = [s for s in default_configs if s.unique_id not in existing_ids]
 
         if new_sensors:
             for sensor_config in new_sensors:
                 await sensor_set.async_add_sensor(sensor_config)
-            _LOGGER.info(f"Added {len(new_sensors)} new synthetic sensors")
     else:
-        # Fresh install - create sensor set with defaults
+        # Fresh install - create with defaults
         await storage_manager.async_create_sensor_set(
             sensor_set_id=sensor_set_id,
             device_identifier=device_identifier,
-            name=f"{coordinator.device_name} Sensors",
+            name=f"Your Device {device_identifier} Sensors",
         )
         sensor_set = storage_manager.get_sensor_set(sensor_set_id)
-
-        default_configs = generate_default_sensor_configs(coordinator.data, device_identifier)
+        default_configs = await generate_default_sensor_configs(sensor_configs, device_identifier)
         await sensor_set.async_replace_sensors(default_configs)
-        _LOGGER.info(f"Created {len(default_configs)} default synthetic sensors")
-```
 
-### 2. Sensor Platform Setup in `sensor.py`
+    return storage_manager
 
-**Use the simplified one-function approach:**
-
-```python
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from ha_synthetic_sensors import async_setup_synthetic_sensors
-from .const import DOMAIN
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback
-) -> None:
-    """Set up sensor platform."""
-
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
-    storage_manager = data["storage_manager"]
-
-    # Create native (non-synthetic) sensors first
-    native_entities = create_native_sensors(coordinator)
-    async_add_entities(native_entities)
-
-    # Create synthetic sensors with one function call
-    sensor_manager = await async_setup_synthetic_sensors(
-        hass=hass,
-        config_entry=entry,
-        async_add_entities=async_add_entities,
-        storage_manager=storage_manager,
-        device_identifier=coordinator.device_id,
-        data_provider_callback=create_data_provider_callback(coordinator),
-    )
-
-    # Optional: Store sensor manager for reload functionality
-    data["sensor_manager"] = sensor_manager
-
-def create_native_sensors(coordinator):
-    """Create your integration's native sensors."""
-    return [
-        YourNativeSensor(coordinator, "power"),
-        YourNativeSensor(coordinator, "energy"),
-        # ... other native sensors
-    ]
-```
-
-### 3. Data Provider Implementation
-
-**Critical**: The data provider supplies live data to synthetic sensors:
-
-```python
-from ha_synthetic_sensors.type_definitions import DataProviderCallback, DataProviderResult
-
-def create_data_provider_callback(coordinator: YourCoordinator) -> DataProviderCallback:
-    """Create data provider callback for synthetic sensors."""
+def create_data_provider_callback(main_coordinator: YourCoordinator) -> DataProviderCallback:
+    """Create data provider callback that uses virtual backing entities."""
 
     def data_provider_callback(entity_id: str) -> DataProviderResult:
-        """Provide live data for synthetic sensors from coordinator."""
+        """Provide live data from virtual backing entities."""
         try:
-            # Parse backing entity ID format: "your_domain_backing.device_123_power"
-            if not entity_id.startswith(f"{DOMAIN}_backing."):
+            # Find the synthetic coordinator for this device
+            synthetic_coord = find_synthetic_coordinator_for(main_coordinator)
+            if not synthetic_coord:
                 return {"value": None, "exists": False}
 
-            # Extract the backing entity part
-            backing_part = entity_id.split(".", 1)[1]  # "device_123_power"
+            # Get value from virtual backing entity
+            value = synthetic_coord.get_backing_value(entity_id)
+            exists = value is not None
 
-            # Parse device and sensor type from backing entity
-            device_id, sensor_type = parse_backing_entity_id(backing_part)
-
-            # Get current data from coordinator (no API calls!)
-            device_data = coordinator.data.get_device(device_id)
-            if not device_data:
-                return {"value": None, "exists": False}
-
-            # Return the requested sensor value
-            value = getattr(device_data, sensor_type, None)
-            return {"value": value, "exists": value is not None}
+            return {"value": value, "exists": exists}
 
         except Exception as e:
             _LOGGER.error("Error in data provider callback for %s: %s", entity_id, e)
             return {"value": None, "exists": False}
 
     return data_provider_callback
-
-def parse_backing_entity_id(backing_part: str) -> tuple[str, str]:
-    """Parse 'device_123_power' -> ('123', 'power')"""
-    # Implement based on your entity ID format
-    parts = backing_part.rsplit("_", 1)
-    if len(parts) == 2:
-        device_id = parts[0].replace("device_", "")
-        sensor_type = parts[1]
-        return device_id, sensor_type
-    raise ValueError(f"Invalid backing entity format: {backing_part}")
 ```
 
-### 4. Sensor Configuration Generation
+## Benefits of This Approach
 
-```python
-from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
+### 1. **Clean Architecture**
 
-def generate_default_sensor_configs(device_data: Any, device_identifier: str) -> list[SensorConfig]:
-    """Generate default sensor configurations for a device."""
+- Templates handle YAML structure
+- Helpers handle all ID generation
+- No string parsing or manual construction
 
-    configs = []
+### 2. **Virtual Backing Entities**
 
-    # Example 1: Simple power sensor
-    power_config = SensorConfig(
-        unique_id=f"{device_identifier}_current_power",
-        name=f"{device_data.name} Current Power",
-        entity_id=f"sensor.{device_identifier}_current_power",
-        device_identifier=device_identifier,
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="power_watts",
-                variables={
-                    "power_watts": f"{DOMAIN}_backing.{device_identifier}_power"
-                },
-                metadata={
-                    "unit_of_measurement": "W",
-                    "device_class": "power",
-                    "state_class": "measurement",
-                },
-            )
-        ],
-    )
-    configs.append(power_config)
+- No entity registry pollution
+- Better memory performance
+- Coordinator automatically updates all virtual entities
 
-    # Example 2: Calculated energy sensor
-    daily_energy_config = SensorConfig(
-        unique_id=f"{device_identifier}_daily_energy",
-        name=f"{device_data.name} Daily Energy",
-        entity_id=f"sensor.{device_identifier}_daily_energy",
-        device_identifier=device_identifier,
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="power_watts * hours_in_day / 1000",  # Convert W to kWh
-                variables={
-                    "power_watts": f"{DOMAIN}_backing.{device_identifier}_power",
-                    "hours_in_day": "24"
-                },
-                metadata={
-                    "unit_of_measurement": "kWh",
-                    "device_class": "energy",
-                    "state_class": "total_increasing",
-                },
-            )
-        ],
-    )
-    configs.append(daily_energy_config)
+### 3. **Type Safety**
 
-    # Example 3: Multi-device calculation
-    if device_data.has_multiple_circuits:
-        total_power_config = SensorConfig(
-            unique_id=f"{device_identifier}_total_power",
-            name=f"{device_data.name} Total Power",
-            entity_id=f"sensor.{device_identifier}_total_power",
-            device_identifier=device_identifier,
-            formulas=[
-                FormulaConfig(
-                    id="main",
-                    formula="circuit_1 + circuit_2 + circuit_3",
-                    variables={
-                        "circuit_1": f"{DOMAIN}_backing.{device_identifier}_circuit_1_power",
-                        "circuit_2": f"{DOMAIN}_backing.{device_identifier}_circuit_2_power",
-                        "circuit_3": f"{DOMAIN}_backing.{device_identifier}_circuit_3_power",
-                    },
-                    metadata={
-                        "unit_of_measurement": "W",
-                        "device_class": "power",
-                        "state_class": "measurement",
-                    },
-                )
-            ],
-        )
-        configs.append(total_power_config)
+- `BackingEntity` TypedDict ensures consistency
+- Helper functions prevent ID conflicts
+- Template placeholders are validated
 
-    return configs
-```
+### 4. **Maintainability**
 
-## Advanced YAML Configuration Examples
+- Adding new sensors requires only template + definition
+- YAML structure changes only require template updates
+- All ID generation logic is centralized in helpers
 
-### Template-Based YAML Generation
-
-```python
-def generate_device_yaml_from_template(device_data, device_identifier):
-    """Generate YAML from templates based on device capabilities."""
-
-    # Base template
-    yaml_template = """
-version: "1.0"
-sensors:
-  {device_id}_power:
-    name: "{device_name} Power"
-    entity_id: "sensor.{device_id}_power"
-    device_identifier: "{device_id}"
-    formulas:
-      - id: "main"
-        formula: "voltage * current"
-        variables:
-          voltage: "{domain}_backing.{device_id}_voltage"
-          current: "{domain}_backing.{device_id}_current"
-        metadata:
-          unit_of_measurement: "W"
-          device_class: "power"
-"""
-
-    # Add energy sensor if supported
-    if device_data.supports_energy:
-        yaml_template += """
-  {device_id}_energy:
-    name: "{device_name} Energy"
-    entity_id: "sensor.{device_id}_energy"
-    device_identifier: "{device_id}"
-    formulas:
-      - id: "main"
-        formula: "power * time_hours / 1000"
-        variables:
-          power: "sensor.{device_id}_power"
-          time_hours: "24"
-        metadata:
-          unit_of_measurement: "kWh"
-          device_class: "energy"
-"""
-
-    return yaml_template.format(
-        device_id=device_identifier,
-        device_name=device_data.name,
-        domain=DOMAIN
-    )
-
-# Use the template
-yaml_content = generate_device_yaml_from_template(coordinator.data, device_identifier)
-await sensor_set.async_import_yaml(yaml_content)
-```
-
-### Conditional YAML Configuration
-
-```python
-import yaml
-
-async def setup_conditional_yaml_config(sensor_set, device_data, device_identifier):
-    """Setup configuration based on device capabilities."""
-
-    sensors = {}
-
-    # Always add basic power sensor
-    sensors[f"{device_identifier}_power"] = {
-        "name": f"{device_data.name} Power",
-        "entity_id": f"sensor.{device_identifier}_power",
-        "device_identifier": device_identifier,
-        "formulas": [{
-            "id": "main",
-            "formula": "voltage * current",
-            "variables": {
-                "voltage": f"{DOMAIN}_backing.{device_identifier}_voltage",
-                "current": f"{DOMAIN}_backing.{device_identifier}_current"
-            },
-            "metadata": {
-                "unit_of_measurement": "W",
-                "device_class": "power"
-            }
-        }]
-    }
-
-    # Add temperature sensor if device supports it
-    if device_data.has_temperature:
-        sensors[f"{device_identifier}_temperature"] = {
-            "name": f"{device_data.name} Temperature",
-            "entity_id": f"sensor.{device_identifier}_temperature",
-            "device_identifier": device_identifier,
-            "formulas": [{
-                "id": "main",
-                "formula": "temp_raw * 0.1 - 40",  # Convert raw to Celsius
-                "variables": {
-                    "temp_raw": f"{DOMAIN}_backing.{device_identifier}_temp_raw"
-                },
-                "metadata": {
-                    "unit_of_measurement": "°C",
-                    "device_class": "temperature"
-                }
-            }]
-        }
-
-    # Build final YAML
-    yaml_dict = {
-        "version": "1.0",
-        "sensors": sensors
-    }
-
-    yaml_content = yaml.dump(yaml_dict, default_flow_style=False)
-    await sensor_set.async_import_yaml(yaml_content)
-```
-
-## Metadata Configuration
-
-### Metadata Architecture
-
-The metadata system provides a clean way to define Home Assistant sensor properties with proper inheritance and validation:
-
-**Metadata Hierarchy:**
-
-1. **Global Metadata**: Defined in `global_settings.metadata`, applies to all sensors
-2. **Sensor Metadata**: Defined in sensor `metadata` section, overrides global metadata
-3. **Attribute Metadata**: Independent metadata for attributes, no inheritance
-
-**API-Based Metadata Configuration:**
-
-```python
-from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
-
-# Sensor with metadata
-sensor_config = SensorConfig(
-    unique_id="power_sensor",
-    name="Power Sensor",
-    formulas=[
-        FormulaConfig(
-            id="main",
-            formula="voltage * current",
-            variables={"voltage": "sensor.voltage", "current": "sensor.current"},
-            metadata={
-                "unit_of_measurement": "W",
-                "device_class": "power",
-                "state_class": "measurement",
-                "icon": "mdi:flash",
-            }
-        )
-    ],
-    metadata={
-        "attribution": "Generated by MyIntegration",
-        "entity_registry_enabled_default": True,
-    }
-)
-
-# Attribute with independent metadata
-attribute_formula = FormulaConfig(
-    id="daily_total",
-    formula="state * 24",
-    metadata={
-        "unit_of_measurement": "Wh",  # Valid for attributes
-        "suggested_display_precision": 2,
-        # "device_class": "energy"  # ERROR: Not allowed for attributes
-    }
-)
-```
-
-**YAML-Based Metadata Configuration:**
-
-```yaml
-version: "1.0"
-
-global_settings:
-  metadata:
-    attribution: "Generated by MyIntegration"
-    entity_registry_enabled_default: true
-    suggested_display_precision: 2
-
-sensors:
-  power_sensor:
-    name: "Power Sensor"
-    formula: "voltage * current"
-    variables:
-      voltage: "sensor.voltage"
-      current: "sensor.current"
-    metadata:
-      unit_of_measurement: "W"
-      device_class: "power"
-      state_class: "measurement"
-      # Inherits attribution, entity_registry_enabled_default, suggested_display_precision
-    attributes:
-      daily_total:
-        formula: "state * 24"
-        metadata:
-          unit_of_measurement: "Wh"
-          suggested_display_precision: 3
-          # No inheritance from global or sensor metadata
-```
-
-### Metadata Validation Rules
-
-**Entity-Only Properties (Sensors Only):**
-
-- `device_class`, `state_class`, `entity_category`
-- `entity_registry_enabled_default`, `entity_registry_visible_default`
-- `assumed_state`, `last_reset`, `force_update`, `available`, `options`
-
-**Attribute-Safe Properties:**
-
-- `unit_of_measurement`, `icon`, `suggested_display_precision`, `suggested_unit_of_measurement`
-- `attribution`, custom properties
-
-**Validation Example:**
-
-```python
-# This will cause validation errors:
-invalid_attribute = FormulaConfig(
-    id="invalid",
-    formula="state",
-    metadata={
-        "device_class": "power",  # ERROR: Entity-only property
-        "unit_of_measurement": "W"  # OK: Attribute-safe property
-    }
-)
-
-# Validation errors will be reported during sensor creation or YAML import
-```
-
-## Best Practices
-
-### 1. Storage-First Approach (Recommended)
-
-Always preserve user customizations:
-
-```python
-# CORRECT: Check existing storage first
-if sensor_set.sensor_count == 0:
-    # Fresh install - populate with defaults
-    await sensor_set.async_replace_sensors(default_configs)
-else:
-    # Existing storage - only add missing sensors
-    existing_ids = {s.unique_id for s in sensor_set.list_sensors()}
-    new_sensors = [s for s in default_configs if s.unique_id not in existing_ids]
-    for sensor in new_sensors:
-        await sensor_set.async_add_sensor(sensor)
-
-# WRONG: Always overwrite (destroys user customizations)
-await sensor_set.async_replace_sensors(default_configs)
-```
-
-### 2. Efficient Data Providers
-
-Use cached data, never make API calls in data providers:
-
-```python
-def create_data_provider_callback(coordinator):
-    def data_provider_callback(entity_id: str):
-        # CORRECT: Use coordinator's cached data
-        return coordinator.get_cached_value(entity_id)
-
-        # WRONG: Make API calls (will block sensor updates)
-        # return api_client.get_live_value(entity_id)
-
-    return data_provider_callback
-```
-
-### 3. Unique Sensor IDs
-
-Use consistent, globally unique sensor IDs:
-
-```python
-# CORRECT: Include device identifier
-unique_id = f"{device_identifier}_{sensor_type}"
-
-# WRONG: Not unique across devices
-unique_id = f"{sensor_type}"
-```
-
-### 4. Error Handling
-
-Handle configuration errors gracefully:
-
-```python
-try:
-    await async_setup_synthetic_sensors(...)
-except Exception as e:
-    _LOGGER.error("Failed to setup synthetic sensors: %s", e)
-    # Continue with native sensors only
-```
-
-### 5. Configuration Validation
-
-Validate configurations before storing:
-
-```python
-from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
-from ha_synthetic_sensors.metadata_handler import MetadataHandler
-
-def create_sensor_config(device_data, device_id):
-    try:
-        # Validate metadata before creating config
-        metadata_handler = MetadataHandler()
-
-        sensor_metadata = {
-            "device_class": "power",
-            "unit_of_measurement": "W",
-            "attribution": f"Data from {device_data.name}"
-        }
-
-        # Validate sensor metadata
-        errors = metadata_handler.validate_metadata(sensor_metadata, is_attribute=False)
-        if errors:
-            _LOGGER.error("Invalid sensor metadata for %s: %s", device_id, errors)
-            return None
-
-        return SensorConfig(
-            unique_id=f"{device_id}_power",
-            name=f"{device_data.name} Power",
-            formulas=[
-                FormulaConfig(
-                    id="main",
-                    formula="power_value",
-                    variables={"power_value": f"sensor.{device_id}_power"},
-                    metadata=sensor_metadata
-                )
-            ]
-        )
-    except ValueError as e:
-        _LOGGER.error("Invalid sensor config for %s: %s", device_id, e)
-        return None
-
-def validate_attribute_metadata(attribute_metadata):
-    """Validate attribute metadata separately."""
-    metadata_handler = MetadataHandler()
-    errors = metadata_handler.validate_metadata(attribute_metadata, is_attribute=True)
-    if errors:
-        _LOGGER.error("Invalid attribute metadata: %s", errors)
-        return False
-    return True
-```
-
-## Reload and Dynamic Updates
-
-### Service-Based Reload
-
-```python
-# Register reload service in your integration
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # ... setup code ...
-
-    async def reload_synthetic_sensors(call):
-        """Reload synthetic sensor configurations."""
-        try:
-            if "sensor_manager" in hass.data[DOMAIN][entry.entry_id]:
-                # Storage-based reload
-                storage_manager = hass.data[DOMAIN][entry.entry_id]["storage_manager"]
-                sensor_manager = hass.data[DOMAIN][entry.entry_id]["sensor_manager"]
-
-                # Reload from storage
-                config = storage_manager.to_config(device_identifier=coordinator.device_id)
-                await sensor_manager.load_configuration(config)
-
-            _LOGGER.info("Synthetic sensors reloaded successfully")
-        except Exception as e:
-            _LOGGER.error("Failed to reload synthetic sensors: %s", e)
-
-    hass.services.async_register(DOMAIN, "reload_synthetic_sensors", reload_synthetic_sensors)
-```
-
-### Configuration Updates
-
-```python
-# Update configurations programmatically
-async def update_sensor_configuration(sensor_set, unique_id, new_formula):
-    """Update a sensor's formula."""
-
-    sensor = sensor_set.get_sensor(unique_id)
-    if sensor:
-        # Modify the sensor configuration
-        sensor.formulas[0].formula = new_formula
-        await sensor_set.async_update_sensor(sensor)
-
-        # Trigger reload to apply changes
-        await reload_synthetic_sensors()
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Sensors not appearing**:
-   - Check that `async_setup_synthetic_sensors()` is called in sensor platform
-   - Verify storage manager is properly initialized
-
-2. **Data not updating**:
-   - Verify data provider callback returns correct format
-   - Check that backing entity IDs match what data provider expects
-
-3. **Configuration lost on restart**:
-   - Ensure storage-first approach (don't overwrite existing configs)
-   - Check storage manager is loaded before creating sensor sets
-
-4. **Performance issues**:
-   - Use cached data in data providers
-   - Avoid API calls in data provider callbacks
-
-5. **Metadata validation errors**:
-   - Check that entity-only properties are not used in attribute metadata
-   - Verify metadata property types (strings, integers, booleans as appropriate)
-   - Use MetadataHandler.validate_metadata() to check metadata before creating configs
-
-### Debug Logging
-
-Enable comprehensive debug logging:
-
-```python
-import ha_synthetic_sensors
-ha_synthetic_sensors.configure_logging(logging.DEBUG)
-
-# Check logging status
-info = ha_synthetic_sensors.get_logging_info()
-_LOGGER.debug("Logging configuration: %s", info)
-
-# Test logging
-ha_synthetic_sensors.test_logging()
-```
-
-### Validation
-
-Test your integration with validation:
-
-```python
-from ha_synthetic_sensors import validate_yaml_content
-
-# Validate YAML configuration
-yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    name: "Test"
-    formulas:
-      - id: "main"
-        formula: "a + b"
-        variables:
-          a: "sensor.input_a"
-          b: "sensor.input_b"
-"""
-
-result = validate_yaml_content(yaml_content)
-if result["is_valid"]:
-    _LOGGER.info("Configuration valid: %d sensors", result["sensors_count"])
-else:
-    _LOGGER.error("Configuration errors: %s", result["errors"])
-```
-
-## API Reference
-
-### Main Functions
-
-- **`async_setup_synthetic_sensors()`**: Recommended one-function setup
-- **`async_setup_integration()`**: YAML file discovery-based setup
-- **`async_reload_integration()`**: Reload YAML file configurations
-- **`async_unload_integration()`**: Clean unload of integration
-
-### Core Classes
-
-- **`StorageManager`**: Manages persistent storage and sensor sets
-- **`SensorSet`**: Handle for a group of sensors with CRUD operations
-- **`SensorConfig`**: Configuration for individual sensors
-- **`FormulaConfig`**: Configuration for sensor formulas
-- **`SyntheticSensorsIntegration`**: Advanced integration class
-
-### SensorSet Methods
-
-#### CRUD Operations
-
-- **`async_add_sensor(sensor_config)`**: Add individual sensor
-- **`async_update_sensor(sensor_config)`**: Update existing sensor
-- **`async_remove_sensor(unique_id)`**: Remove sensor by ID
-- **`get_sensor(unique_id)`**: Get sensor configuration
-- **`list_sensors()`**: List all sensors in set
-
-#### Bulk Operations
-
-- **`async_replace_sensors(sensor_configs)`**: Replace all sensors
-- **`async_modify(modification)`**: Bulk modifications (add/remove/update/entity changes)
-- **`async_import_yaml(yaml_content)`**: Import YAML configuration
-- **`export_yaml()`**: Export to YAML format
-- **`async_validate_import(yaml_content)`**: Validate YAML before import
-
-### Utility Classes
-
-- **`DeviceAssociationHelper`**: Device identification and association utilities
-- **`EntityFactory`**: Factory patterns for creating sensor entities
-- **`MetadataHandler`**: Metadata merging, validation, and HA property extraction
-
-### Type Definitions
-
-- **`DataProviderCallback`**: Function signature for data providers
-- **`DataProviderResult`**: Return format for data provider callbacks
-
-This guide provides the complete, current approach for integrating synthetic sensors into Home Assistant custom integrations.
+This pattern scales well and provides the cleanest integration with the synthetic sensors package.
