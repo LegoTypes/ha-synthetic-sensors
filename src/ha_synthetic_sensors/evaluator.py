@@ -525,7 +525,7 @@ class Evaluator(FormulaEvaluator):
             try:
                 if isinstance(var_value, str) and "." in var_value:
                     # Variable references an entity
-                    value, exists, source = resolver.resolve_variable(var_value)
+                    value, exists, source = resolver.resolve_variable(var_name, var_value)
                     if exists and value is not None:
                         eval_context[var_name] = value
                         _LOGGER.debug(
