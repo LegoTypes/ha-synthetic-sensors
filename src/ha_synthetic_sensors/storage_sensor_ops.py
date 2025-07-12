@@ -81,7 +81,7 @@ class SensorOpsHandler:
         sensor_set_data["sensor_count"] = self.storage_manager.get_sensor_count(sensor_set_id)
 
         await self.storage_manager.async_save()
-        _LOGGER.info("Stored sensor: %s in sensor set: %s", sensor_config.unique_id, sensor_set_id)
+        _LOGGER.debug("Stored sensor: %s in sensor set: %s", sensor_config.unique_id, sensor_set_id)
 
     async def async_store_sensors_bulk(
         self,
@@ -141,7 +141,7 @@ class SensorOpsHandler:
 
         await self.storage_manager.async_save()
 
-        _LOGGER.info("Stored %d sensors in sensor set: %s", len(stored_sensors), sensor_set_id)
+        _LOGGER.debug("Stored %d sensors in sensor set: %s", len(stored_sensors), sensor_set_id)
 
         return {
             "sensor_set_id": sensor_set_id,
@@ -239,7 +239,7 @@ class SensorOpsHandler:
 
         await self.storage_manager.async_save()
 
-        _LOGGER.info("Updated sensor: %s", sensor_config.unique_id)
+        _LOGGER.debug("Updated sensor: %s", sensor_config.unique_id)
         return True
 
     async def async_delete_sensor(self, unique_id: str) -> bool:
@@ -271,7 +271,7 @@ class SensorOpsHandler:
 
         await self.storage_manager.async_save()
 
-        _LOGGER.info("Deleted sensor: %s", unique_id)
+        _LOGGER.debug("Deleted sensor: %s", unique_id)
         return True
 
     def serialize_sensor_config(self, sensor_config: SensorConfig) -> Any:

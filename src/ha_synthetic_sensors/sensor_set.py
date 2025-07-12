@@ -123,7 +123,7 @@ class SensorSet:
         # Rebuild entity index to include new sensor's entities
         self.rebuild_entity_index()
 
-        _LOGGER.info("Added sensor %s to set %s", sensor_config.unique_id, self.sensor_set_id)
+        _LOGGER.debug("Added sensor %s to set %s", sensor_config.unique_id, self.sensor_set_id)
 
     async def async_update_sensor(self, sensor_config: SensorConfig) -> bool:
         """
@@ -145,7 +145,7 @@ class SensorSet:
         if success:
             # Rebuild entity index to reflect updated sensor's entities
             self.rebuild_entity_index()
-            _LOGGER.info("Updated sensor %s in set %s", sensor_config.unique_id, self.sensor_set_id)
+            _LOGGER.debug("Updated sensor %s in set %s", sensor_config.unique_id, self.sensor_set_id)
 
         return success
 
@@ -170,7 +170,7 @@ class SensorSet:
         if success:
             # Rebuild entity index to remove deleted sensor's entities
             self.rebuild_entity_index()
-            _LOGGER.info("Removed sensor %s from set %s", unique_id, self.sensor_set_id)
+            _LOGGER.debug("Removed sensor %s from set %s", unique_id, self.sensor_set_id)
 
         return success
 
@@ -404,7 +404,7 @@ class SensorSet:
             device_identifier=device_identifier,
         )
 
-        _LOGGER.info("Replaced %d sensors in set %s", len(sensor_configs), self.sensor_set_id)
+        _LOGGER.debug("Replaced %d sensors in set %s", len(sensor_configs), self.sensor_set_id)
 
     async def async_modify(self, modification: SensorSetModification) -> dict[str, Any]:
         """
@@ -492,7 +492,7 @@ class SensorSet:
         if entity_id_changes_to_apply:
             await self._apply_entity_registry_changes(entity_id_changes_to_apply)
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Modified sensor set %s: %d added, %d removed, %d updated, %d entity IDs changed",
             self.sensor_set_id,
             changes_summary["sensors_added"],
@@ -631,7 +631,7 @@ class SensorSet:
             for old_entity_id, new_entity_id in entity_id_changes.items():
                 entity_change_handler.handle_entity_id_change(old_entity_id, new_entity_id)
 
-            _LOGGER.info("Applied %d entity ID changes to HA registry: %s", len(registry_updates), ", ".join(registry_updates))
+            _LOGGER.debug("Applied %d entity ID changes to HA registry: %s", len(registry_updates), ", ".join(registry_updates))
 
     async def _add_sensor_direct(self, sensor_config: SensorConfig) -> None:
         """Add sensor directly to storage without entity index updates."""
@@ -720,7 +720,7 @@ class SensorSet:
             device_identifier=device_identifier,
         )
 
-        _LOGGER.info("Imported YAML to sensor set: %s", self.sensor_set_id)
+        _LOGGER.debug("Imported YAML to sensor set: %s", self.sensor_set_id)
 
     def export_yaml(self) -> str:
         """
@@ -744,7 +744,7 @@ class SensorSet:
         """
         success = await self.storage_manager.async_delete_sensor_set(self.sensor_set_id)
         if success:
-            _LOGGER.info("Deleted sensor set: %s", self.sensor_set_id)
+            _LOGGER.debug("Deleted sensor set: %s", self.sensor_set_id)
 
         return success
 

@@ -138,7 +138,7 @@ class SyntheticSensorsIntegration:
 
     async def async_reload(self, add_entities_callback: AddEntitiesCallback) -> bool:
         """Reload the synthetic sensors integration."""
-        _LOGGER.info("Reloading synthetic sensors integration")
+        _LOGGER.debug("Reloading synthetic sensors integration")
 
         # Cleanup existing setup
         await self._cleanup()

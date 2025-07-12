@@ -414,7 +414,7 @@ class ServiceLayer:
             dependencies = self._evaluator.get_formula_dependencies(formula)
             variables = dependencies  # In this context, they're the same
 
-            _LOGGER.info("Formula evaluation result: %s = %s", formula, result)
+            _LOGGER.debug("Formula evaluation result: %s = %s", formula, result)
             _LOGGER.debug("Variables: %s, Dependencies: %s", variables, dependencies)
 
             # Store result in hass data for potential retrieval
@@ -533,7 +533,7 @@ class ServiceLayer:
                 [error["message"] for error in validation_result["errors"]],
             )
         else:
-            _LOGGER.info("Configuration validation passed")
+            _LOGGER.debug("Configuration validation passed")
 
         if validation_result["warnings"]:
             _LOGGER.warning(
@@ -600,7 +600,7 @@ class ServiceLayer:
                         "formula": formula_str,
                         "dependencies": dependencies,
                     }
-                    _LOGGER.info("Retrieved sensor info for entity_id: %s", entity_id)
+                    _LOGGER.debug("Retrieved sensor info for entity_id: %s", entity_id)
                 else:
                     info = {"error": f"Sensor not found: {entity_id}"}
                     _LOGGER.warning("Sensor not found for entity_id: %s", entity_id)
@@ -640,7 +640,7 @@ class ServiceLayer:
 
             self._hass.data["synthetic_sensors_info"]["last_result"] = info
 
-            _LOGGER.info("Retrieved sensor info for: %s", entity_id or "all sensors")
+            _LOGGER.debug("Retrieved sensor info for: %s", entity_id or "all sensors")
 
         except Exception as e:
             _LOGGER.error("Failed to get sensor info: %s", e)
@@ -675,14 +675,14 @@ class ServiceLayer:
     async def async_auto_reload_if_needed(self) -> None:
         """Automatically reload configuration if file has been modified."""
         if self._config_manager.is_config_modified():
-            _LOGGER.info("Configuration file modified, automatically reloading")
+            _LOGGER.debug("Configuration file modified, automatically reloading")
             # Create a dummy ServiceCall for internal reload
             dummy_call = ServiceCall(self._hass, self._domain, "reload_config", {})
             await self._async_reload_config(dummy_call)
 
     async def async_unregister_services(self) -> None:
         """Unregister all services from Home Assistant."""
-        _LOGGER.info("Unregistering synthetic sensor services")
+        _LOGGER.debug("Unregistering synthetic sensor services")
 
         # Remove services
         for service_name in [

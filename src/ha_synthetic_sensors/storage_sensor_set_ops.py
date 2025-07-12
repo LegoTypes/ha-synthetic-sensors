@@ -65,7 +65,7 @@ class SensorSetOpsHandler:
         data["sensor_sets"][sensor_set_id] = sensor_set_data
         await self.storage_manager.async_save()
 
-        _LOGGER.info("Created sensor set: %s", sensor_set_id)
+        _LOGGER.debug("Created sensor set: %s", sensor_set_id)
 
     async def async_delete_sensor_set(self, sensor_set_id: str) -> bool:
         """Delete a sensor set and all its sensors.
@@ -97,7 +97,7 @@ class SensorSetOpsHandler:
         del data["sensor_sets"][sensor_set_id]
         await self.storage_manager.async_save()
 
-        _LOGGER.info("Deleted sensor set %s and %d sensors", sensor_set_id, len(sensors_to_delete))
+        _LOGGER.debug("Deleted sensor set %s and %d sensors", sensor_set_id, len(sensors_to_delete))
         return True
 
     def get_sensor_set_metadata(self, sensor_set_id: str) -> SensorSetMetadata | None:
