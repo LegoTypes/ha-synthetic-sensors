@@ -8,8 +8,9 @@ sensors:
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit_of_measurement: "%"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "%"
+      state_class: "measurement"
 
   # Improved solar self-consumption with edge case handling
   solar_self_consumption_improved:
@@ -21,8 +22,9 @@ sensors:
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit_of_measurement: "%"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "%"
+      state_class: "measurement"
 
   # Comprehensive solar analysis with multiple calculated attributes
   solar_consumption_analysis:
@@ -34,39 +36,46 @@ sensors:
     attributes:
       self_consumed_power:
         formula: "max(0, solar_production - max(0, solar_export))"
-        unit_of_measurement: "W"
+        metadata:
+          unit_of_measurement: "W"
       export_rate:
         formula: "if(solar_production > 0, max(0, solar_export) / solar_production * 100, 0)"
-        unit_of_measurement: "%"
+        metadata:
+          unit_of_measurement: "%"
       production_status:
         formula: |
           if(solar_production > 100, "Producing",
           if(solar_production > 0, "Low Production", "No Production"))
-        unit_of_measurement: ""
+        metadata:
+          unit_of_measurement: ""
       efficiency_tier:
         formula: |
           if(state >= 80, "Excellent",
           if(state >= 60, "Good",
           if(state >= 40, "Fair", "Poor")))
-        unit_of_measurement: ""
+        metadata:
+          unit_of_measurement: ""
       battery_analysis:
         formula: "battery_level * battery_capacity / 100"
         variables:
           battery_level: "sensor.battery_percentage"
           battery_capacity: "sensor.battery_total_capacity"
-        unit_of_measurement: "kWh"
+        metadata:
+          unit_of_measurement: "kWh"
       temperature_impact:
         formula: "if(panel_temp > optimal_temp, (panel_temp - optimal_temp) * temp_coefficient, 0)"
         variables:
           panel_temp: "sensor.solar_panel_temperature"
           optimal_temp: 25  # Optimal temperature for solar panels
           temp_coefficient: -0.004  # Power loss per degree above optimal
-        unit_of_measurement: "%"
+        metadata:
+          unit_of_measurement: "%"
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit_of_measurement: "%"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "%"
+      state_class: "measurement"
 
   # Edge case examples with explanations
   solar_edge_case_examples:
@@ -76,26 +85,30 @@ sensors:
       # Handle negative export (grid import during solar production)
       corrected_export:
         formula: "max(0, solar_export)"  # Ensure export is never negative
-        unit_of_measurement: "W"
+        metadata:
+          unit_of_measurement: "W"
 
       # Handle export > production (measurement errors)
       export_ratio:
         formula: "if(solar_production > 0, solar_export / solar_production, 0)"
-        unit_of_measurement: "ratio"
+        metadata:
+          unit_of_measurement: "ratio"
 
       # Detect suspicious readings
       data_quality:
         formula: |
           if(solar_export < 0, "Negative Export",
           if(solar_export > solar_production * 1.1, "Export > Production", "Normal"))
-        unit_of_measurement: ""
+        metadata:
+          unit_of_measurement: ""
 
       # Weather impact analysis using attribute-specific variables
       weather_impact:
         formula: "if(cloud_cover > 50, solar_production * (100 - cloud_cover) / 100, solar_production)"
         variables:
           cloud_cover: "sensor.weather_cloud_coverage"
-        unit_of_measurement: "W"
+        metadata:
+          unit_of_measurement: "W"
 
       # Grid stability analysis
       grid_stability:
@@ -104,9 +117,11 @@ sensors:
           grid_freq: "sensor.grid_frequency"
           nominal_freq: 60  # Hz - nominal grid frequency
           freq_tolerance: 0.5  # Hz - acceptable frequency deviation
-        unit_of_measurement: ""
+        metadata:
+          unit_of_measurement: ""
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_export: "sensor.solar_sold_watts"
-    unit_of_measurement: "W"
-    device_class: "power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

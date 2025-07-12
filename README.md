@@ -72,10 +72,12 @@ The package provides a clean public API:
 
 ## YAML Configuration Examples
 
+**Required YAML Structure:** All YAML configuration files must start with a version declaration.
+
 ### Simple Calculated Sensors
 
 ```yaml
-version: "1.0"
+version: "1.0"  # Required: YAML schema version
 
 sensors:
   # Single formula sensor (90% of use cases)
@@ -642,14 +644,14 @@ sensors:
   # OR patterns for multiple conditions
   security_monitoring:
     name: "Security Device Count"
-    formula: count("device_class:door|window|lock")
+    formula: count("device_class:door|device_class:window|device_class:lock")
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:security"
 
   main_floor_power:
     name: "Main Floor Power"
-    formula: sum("area:living_room|kitchen|dining_room")
+    formula: sum("area:living_room|area:kitchen|area:dining_room")
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -668,7 +670,7 @@ sensors:
   # Complex mixed patterns
   comprehensive_analysis:
     name: "Comprehensive Analysis"
-    formula: 'sum("device_class:power|energy") + count("area:upstairs|downstairs")'
+    formula: 'sum("device_class:power|device_class:energy") + count("area:upstairs|area:downstairs")'
     metadata:
       unit_of_measurement: "mixed"
       icon: "mdi:chart-line"
@@ -679,11 +681,33 @@ sensors:
 **Collection Patterns:**
 
 - `"device_class:power"` - Entities with specific device class
-- `"regex:pattern_variable"` - Entities matching regex pattern from variable
+- `"regex:pattern_variable"` - Entities matching regex pattern from variable (variable must reference an `input_text` entity)
 - `"area:kitchen"` - Entities in specific area
 - `"tags:tag1,tag2"` - Entities with specified tags
 - `"attribute:battery_level<50"` - Entities with attribute conditions
 - `"state:>100|=on"` - Entities with state conditions (supports OR with `|`)
+
+**Important:** For regex patterns, the variable must reference an `input_text` entity containing the regex pattern:
+
+```yaml
+# Correct: Variable references input_text entity
+variables:
+  circuit_pattern: "input_text.circuit_regex_pattern"  # input_text entity with regex
+formula: sum("regex:circuit_pattern")
+
+# Wrong: Variable contains direct regex string
+variables:
+  circuit_pattern: "sensor\\.circuit_.*"  # Direct regex string
+formula: sum("regex:circuit_pattern")
+```
+
+**Important:** Collection patterns use the pipe (`|`) character for OR logic between fully qualified patterns:
+
+- Correct: `"device_class:power|device_class:energy"`
+- Correct: `"area:kitchen|area:living_room|area:dining_room"`
+- Wrong: `"device_class:power|energy"` (incomplete second pattern)
+- Wrong: `"device_class:power or energy"` (treated as literal string)
+- Wrong: `"area:kitchen or living_room"` (treated as literal string)
 
 **Empty Collection Behavior:**
 

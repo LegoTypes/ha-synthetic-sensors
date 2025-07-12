@@ -7,8 +7,9 @@ sensors:
     formula: "abs(solar_power)"                   # ← Variable name you choose
     variables:
       solar_power: "sensor.span_panel_solar_inverter_instant_power"  # ← Maps to actual entity
-    unit_of_measurement: "W"
-    device_class: "power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
 
   # Multiple variables example - YOU choose ALL the variable names
   energy_cost_analysis:
@@ -17,8 +18,9 @@ sensors:
     variables:
       current_consumption: "sensor.span_panel_instantaneous_power"    # ← You pick "current_consumption"
       electricity_rate: "input_number.electricity_rate_cents_kwh"     # ← You pick "electricity_rate"
-    unit_of_measurement: "¢/h"
-    device_class: "monetary"
+    metadata:
+      unit_of_measurement: "¢/h"
+      device_class: "monetary"
 
   # Complex formula with many variables - ALL names are your choice
   hvac_efficiency:
@@ -28,8 +30,9 @@ sensors:
       heating: "sensor.span_panel_circuit_5_power"          # ← You choose "heating"
       cooling: "sensor.span_panel_circuit_6_power"          # ← You choose "cooling"
       total_consumption: "sensor.span_panel_net_power"      # ← You choose "total_consumption"
-    unit_of_measurement: "%"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "%"
+      state_class: "measurement"
 
   # You could use different variable names for the same entities
   hvac_efficiency_alt:
@@ -39,8 +42,9 @@ sensors:
       heat_pump: "sensor.span_panel_circuit_5_power"        # ← Same entity, different variable name
       ac_unit: "sensor.span_panel_circuit_6_power"          # ← Same entity, different variable name
       house_power: "sensor.span_panel_net_power"            # ← Same entity, different variable name
-    unit_of_measurement: "%"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "%"
+      state_class: "measurement"
 
   # Mixed approach - some variables, some direct entity IDs
   solar_analysis_mixed:
@@ -50,8 +54,9 @@ sensors:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       grid_import: "sensor.span_panel_grid_import_power"
       # Note: sensor.solar_sold_positive is referenced directly (no variable needed)
-    unit_of_measurement: "W"
-    device_class: "power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
 
   # Descriptive variable names for clarity
   solar_self_consumption:
@@ -63,5 +68,6 @@ sensors:
     variables:
       total_solar_production: "sensor.span_panel_solar_inverter_instant_power"
       solar_exported_to_grid: "sensor.solar_sold_positive"
-    unit_of_measurement: "%"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "%"
+      state_class: "measurement"

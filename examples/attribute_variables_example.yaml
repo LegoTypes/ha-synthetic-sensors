@@ -15,7 +15,8 @@ sensors:
       # Attribute inherits grid_power and solar_power from parent
       power_balance:
         formula: "grid_power - solar_power"
-        unit_of_measurement: "W"
+        metadata:
+          unit_of_measurement: "W"
 
       # Attribute defines its own variables
       battery_status:
@@ -23,17 +24,20 @@ sensors:
         variables:
           battery_level: "sensor.battery_percentage"
           battery_capacity: "sensor.battery_total_capacity"
-        unit_of_measurement: "kWh"
+        metadata:
+          unit_of_measurement: "kWh"
 
       # Attribute uses mix of inherited and own variables
       efficiency_analysis:
         formula: "solar_power / (solar_power + grid_power) * panel_efficiency"
         variables:
           panel_efficiency: "sensor.solar_panel_efficiency"
-        unit_of_measurement: "%"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+        metadata:
+          unit_of_measurement: "%"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # Example 2: Variable precedence - attribute variables override sensor variables
   temperature_analysis:
@@ -47,14 +51,16 @@ sensors:
       # Uses sensor-level variables
       average_temp:
         formula: "(indoor_temp + outdoor_temp) / 2"
-        unit_of_measurement: "°C"
+        metadata:
+          unit_of_measurement: "°C"
 
       # Overrides sensor-level outdoor_temp with different entity
       temperature_difference:
         formula: "indoor_temp - outdoor_temp"  # outdoor_temp here refers to attribute variable
         variables:
           outdoor_temp: "sensor.weather_station_temperature"  # Different entity than sensor level
-        unit_of_measurement: "°C"
+        metadata:
+          unit_of_measurement: "°C"
 
       # Uses attribute-specific variables only
       comfort_index:
@@ -62,10 +68,12 @@ sensors:
         variables:
           comfort_temp: "sensor.bedroom_temperature"
           comfort_humidity: "sensor.bedroom_humidity"
-        unit_of_measurement: ""
-    unit_of_measurement: "°C"
-    device_class: "temperature"
-    state_class: "measurement"
+        metadata:
+          unit_of_measurement: ""
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+      state_class: "measurement"
 
   # Example 3: Complex attribute variables with collections and calculations
   home_automation_hub:
@@ -76,10 +84,9 @@ sensors:
     attributes:
       # Collection variables in attributes
       security_status:
-        formula: "count(security_devices) - count(security_devices.state='unavailable')"
-        variables:
-          security_devices: "device_class:door,window,motion"
-        unit_of_measurement: "active"
+        formula: 'count("device_class:door|device_class:window|device_class:motion") - count("device_class:door|device_class:window|device_class:motion".state="unavailable")'
+        metadata:
+          unit_of_measurement: "active"
 
       # Numeric literals in attribute variables
       energy_cost_projection:
@@ -89,23 +96,29 @@ sensors:
           rate_per_kwh: 0.12  # Literal: cost per kWh
           hours_per_day: 24   # Literal: hours
           days_per_month: 30  # Literal: days
-        unit_of_measurement: "$"
+        metadata:
+          unit_of_measurement: "$"
 
-      # Regex pattern variables in attributes
+      # Simple pattern variables in attributes
       circuit_analysis:
-        formula: "sum(circuit_pattern) / count(circuit_pattern)"
+        formula: "sum(circuit_power_1) + sum(circuit_power_2)"
         variables:
-          circuit_pattern: "regex:^sensor\\.circuit_[0-9]+_power$"
-        unit_of_measurement: "W"
+          circuit_power_1: "sensor.circuit_1_power"
+          circuit_power_2: "sensor.circuit_2_power"
+        metadata:
+          unit_of_measurement: "W"
 
       # State and attribute filtering
       low_battery_alert:
-        formula: "count(battery_devices.battery_level<20)"
+        formula: "count(battery_sensor_1) + count(battery_sensor_2)"
         variables:
-          battery_devices: "device_class:battery"
-        unit_of_measurement: "devices"
-    unit_of_measurement: "count"
-    state_class: "measurement"
+          battery_sensor_1: "sensor.battery_1_level"
+          battery_sensor_2: "sensor.battery_2_level"
+        metadata:
+          unit_of_measurement: "devices"
+    metadata:
+      unit_of_measurement: "count"
+      state_class: "measurement"
 
   # Example 4: Attribute variables with device association
   solar_inverter_analysis:
@@ -120,7 +133,8 @@ sensors:
         variables:
           irradiance: "sensor.solar_irradiance"
           panel_area: 50  # Literal: square meters of panels
-        unit_of_measurement: "%"
+        metadata:
+          unit_of_measurement: "%"
 
       # Temperature impact on efficiency
       temp_efficiency:
@@ -129,7 +143,8 @@ sensors:
           panel_temp: "sensor.solar_panel_temperature"
           optimal_temp: 25    # Literal: optimal temperature in Celsius
           temp_coeff: 0.4     # Literal: efficiency loss per degree
-        unit_of_measurement: "%"
+        metadata:
+          unit_of_measurement: "%"
 
       # Maintenance scheduling
       maintenance_due:
@@ -137,10 +152,12 @@ sensors:
         variables:
           days_since_maintenance: "sensor.days_since_solar_maintenance"
           maintenance_interval: 180  # Literal: days between maintenance
-        unit_of_measurement: ""
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+        metadata:
+          unit_of_measurement: ""
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
     # Device association
     device_identifier: "solar_inverter_001"
     device_name: "Main Solar Inverter"
