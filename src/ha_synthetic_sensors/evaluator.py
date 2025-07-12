@@ -215,15 +215,9 @@ class Evaluator(FormulaEvaluator):
 
             if unavailable_deps:
                 # If any dependencies are unavailable, reflect unavailable state
-                error_msg = f"Unavailable dependencies: {', '.join(sorted(unavailable_deps))}"
-                if unknown_deps:
-                    error_msg += f"; Unknown dependencies: {', '.join(sorted(unknown_deps))}"
-                _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
                 return self._create_success_result_with_state("unavailable", unavailable_dependencies=all_problematic_deps)
 
             # Only unknown dependencies
-            error_msg = f"Unknown dependencies: {', '.join(sorted(unknown_deps))}"
-            _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
             return self._create_success_result_with_state("unknown", unavailable_dependencies=all_problematic_deps)
 
         return None
