@@ -4,7 +4,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-yaml
-        exclude: '\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '\..*_cache/.*|dist/.*|venv/.*|tests/yaml_fixtures/invalid/.*'
       - id: check-toml
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
       - id: check-json
@@ -14,22 +14,18 @@ repos:
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
       - id: debug-statements
         exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*'
-
-  # Black for ALL formatting (including trailing whitespace and blank lines)
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        language_version: python3
-        args: ['--line-length=999']
+      # Handle trailing whitespace (including blank lines) before Black runs
+      - id: trailing-whitespace
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
 
-  # Ruff for linting and import sorting
+  # Ruff for linting, import sorting, and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.13
     hooks:
       - id: ruff-check
         args: ['--fix']
+        exclude: '\..*_cache/.*|dist/.*|venv/.*'
+      - id: ruff-format
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
 
   # MyPy for type checking
@@ -47,6 +43,21 @@ repos:
           - types-jsonschema
           - homeassistant-stubs
         args: ['--config-file=pyproject.toml']
+        exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
+
+  # Pylint for additional code quality checks
+  - repo: https://github.com/PyCQA/pylint
+    rev: v3.3.4
+    hooks:
+      - id: pylint
+        additional_dependencies:
+          - pyyaml
+          - simpleeval
+          - voluptuous
+          - pytest
+          - typing-extensions
+          - homeassistant-stubs
+        args: ['--rcfile=pyproject.toml']
         exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
 
   # Markdownlint for markdown files

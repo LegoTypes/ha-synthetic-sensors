@@ -23,6 +23,7 @@ from .exceptions import IntegrationNotInitializedError, IntegrationSetupError
 from .name_resolver import NameResolver
 from .sensor_manager import SensorManager, SensorManagerConfig
 from .service_layer import ServiceLayer
+from .storage_manager import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -99,8 +100,9 @@ class SyntheticSensorsIntegration:
         try:
             _LOGGER.debug("Setting up synthetic sensor integration")
 
-            # Initialize sensor manager
-            self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback)
+            # Initialize sensor manager with integration domain
+            manager_config = SensorManagerConfig(integration_domain="synthetic_sensors")
+            self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback, manager_config)
 
             # Initialize enhanced evaluator
             evaluator = Evaluator(self._hass)
@@ -121,22 +123,22 @@ class SyntheticSensorsIntegration:
             await self._check_auto_configuration()
 
             self._initialized = True
-            _LOGGER.info("Synthetic sensors integration setup completed successfully")
+            _LOGGER.debug("Synthetic sensors integration setup completed successfully")
             return True
 
         except Exception as err:
-            _LOGGER.error(f"Failed to setup synthetic sensors integration: {err}")
+            _LOGGER.error("Failed to setup synthetic sensors integration: %s", err)
             await self._cleanup()
             raise IntegrationSetupError(str(err)) from err
 
     async def async_unload(self) -> bool:
         """Unload the synthetic sensors integration."""
-        _LOGGER.info("Unloading synthetic sensors integration")
+        _LOGGER.debug("Unloading synthetic sensors integration")
         return await self._cleanup()
 
     async def async_reload(self, add_entities_callback: AddEntitiesCallback) -> bool:
         """Reload the synthetic sensors integration."""
-        _LOGGER.info("Reloading synthetic sensors integration")
+        _LOGGER.debug("Reloading synthetic sensors integration")
 
         # Cleanup existing setup
         await self._cleanup()
@@ -197,11 +199,11 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.debug(f"Successfully loaded synthetic sensors configuration from " f"{config_path}")
+            _LOGGER.debug("Successfully loaded synthetic sensors configuration from %s", config_path)
             return True
 
         except Exception as err:
-            _LOGGER.error(f"Failed to load synthetic sensors configuration from " f"{config_path}: {err}")
+            _LOGGER.error("Failed to load synthetic sensors configuration from %s: %s", config_path, err)
             return False
 
     async def load_configuration_content(self, yaml_content: str) -> bool:
@@ -219,15 +221,37 @@ class SyntheticSensorsIntegration:
             # Load sensors
             await self._sensor_manager.load_configuration(config)
 
-            _LOGGER.debug("Successfully loaded synthetic sensors configuration from " "provided content")
+            _LOGGER.debug("Successfully loaded synthetic sensors configuration from provided content")
             return True
 
         except Exception as err:
-            _LOGGER.error(f"Failed to load synthetic sensors configuration from content: {err}")
+            _LOGGER.error("Failed to load synthetic sensors configuration from content: %s", err)
             return False
 
     async def _check_auto_configuration(self) -> None:
-        """Check for auto-configuration file and load if present."""
+        """Check for auto-configuration file and load if present.
+
+        Auto-discovery is skipped if storage-based configuration is detected
+        to avoid conflicts between configuration sources.
+        """
+        # Check if storage-based configuration exists
+        try:
+            # Create a temporary storage manager to check for existing data
+            storage_manager = StorageManager(self._hass)
+            await storage_manager.async_load()
+
+            # If storage has any sensor sets, skip auto-discovery
+            sensor_sets = storage_manager.list_sensor_sets()
+            if sensor_sets:
+                _LOGGER.debug(
+                    "Storage-based configuration detected (%d sensor sets). Skipping auto-discovery.", len(sensor_sets)
+                )
+                return
+
+        except Exception as err:
+            _LOGGER.debug("Could not check storage configuration: %s. Proceeding with auto-discovery.", err)
+            # Continue with auto-discovery if storage check fails
+
         # Define potential auto-config file locations
         config_dir = Path(self._hass.config.config_dir)
         potential_paths = [
@@ -239,15 +263,15 @@ class SyntheticSensorsIntegration:
 
         for path in potential_paths:
             if path.exists() and path.is_file():
-                _LOGGER.info(f"Found auto-configuration file: {path}")
+                _LOGGER.debug("Found auto-configuration file: %s", path)
                 self._auto_config_path = path
 
                 try:
                     await self.load_configuration_file(str(path))
-                    _LOGGER.debug(f"Successfully loaded auto-configuration from {path}")
+                    _LOGGER.debug("Successfully loaded auto-configuration from %s", path)
                     break
                 except Exception as err:
-                    _LOGGER.warning(f"Failed to load auto-configuration from {path}: {err}")
+                    _LOGGER.warning("Failed to load auto-configuration from %s: %s", path, err)
                     continue
         else:
             _LOGGER.debug("No auto-configuration file found")
@@ -259,7 +283,7 @@ class SyntheticSensorsIntegration:
 
     async def async_cleanup_detailed(self) -> IntegrationCleanupResult:
         """Clean up all synthetic sensor resources with detailed results."""
-        errors = []
+        errors: list[str] = []
         services_unregistered = False
         sensors_removed = False
 
@@ -276,7 +300,7 @@ class SyntheticSensorsIntegration:
         try:
             # Clean up sensor manager
             if self._sensor_manager:
-                await self._sensor_manager._remove_all_sensors()
+                await self._sensor_manager.cleanup_all_sensors()
                 self._sensor_manager = None
                 sensors_removed = True
 
@@ -288,13 +312,13 @@ class SyntheticSensorsIntegration:
             self._initialized = False
 
             if not errors:
-                _LOGGER.info("Synthetic sensors integration cleanup completed")
+                _LOGGER.debug("Synthetic sensors integration cleanup completed")
 
         except Exception as err:
             errors.append(f"Failed to reset state: {err}")
 
         if errors:
-            _LOGGER.error(f"Errors during synthetic sensors cleanup: {errors}")
+            _LOGGER.error("Errors during synthetic sensors cleanup: %s", errors)
 
         return {
             "success": len(errors) == 0,
@@ -306,6 +330,7 @@ class SyntheticSensorsIntegration:
     async def create_managed_sensor_manager(
         self,
         add_entities_callback: AddEntitiesCallback,
+        integration_domain: str,
         device_info: DeviceInfo | None = None,
         unique_id_prefix: str = "",
         lifecycle_managed_externally: bool = True,
@@ -322,6 +347,7 @@ class SyntheticSensorsIntegration:
 
         Args:
             add_entities_callback: Callback to add entities to HA
+            integration_domain: The domain of the parent integration (required for device lookup)
             device_info: Device info for the parent integration
             unique_id_prefix: Optional prefix for unique IDs (for compatibility with existing sensors)
             lifecycle_managed_externally: Whether lifecycle is managed by parent integration
@@ -341,6 +367,7 @@ class SyntheticSensorsIntegration:
 
         # Create manager config for external integration
         manager_config = SensorManagerConfig(
+            integration_domain=integration_domain,
             device_info=device_info,
             unique_id_prefix=unique_id_prefix,
             lifecycle_managed_externally=lifecycle_managed_externally,
@@ -355,14 +382,82 @@ class SyntheticSensorsIntegration:
 
         # Create and return sensor manager
         sensor_manager = SensorManager(
-            effective_hass,
-            default_name_resolver,
-            add_entities_callback,
-            manager_config,
+            hass=effective_hass,
+            name_resolver=default_name_resolver,
+            add_entities_callback=add_entities_callback,
+            manager_config=manager_config,
         )
 
-        _LOGGER.info("Created managed sensor manager for external integration")
+        _LOGGER.debug("Created managed sensor manager for external integration domain: %s", integration_domain)
         return sensor_manager
+
+
+# External Integration Support Functions
+
+
+async def async_create_sensor_manager(
+    hass: HomeAssistant,
+    integration_domain: str,
+    add_entities_callback: AddEntitiesCallback,
+    device_info: DeviceInfo | None = None,
+    unique_id_prefix: str = "",
+    data_provider_callback: Any = None,
+) -> SensorManager:
+    """Create a sensor manager for external integrations.
+
+    This is the recommended way for external integrations (like SPAN) to create
+    sensor managers without dealing with the full SyntheticSensorsIntegration class.
+
+    Args:
+        hass: Home Assistant instance
+        integration_domain: The domain of the calling integration
+        add_entities_callback: Callback to add entities to HA
+        device_info: Device info for sensors (optional)
+        unique_id_prefix: Prefix for unique IDs (optional)
+        data_provider_callback: Callback for providing live data (optional)
+
+    Returns:
+        SensorManager: Ready-to-use sensor manager
+
+    Example:
+        ```python
+        sensor_manager = await async_create_sensor_manager(
+            hass=hass,
+            integration_domain=DOMAIN,
+            add_entities_callback=async_add_entities,
+            device_info=your_device_info,
+        )
+
+        # Register data sources
+        sensor_manager.register_data_provider_entities(backing_entities)
+
+        # Load configuration from storage
+        config = storage_manager.to_config(device_identifier="your_device")
+        await sensor_manager.load_configuration(config)
+        ```
+    """
+    # Create minimal components needed for sensor manager
+    name_resolver = NameResolver(hass, variables={})
+
+    # Create manager config for external integration
+    manager_config = SensorManagerConfig(
+        integration_domain=integration_domain,
+        device_info=device_info,
+        unique_id_prefix=unique_id_prefix,
+        lifecycle_managed_externally=True,
+        data_provider_callback=data_provider_callback,
+    )
+
+    # Create and return sensor manager
+    sensor_manager = SensorManager(
+        hass=hass,
+        name_resolver=name_resolver,
+        add_entities_callback=add_entities_callback,
+        manager_config=manager_config,
+    )
+
+    _LOGGER.debug("Created external sensor manager for integration: %s", integration_domain)
+    return sensor_manager
 
 
 # Global instance management for integration with existing components
@@ -378,7 +473,7 @@ async def async_setup_integration(
     entry_id = config_entry.entry_id
 
     if entry_id in _integrations:
-        _LOGGER.warning(f"Synthetic sensors integration already exists for entry {entry_id}")
+        _LOGGER.warning("Synthetic sensors integration already exists for entry %s", entry_id)
         return True
 
     integration = SyntheticSensorsIntegration(hass, config_entry)
@@ -406,7 +501,11 @@ async def async_unload_integration(config_entry: ConfigEntry[Any]) -> bool:
     return success
 
 
-async def async_reload_integration(hass: HomeAssistant, config_entry: ConfigEntry[Any], add_entities_callback: AddEntitiesCallback) -> bool:
+async def async_reload_integration(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry[Any],
+    add_entities_callback: AddEntitiesCallback,
+) -> bool:
     """Reload synthetic sensors integration for a config entry."""
     entry_id = config_entry.entry_id
 
@@ -417,7 +516,9 @@ async def async_reload_integration(hass: HomeAssistant, config_entry: ConfigEntr
     return await integration.async_reload(add_entities_callback)
 
 
-def get_integration(config_entry: ConfigEntry[Any]) -> SyntheticSensorsIntegration | None:
+def get_integration(
+    config_entry: ConfigEntry[Any],
+) -> SyntheticSensorsIntegration | None:
     """Get the synthetic sensors integration instance for a config entry."""
     return _integrations.get(config_entry.entry_id)
 
@@ -466,39 +567,45 @@ sensors:
     friendly_name: "Energy Cost Analysis"
     description: "Real-time energy cost calculations"
     category: "energy"
+    integration_domain: "synthetic_sensors"
     formulas:
       - name: "current_cost_rate"
         formula: >-
           entity('sensor.electricity_rate') *
           entity('sensor.span_panel_instantaneous_power') / 1000
-        unit_of_measurement: "$/h"
-        device_class: "monetary"
-        icon: "mdi:currency-usd"
+        metadata:
+          unit_of_measurement: "$/h"
+          device_class: "monetary"
+          icon: "mdi:currency-usd"
 
       - name: "daily_projected_cost"
         formula: "entity('sensor.cost_analysis_current_cost_rate') * 24"
-        unit_of_measurement: "$"
-        device_class: "monetary"
+        metadata:
+          unit_of_measurement: "$"
+          device_class: "monetary"
 
   - name: "solar_analytics"
     friendly_name: "Solar Analytics"
     description: "Advanced solar energy analysis"
     category: "solar"
+    integration_domain: "synthetic_sensors"
     formulas:
       - name: "efficiency_ratio"
         formula: >-
           entity('sensor.solar_production') /
           max(entity('sensor.solar_irradiance'), 1) * 100
-        unit_of_measurement: "%"
-        device_class: "energy"
+        metadata:
+          unit_of_measurement: "%"
+          device_class: "energy"
 
       - name: "net_energy_flow"
         formula: >-
           entity('sensor.solar_production') -
           entity('sensor.span_panel_instantaneous_power')
-        unit_of_measurement: "W"
-        device_class: "power"
-        state_class: "measurement"
+        metadata:
+          unit_of_measurement: "W"
+          device_class: "power"
+          state_class: "measurement"
 
 global_settings:
   default_update_interval: 30

@@ -1,38 +1,37 @@
-# Evaluator Test Configuration
-version: "1.0"
-
+version: '1.0'
 sensors:
   evaluator_test_basic:
-    name: "Basic Evaluator Test"
-    formula: "temp + humidity"
+    name: Basic Evaluator Test
+    formula: temp + humidity
     variables:
-      temp: "sensor.test_temperature"
-      humidity: "sensor.test_humidity"
-    unit_of_measurement: "index"
-    state_class: "measurement"
-
+      temp: sensor.test_temperature
+      humidity: sensor.test_humidity
+    metadata:
+      unit_of_measurement: index
+      state_class: measurement
   evaluator_test_functions:
-    name: "Function Test"
-    formula: "max(a, b) + min(c, d)"
+    name: Function Test
+    formula: max(a, b) + min(c, d)
     variables:
-      a: "sensor.test_value_a"
-      b: "sensor.test_value_b"
-      c: "sensor.test_value_c"
-      d: "sensor.test_value_d"
-    unit_of_measurement: "value"
-    state_class: "measurement"
-
+      a: sensor.test_value_a
+      b: sensor.test_value_b
+      c: sensor.test_value_c
+      d: sensor.test_value_d
+    metadata:
+      unit_of_measurement: value
+      state_class: measurement
   evaluator_test_entity_refs:
-    name: "Entity Reference Test"
-    formula: "entity('sensor.test_entity_1') + entity('sensor.test_entity_2')"
-    unit_of_measurement: "combined"
-    state_class: "measurement"
-
+    name: Entity Reference Test
+    formula: entity('sensor.test_entity_1') + entity('sensor.test_entity_2')
+    metadata:
+      unit_of_measurement: combined
+      state_class: measurement
   evaluator_test_complex:
-    name: "Complex Formula Test"
-    formula: "if(temp > 20, temp * humidity / 100, temp + humidity)"
+    name: Complex Formula Test
+    formula: if(temp > 20, temp * humidity / 100, temp + humidity)
     variables:
-      temp: "sensor.test_temperature"
-      humidity: "sensor.test_humidity"
-    unit_of_measurement: "complex"
-    state_class: "measurement"
+      temp: sensor.test_temperature
+      humidity: sensor.test_humidity
+    metadata:
+      unit_of_measurement: complex
+      state_class: measurement

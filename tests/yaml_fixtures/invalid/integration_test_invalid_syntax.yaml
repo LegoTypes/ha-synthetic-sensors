@@ -1,0 +1,29 @@
+version: "1.0"
+sensors:
+  # YAML syntax error - missing closing quote in formula
+  malformed_yaml_sensor:
+    name: "Sensor With Malformed YAML"
+    formula: "power_value * efficiency
+    # Missing closing quote - YAML syntax error
+    variables:
+      power_value: "sensor.input_power"
+      efficiency: 0.95
+    unit_of_measurement: "W"
+    device_class: "power"
+
+  # Invalid mathematical formula syntax
+  invalid_formula_syntax:
+    name: "Sensor With Invalid Formula"
+    formula: "power_value + + * efficiency"  # Invalid mathematical expression
+    variables:
+      power_value: "sensor.input_power"
+      efficiency: 0.95
+    unit_of_measurement: "W"
+
+  # Missing quotes in YAML string values
+  missing_quotes_sensor:
+    name: Invalid Name Without Quotes
+    formula: power_value * 2
+    variables:
+      power_value: sensor.input_power
+    unit_of_measurement: W

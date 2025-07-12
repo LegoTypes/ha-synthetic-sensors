@@ -1,0 +1,36 @@
+version: '1.0'
+global_settings:
+  device_identifier: global_device:test_123
+  variables:
+    base_power_sensor: sensor.test_power_meter
+    energy_rate: 0.15
+    efficiency_threshold: 85
+sensors:
+  global_power_sensor:
+    name: Global Power Sensor
+    formula: base_power_sensor
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  global_energy_cost:
+    name: Global Energy Cost
+    formula: base_power_sensor * energy_rate
+    metadata:
+      unit_of_measurement: $
+      state_class: measurement
+  global_efficiency_check:
+    name: Global Efficiency Check
+    formula: base_power_sensor > efficiency_threshold
+    metadata:
+      unit_of_measurement: bool
+      state_class: measurement
+  mixed_variables_sensor:
+    name: Mixed Variables Sensor
+    formula: base_power_sensor + local_adjustment
+    variables:
+      local_adjustment: sensor.local_adjustment_value
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

@@ -16,7 +16,7 @@ sensors:
     device_model: "ST-5000"
     device_sw_version: "1.2.3"
     suggested_area: "Garage"
-    
+
   # Example 2: Associate with the same device (minimal config)
   solar_inverter_energy:
     name: "Solar Inverter Energy"
@@ -29,7 +29,7 @@ sensors:
     state_class: total_increasing
     # Only device_identifier needed - reuses existing device
     device_identifier: "solar_inverter_001"
-    
+
   # Example 3: Associate with an existing HA device
   existing_device_sensor:
     name: "Temperature Comfort Index"
@@ -39,7 +39,7 @@ sensors:
     unit_of_measurement: "comfort"
     # Reference existing device by identifier
     device_identifier: "existing_thermostat_device"
-    
+
   # Example 4: No device association (standalone sensor)
   standalone_calculation:
     name: "Daily Average Temperature"

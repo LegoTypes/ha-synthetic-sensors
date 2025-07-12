@@ -1,46 +1,39 @@
-# Area OR Patterns Test Configuration
-# Tests OR-style logic for multiple areas using pipe (|) syntax
-version: "1.0"
-
+version: '1.0'
 sensors:
-  # Test basic OR pattern with two areas
   living_kitchen_count:
-    name: "Living Room and Kitchen Count"
-    formula: 'count("area:living_room|kitchen")'
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Test OR pattern with three areas
+    name: Living Room and Kitchen Count
+    formula: count("area:living_room|kitchen")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   main_floor_sum:
-    name: "Main Floor Sum"
-    formula: 'sum("area:living_room|kitchen|dining_room")'
-    unit_of_measurement: "count"
-    state_class: "measurement"
-
-  # Test OR pattern with avg function
+    name: Main Floor Sum
+    formula: sum("area:living_room|kitchen|dining_room")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
   bedroom_average:
-    name: "Bedroom Average"
-    formula: 'avg("area:master_bedroom|guest_bedroom")'
-    unit_of_measurement: "°C"
-    state_class: "measurement"
-
-  # Test variable-driven OR patterns
+    name: Bedroom Average
+    formula: avg("area:master_bedroom|guest_bedroom")
+    metadata:
+      unit_of_measurement: °C
+      state_class: measurement
   dynamic_or_areas:
-    name: "Dynamic OR Areas"
-    formula: 'sum("area:primary_area|secondary_area")'
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Test complex mathematical formula with OR
+    name: Dynamic OR Areas
+    formula: sum("area:primary_area|secondary_area")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   area_ratio_analysis:
-    name: "Area Ratio Analysis"
-    formula: '(sum("area:upstairs|downstairs") / count("area:living_room|kitchen")) * 100'
-    unit_of_measurement: "%"
-    state_class: "measurement"
-
-  # Test mixed patterns in single formula
+    name: Area Ratio Analysis
+    formula: (sum("area:upstairs|downstairs") / count("area:living_room|kitchen"))
+      * 100
+    metadata:
+      unit_of_measurement: '%'
+      state_class: measurement
   comprehensive_area_analysis:
-    name: "Comprehensive Area Analysis"
-    formula: 'sum("area:bedroom|bathroom") + count("area:office|study")'
-    unit_of_measurement: "count"
-    state_class: "measurement" 
+    name: Comprehensive Area Analysis
+    formula: sum("area:bedroom|bathroom") + count("area:office|study")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement

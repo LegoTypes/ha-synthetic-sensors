@@ -1,0 +1,46 @@
+version: '1.0'
+global_settings:
+  variables:
+    base_power: sensor.global_power_meter
+    efficiency: 0.85
+    voltage_source: sensor.global_voltage
+sensors:
+  main_sensor:
+    name: Main Sensor
+    formula: base_power * efficiency
+    variables:
+      temperature: sensor.main_temperature
+      pressure: sensor.main_pressure
+    attributes:
+      complex_analysis:
+        formula: base_power * efficiency * temperature / pressure
+        variables:
+          base_power: sensor.different_power_meter
+          efficiency: 0.9
+          temperature: sensor.different_temperature
+        metadata:
+          unit_of_measurement: complex
+      voltage_calc:
+        formula: voltage_source * temperature
+        variables:
+          voltage_source: sensor.different_voltage
+          temperature: sensor.different_temp
+        metadata:
+          unit_of_measurement: V
+    metadata:
+      unit_of_measurement: W
+  secondary_sensor:
+    name: Secondary Sensor
+    formula: voltage_source / efficiency
+    variables:
+      local_factor: 1.5
+    attributes:
+      mixed_conflicts:
+        formula: voltage_source * efficiency * local_factor
+        variables:
+          voltage_source: sensor.alt_voltage
+          local_factor: 2.0
+        metadata:
+          unit_of_measurement: mixed
+    metadata:
+      unit_of_measurement: ratio

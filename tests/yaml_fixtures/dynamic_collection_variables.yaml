@@ -1,427 +1,403 @@
-version: "1.0"
-
+version: '1.0'
 sensors:
-  # Single variable device class aggregation
   dynamic_device_sum:
-    name: "Dynamic Device Sum"
-    formula: 'sum("device_class:device_type")'
+    name: Dynamic Device Sum
+    formula: sum("device_class:device_type")
     variables:
-      device_type: "input_select.monitoring_device_class"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Multiple variables for area + device class filtering
+      device_type: input_select.monitoring_device_class
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   area_device_average:
-    name: "Area Device Average"
-    formula: 'avg("area:target_area", "device_class:device_type")'
+    name: Area Device Average
+    formula: avg("area:target_area", "device_class:device_type")
     variables:
-      target_area: "input_select.focus_area"
-      device_type: "input_select.focus_device_class"
-    unit_of_measurement: "°C"
-    device_class: "temperature"
-    state_class: "measurement"
-
-  # Variable threshold in attribute pattern
+      target_area: input_select.focus_area
+      device_type: input_select.focus_device_class
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement
   low_battery_count:
-    name: "Low Battery Device Count"
-    formula: 'count("device_class:battery" < threshold)'
+    name: Low Battery Device Count
+    formula: count("device_class:battery" < threshold)
     variables:
-      threshold: "input_number.battery_alert_threshold"
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Variable regex pattern construction
+      threshold: input_number.battery_alert_threshold
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   circuit_group_power:
-    name: "Circuit Group Power"
-    formula: 'sum("regex:group_prefix")'
+    name: Circuit Group Power
+    formula: sum("regex:group_prefix")
     variables:
-      group_prefix: "input_text.circuit_group_name"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Complex multi-variable pattern with mathematical operations
+      group_prefix: input_text.circuit_group_name
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   efficiency_analysis:
-    name: "Efficiency Analysis"
-    formula: '(sum("device_class:primary_type") / sum("device_class:secondary_type")) * 100'
+    name: Efficiency Analysis
+    formula: (sum("device_class:primary_type") / sum("device_class:secondary_type"))
+      * 100
     variables:
-      primary_type: "input_select.primary_device_type"
-      secondary_type: "input_select.secondary_device_type"
-    unit_of_measurement: "%"
-    device_class: "power_factor"
-    state_class: "measurement"
-
-  # Mixed collection and regular variables
+      primary_type: input_select.primary_device_type
+      secondary_type: input_select.secondary_device_type
+    metadata:
+      unit_of_measurement: '%'
+      device_class: power_factor
+      state_class: measurement
   enhanced_power_analysis:
-    name: "Enhanced Power Analysis"
-    formula: '(sum("device_class:device_type") * rate_multiplier) + base_consumption'
+    name: Enhanced Power Analysis
+    formula: (sum("device_class:device_type") * rate_multiplier) + base_consumption
     variables:
-      device_type: "input_select.target_device_class"
-      rate_multiplier: "input_number.power_rate_multiplier"
-      base_consumption: "sensor.always_on_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Multiple collection functions with different variables using values of an attribute
-  # "device_class:battery.battery_level resolves to the attributes of all the sensors with device class battery
-  # so the first part to get resolved is the variable "device_class:battery" and then the attribute of 
-  # those sensors is used to filter the sensors. The trick here is that the varaible should not be fully resolved
-  # to a list of states because it is a special type of variable that is further refined in the formula before 
-  # the states are read.
+      device_type: input_select.target_device_class
+      rate_multiplier: input_number.power_rate_multiplier
+      base_consumption: sensor.always_on_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   power_to_battery_ratio:
-    name: "Power to Battery Efficiency"
-    formula: 'sum("device_class:power_type") / count(battery_class.battery_level > min_battery)'
+    name: Power to Battery Efficiency
+    formula: sum("device_class:power_type") / count(battery_class.battery_level >
+      min_battery)
     variables:
-      power_type: "input_select.power_device_class"
-      min_battery: "input_number.minimum_battery_level"
-      battery_class: "device_class:battery"
-    unit_of_measurement: "W/device"
-    state_class: "measurement"
-
-  # Complex area-based aggregation with multiple conditions
+      power_type: input_select.power_device_class
+      min_battery: input_number.minimum_battery_level
+      battery_class: device_class:battery
+    metadata:
+      unit_of_measurement: W/device
+      state_class: measurement
   multi_area_analysis:
-    name: "Multi-Area Analysis"
-    formula: 'avg("area:primary_area", "area:secondary_area", "device_class:sensor_type")'
+    name: Multi-Area Analysis
+    formula: avg("area:primary_area", "area:secondary_area", "device_class:sensor_type")
     variables:
-      primary_area: "input_select.primary_area"
-      secondary_area: "input_select.secondary_area"
-      sensor_type: "input_select.monitored_device_class"
-    unit_of_measurement: "units"
-    state_class: "measurement"
-
-  # Dynamic tag-based monitoring
+      primary_area: input_select.primary_area
+      secondary_area: input_select.secondary_area
+      sensor_type: input_select.monitored_device_class
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
   tagged_device_monitor:
-    name: "Tagged Device Monitor"
-    formula: 'count("tags:alert_tag") + count("tags:warning_tag")'
+    name: Tagged Device Monitor
+    formula: count("tags:alert_tag") + count("tags:warning_tag")
     variables:
-      alert_tag: "input_select.alert_level_tag"
-      warning_tag: "input_select.warning_level_tag"
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Advanced attribute comparison with variable thresholds
+      alert_tag: input_select.alert_level_tag
+      warning_tag: input_select.warning_level_tag
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   temperature_range_monitor:
-    name: "Temperature Range Monitor"
-    formula: 'count(temp_sensors.temperature > min_temp and temp_sensors.temperature < max_temp)'
+    name: Temperature Range Monitor
+    formula: count(temp_sensors.temperature > min_temp and temp_sensors.temperature
+      < max_temp)
     variables:
-      min_temp: "input_number.min_temperature"
-      max_temp: "input_number.max_temperature"
-      temp_sensors: "device_class:temperature"
-    unit_of_measurement: "sensors"
-    state_class: "measurement"
-
-  # Multi-formula sensor with calculated attributes using dynamic collections
+      min_temp: input_number.min_temperature
+      max_temp: input_number.max_temperature
+      temp_sensors: device_class:temperature
+    metadata:
+      unit_of_measurement: sensors
+      state_class: measurement
   energy_analysis_suite:
-    name: "Energy Analysis Suite"
-    formula: 'sum("device_class:primary_energy_type")'
+    name: Energy Analysis Suite
+    formula: sum("device_class:primary_energy_type")
     attributes:
       secondary_consumption:
-        formula: 'sum("device_class:secondary_energy_type")'
-        unit_of_measurement: "W"
+        formula: sum("device_class:secondary_energy_type")
+        metadata:
+          unit_of_measurement: W
       total_consumption:
-        formula: 'state + secondary_consumption'
-        unit_of_measurement: "W"
+        formula: state + secondary_consumption
+        metadata:
+          unit_of_measurement: W
       efficiency_rating:
-        formula: 'state / total_consumption * 100'
-        unit_of_measurement: "%"
+        formula: state / total_consumption * 100
+        metadata:
+          unit_of_measurement: '%'
       high_usage_count:
-        formula: 'count(primary_devices.current_power > alert_threshold)'
-        unit_of_measurement: "devices"
+        formula: count(primary_devices.current_power > alert_threshold)
+        metadata:
+          unit_of_measurement: devices
     variables:
-      primary_energy_type: "input_select.primary_energy_class"
-      secondary_energy_type: "input_select.secondary_energy_class"
-      alert_threshold: "input_number.power_alert_level"
-      primary_devices: "device_class:power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Edge case: Empty variable handling
+      primary_energy_type: input_select.primary_energy_class
+      secondary_energy_type: input_select.secondary_energy_class
+      alert_threshold: input_number.power_alert_level
+      primary_devices: device_class:power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   empty_collection_test:
-    name: "Empty Collection Test"
-    formula: 'count("device_class:test_type")'
+    name: Empty Collection Test
+    formula: count("device_class:test_type")
     variables:
-      test_type: "input_text.empty_device_class"
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # multiple regex patterns
+      test_type: input_text.empty_device_class
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   sum_two_regex_patterns:
-    name: "Sum Two Regex Patterns"
-    formula: 'sum("regex:circuit_pattern", "regex:kitchen_pattern")'
+    name: Sum Two Regex Patterns
+    formula: sum("regex:circuit_pattern", "regex:kitchen_pattern")
     variables:
-      circuit_pattern: "input_text.circuit_regex_pattern"
-      kitchen_pattern: "input_text.kitchen_regex_pattern"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # comma-separated regex patterns (string-level, like device_class)
+      circuit_pattern: input_text.circuit_regex_pattern
+      kitchen_pattern: input_text.kitchen_regex_pattern
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   or_separated_regex:
-    name: "OR Separated Regex"
-    formula: 'sum("regex:circuit_pattern|kitchen_pattern")'
+    name: OR Separated Regex
+    formula: sum("regex:circuit_pattern|kitchen_pattern")
     variables:
-      circuit_pattern: "input_text.circuit_regex_pattern"
-      kitchen_pattern: "input_text.kitchen_regex_pattern"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # OR-style device class tests with pipe syntax
+      circuit_pattern: input_text.circuit_regex_pattern
+      kitchen_pattern: input_text.kitchen_regex_pattern
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   door_window_count:
-    name: "Door and Window Count"
-    formula: 'count("device_class:door|window")'
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
+    name: Door and Window Count
+    formula: count("device_class:door|window")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   security_device_sum:
-    name: "Security Device Status Sum"
-    formula: 'sum("device_class:door|window|lock")'
-    unit_of_measurement: "total"
-    state_class: "measurement"
-
+    name: Security Device Status Sum
+    formula: sum("device_class:door|window|lock")
+    metadata:
+      unit_of_measurement: total
+      state_class: measurement
   climate_power_analysis:
-    name: "Climate and Power Analysis"
-    formula: 'avg("device_class:temperature|humidity") + sum("device_class:power|energy")'
-    unit_of_measurement: "mixed"
-    state_class: "measurement"
-
-  # OR-style regex tests with pipe syntax using variables
+    name: Climate and Power Analysis
+    formula: avg("device_class:temperature|humidity") + sum("device_class:power|energy")
+    metadata:
+      unit_of_measurement: mixed
+      state_class: measurement
   power_circuit_or_kitchen:
-    name: "Power Circuit or Kitchen"
-    formula: 'sum("regex:circuit_pattern|kitchen_pattern")'
+    name: Power Circuit or Kitchen
+    formula: sum("regex:circuit_pattern|kitchen_pattern")
     variables:
-      circuit_pattern: "input_text.circuit_regex_pattern"
-      kitchen_pattern: "input_text.kitchen_regex_pattern"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
+      circuit_pattern: input_text.circuit_regex_pattern
+      kitchen_pattern: input_text.kitchen_regex_pattern
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   multi_regex_or_patterns:
-    name: "Multi Regex OR Patterns"
-    formula: 'count("regex:living_pattern|bedroom_pattern|bathroom_pattern")'
+    name: Multi Regex OR Patterns
+    formula: count("regex:living_pattern|bedroom_pattern|bathroom_pattern")
     variables:
-      living_pattern: "input_text.living_room_regex"
-      bedroom_pattern: "input_text.bedroom_regex"
-      bathroom_pattern: "input_text.bathroom_regex"
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
+      living_pattern: input_text.living_room_regex
+      bedroom_pattern: input_text.bedroom_regex
+      bathroom_pattern: input_text.bathroom_regex
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   complex_regex_or_with_math:
-    name: "Complex Regex OR with Math"
-    formula: 'avg("regex:temp_pattern|humidity_pattern") * 2'
+    name: Complex Regex OR with Math
+    formula: avg("regex:temp_pattern|humidity_pattern") * 2
     variables:
-      temp_pattern: "input_text.temperature_regex"
-      humidity_pattern: "input_text.humidity_regex"
-    unit_of_measurement: "calculated"
-    state_class: "measurement"
-
-  # Variable-driven OR device classes
+      temp_pattern: input_text.temperature_regex
+      humidity_pattern: input_text.humidity_regex
+    metadata:
+      unit_of_measurement: calculated
+      state_class: measurement
   dynamic_or_device_classes:
-    name: "Dynamic OR Device Classes"
-    formula: 'count("device_class:primary_class|secondary_class")'
+    name: Dynamic OR Device Classes
+    formula: count("device_class:primary_class|secondary_class")
     variables:
-      primary_class: "input_select.primary_device_class"
-      secondary_class: "input_select.secondary_device_class"
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Complex OR pattern with mathematical operations
+      primary_class: input_select.primary_device_class
+      secondary_class: input_select.secondary_device_class
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   multi_device_efficiency:
-    name: "Multi-Device Efficiency"
-    formula: '(sum("device_class:power|energy") / count("device_class:temperature|humidity")) * 100'
-    unit_of_measurement: "%"
-    device_class: "power_factor"
-    state_class: "measurement"
-
-  # OR pattern in attribute formulas
+    name: Multi-Device Efficiency
+    formula: (sum("device_class:power|energy") / count("device_class:temperature|humidity"))
+      * 100
+    metadata:
+      unit_of_measurement: '%'
+      device_class: power_factor
+      state_class: measurement
   comprehensive_device_analysis:
-    name: "Comprehensive Device Analysis"
-    formula: 'sum("device_class:power")'
+    name: Comprehensive Device Analysis
+    formula: sum("device_class:power")
     attributes:
       security_status:
-        formula: 'count("device_class:door|window|lock")'
-        unit_of_measurement: "devices"
+        formula: count("device_class:door|window|lock")
+        metadata:
+          unit_of_measurement: devices
       climate_average:
-        formula: 'avg("device_class:temperature|humidity")'
-        unit_of_measurement: "avg"
+        formula: avg("device_class:temperature|humidity")
+        metadata:
+          unit_of_measurement: avg
       mixed_or_count:
-        formula: 'count("device_class:motion|occupancy|presence")'
-        unit_of_measurement: "sensors"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # OR-style regex pattern tests with pipe syntax
-  # Basic OR regex patterns (variable-based)
+        formula: count("device_class:motion|occupancy|presence")
+        metadata:
+          unit_of_measurement: sensors
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   circuit_or_kitchen_power:
-    name: "Circuit or Kitchen Power Sum"
-    formula: 'sum("regex:circuit_pattern|kitchen_pattern")'
+    name: Circuit or Kitchen Power Sum
+    formula: sum("regex:circuit_pattern|kitchen_pattern")
     variables:
-      circuit_pattern: "input_text.circuit_power_regex"
-      kitchen_pattern: "input_text.kitchen_power_regex"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Multiple OR regex patterns (three-way)
+      circuit_pattern: input_text.circuit_power_regex
+      kitchen_pattern: input_text.kitchen_power_regex
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   multi_room_temperature:
-    name: "Multi-Room Temperature Average"
-    formula: 'avg("regex:kitchen_pattern|living_pattern|bedroom_pattern")'
+    name: Multi-Room Temperature Average
+    formula: avg("regex:kitchen_pattern|living_pattern|bedroom_pattern")
     variables:
-      kitchen_pattern: "input_text.kitchen_temp_regex"
-      living_pattern: "input_text.living_temp_regex"
-      bedroom_pattern: "input_text.bedroom_temp_regex"
-    unit_of_measurement: "°C"
-    device_class: "temperature"
-    state_class: "measurement"
-
-  # Complex regex OR with different entity domains
+      kitchen_pattern: input_text.kitchen_temp_regex
+      living_pattern: input_text.living_temp_regex
+      bedroom_pattern: input_text.bedroom_temp_regex
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement
   sensor_or_binary_count:
-    name: "Sensor or Binary Sensor Count"
-    formula: 'count("regex:sensor_pattern|binary_pattern|input_pattern")'
+    name: Sensor or Binary Sensor Count
+    formula: count("regex:sensor_pattern|binary_pattern|input_pattern")
     variables:
-      sensor_pattern: "input_text.sensor_domain_regex"
-      binary_pattern: "input_text.binary_sensor_regex"
-      input_pattern: "input_text.input_entity_regex"
-    unit_of_measurement: "entities"
-    state_class: "measurement"
-
-  # Variable-driven OR regex patterns
+      sensor_pattern: input_text.sensor_domain_regex
+      binary_pattern: input_text.binary_sensor_regex
+      input_pattern: input_text.input_entity_regex
+    metadata:
+      unit_of_measurement: entities
+      state_class: measurement
   dynamic_or_regex_patterns:
-    name: "Dynamic OR Regex Patterns"
-    formula: 'sum("regex:primary_pattern|secondary_pattern")'
+    name: Dynamic OR Regex Patterns
+    formula: sum("regex:primary_pattern|secondary_pattern")
     variables:
-      primary_pattern: "input_text.primary_regex_pattern"
-      secondary_pattern: "input_text.secondary_regex_pattern"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # OR patterns in mathematical expressions
+      primary_pattern: input_text.primary_regex_pattern
+      secondary_pattern: input_text.secondary_regex_pattern
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   regex_efficiency_calculation:
-    name: "Regex Efficiency Calculation"
-    formula: '(sum("regex:power_pattern|energy_pattern") / count("regex:temp_pattern|humidity_pattern")) * 100'
+    name: Regex Efficiency Calculation
+    formula: (sum("regex:power_pattern|energy_pattern") / count("regex:temp_pattern|humidity_pattern"))
+      * 100
     variables:
-      power_pattern: "input_text.power_regex"
-      energy_pattern: "input_text.energy_regex"
-      temp_pattern: "input_text.temp_regex"
-      humidity_pattern: "input_text.humidity_regex"
-    unit_of_measurement: "%"
-    device_class: "power_factor"
-    state_class: "measurement"
-
-  # OR regex patterns in attribute formulas
+      power_pattern: input_text.power_regex
+      energy_pattern: input_text.energy_regex
+      temp_pattern: input_text.temp_regex
+      humidity_pattern: input_text.humidity_regex
+    metadata:
+      unit_of_measurement: '%'
+      device_class: power_factor
+      state_class: measurement
   comprehensive_regex_analysis:
-    name: "Comprehensive Regex Analysis"
-    formula: 'sum("regex:power_pattern")'
+    name: Comprehensive Regex Analysis
+    formula: sum("regex:power_pattern")
     variables:
-      power_pattern: "input_text.power_regex"
-      circuit_pattern: "input_text.circuit_regex"
-      breaker_pattern: "input_text.breaker_regex"
-      temperature_pattern: "input_text.temperature_regex"
-      humidity_pattern: "input_text.humidity_regex"
-      pressure_pattern: "input_text.pressure_regex"
-      motion_pattern: "input_text.motion_regex"
-      occupancy_pattern: "input_text.occupancy_regex"
-      presence_pattern: "input_text.presence_regex"
-      sensor_power_pattern: "input_text.sensor_power_regex"
-      binary_on_pattern: "input_text.binary_on_regex"
+      power_pattern: input_text.power_regex
+      circuit_pattern: input_text.circuit_regex
+      breaker_pattern: input_text.breaker_regex
+      temperature_pattern: input_text.temperature_regex
+      humidity_pattern: input_text.humidity_regex
+      pressure_pattern: input_text.pressure_regex
+      motion_pattern: input_text.motion_regex
+      occupancy_pattern: input_text.occupancy_regex
+      presence_pattern: input_text.presence_regex
+      sensor_power_pattern: input_text.sensor_power_regex
+      binary_on_pattern: input_text.binary_on_regex
     attributes:
       circuit_status:
-        formula: 'count("regex:circuit_pattern|breaker_pattern")'
-        unit_of_measurement: "devices"
+        formula: count("regex:circuit_pattern|breaker_pattern")
+        metadata:
+          unit_of_measurement: devices
       climate_data:
-        formula: 'avg("regex:temperature_pattern|humidity_pattern|pressure_pattern")'
-        unit_of_measurement: "avg"
+        formula: avg("regex:temperature_pattern|humidity_pattern|pressure_pattern")
+        metadata:
+          unit_of_measurement: avg
       motion_sensors:
-        formula: 'count("regex:motion_pattern|occupancy_pattern|presence_pattern")'
-        unit_of_measurement: "sensors"
+        formula: count("regex:motion_pattern|occupancy_pattern|presence_pattern")
+        metadata:
+          unit_of_measurement: sensors
       mixed_patterns:
-        formula: 'sum("regex:sensor_power_pattern|binary_on_pattern")'
-        unit_of_measurement: "mixed"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Edge cases for OR regex
+        formula: sum("regex:sensor_power_pattern|binary_on_pattern")
+        metadata:
+          unit_of_measurement: mixed
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   regex_edge_cases:
-    name: "Regex Edge Cases"
-    formula: 'count("regex:test_pattern|demo_pattern|sample_pattern")'
+    name: Regex Edge Cases
+    formula: count("regex:test_pattern|demo_pattern|sample_pattern")
     variables:
-      test_pattern: "input_text.test_regex"
-      demo_pattern: "input_text.demo_regex"
-      sample_pattern: "input_text.sample_regex"
-    unit_of_measurement: "entities"
-    state_class: "measurement"
-
-  # OR patterns with escaped characters
+      test_pattern: input_text.test_regex
+      demo_pattern: input_text.demo_regex
+      sample_pattern: input_text.sample_regex
+    metadata:
+      unit_of_measurement: entities
+      state_class: measurement
   regex_escaped_or:
-    name: "Regex Escaped OR Pattern"
-    formula: 'sum("regex:circuit_escaped_pattern|power_escaped_pattern")'
+    name: Regex Escaped OR Pattern
+    formula: sum("regex:circuit_escaped_pattern|power_escaped_pattern")
     variables:
-      circuit_escaped_pattern: "input_text.circuit_escaped_regex"
-      power_escaped_pattern: "input_text.power_escaped_regex"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Complex nested OR patterns
+      circuit_escaped_pattern: input_text.circuit_escaped_regex
+      power_escaped_pattern: input_text.power_escaped_regex
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   regex_nested_or:
-    name: "Regex Nested OR Pattern"
-    formula: 'avg("regex:kitchen_climate_pattern|office_climate_pattern")'
+    name: Regex Nested OR Pattern
+    formula: avg("regex:kitchen_climate_pattern|office_climate_pattern")
     variables:
-      kitchen_climate_pattern: "input_text.kitchen_climate_regex"
-      office_climate_pattern: "input_text.office_climate_regex"
-    unit_of_measurement: "avg"
-    state_class: "measurement"
-
-  # Direct entity ID OR patterns for device classes (no variables)
+      kitchen_climate_pattern: input_text.kitchen_climate_regex
+      office_climate_pattern: input_text.office_climate_regex
+    metadata:
+      unit_of_measurement: avg
+      state_class: measurement
   direct_device_class_or:
-    name: "Direct Device Class OR"
-    formula: 'count("device_class:input_select.device_type_1|input_select.device_type_2")'
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Direct entity ID OR patterns for regex (no variables)
+    name: Direct Device Class OR
+    formula: count("device_class:input_select.device_type_1|input_select.device_type_2")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   direct_regex_or:
-    name: "Direct Regex OR"
-    formula: 'sum("regex:input_text.circuit_regex|input_text.kitchen_regex")'
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Mixed direct and variable OR patterns for device classes
+    name: Direct Regex OR
+    formula: sum("regex:input_text.circuit_regex|input_text.kitchen_regex")
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   mixed_device_class_or:
-    name: "Mixed Device Class OR"
-    formula: 'count("device_class:variable_type|input_select.direct_device_type")'
+    name: Mixed Device Class OR
+    formula: count("device_class:variable_type|input_select.direct_device_type")
     variables:
-      variable_type: "input_select.variable_device_class"
-    unit_of_measurement: "devices"
-    state_class: "measurement"
-
-  # Mixed direct and variable OR patterns for regex
+      variable_type: input_select.variable_device_class
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
   mixed_regex_or:
-    name: "Mixed Regex OR"
-    formula: 'sum("regex:variable_pattern|input_text.direct_regex_pattern")'
+    name: Mixed Regex OR
+    formula: sum("regex:variable_pattern|input_text.direct_regex_pattern")
     variables:
-      variable_pattern: "input_text.variable_regex_pattern"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Complex direct entity ID OR with three patterns
+      variable_pattern: input_text.variable_regex_pattern
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   direct_three_way_device_class:
-    name: "Direct Three-Way Device Class"
-    formula: 'avg("device_class:input_select.type1|input_select.type2|input_select.type3")'
-    unit_of_measurement: "avg"
-    state_class: "measurement"
-
-  # Complex direct entity ID OR with three regex patterns
+    name: Direct Three-Way Device Class
+    formula: avg("device_class:input_select.type1|input_select.type2|input_select.type3")
+    metadata:
+      unit_of_measurement: avg
+      state_class: measurement
   direct_three_way_regex:
-    name: "Direct Three-Way Regex"
-    formula: 'count("regex:input_text.pattern1|input_text.pattern2|input_text.pattern3")'
-    unit_of_measurement: "entities"
-    state_class: "measurement"
+    name: Direct Three-Way Regex
+    formula: count("regex:input_text.pattern1|input_text.pattern2|input_text.pattern3")
+    metadata:
+      unit_of_measurement: entities
+      state_class: measurement

@@ -1,13 +1,12 @@
-# Cost Analysis Configuration
-version: "1.0"
-
+version: '1.0'
 sensors:
-  current_energy_cost_rate:              # Sensor key becomes the unique_id
-    name: "Current Energy Cost Rate"     # OPTIONAL: Display name
-    formula: "energy_usage * rate_per_kwh / 1000"
+  current_energy_cost_rate:
+    name: Current Energy Cost Rate
+    formula: energy_usage * rate_per_kwh / 1000
     variables:
-      energy_usage: "sensor.total_energy_usage"
-      rate_per_kwh: "sensor.current_electricity_rate"
-    unit_of_measurement: "$/h"
-    device_class: "monetary"
-    state_class: "measurement"
+      energy_usage: sensor.total_energy_usage
+      rate_per_kwh: sensor.current_electricity_rate
+    metadata:
+      unit_of_measurement: $/h
+      device_class: monetary
+      state_class: measurement

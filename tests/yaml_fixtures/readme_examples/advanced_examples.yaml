@@ -1,0 +1,58 @@
+version: "1.0"
+
+sensors:
+  # Sensor with calculated attributes
+  energy_cost_analysis:
+    name: "Energy Cost Analysis"
+    formula: "current_power * electricity_rate / conversion_factor"
+    attributes:
+      daily_projected:
+        formula: "state * 24" # ref by main state alias
+        metadata:
+          unit_of_measurement: "¢"
+      monthly_projected:
+        formula: "energy_cost_analysis * 24 * 30" # ref by main sensor key
+        metadata:
+          unit_of_measurement: "¢"
+      annual_projected:
+        formula: "sensor.syn2_energy_cost_analysis * 24 * 365" # ref by entity_id
+        metadata:
+          unit_of_measurement: "¢"
+      battery_efficiency:
+        formula: "current_power * device.battery_level / 100" # using attribute access
+        variables:
+          device: "sensor.backup_device"
+        metadata:
+          unit_of_measurement: "W"
+      efficiency:
+        formula: "state / sensor.max_power_capacity * 100"
+        metadata:
+          unit_of_measurement: "%"
+    variables:
+      current_power: "sensor.span_panel_instantaneous_power"
+      electricity_rate: "input_number.electricity_rate_cents_kwh"
+      conversion_factor: 1000                    # Literal: conversion factor
+    metadata:
+      unit_of_measurement: "¢/h"
+      device_class: "monetary"
+
+  # Sensor with device association
+  solar_inverter_efficiency:
+    name: "Solar Inverter Efficiency"
+    formula: "solar_output / solar_capacity * percentage_factor"
+    variables:
+      solar_output: "sensor.solar_current_power"
+      solar_capacity: "sensor.solar_max_capacity"
+      percentage_factor: 100                     # Literal: percentage conversion
+    metadata:
+      unit_of_measurement: "%"
+      device_class: "power_factor"
+      state_class: "measurement"
+    # Device association fields
+    device_identifier: "solar_inverter_001"
+    device_name: "Solar Inverter"
+    device_manufacturer: "SolarTech"
+    device_model: "ST-5000"
+    device_sw_version: "2.1.0"
+    device_hw_version: "1.0"
+    suggested_area: "Garage"

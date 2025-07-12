@@ -1,28 +1,27 @@
-# Service Layer Test Configuration
-version: "1.0"
-
+version: '1.0'
 sensors:
   service_test_basic:
-    name: "Service Basic Test"
-    formula: "A + B"
+    name: Service Basic Test
+    formula: A + B
     variables:
-      A: "sensor.test_input_a"
-      B: "sensor.test_input_b"
-    unit_of_measurement: "units"
-    state_class: "measurement"
-
+      A: sensor.test_input_a
+      B: sensor.test_input_b
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
   service_test_async:
-    name: "Service Async Test"
-    formula: "value * 2"
+    name: Service Async Test
+    formula: value * 2
     variables:
-      value: "sensor.async_test_value"
-    unit_of_measurement: "doubled"
-    state_class: "measurement"
-
+      value: sensor.async_test_value
+    metadata:
+      unit_of_measurement: doubled
+      state_class: measurement
   service_test_integration:
-    name: "Service Integration Test"
-    formula: "entity('sensor.integration_source') * factor"
+    name: Service Integration Test
+    formula: entity('sensor.integration_source') * factor
     variables:
-      factor: "sensor.multiplication_factor"
-    unit_of_measurement: "scaled"
-    state_class: "measurement"
+      factor: sensor.multiplication_factor
+    metadata:
+      unit_of_measurement: scaled
+      state_class: measurement

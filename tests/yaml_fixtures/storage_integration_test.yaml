@@ -1,0 +1,73 @@
+version: '1.0'
+sensors:
+  test_power_sensor:
+    name: Test Power Sensor
+    device_identifier: test_device:456
+    formula: instant_power
+    variables:
+      instant_power: sensor.power_meter
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+  test_energy_sensor:
+    name: Test Energy Sensor
+    device_identifier: test_device:456
+    formula: cumulative_energy
+    variables:
+      cumulative_energy: sensor.energy_meter
+    metadata:
+      unit_of_measurement: kWh
+      device_class: energy
+      state_class: total_increasing
+      icon: mdi:lightning-bolt
+  test_efficiency_sensor:
+    name: Test Efficiency
+    device_identifier: test_device:456
+    formula: (output_power / input_power) * 100
+    variables:
+      output_power: sensor.output_power
+      input_power: sensor.input_power
+    metadata:
+      unit_of_measurement: '%'
+      state_class: measurement
+      icon: mdi:gauge
+  test_analysis_suite:
+    name: Test Analysis Suite
+    device_identifier: test_device:456
+    formula: sum("device_class:primary_type")
+    attributes:
+      secondary_consumption:
+        formula: sum("device_class:secondary_type")
+        metadata:
+          unit_of_measurement: W
+      total_consumption:
+        formula: state + secondary_consumption
+        metadata:
+          unit_of_measurement: W
+      efficiency_rating:
+        formula: state / total_consumption * 100
+        metadata:
+          unit_of_measurement: '%'
+      device_count:
+        formula: count("device_class:power")
+        metadata:
+          unit_of_measurement: devices
+    variables:
+      primary_type: input_select.primary_device_class
+      secondary_type: input_select.secondary_device_class
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  test_dynamic_collection:
+    name: Test Dynamic Collection
+    device_identifier: test_device:456
+    formula: avg("device_class:sensor_type")
+    variables:
+      sensor_type: input_select.monitored_device_class
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
+      icon: mdi:chart-line

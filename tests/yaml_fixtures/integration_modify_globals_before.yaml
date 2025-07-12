@@ -1,0 +1,44 @@
+version: '1.0'
+global_settings:
+  device_identifier: test_device:globals_123
+  variables:
+    power_source: sensor.main_power_meter
+    voltage_source: sensor.main_voltage_meter
+    efficiency_rate: 0.85
+    tax_multiplier: 1.08
+    base_offset: 10
+sensors:
+  calculated_power:
+    name: Calculated Power
+    formula: power_source * efficiency_rate + base_offset
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+  total_cost:
+    name: Total Cost
+    formula: calculated_power_value * rate_per_kwh * tax_multiplier
+    variables:
+      calculated_power_value: sensor.calculated_power
+      rate_per_kwh: 0.12
+    metadata:
+      unit_of_measurement: $/hr
+  voltage_ratio:
+    name: Voltage Efficiency
+    formula: voltage_source / reference_voltage * efficiency_rate
+    variables:
+      reference_voltage: 240.0
+    metadata:
+      unit_of_measurement: ratio
+  system_status:
+    name: System Status
+    formula: power_source > threshold and voltage_source > min_voltage
+    variables:
+      threshold: 500
+      min_voltage: 220
+    attributes:
+      power_percentage:
+        formula: (power_source / max_power) * 100
+        variables:
+          max_power: 5000
+        metadata:
+          unit_of_measurement: '%'

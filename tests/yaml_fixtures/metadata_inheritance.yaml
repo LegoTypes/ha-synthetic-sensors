@@ -1,0 +1,62 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "inheritance_device"
+  variables:
+    base_power: "sensor.base_power"
+    efficiency: 0.85
+  metadata:
+    attribution: "Global attribution"
+    entity_registry_enabled_default: true
+    suggested_display_precision: 2
+    state_class: "measurement"
+
+sensors:
+  # Sensor that inherits most global metadata
+  inheriting_sensor:
+    name: "Inheriting Sensor"
+    formula: "base_power * efficiency"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      # Inherits: attribution, entity_registry_enabled_default, suggested_display_precision, state_class
+
+    attributes:
+      daily_total:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "Wh"
+          device_class: "energy"
+          suggested_display_precision: 0  # Overrides sensor and global
+          # Inherits: attribution, entity_registry_enabled_default, state_class
+
+  # Sensor that overrides global metadata
+  overriding_sensor:
+    name: "Overriding Sensor"
+    formula: "base_power * 2"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      attribution: "Sensor-specific attribution"  # Overrides global
+      suggested_display_precision: 1               # Overrides global
+      # Inherits: entity_registry_enabled_default, state_class
+
+    attributes:
+      percentage:
+        formula: "state / 1000 * 100"
+        metadata:
+          unit_of_measurement: "%"
+          suggested_display_precision: 3  # Overrides sensor and global
+          attribution: "Attribute-specific attribution"  # Overrides sensor and global
+          # Inherits: entity_registry_enabled_default, state_class
+
+  # Sensor with no metadata (inherits all global)
+  global_only_sensor:
+    name: "Global Only Sensor"
+    formula: "base_power"
+    # No metadata - inherits all global metadata
+
+    attributes:
+      doubled:
+        formula: "state * 2"
+        # No metadata - inherits all global metadata

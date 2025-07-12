@@ -9,7 +9,11 @@
     },
     "MD025": false,
     "MD033": {
-      "allowed_elements": ["br", "details", "summary"]
+      "allowed_elements": [
+        "br",
+        "details",
+        "summary"
+      ]
     },
     "MD046": {
       "style": "fenced"
@@ -35,20 +39,34 @@
     },
     "MD036": false,
     "MD040": {
-      "allowed_languages": ["yaml", "python", "bash", "shell", "json", "toml", "markdown", "text", "console", "diff"],
+      "allowed_languages": [
+        "yaml",
+        "python",
+        "bash",
+        "shell",
+        "json",
+        "toml",
+        "markdown",
+        "text",
+        "console",
+        "diff"
+      ],
       "language_only": false
     }
   },
-  "globs": ["**/*.md"],
+  "globs": [
+    "**/*.md"
+  ],
   "ignores": [
     ".venv/**",
-    "venv/**", 
+    "venv/**",
     "node_modules/**",
     "__pycache__/**",
     "htmlcov/**",
     ".mypy_cache/**",
     ".pytest_cache/**",
     "dist/**",
-    "build/**"
+    "build/**",
+    ".cursor/**"
   ]
 }

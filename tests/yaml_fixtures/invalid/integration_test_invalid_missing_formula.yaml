@@ -1,0 +1,14 @@
+version: "1.0"
+global_settings:
+  device_identifier: "device_123"
+
+sensors:
+  test_power:
+    name: "Test Power"
+    entity_id: "sensor.test_power"
+    # Missing formula - this should cause validation to fail
+    variables:
+      power_value: "test_integration_backing.device_123_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"

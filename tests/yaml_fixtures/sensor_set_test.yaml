@@ -1,0 +1,191 @@
+basic_sensor_set:
+  version: "1.0"
+  global_settings:
+    device_identifier: "test-device-123"
+    variables:
+      global_var: "sensor.test_value"
+  sensors:
+    test_sensor_1:
+      name: "Test Sensor 1"
+      entity_id: "sensor.test_device_sensor_1"
+      formula: "source_value"
+      variables:
+        source_value: "sensor.source_1"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "test-device-123"
+    test_sensor_2:
+      name: "Test Sensor 2"
+      entity_id: "sensor.test_device_sensor_2"
+      formula: "source_value * 2"
+      variables:
+        source_value: "sensor.source_2"
+      unit_of_measurement: "kW"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "test-device-123"
+
+multi_device_sensor_set:
+  version: "1.0"
+  sensors:
+    device_a_sensor:
+      name: "Device A Sensor"
+      entity_id: "sensor.device_a_power"
+      formula: "source_value"
+      variables:
+        source_value: "sensor.device_a_source"
+      unit_of_measurement: "W"
+      device_class: "power"
+      device_identifier: "device-a-123"
+    device_b_sensor:
+      name: "Device B Sensor"
+      entity_id: "sensor.device_b_power"
+      formula: "source_value"
+      variables:
+        source_value: "sensor.device_b_source"
+      unit_of_measurement: "W"
+      device_class: "power"
+      device_identifier: "device-b-456"
+
+complex_formulas_sensor_set:
+  version: "1.0"
+  global_settings:
+    device_identifier: "span-panel-789"
+    variables:
+      efficiency_factor: "sensor.efficiency_factor"
+      base_load: "sensor.base_load"
+  sensors:
+    total_power:
+      name: "Total Power"
+      entity_id: "sensor.span_panel_total_power"
+      formula: "sum(device_class:power) * efficiency_factor"
+      variables:
+        efficiency_factor: "sensor.efficiency_factor"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "span-panel-789"
+    adjusted_power:
+      name: "Adjusted Power"
+      entity_id: "sensor.span_panel_adjusted_power"
+      formula: "total_power - base_load"
+      variables:
+        total_power: "sensor.span_panel_total_power"
+        base_load: "sensor.base_load"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "span-panel-789"
+
+empty_sensor_set:
+  version: "1.0"
+  global_settings:
+    device_identifier: "empty-device"
+  sensors: {}
+
+invalid_sensor_set:
+  version: "1.0"
+  sensors:
+    invalid_sensor:
+      name: "Invalid Sensor"
+      # Missing required formula field
+      unit_of_measurement: "W"
+      device_class: "power"
+
+no_device_sensor_set:
+  version: "1.0"
+  sensors:
+    standalone_sensor:
+      name: "Standalone Sensor"
+      entity_id: "sensor.standalone_power"
+      formula: "source_value"
+      variables:
+        source_value: "sensor.external_source"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      # No device_identifier - should work without device association
+
+update_sensor_set:
+  version: "1.0"
+  global_settings:
+    device_identifier: "update-device-123"
+  sensors:
+    updatable_sensor:
+      name: "Updatable Sensor"
+      entity_id: "sensor.update_device_power"
+      formula: "source_value"
+      variables:
+        source_value: "sensor.update_source"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "update-device-123"
+
+replacement_sensor_set:
+  version: "1.0"
+  global_settings:
+    device_identifier: "update-device-123"
+  sensors:
+    updatable_sensor:
+      name: "Updated Sensor Name"
+      entity_id: "sensor.update_device_power"
+      formula: "source_value * 1.1"
+      variables:
+        source_value: "sensor.update_source"
+      unit_of_measurement: "kW"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "update-device-123"
+    new_sensor:
+      name: "New Additional Sensor"
+      entity_id: "sensor.update_device_additional"
+      formula: "source_value"
+      variables:
+        source_value: "sensor.additional_source"
+      unit_of_measurement: "V"
+      device_class: "voltage"
+      state_class: "measurement"
+      device_identifier: "update-device-123"
+
+bulk_operations_sensor_set:
+  version: "1.0"
+  global_settings:
+    device_identifier: "bulk-device-456"
+    variables:
+      common_multiplier: "sensor.common_multiplier"
+  sensors:
+    bulk_sensor_1:
+      name: "Bulk Sensor 1"
+      entity_id: "sensor.bulk_device_sensor_1"
+      formula: "source_value * common_multiplier"
+      variables:
+        source_value: "sensor.bulk_source_1"
+        common_multiplier: "sensor.common_multiplier"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "bulk-device-456"
+    bulk_sensor_2:
+      name: "Bulk Sensor 2"
+      entity_id: "sensor.bulk_device_sensor_2"
+      formula: "source_value * common_multiplier"
+      variables:
+        source_value: "sensor.bulk_source_2"
+        common_multiplier: "sensor.common_multiplier"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "bulk-device-456"
+    bulk_sensor_3:
+      name: "Bulk Sensor 3"
+      entity_id: "sensor.bulk_device_sensor_3"
+      formula: "source_value * common_multiplier"
+      variables:
+        source_value: "sensor.bulk_source_3"
+        common_multiplier: "sensor.common_multiplier"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      device_identifier: "bulk-device-456"

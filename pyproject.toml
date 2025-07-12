@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ha-synthetic-sensors"
-version = "1.0.8"
+version = "1.1.0"
 description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
 authors = ["SpanPanel"]
 readme = "README.md"
@@ -14,11 +14,10 @@ Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
 
 [tool.poetry.dependencies]
 python = ">=3.13.2,<3.14"
-# Core dependencies for synthetic sensors - let HA provide these
-pyyaml = "*"  # Let HA provide whatever version it needs
-simpleeval = "^1.0.3"  # Not used by HA, so we keep our own constraint
-voluptuous = "*"  # Let HA provide whatever version it needs
-jsonschema = "^4.17.0"  # Not used by HA, so we keep our own constraint
+simpleeval = "^1.0.3"  # Keep our own constraint for non-HA dependency
+jsonschema = "^4.24.0"  # Keep our own constraint for non-HA dependency
+homeassistant = "^2025.7.0"  # Required runtime dependency - brings pyyaml, voluptuous transitively
+aiofiles = "*"  # For async file operations - not included with HA core
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"
@@ -27,27 +26,30 @@ pytest-cov = "^6.0.0"
 bandit = "^1.8.5"
 twine = "^6.0.1"
 pre-commit = "^4.0.0"
-black = "^25.1.0"
-ruff = "^0.12.0"
+ruff = "^0.12.1"
 mypy = "^1.15.0"
 radon = "*"
+pylint = "*"
 types-PyYAML = "^6.0.0"
 types-jsonschema = "^4.0.0"
+types-aiofiles = "^24.1.0.20250606"
 homeassistant-stubs = "*"
 
 [tool.poetry.group.test.dependencies]
-homeassistant = "*"
+# homeassistant is now in runtime dependencies, so no need here
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
+line-length = 128
 exclude = [
     ".*_cache/",
     "dist/",
     "venv/",
     ".venv/",
+    "tests/",
 ]
 
 [tool.ruff.lint]
@@ -66,11 +68,6 @@ select = [
 
 ignore = [
     "E501",   # line too long - following Home Assistant's approach
-    # May conflict with the formatter
-    "W191",
-    "E111",
-    "E114",
-    "E117",
 ]
 
 [tool.ruff.lint.isort]
@@ -114,6 +111,8 @@ omit = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# Disable the homeassistant plugin due to asyncio event loop issues in Python 3.13+
+addopts = "-p no:homeassistant"
 # Add markers for our new test types
 markers = [
     "ha_integration: marks tests as requiring real Home Assistant (deselect with '-m \"not ha_integration\"')"
@@ -140,5 +139,20 @@ exclude_lines = [
 [tool.bandit]
 exclude_dirs = ["tests"]
 
-[tool.black]
-line-length = 999  # Effectively disable line length restrictions (following HA approach)
+[tool.pylint.format]
+max-line-length = 250
+
+[tool.pylint.messages_control]
+disable = [
+    "attribute-defined-outside-init",  # Common HA pattern for lazy initialization
+    "too-many-instance-attributes",    # HA entities often have many attributes
+    "too-many-arguments",             # HA constructors often need many params
+    "too-few-public-methods",         # HA entities/helpers are often simple
+    "missing-docstring",              # Not enforcing docstrings everywhere
+    "invalid-name",                   # HA uses different naming conventions
+    "broad-except",                   # Sometimes needed for robustness
+    "unused-argument",                # HA callbacks often have unused params
+    "too-many-public-methods",        # Complex classes often need many methods
+    "too-many-positional-arguments",  # HA constructors often need many params
+    "too-many-locals",                # Complex functions often need many variables
+]

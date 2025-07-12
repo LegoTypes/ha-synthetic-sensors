@@ -1,0 +1,6 @@
+version: "1.0"
+
+sensors:
+  test_sensor:
+    name: Test Sensor
+    formula: "1 + 1"

@@ -1,0 +1,17 @@
+version: "1.0"
+sensors:
+  malformed_quotes_sensor:
+    name: "Sensor With Unclosed Quote
+    entity_id: sensor.malformed_quotes
+    formula: "power_value * efficiency_factor
+    # Missing closing quotes above - YAML syntax error
+    variables:
+      power_value: "sensor.input_power"
+      efficiency_factor: 0.95
+
+  invalid_indentation:
+    name: "Sensor With Bad Indentation"
+  entity_id: "sensor.bad_indent"  # Wrong indentation level
+    formula: "value * 2"
+    variables:
+      value: "sensor.test"

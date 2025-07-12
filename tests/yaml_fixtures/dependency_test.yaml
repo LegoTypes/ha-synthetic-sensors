@@ -1,72 +1,72 @@
-version: "1.0"
-
+version: '1.0'
 sensors:
   base_sensor_a:
-    name: "Base Sensor A"
-    description: "Base sensor for dependency testing"
-    formula: "external_input_1"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    name: Base Sensor A
+    description: Base sensor for dependency testing
+    formula: external_input_1
     variables:
-      external_input_1: "sensor.external_source_1"
+      external_input_1: sensor.external_source_1
     enabled: true
-
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   base_sensor_b:
-    name: "Base Sensor B"
-    description: "Base sensor B for dependency testing"
-    formula: "external_input_2 * 2"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    name: Base Sensor B
+    description: Base sensor B for dependency testing
+    formula: external_input_2 * 2
     variables:
-      external_input_2: "sensor.external_source_2"
+      external_input_2: sensor.external_source_2
     enabled: true
-
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   dependent_sensor_c:
-    name: "Dependent Sensor C"
-    description: "Sensor that depends on A and B"
-    formula: "base_a + base_b"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    name: Dependent Sensor C
+    description: Sensor that depends on A and B
+    formula: base_a + base_b
     variables:
-      base_a: "sensor.base_sensor_a"
-      base_b: "sensor.base_sensor_b"
+      base_a: sensor.base_sensor_a
+      base_b: sensor.base_sensor_b
     enabled: true
-
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   complex_dependent_d:
-    name: "Complex Dependent D"
-    description: "Complex sensor with multiple dependencies"
-    formula: "(base_a * 0.6) + (base_b * 0.4) + dependent_c"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    name: Complex Dependent D
+    description: Complex sensor with multiple dependencies
+    formula: (base_a * 0.6) + (base_b * 0.4) + dependent_c
     variables:
-      base_a: "sensor.base_sensor_a"
-      base_b: "sensor.base_sensor_b"
-      dependent_c: "sensor.dependent_sensor_c"
+      base_a: sensor.base_sensor_a
+      base_b: sensor.base_sensor_b
+      dependent_c: sensor.dependent_sensor_c
     enabled: true
-
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   circular_test_e:
-    name: "Circular Test E"
-    description: "Sensor for testing circular dependency detection"
-    formula: "circular_f + external_input_1"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    name: Circular Test E
+    description: Sensor for testing circular dependency detection
+    formula: circular_f + external_input_1
     variables:
-      circular_f: "sensor.circular_test_f"
-      external_input_1: "sensor.external_source_1"
+      circular_f: sensor.circular_test_f
+      external_input_1: sensor.external_source_1
     enabled: true
-
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   circular_test_f:
-    name: "Circular Test F"
-    description: "Sensor that creates circular dependency with E"
-    formula: "circular_e + 10"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    name: Circular Test F
+    description: Sensor that creates circular dependency with E
+    formula: circular_e + 10
     variables:
-      circular_e: "sensor.circular_test_e"
+      circular_e: sensor.circular_test_e
     enabled: true
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

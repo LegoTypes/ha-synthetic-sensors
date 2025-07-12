@@ -1,0 +1,44 @@
+version: '1.0'
+global_settings:
+  device_identifier: test_device:roundtrip_123
+  variables:
+    shared_power_meter: sensor.house_main_power
+    global_efficiency: 0.92
+    base_voltage: sensor.house_voltage
+sensors:
+  pure_global_sensor:
+    name: Pure Global Sensor
+    entity_id: sensor.pure_global_sensor
+    formula: state("shared_power_meter") * global_efficiency
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  mixed_usage_sensor:
+    name: Mixed Usage Sensor
+    entity_id: sensor.mixed_usage_sensor
+    formula: state("shared_power_meter") + state("local_offset")
+    variables:
+      local_offset: sensor.local_adjustment
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  complex_global_sensor:
+    name: Complex Global Sensor
+    entity_id: sensor.complex_global_sensor
+    formula: (state("shared_power_meter") / state("base_voltage")) * global_efficiency
+    metadata:
+      unit_of_measurement: A
+      device_class: current
+      state_class: measurement
+  pure_local_sensor:
+    name: Pure Local Sensor
+    entity_id: sensor.pure_local_sensor
+    formula: state("local_temp") + 5
+    variables:
+      local_temp: sensor.room_temperature
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement

@@ -1,0 +1,59 @@
+version: '1.0'
+global_settings:
+  device_identifier: test_device_001
+  variables:
+    global_power_meter: sensor.main_power_meter
+    global_temperature: sensor.outdoor_temperature
+    global_efficiency: 0.85
+sensors:
+  global_power_analysis:
+    name: Global Power Analysis
+    formula: global_power_meter * global_efficiency
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  local_power_analysis:
+    name: Local Power Analysis
+    formula: local_power * efficiency_factor + global_temperature
+    variables:
+      local_power: sensor.local_power_meter
+      efficiency_factor: 0.92
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  comprehensive_analysis:
+    name: Comprehensive Analysis
+    formula: primary_power + secondary_power
+    variables:
+      primary_power: sensor.primary_meter
+      secondary_power: sensor.secondary_meter
+    attributes:
+      efficiency_ratio:
+        formula: state / reference_power * 100
+        variables:
+          reference_power: sensor.reference_power_meter
+        metadata:
+          unit_of_measurement: '%'
+      temperature_delta:
+        formula: indoor_temp - global_temperature
+        variables:
+          indoor_temp: sensor.indoor_temperature
+        metadata:
+          unit_of_measurement: °C
+      combined_metrics:
+        formula: state + efficiency_ratio + temperature_delta
+        metadata:
+          unit_of_measurement: mixed
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  cross_reference_sensor:
+    name: Cross Reference Sensor
+    formula: global_power_analysis + local_power_analysis
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

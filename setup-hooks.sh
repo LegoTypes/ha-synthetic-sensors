@@ -25,7 +25,7 @@ if [[ ! -f ".deps-installed" ]] || [[ "pyproject.toml" -nt ".deps-installed" ]] 
     touch .deps-installed
 fi
 
-# Install pre-commit hooks
-poetry run pre-commit install
+# Install pre-commit hooks with explicit hook type to avoid migration mode
+poetry run pre-commit install --hook-type pre-commit --overwrite
 
 echo "Git hooks installed successfully!"

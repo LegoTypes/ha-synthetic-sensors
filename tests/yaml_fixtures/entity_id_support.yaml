@@ -1,56 +1,52 @@
-# Entity ID Support Test Configuration
-# Tests explicit entity_id field in YAML configuration
-version: "1.0"
-
+version: '1.0'
 sensors:
-  # Standard sensor without explicit entity_id (should use default pattern)
   standard_power_sensor:
-    name: "Standard Power Sensor"
-    formula: "input_power * 1.0"
+    name: Standard Power Sensor
+    formula: input_power * 1.0
     variables:
-      input_power: "sensor.power_meter"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Sensor with explicit entity_id field
+      input_power: sensor.power_meter
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   custom_named_sensor:
-    name: "Custom Named Energy Monitor"
-    entity_id: "sensor.custom_energy_monitor"
-    formula: "base_power * efficiency_factor"
+    name: Custom Named Energy Monitor
+    entity_id: sensor.custom_energy_monitor
+    formula: base_power * efficiency_factor
     variables:
-      base_power: "sensor.base_power_reading"
-      efficiency_factor: "input_number.efficiency_multiplier"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
-
-  # Another sensor with explicit entity_id to test multiple instances
+      base_power: sensor.base_power_reading
+      efficiency_factor: input_number.efficiency_multiplier
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
   special_consumption_tracker:
-    name: "Special Consumption Tracker"
-    entity_id: "sensor.special_consumption"
-    formula: "daily_usage / 24"
+    name: Special Consumption Tracker
+    entity_id: sensor.special_consumption
+    formula: daily_usage / 24
     variables:
-      daily_usage: "sensor.daily_energy_total"
-    unit_of_measurement: "kWh"
-    device_class: "energy"
-    state_class: "total_increasing"
-
-  # Sensor with attributes and explicit entity_id
+      daily_usage: sensor.daily_energy_total
+    metadata:
+      unit_of_measurement: kWh
+      device_class: energy
+      state_class: total_increasing
   comprehensive_monitor:
-    name: "Comprehensive Energy Monitor"
-    entity_id: "sensor.comprehensive_energy"
-    formula: "current_power + standby_power"
+    name: Comprehensive Energy Monitor
+    entity_id: sensor.comprehensive_energy
+    formula: current_power + standby_power
     variables:
-      current_power: "sensor.active_power"
-      standby_power: "sensor.standby_power"
+      current_power: sensor.active_power
+      standby_power: sensor.standby_power
     attributes:
       daily_projection:
-        formula: "state * 24"
-        unit_of_measurement: "Wh"
+        formula: state * 24
+        metadata:
+          unit_of_measurement: Wh
       efficiency_rating:
-        formula: "state / 1000 * 100"
-        unit_of_measurement: "%"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+        formula: state / 1000 * 100
+        metadata:
+          unit_of_measurement: '%'
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

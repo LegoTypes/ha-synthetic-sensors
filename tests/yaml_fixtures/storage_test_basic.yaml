@@ -1,0 +1,34 @@
+version: '1.0'
+global_settings:
+  device_identifier: span_panel:nj-2316-005k6
+sensors:
+  span_panel_total_power:
+    name: Total Power
+    device_identifier: span_panel:nj-2316-005k6
+    formula: instant_power
+    variables:
+      instant_power: sensor.span_panel_instant_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  span_panel_solar_generation:
+    name: Solar Generation
+    device_identifier: span_panel:nj-2316-005k6
+    formula: solar_inverter_power + solar_array_power
+    variables:
+      solar_inverter_power: sensor.span_panel_solar_inverter_instant_power
+      solar_array_power: sensor.span_panel_solar_array_instant_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  span_panel_daily_cost:
+    name: Daily Energy Cost
+    device_identifier: span_panel:nj-2316-005k6
+    formula: daily_usage * rate_per_kwh
+    variables:
+      daily_usage: sensor.span_panel_daily_energy_usage
+      rate_per_kwh: 0.12
+    metadata:
+      unit_of_measurement: $

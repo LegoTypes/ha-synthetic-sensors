@@ -54,13 +54,24 @@ class MockHomeAssistant:
     """Mock HomeAssistant instance for testing."""
 
     def __init__(self):
+        import tempfile
+
         self.states = Mock()
         self.config = Mock()
+        self.config.config_dir = tempfile.mkdtemp()  # Provide a real temp directory
         self.loop = Mock()
+        self.data = {}  # Add data attribute for Store support
+        self.bus = Mock()  # Add bus attribute for event handling
 
     def get_state(self, entity_id):
         """Mock get_state method."""
         return Mock(state="mocked_state", attributes={})
+
+    def async_create_task(self, coro):
+        """Mock async_create_task method."""
+        import asyncio
+
+        return asyncio.create_task(coro)
 
 
 class MockConfigEntryError(Exception):
@@ -191,7 +202,7 @@ sys.meta_path.insert(0, HomeAssistantMockFinder())
 
 # Import all fixtures from test_fixtures.py to make them available globally
 # We need to use importlib to avoid relative import issues
-test_fixtures_path = Path(__file__).parent / "test_fixtures.py"
+test_fixtures_path = Path(__file__).parent / "integration" / "test_fixtures.py"
 spec = importlib.util.spec_from_file_location("test_fixtures", test_fixtures_path)
 if spec is not None and spec.loader is not None:
     test_fixtures_module = importlib.util.module_from_spec(spec)
@@ -208,6 +219,7 @@ entity_management_test_yaml = test_fixtures_module.entity_management_test_yaml
 mock_entities_with_dependencies = test_fixtures_module.mock_entities_with_dependencies
 load_yaml_fixture = test_fixtures_module.load_yaml_fixture
 yaml_fixtures_dir = test_fixtures_module.yaml_fixtures_dir
+storage_manager_real = test_fixtures_module.storage_manager_real
 
 
 @pytest.fixture

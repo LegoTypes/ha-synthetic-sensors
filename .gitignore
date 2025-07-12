@@ -26,5 +26,5 @@ dmypy.json
 /coverage.xml
 /.coverage
 .cursor/
+xnotes/*
 .DS_Store
-.vscode

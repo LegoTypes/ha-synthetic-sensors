@@ -7,7 +7,17 @@
 			"command": "${workspaceFolder}/setup-hooks.sh",
 			"runOptions": {
 				"runOn": "folderOpen"
-			}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": false,
+				"close": true
+			},
+			"problemMatcher": []
 		},
 		{
 			"label": "Run all pre-commit hooks",
@@ -49,9 +59,9 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "Run black format",
+			"label": "Run ruff format",
 			"type": "shell",
-			"command": "poetry run black --line-length 88 .",
+			"command": "poetry run ruff format .",
 			"group": "test",
 			"options": {
 				"cwd": "${workspaceFolder}"

@@ -11,7 +11,7 @@ from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 
-from .config_manager import AttributeConfigDict, SensorConfigDict
+from .config_types import AttributeConfigDict, SensorConfigDict
 from .name_resolver import NameResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -123,18 +123,17 @@ class EntityFactory:
         else:
             name = unique_id
 
-        # Extract entity metadata from formula config (v1.0) or sensor config (v2.0)
-        icon_val = (formula_config.get("icon") if formula_config else None) or sensor_config.get("icon")
-        icon = str(icon_val) if icon_val else None
+        # Extract entity metadata from formula and sensor metadata
+        formula_metadata = formula_config.get("metadata", {}) if formula_config else {}
+        sensor_metadata = sensor_config.get("metadata", {})
 
-        device_class_val = (formula_config.get("device_class") if formula_config else None) or sensor_config.get("device_class")
-        device_class = str(device_class_val) if device_class_val else None
+        # Formula metadata takes priority over sensor metadata
+        merged_metadata = {**sensor_metadata, **formula_metadata}
 
-        unit_val = (formula_config.get("unit_of_measurement") if formula_config else None) or sensor_config.get("unit_of_measurement")
-        unit_of_measurement = str(unit_val) if unit_val else None
-
-        state_class_val = (formula_config.get("state_class") if formula_config else None) or sensor_config.get("state_class")
-        state_class = str(state_class_val) if state_class_val else None
+        icon = merged_metadata.get("icon")
+        device_class = merged_metadata.get("device_class")
+        unit_of_measurement = merged_metadata.get("unit_of_measurement")
+        state_class = merged_metadata.get("state_class")
 
         return EntityDescription(
             unique_id=unique_id,

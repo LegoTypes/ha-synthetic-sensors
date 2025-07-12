@@ -69,18 +69,20 @@ class FormulaCache:
         formula: str,
         context: dict[str, str | float | int | bool] | None = None,
         formula_id: str | None = None,
+        variables: dict[str, str | int | float | None] | None = None,
     ) -> FormulaResult:
-        """Get cached result if valid.
+        """Get cached result for formula.
 
         Args:
             formula: Formula string
             context: Evaluation context
-            formula_id: Optional formula identifier for better cache keys
+            formula_id: Optional formula identifier
+            variables: Formula variables
 
         Returns:
-            Cached result if valid, None otherwise
+            Cached result if found and valid, None otherwise
         """
-        cache_key = self._generate_cache_key(formula, context, formula_id)
+        cache_key = self._generate_cache_key(formula, context, formula_id, variables)
 
         if cache_key not in self._cache:
             self._misses += 1
@@ -88,7 +90,7 @@ class FormulaCache:
 
         entry = self._cache[cache_key]
 
-        # Check if entry is still valid
+        # Check if entry is expired
         if self._is_entry_expired(entry):
             del self._cache[cache_key]
             self._misses += 1
@@ -105,6 +107,7 @@ class FormulaCache:
         result: FormulaResult,
         context: dict[str, str | float | int | bool] | None = None,
         formula_id: str | None = None,
+        variables: dict[str, str | int | float | None] | None = None,
     ) -> None:
         """Store evaluation result in cache.
 
@@ -113,11 +116,12 @@ class FormulaCache:
             result: Evaluation result
             context: Evaluation context
             formula_id: Optional formula identifier
+            variables: Formula variables
         """
         # Ensure we don't exceed max entries
         self._evict_if_needed()
 
-        cache_key = self._generate_cache_key(formula, context, formula_id)
+        cache_key = self._generate_cache_key(formula, context, formula_id, variables)
         formula_hash = self._hash_formula(formula)
 
         self._cache[cache_key] = {
@@ -126,6 +130,25 @@ class FormulaCache:
             "hit_count": 0,
             "formula_hash": formula_hash,
         }
+
+    def set_result(
+        self,
+        formula: str,
+        context: dict[str, str | float | int | bool] | None,
+        result: FormulaResult,
+        formula_id: str | None = None,
+        variables: dict[str, str | int | float | None] | None = None,
+    ) -> None:
+        """Store evaluation result in cache (alias for store_result with different parameter order).
+
+        Args:
+            formula: Formula string
+            context: Evaluation context
+            result: Evaluation result
+            formula_id: Optional formula identifier
+            variables: Formula variables
+        """
+        self.store_result(formula, result, context, formula_id, variables)
 
     def store_dependencies(self, formula: str, dependencies: set[str]) -> None:
         """Store formula dependencies in cache.
@@ -203,6 +226,7 @@ class FormulaCache:
         formula: str,
         context: dict[str, str | float | int | bool] | None,
         formula_id: str | None,
+        variables: dict[str, str | int | float | None] | None = None,
     ) -> str:
         """Generate optimized cache key.
 
@@ -210,6 +234,7 @@ class FormulaCache:
             formula: Formula string
             context: Evaluation context
             formula_id: Optional formula identifier
+            variables: Formula variables (for distinguishing same formula with different variables)
 
         Returns:
             Cache key string
@@ -217,15 +242,30 @@ class FormulaCache:
         # Use formula_id if available for better key readability
         base_key = formula_id or self._hash_formula(formula)
 
-        if not context:
+        # Create a combined hash from context and variables
+        hash_components = []
+
+        # Add context if provided
+        if context is not None:
+            context_items = sorted(context.items())
+            context_str = "&".join(f"{k}={v}" for k, v in context_items)
+            hash_components.append(f"ctx:{context_str}")
+
+        # Add variables if provided (this is the key fix for the caching bug)
+        if variables is not None:
+            variables_items = sorted(variables.items())
+            variables_str = "&".join(f"{k}={v}" for k, v in variables_items)
+            hash_components.append(f"vars:{variables_str}")
+
+        # If no context or variables, return just the base key
+        if not hash_components:
             return base_key
 
-        # Create stable context hash
-        context_items = sorted(context.items())
-        context_str = "&".join(f"{k}={v}" for k, v in context_items)
-        context_hash = hashlib.md5(context_str.encode(), usedforsecurity=False).hexdigest()[:8]
+        # Create stable hash from all components
+        combined_str = "|".join(hash_components)
+        combined_hash = hashlib.md5(combined_str.encode(), usedforsecurity=False).hexdigest()[:8]
 
-        return f"{base_key}:{context_hash}"
+        return f"{base_key}:{combined_hash}"
 
     def _hash_formula(self, formula: str) -> str:
         """Create consistent hash for formula.

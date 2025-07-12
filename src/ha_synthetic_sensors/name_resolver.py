@@ -12,7 +12,9 @@ from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from simpleeval import NameNotDefined
+from simpleeval import NameNotDefined, simple_eval
+
+from .device_classes import is_valid_ha_domain
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,7 +124,7 @@ class NameResolver:
         if variable_name in self._variables:
             entity_id = self._variables[variable_name]
         # Then check if it looks like a direct entity ID (contains dot)
-        elif "." in variable_name and self._is_valid_entity_id(variable_name):
+        elif "." in variable_name and self.is_valid_entity_id(variable_name):
             entity_id = variable_name
             self._logger.debug("Using direct entity ID reference: %s", variable_name)
         else:
@@ -177,7 +179,9 @@ class NameResolver:
                 variable_name,
                 exc,
             )
-            raise HomeAssistantError(f"Entity '{entity_id}' state '{entity_state.state}' " f"cannot be converted to number") from exc
+            raise HomeAssistantError(
+                f"Entity '{entity_id}' state '{entity_state.state}' cannot be converted to number"
+            ) from exc
 
     def get_static_names(self) -> dict[str, float]:
         """Get all current variable values as a static dictionary.
@@ -312,7 +316,7 @@ class NameResolver:
             "total_dependencies": len(entity_ids),
         }
 
-    def _is_valid_entity_id(self, entity_id: str) -> bool:
+    def is_valid_entity_id(self, entity_id: str) -> bool:
         """Check if a string looks like a valid Home Assistant entity ID.
 
         Args:
@@ -328,48 +332,15 @@ class NameResolver:
         domain, entity = entity_id.split(".")
 
         # Basic validation of domain and entity parts
-        # Domain: lowercase letters, numbers, underscores
-        # Entity: letters, numbers, underscores
         if not (domain and entity):
             return False
 
-        # Check domain format (common HA domains)
-        valid_domains = {
-            "sensor",
-            "binary_sensor",
-            "switch",
-            "light",
-            "fan",
-            "cover",
-            "climate",
-            "lock",
-            "vacuum",
-            "media_player",
-            "device_tracker",
-            "weather",
-            "camera",
-            "alarm_control_panel",
-            "input_number",
-            "input_boolean",
-            "input_select",
-            "input_text",
-            "input_datetime",
-            "counter",
-            "timer",
-            "number",
-            "select",
-            "button",
-            "text",
-        }
-
-        if domain not in valid_domains:
-            # Still allow it - could be a custom domain
-            pass
-
-        # Basic format check: alphanumeric and underscores
-        if not re.match(r"^[a-zA-Z0-9_]+$", domain):
+        # Check domain format using centralized domain validation with HA instance
+        if not is_valid_ha_domain(domain, self._hass):
             return False
-        return bool(re.match(r"^[a-zA-Z0-9_]+$", entity))
+
+        # Entity part: letters, numbers, underscores, hyphens (basic validation)
+        return entity.replace("_", "").replace("-", "").isalnum()
 
 
 class FormulaEvaluator:
@@ -419,9 +390,6 @@ class FormulaEvaluator:
             float: The calculated result or fallback_value if evaluation fails
         """
         try:
-            # Import simpleeval here to avoid import errors if not installed
-            from simpleeval import simple_eval
-
             # Use the name resolver function for dynamic entity state lookup
             result = simple_eval(self._formula, names=self._name_resolver.resolve_name)
 
@@ -465,8 +433,6 @@ class FormulaEvaluator:
 
         # Test formula syntax with dummy values
         try:
-            from simpleeval import simple_eval
-
             # Create dummy values for syntax testing
             dummy_names = dict.fromkeys(self._variables.keys(), 1.0)
             simple_eval(self._formula, names=dummy_names)

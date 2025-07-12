@@ -1,0 +1,64 @@
+version: '1.0'
+global_settings:
+  device_identifier: test_device:eval_123
+  variables:
+    base_power: sensor.power_meter
+    base_voltage: sensor.voltage_meter
+    efficiency_factor: 0.9
+    tax_rate: 0.1
+    new_multiplier: 1.2
+sensors:
+  simple_math:
+    name: Simple Math Sensor (Updated)
+    formula: 20 + 3 * 4
+    metadata:
+      unit_of_measurement: units
+  power_calculation:
+    name: Power Calculation
+    formula: base_power * efficiency_factor * new_multiplier
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+  cost_calculator:
+    name: Cost Calculator
+    formula: (base_power / 1000) * rate_per_kwh * (1 + tax_rate) + fixed_fee
+    variables:
+      rate_per_kwh: 0.18
+      fixed_fee: 2.5
+    metadata:
+      unit_of_measurement: $/hr
+  voltage_ratio:
+    name: Voltage Ratio
+    formula: (base_voltage / 240.0) * adjustment_factor
+    variables:
+      adjustment_factor: 1.05
+    metadata:
+      unit_of_measurement: ratio
+  complex_calculation:
+    name: Complex Multi-Step
+    formula: sqrt(pow(base_power * new_multiplier, 2) + pow(reactive_power, 2))
+    variables:
+      reactive_power: sensor.reactive_power
+    attributes:
+      power_factor:
+        formula: (base_power * new_multiplier) / state
+        metadata:
+          unit_of_measurement: pf
+      efficiency_percentage:
+        formula: efficiency_factor * 100
+        metadata:
+          unit_of_measurement: '%'
+      new_metric:
+        formula: base_power / base_voltage
+        metadata:
+          unit_of_measurement: A
+    metadata:
+      unit_of_measurement: VA
+  energy_efficiency:
+    name: Energy Efficiency Rating
+    formula: (base_power * efficiency_factor) / theoretical_max * 100
+    variables:
+      theoretical_max: 5000
+    metadata:
+      unit_of_measurement: '%'
+      device_class: power_factor
