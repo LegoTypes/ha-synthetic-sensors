@@ -11,7 +11,7 @@ from ha_synthetic_sensors.schema_validator import SchemaValidator
 
 def load_example_configs() -> list[tuple[str, dict[str, Any]]]:
     """Load all example YAML configurations."""
-    examples_dir = Path(__file__).parent.parent / "examples"
+    examples_dir = Path(__file__).parent.parent.parent / "examples"
     yaml_files = list(examples_dir.glob("*.yaml"))
 
     configs = []

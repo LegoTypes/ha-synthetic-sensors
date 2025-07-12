@@ -14,18 +14,20 @@ sensors:
     variables:
       heating: "sensor.circuit_5_power"
       cooling: "sensor.circuit_6_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # Pattern 2: Pure Direct Entity ID References (No variables)
   lighting_total_direct:
     name: "Lighting Total (Direct Entity IDs)"
     formula: "sensor.circuit_10_power + sensor.circuit_11_power + sensor.circuit_12_power"  # Direct entity IDs
     variables: {}  # No variable mapping needed
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # Pattern 3: Mixed Approach (Variables + Direct Entity IDs)
   home_consumption_mixed:
@@ -35,9 +37,10 @@ sensors:
       hvac_total: "sensor.hvac_total_clean"        # Variable to synthetic sensor
       lighting_total: "sensor.lighting_total_direct"  # Variable to synthetic sensor
       # sensor.major_appliances_power and sensor.water_heater_power are direct references
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # Pattern 4: Cost Analysis with Mixed References
   real_time_cost:
@@ -47,9 +50,10 @@ sensors:
       net_power: "sensor.span_panel_current_power"  # Variable mapping
       sell_rate: "input_number.electricity_sell_rate_cents_kwh"  # Variable mapping
       # input_number.electricity_buy_rate_cents_kwh is direct reference
-    unit_of_measurement: "¢/h"
-    device_class: "monetary"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "¢/h"
+      device_class: "monetary"
+      state_class: "measurement"
 
   # Pattern 5: Solar Analytics with Self-Referencing
   solar_self_consumption:
@@ -58,9 +62,10 @@ sensors:
     variables:
       solar_production: "sensor.span_panel_solar_inverter_instant_power"
       # sensor.solar_export would be direct reference to another synthetic sensor
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 
   # Pattern 6: Grid vs Solar Comparison
   grid_vs_solar:
@@ -69,6 +74,7 @@ sensors:
     variables:
       backup_battery: "sensor.battery_power"
       # Both sensor.span_panel_* are direct references
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
