@@ -465,6 +465,29 @@ class TestSensorSetYAMLOperations:
         with pytest.raises(SyntheticSensorsError, match="Sensor set not found: nonexistent_set"):
             sensor_set.export_yaml()
 
+    @pytest.mark.asyncio
+    async def test_async_export_yaml_success(self, storage_manager, sensor_set_metadata):
+        """Test async exporting sensor set to YAML."""
+        storage_manager.get_sensor_set_metadata = MagicMock(return_value=sensor_set_metadata)
+        storage_manager.export_yaml = MagicMock(return_value="yaml_content")
+
+        sensor_set = SensorSet(storage_manager, "test_sensor_set")
+
+        result = await sensor_set.async_export_yaml()
+
+        assert result == "yaml_content"
+        storage_manager.export_yaml.assert_called_once_with("test_sensor_set")
+
+    @pytest.mark.asyncio
+    async def test_async_export_yaml_not_exists(self, storage_manager):
+        """Test async exporting YAML when sensor set doesn't exist."""
+        storage_manager.get_sensor_set_metadata = MagicMock(return_value=None)
+
+        sensor_set = SensorSet(storage_manager, "nonexistent_set")
+
+        with pytest.raises(SyntheticSensorsError, match="Sensor set not found: nonexistent_set"):
+            await sensor_set.async_export_yaml()
+
 
 class TestSensorSetManagement:
     """Test SensorSet management operations."""

@@ -722,6 +722,20 @@ class SensorSet:
 
         _LOGGER.debug("Imported YAML to sensor set: %s", self.sensor_set_id)
 
+    async def async_export_yaml(self) -> str:
+        """
+        Export this sensor set to YAML format (async version).
+
+        Returns:
+            YAML content as string
+        """
+        self._ensure_exists()
+
+        # Run the YAML export in an executor to avoid blocking the event loop
+        # even though it's typically fast, this ensures we don't block on large datasets
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.storage_manager.export_yaml, self.sensor_set_id)
+
     def export_yaml(self) -> str:
         """
         Export this sensor set to YAML format.
