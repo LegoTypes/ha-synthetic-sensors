@@ -16,17 +16,17 @@ Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
 python = ">=3.13.2,<3.14"
 simpleeval = "^1.0.3"  # Keep our own constraint for non-HA dependency
 jsonschema = "^4.24.0"  # Keep our own constraint for non-HA dependency
-homeassistant = "^2025.7.0"  # Required runtime dependency - brings pyyaml, voluptuous transitively
+homeassistant = "^2025.7.1"  # Required runtime dependency - brings pyyaml, voluptuous transitively
 aiofiles = "*"  # For async file operations - not included with HA core
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"
 pytest-asyncio = "^1.0.0"
 pytest-cov = "^6.0.0"
-bandit = "^1.8.5"
+bandit = "^1.8.6"
 twine = "^6.0.1"
 pre-commit = "^4.0.0"
-ruff = "^0.12.1"
+ruff = "^0.12.2"
 mypy = "^1.15.0"
 radon = "*"
 pylint = "*"
