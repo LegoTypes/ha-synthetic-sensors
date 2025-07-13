@@ -486,7 +486,7 @@ async def generate_complete_sensor_set_yaml(
     return yaml.dump(header_yaml, default_flow_style=False)
 ```
 
-#### 5. Enhanced Virtual Backing Entity Coordinator with Granular Change Detection
+#### 5. Virtual Backing Entity Coordinator with Granular Change Detection
 
 ```python
 # synthetic_sensors.py
@@ -569,7 +569,7 @@ class SyntheticSensorCoordinator:
             self._unsub()
 ```
 
-#### 6. Enhanced Setup Integration
+#### 6. Setup Integration
 
 ```python
 # synthetic_sensors.py continued
@@ -714,17 +714,22 @@ async def add_solar_sensors(sensor_manager: SensorManager, leg1_circuit: str, le
             _LOGGER.error("Failed to remove solar sensor: %s", sensor_id)
 ```
 
-## Bulk Modification Performance Benefits
+## YAML Export Methods for Sensor Sets
 
-### Before: Manual Bulk Updates
+The `SensorSet` class provides both synchronous and asynchronous methods for exporting sensor set configuration to YAML.
+Both methods serialize the current in-memory sensor set configuration to a YAML string. Neither method performs file I/O.
 
 ```python
-# Old approach - updates ALL sensors on every coordinator update
-async def _handle_coordinator_update(self):
-    await self.sensor_manager.async_update_sensors()  # Updates all 20+ sensors
+# Synchronous export
+exported_yaml = sensor_set.export_yaml()  # str
+
+# Asynchronous export
+exported_yaml = await sensor_set.async_export_yaml()  # str
 ```
 
-### After: Enhanced Selective Updates
+## Bulk Modification Performance Benefits
+
+### Enhanced Selective Updates
 
 ```python
 # New approach - updates only sensors using changed backing entities
