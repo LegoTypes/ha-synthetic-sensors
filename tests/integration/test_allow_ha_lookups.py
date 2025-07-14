@@ -19,6 +19,7 @@ def mock_hass():
 @pytest.fixture
 def data_provider_callback():
     """Create a mock data provider callback."""
+
     def mock_provider(entity_id: str):
         # Return different values for different backing entities
         if entity_id == "sensor.backing_virtual":
@@ -38,13 +39,7 @@ def sensor_config_virtual():
         unique_id="virtual_sensor",
         name="Virtual Sensor",
         entity_id="sensor.virtual_test",
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="backing_value",
-                variables={"backing_value": "sensor.backing_virtual"}
-            )
-        ]
+        formulas=[FormulaConfig(id="main", formula="backing_value", variables={"backing_value": "sensor.backing_virtual"})],
     )
 
 
@@ -55,13 +50,7 @@ def sensor_config_ha_only():
         unique_id="ha_sensor",
         name="HA Sensor",
         entity_id="sensor.ha_test",
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="backing_value",
-                variables={"backing_value": "sensor.backing_ha_only"}
-            )
-        ]
+        formulas=[FormulaConfig(id="main", formula="backing_value", variables={"backing_value": "sensor.backing_ha_only"})],
     )
 
 
@@ -102,13 +91,7 @@ def test_build_variable_context_with_data_provider_and_allow_ha_lookups_false(mo
         unique_id="test_sensor",
         name="Test Sensor",
         entity_id="sensor.test",
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="backing_value",
-                variables={"backing_value": "sensor.backing_virtual"}
-            )
-        ]
+        formulas=[FormulaConfig(id="main", formula="backing_value", variables={"backing_value": "sensor.backing_virtual"})],
     )
 
     # Mock sensor manager
@@ -117,9 +100,7 @@ def test_build_variable_context_with_data_provider_and_allow_ha_lookups_false(mo
     mock_sensor_manager.allow_ha_lookups = False
 
     # Create sensor
-    sensor = DynamicSensor(
-        mock_hass, sensor_config, evaluator, mock_sensor_manager
-    )
+    sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager)
 
     # Mock HA state
     mock_state = MagicMock()
@@ -146,13 +127,7 @@ def test_build_variable_context_with_data_provider_and_allow_ha_lookups_true(moc
         unique_id="test_sensor",
         name="Test Sensor",
         entity_id="sensor.test",
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="backing_value",
-                variables={"backing_value": "sensor.backing_ha_only"}
-            )
-        ]
+        formulas=[FormulaConfig(id="main", formula="backing_value", variables={"backing_value": "sensor.backing_ha_only"})],
     )
 
     # Mock sensor manager with allow_ha_lookups=True
@@ -161,9 +136,7 @@ def test_build_variable_context_with_data_provider_and_allow_ha_lookups_true(moc
     mock_sensor_manager.allow_ha_lookups = True
 
     # Create sensor
-    sensor = DynamicSensor(
-        mock_hass, sensor_config, evaluator, mock_sensor_manager
-    )
+    sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager)
 
     # Mock HA state
     mock_state = MagicMock()
@@ -191,13 +164,7 @@ def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass):
         unique_id="test_sensor",
         name="Test Sensor",
         entity_id="sensor.test",
-        formulas=[
-            FormulaConfig(
-                id="main",
-                formula="backing_value",
-                variables={"backing_value": "sensor.backing_virtual"}
-            )
-        ]
+        formulas=[FormulaConfig(id="main", formula="backing_value", variables={"backing_value": "sensor.backing_virtual"})],
     )
 
     # Mock sensor manager with allow_ha_lookups=False (should be ignored)
@@ -206,9 +173,7 @@ def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass):
     mock_sensor_manager.allow_ha_lookups = False
 
     # Create sensor
-    sensor = DynamicSensor(
-        mock_hass, sensor_config, evaluator, mock_sensor_manager
-    )
+    sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager)
 
     # Mock HA state
     mock_state = MagicMock()

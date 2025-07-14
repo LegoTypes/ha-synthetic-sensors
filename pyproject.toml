@@ -49,7 +49,6 @@ exclude = [
     "dist/",
     "venv/",
     ".venv/",
-    "tests/",
 ]
 
 [tool.ruff.lint]
@@ -69,6 +68,10 @@ select = [
 ignore = [
     "E501",   # line too long - following Home Assistant's approach
 ]
+
+# Exclude tests from ALL linting checks (formatting still applies)
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ALL"]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
