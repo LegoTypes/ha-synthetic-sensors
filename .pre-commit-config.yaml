@@ -24,7 +24,7 @@ repos:
     hooks:
       - id: ruff-check
         args: ['--fix']
-        exclude: '\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*'
       - id: ruff-format
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
 

@@ -41,11 +41,10 @@ def is_device_class_numeric(device_class: str | SensorDeviceClass | BinarySensor
     type_str = str(type(device_class))
 
     # Check if this is a mocked BinarySensorDeviceClass
-    mock_name_check = (hasattr(device_class, "_mock_name") and
-                      "BinarySensorDeviceClass" in str(getattr(device_class, "_mock_name", "")))
-    if ("BinarySensorDeviceClass" in type_str or
-        "BinarySensorDeviceClass" in device_class_str or
-        mock_name_check):
+    mock_name_check = hasattr(device_class, "_mock_name") and "BinarySensorDeviceClass" in str(
+        getattr(device_class, "_mock_name", "")
+    )
+    if "BinarySensorDeviceClass" in type_str or "BinarySensorDeviceClass" in device_class_str or mock_name_check:
         return False  # Binary sensors are always non-numeric
 
     try:
@@ -55,11 +54,10 @@ def is_device_class_numeric(device_class: str | SensorDeviceClass | BinarySensor
         pass  # Fall through to mock detection
 
     # Check for mocked SensorDeviceClass or handle as string
-    sensor_mock_name_check = (hasattr(device_class, "_mock_name") and
-                             "SensorDeviceClass" in str(getattr(device_class, "_mock_name", "")))
-    if ("SensorDeviceClass" in type_str or
-        "SensorDeviceClass" in device_class_str or
-        sensor_mock_name_check):
+    sensor_mock_name_check = hasattr(device_class, "_mock_name") and "SensorDeviceClass" in str(
+        getattr(device_class, "_mock_name", "")
+    )
+    if "SensorDeviceClass" in type_str or "SensorDeviceClass" in device_class_str or sensor_mock_name_check:
         # Try to get the value from the mocked enum
         if hasattr(device_class, "value"):
             device_class_str = str(getattr(device_class, "value", device_class))
