@@ -24,6 +24,22 @@ from .schema_validator import validate_yaml_config
 _LOGGER = logging.getLogger(__name__)
 
 
+def _trim_yaml_keys(obj: Any) -> Any:
+    """Recursively trim whitespace from dictionary keys in YAML data.
+
+    Args:
+        obj: The object to process (dict, list, or other)
+
+    Returns:
+        The processed object with trimmed keys
+    """
+    if isinstance(obj, dict):
+        return {key.strip() if isinstance(key, str) else key: _trim_yaml_keys(value) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_trim_yaml_keys(item) for item in obj]
+    return obj
+
+
 class ConfigManager:
     """Manages loading, validation, and access to synthetic sensor configurations."""
 
@@ -65,7 +81,8 @@ class ConfigManager:
 
         try:
             with open(path, encoding="utf-8") as file:
-                yaml_data = yaml.safe_load(file)
+                yaml_data_raw = yaml.safe_load(file)
+                yaml_data = _trim_yaml_keys(yaml_data_raw)
 
             if not yaml_data:
                 self._logger.warning("Empty configuration file, using empty config")
@@ -139,10 +156,11 @@ class ConfigManager:
             async with aiofiles.open(path, encoding="utf-8") as file:
                 content = await file.read()
                 yaml_data_raw = yaml.safe_load(content)
-                if not isinstance(yaml_data_raw, dict):
+                yaml_data_trimmed = _trim_yaml_keys(yaml_data_raw)
+                if not isinstance(yaml_data_trimmed, dict):
                     yaml_data: dict[str, Any] = {}
                 else:
-                    yaml_data = cast(dict[str, Any], yaml_data_raw)
+                    yaml_data = cast(dict[str, Any], yaml_data_trimmed)
 
             if not yaml_data:
                 self._logger.warning("Empty configuration file, using empty config")
@@ -445,7 +463,8 @@ class ConfigManager:
             ConfigEntryError: If parsing or validation fails
         """
         try:
-            yaml_data = yaml.safe_load(yaml_content)
+            yaml_data_raw = yaml.safe_load(yaml_content)
+            yaml_data = _trim_yaml_keys(yaml_data_raw)
 
             if not yaml_data:
                 self._logger.warning("Empty YAML content, using empty config")

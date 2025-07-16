@@ -13,7 +13,7 @@ from homeassistant.exceptions import ConfigEntryError
 import pytest
 import yaml
 
-from ha_synthetic_sensors.config_manager import Config, ConfigManager, FormulaConfig, SensorConfig
+from ha_synthetic_sensors.config_manager import Config, ConfigManager, FormulaConfig, SensorConfig, _trim_yaml_keys
 
 
 class TestConfigManager:
@@ -960,3 +960,230 @@ class TestAsyncMethods:
         # This method appears to be a placeholder in the current implementation
         result = config_manager.remove_variable("test_var")
         assert isinstance(result, bool)
+
+
+class TestYamlWhitespaceTrimming:
+    """Test whitespace trimming in YAML keys."""
+
+    @pytest.fixture
+    def config_manager(self):
+        """Create a ConfigManager instance for testing."""
+        from unittest.mock import MagicMock
+
+        return ConfigManager(MagicMock())
+
+    def test_trim_yaml_keys_basic(self):
+        """Test basic whitespace trimming in dictionary keys."""
+        test_data = {"key1 ": "value1", " key2": "value2", " key3 ": "value3", "normal_key": "value4"}
+
+        result = _trim_yaml_keys(test_data)
+
+        expected = {"key1": "value1", "key2": "value2", "key3": "value3", "normal_key": "value4"}
+
+        assert result == expected
+
+    def test_trim_yaml_keys_nested(self):
+        """Test whitespace trimming in nested dictionaries."""
+        test_data = {
+            "sensors ": {" sensor1 ": {"name ": "Test Sensor", " formula": "1 + 1"}, "sensor2": {"name": "Normal Sensor"}},
+            "global_settings": {" device_identifier ": "test_device"},
+        }
+
+        result = _trim_yaml_keys(test_data)
+
+        expected = {
+            "sensors": {"sensor1": {"name": "Test Sensor", "formula": "1 + 1"}, "sensor2": {"name": "Normal Sensor"}},
+            "global_settings": {"device_identifier": "test_device"},
+        }
+
+        assert result == expected
+
+    def test_trim_yaml_keys_with_lists(self):
+        """Test whitespace trimming with lists containing dictionaries."""
+        test_data = {"items ": [{" key1 ": "value1"}, {" key2": "value2"}, "simple_string"]}
+
+        result = _trim_yaml_keys(test_data)
+
+        expected = {"items": [{"key1": "value1"}, {"key2": "value2"}, "simple_string"]}
+
+        assert result == expected
+
+    def test_trim_yaml_keys_non_string_keys(self):
+        """Test that non-string keys are preserved."""
+        test_data = {123: "numeric_key", "string_key ": "string_value", None: "none_key"}
+
+        result = _trim_yaml_keys(test_data)
+
+        expected = {123: "numeric_key", "string_key": "string_value", None: "none_key"}
+
+        assert result == expected
+
+    def test_config_manager_trims_whitespace_on_load(self, config_manager):
+        """Test that ConfigManager trims whitespace when loading YAML."""
+        yaml_content = """
+version: "2.0"
+sensors:
+  "test_sensor ":
+    name: "Test Sensor"
+    formula: "1 + 1"
+  " another_sensor":
+    name: "Another Sensor"
+    formula: "2 * 2"
+global_settings:
+  " device_identifier ": "test_device"
+"""
+
+        config = config_manager.load_from_yaml(yaml_content)
+
+        # Check that sensor keys are trimmed
+        sensor_keys = [sensor.unique_id for sensor in config.sensors]
+        assert "test_sensor" in sensor_keys
+        assert "another_sensor" in sensor_keys
+        assert "test_sensor " not in sensor_keys
+        assert " another_sensor" not in sensor_keys
+
+        # Check that global settings keys are trimmed
+        assert "device_identifier" in config.global_settings
+        assert " device_identifier " not in config.global_settings
+
+    def test_import_trimming_prevents_whitespace_issues(self, config_manager):
+        """Test that import trimming prevents whitespace from entering the system."""
+        # Create YAML with various whitespace scenarios
+        yaml_with_whitespace = """
+version: "2.0"
+sensors:
+  "test_sensor ":
+    name: "Test Sensor"
+    formula: "1 + 1"
+  " another_sensor":
+    name: "Another Sensor"
+    formula: "2 * 2"
+  "  third_sensor  ":
+    name: "Third Sensor"
+    formula: "3 * 3"
+global_settings:
+  " device_identifier ": "test_device"
+  "  device_name  ": "Test Device"
+"""
+
+        # Load config (this should trim whitespace)
+        config = config_manager.load_from_yaml(yaml_with_whitespace)
+
+        # Verify all sensor keys are trimmed during import
+        sensor_keys = [sensor.unique_id for sensor in config.sensors]
+        expected_keys = ["test_sensor", "another_sensor", "third_sensor"]
+
+        for key in expected_keys:
+            assert key in sensor_keys, f"Expected key '{key}' not found in {sensor_keys}"
+
+        # Verify no whitespace versions exist
+        whitespace_keys = ["test_sensor ", " another_sensor", "  third_sensor  "]
+        for key in whitespace_keys:
+            assert key not in sensor_keys, f"Whitespace key '{key}' should not exist in {sensor_keys}"
+
+        # Check global settings keys are trimmed
+        assert "device_identifier" in config.global_settings
+        assert "device_name" in config.global_settings
+        assert " device_identifier " not in config.global_settings
+        assert "  device_name  " not in config.global_settings
+
+        # Verify the config can be processed normally after trimming
+        assert len(config.sensors) == 3
+        assert config.global_settings["device_identifier"] == "test_device"
+        assert config.global_settings["device_name"] == "Test Device"
+
+    def test_trim_yaml_keys_edge_cases(self):
+        """Test edge cases for whitespace trimming."""
+        # Test with None
+        result = _trim_yaml_keys(None)
+        assert result is None
+
+        # Test with empty containers
+        assert _trim_yaml_keys({}) == {}
+        assert _trim_yaml_keys([]) == []
+
+        # Test with mixed types
+        test_data = {"key": None, "list": [None, "string", 123], "nested": {"inner": None}}
+        result = _trim_yaml_keys(test_data)
+        expected = {"key": None, "list": [None, "string", 123], "nested": {"inner": None}}
+        assert result == expected
+
+        # Test with deeply nested structures
+        deep_data = {"level1 ": {" level2": {"level3 ": [{" deep_key ": "value"}, "string", 123]}}}
+        deep_result = _trim_yaml_keys(deep_data)
+        deep_expected = {"level1": {"level2": {"level3": [{"deep_key": "value"}, "string", 123]}}}
+        assert deep_result == deep_expected
+
+    def test_export_yaml_has_no_whitespace(self, config_manager):
+        """Test that exported YAML doesn't contain whitespace in keys."""
+        # Create YAML with whitespace in keys
+        yaml_with_whitespace = """
+version: "2.0"
+sensors:
+  "test_sensor ":
+    name: "Test Sensor"
+    formula: "1 + 1"
+  " another_sensor":
+    name: "Another Sensor"
+    formula: "2 * 2"
+global_settings:
+  " device_identifier ": "test_device"
+"""
+
+        # Load config (this should trim whitespace)
+        config = config_manager.load_from_yaml(yaml_with_whitespace)
+
+        # Export back to YAML dict format (using the correct dictionary format)
+        yaml_dict = {
+            "version": config.version,
+            "sensors": {},
+        }
+
+        if config.global_settings:
+            yaml_dict["global_settings"] = config.global_settings
+
+        # Use dictionary format for sensors (like the input format)
+        for sensor in config.sensors:
+            yaml_dict["sensors"][sensor.unique_id] = {
+                "name": sensor.name,
+                "formula": sensor.formulas[0].formula if sensor.formulas else "",
+            }
+
+        # Convert to actual YAML string
+        import yaml
+
+        yaml_string = yaml.dump(yaml_dict, default_flow_style=False, allow_unicode=True)
+
+        # Parse the exported YAML to verify it doesn't have whitespace
+        exported_data = yaml.safe_load(yaml_string)
+
+        # Check that exported YAML doesn't have whitespace in sensor keys (dictionary format)
+        sensor_keys = list(exported_data["sensors"].keys())
+        assert "test_sensor" in sensor_keys
+        assert "another_sensor" in sensor_keys
+        assert "test_sensor " not in sensor_keys
+        assert " another_sensor" not in sensor_keys
+
+        # Check global settings
+        assert "device_identifier" in exported_data["global_settings"]
+        assert " device_identifier " not in exported_data["global_settings"]
+
+        # Verify the exported YAML string itself doesn't contain whitespace keys
+        # Check for sensor keys with whitespace (accounting for YAML indentation)
+        assert "test_sensor :" not in yaml_string  # Key with trailing space
+        assert "device_identifier :" not in yaml_string  # Global setting key with whitespace
+
+        # Verify clean keys are present
+        assert "test_sensor:" in yaml_string
+        assert "another_sensor:" in yaml_string
+        assert "device_identifier:" in yaml_string
+
+        # Additional checks for whitespace around ALL keys in the YAML string
+        lines = yaml_string.split("\n")
+        for line in lines:
+            if ":" in line and line.strip():
+                key_part = line.split(":")[0]
+                # Remove leading whitespace (indentation is OK) but check the actual key
+                stripped_key = key_part.lstrip()
+                # The key itself should not have trailing whitespace
+                assert not stripped_key.endswith(" "), f"Key has trailing whitespace in line: '{line}'"

@@ -19,7 +19,15 @@ class TestEntityRegistryListener:
         hass = MagicMock()
         hass.bus = MagicMock()
         hass.bus.async_listen = MagicMock(return_value=MagicMock())
-        hass.async_create_task = MagicMock()
+
+        # Mock async_create_task to properly handle coroutines
+        def mock_create_task(coro):
+            # Close the coroutine to avoid the warning
+            if hasattr(coro, "close"):
+                coro.close()
+            return MagicMock()
+
+        hass.async_create_task = MagicMock(side_effect=mock_create_task)
         return hass
 
     @pytest.fixture
