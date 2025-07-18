@@ -147,51 +147,105 @@ class YamlHandler:
             attr_dict["variables"] = variables_dict
 
         # Add metadata if present
-        if hasattr(formula, "metadata") and formula.metadata:
-            attr_dict["metadata"] = formula.metadata
-        else:
-            # Legacy field support - migrate to metadata format
-            legacy_metadata = {}
-            if hasattr(formula, "unit_of_measurement") and formula.unit_of_measurement:
-                legacy_metadata["unit_of_measurement"] = formula.unit_of_measurement
-            if hasattr(formula, "device_class") and formula.device_class:
-                legacy_metadata["device_class"] = formula.device_class
-            if hasattr(formula, "state_class") and formula.state_class:
-                legacy_metadata["state_class"] = formula.state_class
-            if hasattr(formula, "icon") and formula.icon:
-                legacy_metadata["icon"] = formula.icon
-
-            if legacy_metadata:
-                attr_dict["metadata"] = legacy_metadata
+        metadata = self._extract_formula_metadata(formula)
+        if metadata:
+            attr_dict["metadata"] = metadata
 
         return attr_dict
 
+    def _extract_formula_metadata(self, formula: FormulaConfig) -> dict[str, Any] | None:
+        """Extract metadata from formula configuration."""
+        # Add metadata if present
+        if hasattr(formula, "metadata") and formula.metadata:
+            return formula.metadata
+
+        # Legacy field support - migrate to metadata format
+        legacy_metadata = self._extract_legacy_formula_metadata(formula)
+        return legacy_metadata if legacy_metadata else None
+
+    def _extract_legacy_formula_metadata(self, formula: FormulaConfig) -> dict[str, Any] | None:
+        """Extract legacy metadata fields from formula configuration."""
+        legacy_metadata = {}
+
+        if hasattr(formula, "unit_of_measurement") and formula.unit_of_measurement:
+            legacy_metadata["unit_of_measurement"] = formula.unit_of_measurement
+        if hasattr(formula, "device_class") and formula.device_class:
+            legacy_metadata["device_class"] = formula.device_class
+        if hasattr(formula, "state_class") and formula.state_class:
+            legacy_metadata["state_class"] = formula.state_class
+        if hasattr(formula, "icon") and formula.icon:
+            legacy_metadata["icon"] = formula.icon
+
+        return legacy_metadata if legacy_metadata else None
+
     def _parse_literal_value(self, formula: str) -> int | float | str | bool | None:
         """Parse formula as literal value if possible."""
-        result: int | float | str | bool | None = None
+        # Try numeric parsing first
+        numeric_result = self._parse_numeric_literal(formula)
+        if numeric_result is not None:
+            return numeric_result
+
+        # Try string literal parsing
+        string_result = self._parse_string_literal(formula)
+        if string_result is not None:
+            return string_result
+
+        # Try boolean literal parsing
+        boolean_result = self._parse_boolean_literal(formula)
+        if boolean_result is not None:
+            return boolean_result
+
+        # Try simple string literal parsing (no operators)
+        simple_result = self._parse_simple_string_literal(formula)
+        if simple_result is not None:
+            return simple_result
+
+        return None
+
+    def _parse_numeric_literal(self, formula: str) -> int | float | None:
+        """Parse numeric literal values."""
         try:
             # Integer literal
             if formula.isdigit():
-                result = int(formula)
-            # Float literal
-            elif formula.replace(".", "").replace("-", "").isdigit() and formula.count(".") <= 1:
-                result = float(formula)
-            # String literal with quotes
-            elif (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
-                result = formula[1:-1]
-            # Boolean literals
-            elif formula == "True":
-                result = True
-            elif formula == "False":
-                result = False
-            # Simple string literal without operators (but can have spaces and brackets)
-            elif not any(op in formula for op in ["+", "-", "*", "/", "(", ")"]):
-                result = formula
+                return int(formula)
 
+            # Float literal
+            if formula.replace(".", "").replace("-", "").isdigit() and formula.count(".") <= 1:
+                return float(formula)
         except (ValueError, AttributeError):
             pass
 
-        return result
+        return None
+
+    def _parse_string_literal(self, formula: str) -> str | None:
+        """Parse string literal values with quotes."""
+        try:
+            if (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
+                return formula[1:-1]
+        except (ValueError, AttributeError):
+            pass
+        return None
+
+    def _parse_boolean_literal(self, formula: str) -> bool | None:
+        """Parse boolean literal values."""
+        try:
+            if formula == "True":
+                return True
+            if formula == "False":
+                return False
+        except (ValueError, AttributeError):
+            pass
+        return None
+
+    def _parse_simple_string_literal(self, formula: str) -> str | None:
+        """Parse simple string literal without operators."""
+        try:
+            # Check if it contains any mathematical operators
+            if not any(op in formula for op in ["+", "-", "*", "/", "(", ")"]):
+                return formula
+        except (ValueError, AttributeError):
+            pass
+        return None
 
     def _add_main_formula_details(self, sensor_dict: dict[str, Any], main_formula: FormulaConfig) -> None:
         """Add main formula details to sensor dictionary."""
@@ -201,25 +255,12 @@ class YamlHandler:
             sensor_dict["variables"] = dict(main_formula.variables)
 
         # Add metadata if present (formula-level metadata overrides sensor-level metadata)
-        if hasattr(main_formula, "metadata") and main_formula.metadata:
-            # Merge with existing sensor metadata, with formula metadata taking precedence
-            existing_metadata = sensor_dict.get("metadata", {})
-            merged_metadata = {**existing_metadata, **main_formula.metadata}
-            sensor_dict["metadata"] = merged_metadata
-        else:
-            # Legacy field support - migrate to metadata format
-            legacy_metadata = {}
-            if hasattr(main_formula, "unit_of_measurement") and main_formula.unit_of_measurement:
-                legacy_metadata["unit_of_measurement"] = main_formula.unit_of_measurement
-            if hasattr(main_formula, "device_class") and main_formula.device_class:
-                legacy_metadata["device_class"] = main_formula.device_class
-            if hasattr(main_formula, "state_class") and main_formula.state_class:
-                legacy_metadata["state_class"] = main_formula.state_class
-            if hasattr(main_formula, "icon") and main_formula.icon:
-                legacy_metadata["icon"] = main_formula.icon
+        metadata = self._extract_formula_metadata(main_formula)
+        if metadata:
+            self._merge_metadata(sensor_dict, metadata)
 
-            if legacy_metadata:
-                # Merge with existing sensor metadata, with formula metadata taking precedence
-                existing_metadata = sensor_dict.get("metadata", {})
-                merged_metadata = {**existing_metadata, **legacy_metadata}
-                sensor_dict["metadata"] = merged_metadata
+    def _merge_metadata(self, sensor_dict: dict[str, Any], formula_metadata: dict[str, Any]) -> None:
+        """Merge formula metadata with existing sensor metadata."""
+        existing_metadata = sensor_dict.get("metadata", {})
+        merged_metadata = {**existing_metadata, **formula_metadata}
+        sensor_dict["metadata"] = merged_metadata
