@@ -328,14 +328,70 @@ global_settings:
 sensors: {}
 ```
 
+**Important: Understanding Backing Entity References**
+
+The templates use the `state` special token to reference backing entities:
+
+1. **Backing Entity Registration**: The integration registers virtual entity
+   IDs (e.g., `sensor.span_abc123_0_backing_current_power`) with the synthetic sensors package
+2. **State Token Resolution**: When the formula uses `state`, it automatically calls the integration's data provideri
+   to get the current value
+3. **No Variables Needed**: The backing entity is accessed directly through the `state` token, no variable mapping required
+
+So when you see:
+
+```yaml
+formula: "state"
+```
+
+This means:
+
+- `state` is a special token that references the backing entity
+- The backing entity is registered by the integration and provides data on demand
+- No variables section is needed - the `state` token handles the resolution automatically
+
+### Attribute Formulas and the 'state' Variable
+
+Attribute formulas are always evaluated after the main sensor state is calculated. Every attribute formula automatically has
+access to a special variable called `state`, which contains the freshly calculated value of the main sensor.
+This allows attribute formulas to reference the main sensor's value directly, along with any additional variables defined
+for the attribute.
+
+**Example:**
+
+```yaml
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "state"
+    # The 'state' special token references the backing entity
+    attributes:
+      daily_total:
+        formula: "state * 24"
+      with_multiplier:
+        formula: "state * multiplier"
+        variables:
+          multiplier: 2.5
+```
+
+In this example:
+
+- The main sensor state is set to the value of the backing entity (accessed via the `state` token).
+- The `daily_total` attribute is calculated as the main state times 24.
+- The `with_multiplier` attribute is calculated as the main state times a custom multiplier (2.5).
+- Both attribute formulas use the `state` variable, which is the freshly calculated main sensor value.
+
+This pattern allows you to build complex attribute calculations that depend on the main sensor's value, ensuring consistency
+and flexibility in your synthetic sensor definitions.
+
 ```yaml
 # yaml_templates/power_sensor.yaml.txt
 {{sensor_key}}:
   name: "{{sensor_name}}"
   entity_id: "{{entity_id}}"
-  formula: "source_value"
-  variables:
-    source_value: "{{backing_entity_id}}"
+  formula: "state"
+  # The 'state' special token automatically references the backing entity
+  # No variables needed - the backing entity is registered by the integration
   metadata:
     unit_of_measurement: "W"
     device_class: "power"
@@ -347,9 +403,9 @@ sensors: {}
 {{sensor_key}}:
   name: "{{sensor_name}}"
   entity_id: "{{entity_id}}"
-  formula: "source_value"
-  variables:
-    source_value: "{{backing_entity_id}}"
+  formula: "state"
+  # The 'state' special token automatically references the backing entity
+  # No variables needed - the backing entity is registered by the integration
   metadata:
     unit_of_measurement: "Wh"
     device_class: "energy"

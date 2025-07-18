@@ -111,10 +111,12 @@ class YamlHandler:
             sensor_dict["metadata"] = sensor_config.metadata
         # Note: Formula-level metadata is handled in _add_main_formula_details
 
-    def _process_formulas(self, sensor_config: SensorConfig) -> tuple[FormulaConfig | None, dict[str, Any]]:
+    def _process_formulas(
+        self, sensor_config: SensorConfig
+    ) -> tuple[FormulaConfig | None, dict[str, Any | int | float | str | bool]]:
         """Process formulas and separate main formula from attributes."""
         main_formula = None
-        attributes_dict = {}
+        attributes_dict: dict[str, Any | int | float | str | bool] = {}
 
         for formula in sensor_config.formulas:
             # Main formula has id matching the sensor's unique_id
@@ -128,8 +130,16 @@ class YamlHandler:
 
         return main_formula, attributes_dict
 
-    def _build_attribute_dict(self, formula: FormulaConfig) -> dict[str, Any]:
+    def _build_attribute_dict(self, formula: FormulaConfig) -> dict[str, Any] | int | float | str | bool:
         """Build attribute dictionary from formula configuration."""
+        # Check if this is a literal value formula (e.g., formula="240" with no variables)
+        if not formula.variables and formula.formula:
+            literal_value = self._parse_literal_value(formula.formula)
+            if literal_value is not None:
+                # Return the literal value directly (not wrapped in a dict)
+                return literal_value
+
+        # Handle as formula object (existing behavior)
         attr_dict: dict[str, Any] = {"formula": formula.formula}
 
         if formula.variables:
@@ -155,6 +165,33 @@ class YamlHandler:
                 attr_dict["metadata"] = legacy_metadata
 
         return attr_dict
+
+    def _parse_literal_value(self, formula: str) -> int | float | str | bool | None:
+        """Parse formula as literal value if possible."""
+        result: int | float | str | bool | None = None
+        try:
+            # Integer literal
+            if formula.isdigit():
+                result = int(formula)
+            # Float literal
+            elif formula.replace(".", "").replace("-", "").isdigit() and formula.count(".") <= 1:
+                result = float(formula)
+            # String literal with quotes
+            elif (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
+                result = formula[1:-1]
+            # Boolean literals
+            elif formula == "True":
+                result = True
+            elif formula == "False":
+                result = False
+            # Simple string literal without operators (but can have spaces and brackets)
+            elif not any(op in formula for op in ["+", "-", "*", "/", "(", ")"]):
+                result = formula
+
+        except (ValueError, AttributeError):
+            pass
+
+        return result
 
     def _add_main_formula_details(self, sensor_dict: dict[str, Any], main_formula: FormulaConfig) -> None:
         """Add main formula details to sensor dictionary."""

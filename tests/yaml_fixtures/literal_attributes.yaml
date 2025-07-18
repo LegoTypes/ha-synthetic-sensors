@@ -1,0 +1,33 @@
+version: "1.0"
+sensors:
+  test_sensor_with_literal_attributes:
+    name: "Test Sensor with Literal Attributes"
+    formula: "power_source * 2"
+    variables:
+      power_source: "sensor.main_power_meter"
+    attributes:
+      # Numeric literals
+      voltage: 240
+      max_capacity: 5000.5
+      efficiency_rate: 0.85
+
+      # String literals
+      manufacturer: "TestCorp"
+      model: "TC-1000"
+      status: "active"
+
+      # Boolean literals (as static values)
+      is_enabled: true
+      has_backup: false
+
+      # Formula attributes (existing behavior)
+      calculated_efficiency:
+        formula: "power_source / max_capacity * 100"
+        variables:
+          max_capacity: 5000
+        metadata:
+          unit_of_measurement: "%"
+          suggested_display_precision: 1
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

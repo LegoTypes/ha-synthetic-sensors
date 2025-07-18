@@ -34,6 +34,14 @@ sensors:
           panel_efficiency: "sensor.solar_panel_efficiency"
         metadata:
           unit_of_measurement: "%"
+
+      # Literal attributes - static device information
+      voltage: 240
+      manufacturer: "EnergyCorp"
+      model: "EM-2000"
+      installation_date: "2024-01-15"
+      warranty_years: 5
+      is_active: True
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -70,6 +78,13 @@ sensors:
           comfort_humidity: "sensor.bedroom_humidity"
         metadata:
           unit_of_measurement: ""
+
+      # Literal attributes - sensor configuration
+      sensor_type: "temperature"
+      location: "Living Room"
+      calibration_offset: 0.5
+      last_calibration: "2024-03-01"
+      requires_maintenance: False
     metadata:
       unit_of_measurement: "°C"
       device_class: "temperature"
@@ -116,6 +131,13 @@ sensors:
           battery_sensor_2: "sensor.battery_2_level"
         metadata:
           unit_of_measurement: "devices"
+
+      # Literal attributes - hub configuration
+      hub_version: "2.1.0"
+      max_devices: 100
+      protocol: "Zigbee"
+      firmware_date: "2024-02-15"
+      auto_update: True
     metadata:
       unit_of_measurement: "count"
       state_class: "measurement"
@@ -154,6 +176,15 @@ sensors:
           maintenance_interval: 180  # Literal: days between maintenance
         metadata:
           unit_of_measurement: ""
+
+      # Literal attributes - inverter specifications
+      rated_power: 5000
+      efficiency_rating: 0.95
+      operating_voltage: 400
+      max_temp: 85
+      serial_number: "SI-2024-001"
+      warranty_months: 120
+      grid_compliant: True
     metadata:
       unit_of_measurement: "W"
       device_class: "power"

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ha-synthetic-sensors"
-version = "1.1.2"
+version = "1.1.3"
 description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
 authors = ["SpanPanel"]
 readme = "README.md"
@@ -16,7 +16,7 @@ Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
 python = ">=3.13.2,<3.14"
 simpleeval = "^1.0.3"  # Keep our own constraint for non-HA dependency
 jsonschema = "^4.24.0"  # Keep our own constraint for non-HA dependency
-homeassistant = "^2025.7.1"  # Required runtime dependency - brings pyyaml, voluptuous transitively
+homeassistant = "^2025.7.2"  # Required runtime dependency - brings pyyaml, voluptuous transitively
 aiofiles = "*"  # For async file operations - not included with HA core
 
 [tool.poetry.group.dev.dependencies]
@@ -95,6 +95,7 @@ module = [
     "homeassistant.*",
     "voluptuous.*",
     "simpleeval.*",
+    "aiofiles.*",
 ]
 ignore_missing_imports = true
 
@@ -115,7 +116,7 @@ omit = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # Disable the homeassistant plugin due to asyncio event loop issues in Python 3.13+
-addopts = "-p no:homeassistant"
+addopts = "-p no:homeassistant --cov-fail-under=85"
 # Add markers for our new test types
 markers = [
     "ha_integration: marks tests as requiring real Home Assistant (deselect with '-m \"not ha_integration\"')"
@@ -158,4 +159,5 @@ disable = [
     "too-many-public-methods",        # Complex classes often need many methods
     "too-many-positional-arguments",  # HA constructors often need many params
     "too-many-locals",                # Complex functions often need many variables
+    "import-error",                   # aiofiles import issue in pre-commit environment
 ]
