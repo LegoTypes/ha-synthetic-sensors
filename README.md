@@ -16,7 +16,7 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support%20development-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/cayossarian)
 
-A comprehensive Python package for creating formula-based synthetic sensors in Home Assistant integrations
+A Python package for creating formula-based synthetic sensors in Home Assistant integrations
 using YAML configuration and mathematical expressions.
 
 ## What it does
@@ -63,7 +63,7 @@ poetry install --with dev
 For detailed implementation examples, API documentation, and integration patterns,
 see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
 
-The package provides a clean public API:
+The package provides a public API:
 
 - **StorageManager** - Manages sensor set storage and configuration
 - **SensorSet** - Handle for individual sensor set operations
