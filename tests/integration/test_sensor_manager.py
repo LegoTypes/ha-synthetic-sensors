@@ -56,7 +56,7 @@ class TestDynamicSensor:
     @pytest.fixture
     def mock_evaluator(self):
         """Create a mock Evaluator."""
-        evaluator = MagicMock()
+        evaluator = MagicMock(spec=Evaluator)
         evaluator.evaluate_formula = MagicMock()
         evaluator.clear_cache = MagicMock()
         return evaluator
@@ -479,11 +479,16 @@ class TestDynamicSensorExtended:
     @pytest.mark.asyncio
     async def test_async_update_sensor_success(self, dynamic_sensor, mock_evaluator):
         """Test _async_update_sensor with successful evaluation."""
+
+        # Create a function that returns the expected result
+        def mock_evaluate_formula(formula_config, context=None):
+            return {
+                "success": True,
+                "value": 45.0,
+            }
+
         # Mock successful evaluation
-        mock_evaluator.evaluate_formula.return_value = {
-            "success": True,
-            "value": 45.0,
-        }
+        mock_evaluator.evaluate_formula = mock_evaluate_formula
 
         # Mock async_write_ha_state
         with patch.object(dynamic_sensor, "async_write_ha_state"):

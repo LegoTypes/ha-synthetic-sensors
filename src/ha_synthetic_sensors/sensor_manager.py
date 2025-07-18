@@ -303,10 +303,18 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 for attr_formula in self._attribute_formulas:
                     # Build variable context for each attribute formula
                     attr_context = self._build_variable_context(attr_formula)
+                    # Add the sensor's state to the context for attribute formulas
+                    if attr_context is None:
+                        attr_context = {}
+                    attr_context["state"] = main_result["value"]
                     attr_result = self._evaluator.evaluate_formula(attr_formula, attr_context)
                     if attr_result["success"] and attr_result["value"] is not None:
-                        # Use formula ID as the attribute name
-                        attr_name = attr_formula.id
+                        # Extract attribute name from formula ID (format: {sensor_unique_id}_{attribute_name})
+                        if attr_formula.id.startswith(f"{self._config.unique_id}_"):
+                            attr_name = attr_formula.id[len(self._config.unique_id) + 1 :]
+                        else:
+                            # Fallback: use the full formula ID if it doesn't match expected pattern
+                            attr_name = attr_formula.id
                         self._calculated_attributes[attr_name] = attr_result["value"]
 
                 # Update extra state attributes with calculated values

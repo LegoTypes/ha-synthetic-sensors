@@ -69,9 +69,20 @@ sensors:
     formula: "power_value"
     variables:
       power_value: "test_integration_backing.device_123_power"
-    unit_of_measurement: "W"
-    device_class: "power"
-    state_class: "measurement"
+    attributes:
+      # Literal attribute for voltage
+      voltage: 240
+      # Calculated amperage from power and voltage
+      amperage:
+        formula: "state / voltage"
+        metadata:
+          unit_of_measurement: "A"
+          device_class: "current"
+          suggested_display_precision: 2
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 """
 
         # Mock file system to provide YAML content
@@ -189,6 +200,11 @@ sensors:
         assert result["value"] == 1500.0
         assert result["exists"] is True
 
+        # Test amperage calculation: 1500W / 240V = 6.25A
+        # The amperage attribute uses the literal voltage (240) and calculated state (1500W)
+        expected_amperage = 1500.0 / 240.0  # 6.25A
+        assert expected_amperage == 6.25
+
         # Test invalid entity ID
         result = callback("invalid.entity_id")
         assert result["value"] is None
@@ -199,6 +215,76 @@ sensors:
         result = callback("test_integration_backing.device_123_nonexistent")
         assert result["value"] is None
         assert result["exists"] is False
+
+    @pytest.mark.asyncio
+    async def test_tabs_literal_integration_real_yaml(self, mock_hass, mock_config_entry, mock_add_entities):
+        """Test integration with real YAML containing tabs literal that was causing issues."""
+        yaml_content = """
+version: "1.0"
+sensors:
+  span_abc123_circuit_1_power:
+    name: "Kitchen Lights Power"
+    entity_id: "sensor.kitchen_lights_power"
+    formula: "source_value"
+    variables:
+      source_value: "sensor.span_abc123_circuit_1_power"
+    attributes:
+      tabs: "tabs [3]"
+      voltage: 120
+      amperage:
+        formula: "source_value / 120"
+        metadata:
+          unit_of_measurement: "A"
+          device_class: "current"
+          suggested_display_precision: 2
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      suggested_display_precision: 2
+"""
+
+        # Mock file system to provide YAML content
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("builtins.open", mock_open(read_data=yaml_content)),
+        ):
+            # Test public API setup
+            result = await async_setup_integration(mock_hass, mock_config_entry, mock_add_entities)
+
+            # Should succeed with valid YAML
+            assert result is True
+
+            # Test that the tabs attribute is treated as a literal string
+            # This should not extract 'tabs' as a dependency
+            from ha_synthetic_sensors.dependency_parser import DependencyParser
+
+            parser = DependencyParser()
+            dependencies = parser.extract_dependencies("tabs [3]")
+            assert "tabs" not in dependencies, (
+                f"Expected 'tabs' not to be extracted as dependency from 'tabs [3]', got: {dependencies}"
+            )
+
+            # Test that the YAML can be parsed correctly
+            from ha_synthetic_sensors.config_manager import ConfigManager
+
+            config_manager = ConfigManager(mock_hass)
+            config = config_manager.load_from_yaml(yaml_content)
+
+            # Verify the sensor was parsed correctly
+            assert config is not None
+            assert len(config.sensors) == 1
+
+            sensor = config.sensors[0]
+            assert sensor.unique_id == "span_abc123_circuit_1_power"
+            assert sensor.name == "Kitchen Lights Power"
+            assert sensor.entity_id == "sensor.kitchen_lights_power"
+
+            # Check that the tabs attribute is treated as a literal
+            tabs_formula = next(f for f in sensor.formulas if f.id == "span_abc123_circuit_1_power_tabs")
+            assert tabs_formula.formula == "tabs [3]"
+            assert not tabs_formula.variables  # No variables for literals
 
 
 class TestPublicAPIConfiguration:
@@ -222,7 +308,18 @@ class TestPublicAPIConfiguration:
                         "device_class": "power",
                         "state_class": "measurement",
                     },
-                )
+                ),
+                # Attribute formula for amperage calculation
+                FormulaConfig(
+                    id="device_123_current_power_amperage",
+                    formula="state / voltage",
+                    variables={},
+                    metadata={
+                        "unit_of_measurement": "A",
+                        "device_class": "current",
+                        "suggested_display_precision": 2,
+                    },
+                ),
             ],
         )
 
@@ -231,12 +328,20 @@ class TestPublicAPIConfiguration:
         assert config.name == "Test Device Current Power"
         assert config.entity_id == "sensor.device_123_current_power"
         assert config.device_identifier == "device_123"
-        assert len(config.formulas) == 1
+        assert len(config.formulas) == 2
+
+        # Test main formula
         assert config.formulas[0].id == "main"
         assert config.formulas[0].formula == "power_watts"
         assert config.formulas[0].metadata["unit_of_measurement"] == "W"
         assert config.formulas[0].metadata["device_class"] == "power"
         assert config.formulas[0].metadata["state_class"] == "measurement"
+
+        # Test attribute formula
+        assert config.formulas[1].id == "device_123_current_power_amperage"
+        assert config.formulas[1].formula == "state / voltage"
+        assert config.formulas[1].metadata["unit_of_measurement"] == "A"
+        assert config.formulas[1].metadata["device_class"] == "current"
 
     def test_formula_config_public_api(self):
         """Test FormulaConfig using public API only."""

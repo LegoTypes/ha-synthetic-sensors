@@ -105,6 +105,37 @@ class DependencyParser:
         # Cache excluded terms to avoid repeated lookups
         self._excluded_terms = self._build_excluded_terms()
 
+    def _is_literal_expression(self, formula: str) -> bool:
+        """Check if formula looks like a literal expression that shouldn't extract variables.
+
+        Args:
+            formula: Formula string to check
+
+        Returns:
+            True if formula looks like a literal expression, False otherwise
+        """
+        # Check for patterns that indicate this is a literal expression
+        # Examples: "tabs[16]", "tabs [22]", "tabs [30:32]", "device_name", "custom_value"
+
+        # If it contains brackets, check if it's a literal expression
+        if "[" in formula and "]" in formula:
+            # Check if it contains arithmetic operators that would make it a formula
+            arithmetic_operators = ["+", "-", "*", "/", "(", ")"]
+            if not any(op in formula for op in arithmetic_operators):
+                # This is a literal expression with brackets (e.g., "tabs[16]", "tabs [22]")
+                return True
+
+        # If it's a simple identifier with no operators, it's a variable
+        if formula.strip().replace("_", "").replace("-", "").isalnum():
+            return False
+
+        # If it contains arithmetic operators (but not brackets), it's a formula that should extract variables
+        if any(op in formula for op in ["+", "-", "*", "/", "(", ")"]):
+            return False
+
+        # If it contains brackets but no arithmetic, it's a literal
+        return bool("[" in formula or "]" in formula)
+
     def extract_dependencies(self, formula: str) -> set[str]:
         """Extract all dependencies from a formula string.
 
@@ -133,6 +164,11 @@ class DependencyParser:
         entity_id_parts = set()
         for entity_id in all_entity_ids:
             entity_id_parts.update(entity_id.split("."))
+
+        # Check if formula looks like a literal expression (e.g., "tabs[16]")
+        # If it does, don't extract variables from it
+        if self._is_literal_expression(formula):
+            return dependencies
 
         variable_matches = self._variable_pattern.findall(formula)
         for var in variable_matches:

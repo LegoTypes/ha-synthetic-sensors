@@ -168,6 +168,63 @@ sensors:
       attribution: "Calculated from SPAN Panel data"
 ```
 
+### Literal Attribute Values
+
+Attributes can be defined as literal values without requiring formulas. This is useful for static information like
+device specifications, constants, or metadata that doesn't need calculation:
+
+```yaml
+sensors:
+  device_info_sensor:
+    name: "Device Information"
+    formula: "current_power * efficiency_factor"
+    variables:
+      current_power: "sensor.power_meter"
+      efficiency_factor: 0.95
+    attributes:
+      # Literal values - no formula required
+      voltage: 240
+      manufacturer: "TestCorp"
+      model: "PowerMeter Pro"
+      serial_number: "PM-2024-001"
+      max_capacity: 5000
+      installation_date: "2024-01-15"
+      warranty_years: 5
+      is_active: True
+      firmware_version: "2.1.0"
+
+      # Mixed literal and calculated attributes
+      calculated_power:
+        formula: "state * 1.1"
+        metadata:
+          unit_of_measurement: "W"
+          suggested_display_precision: 0
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+```
+
+**Supported Literal Types:**
+
+- **Numeric values**: `42`, `3.14`, `-5.0`, `1.23e-4`
+- **String values**: `"test_string"`, `"Hello World"`, `""` (empty string)
+- **Boolean values**: `True`, `False`
+- **Special characters**: `"test@#$%^&*()"`, `"测试"` (Unicode)
+
+**Literal vs Formula Attributes:**
+
+- **Literal attributes**: Static values that don't change based on sensor state
+- **Formula attributes**: Calculated values that depend on sensor state or other entities
+- **Mixed usage**: Both literal and formula attributes can be used together in the same sensor
+
+**Use Cases for Literal Attributes:**
+
+- Device specifications (voltage, capacity, model numbers)
+- Installation information (dates, serial numbers, warranty periods)
+- Configuration constants (thresholds, limits, default values)
+- Metadata that doesn't require calculation (manufacturer, location, notes)
+
 ### Device Association
 
 Associate sensors with Home Assistant devices for better organization and device-centric management:
@@ -258,7 +315,7 @@ underscores, special characters removed)
 This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to,
 while avoiding conflicts between sensors from different devices.
 
-**How attributes work:**
+## How attributes work
 
 - Main sensor state is calculated first using the `formula`
 - Attributes are calculated second and have access to the `state` variable
@@ -267,6 +324,30 @@ while avoiding conflicts between sensors from different devices.
 - Attributes inherit all variables from their parent sensor and can add their own
 - Attributes can also reference other entities directly (like `sensor.max_power_capacity` above)
 - Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
+
+**Example:**
+
+```yaml
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "state"
+    # The 'state' special token references the backing entity
+    attributes:
+      daily_total:
+        formula: "state * 24"
+      with_multiplier:
+        formula: "state * multiplier"
+        variables:
+          multiplier: 2.5
+```
+
+In this example:
+
+- The main sensor state is set to the value of the backing entity (accessed via the `state` token).
+- The `daily_total` attribute is calculated as the main state times 24.
+- The `with_multiplier` attribute is calculated as the main state times a custom multiplier (2.5).
+- Both attribute formulas use the `state` variable, which is the freshly calculated main sensor value.
 
 ### Metadata Dictionary
 
@@ -749,7 +830,9 @@ For detailed formula examples and programming patterns, see the
 
 ## Variables and Configuration
 
-Numeric literals can be used directly in variable definitions for constants, conversion factors, and thresholds:
+Numeric literals can be used directly in variable definitions for constants, conversion factors, and thresholds.
+Literals can also be used as attribute values without requiring formulas. Literals can also be used as attribute
+values without requiring formulas.
 
 ```yaml
 sensors:
@@ -795,6 +878,8 @@ sensors:
 - **Integers**: `42`, `-10`, `0`
 - **Floats**: `3.14159`, `-2.5`, `0.001`
 - **Scientific notation**: `1.23e-4`, `2.5e6`
+- **Strings**: `"test_string"`, `"Hello World"`, `""` (empty string)
+- **Booleans**: `True`, `False`
 
 **Boolean State Conversion:**
 

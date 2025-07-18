@@ -6,7 +6,7 @@ This module contains TypedDicts and type aliases used for YAML configuration par
 
 from __future__ import annotations
 
-from typing import Any, TypeAlias, TypedDict
+from typing import Any, TypeAlias, TypedDict, Union
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 
@@ -27,6 +27,10 @@ class AttributeConfigDict(TypedDict, total=False):
     variables: dict[str, str | int | float]  # Allow attributes to define additional variables
 
 
+# Type alias for attribute configuration that can be either formula object or literal value
+AttributeConfig: TypeAlias = Union[AttributeConfigDict, str, int, float]
+
+
 class SensorConfigDict(TypedDict, total=False):
     """TypedDict for sensor configuration in YAML."""
 
@@ -38,7 +42,7 @@ class SensorConfigDict(TypedDict, total=False):
     entity_id: str  # Optional: Explicit entity ID for the sensor
     # Main formula syntax
     formula: str
-    attributes: dict[str, AttributeConfigDict]
+    attributes: dict[str, AttributeConfig]
     # Common properties
     variables: dict[str, str | int | float]
     metadata: dict[str, Any]

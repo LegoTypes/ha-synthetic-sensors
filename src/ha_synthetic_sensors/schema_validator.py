@@ -872,63 +872,79 @@ class SchemaValidator:
         """Get the calculated attribute definition for the v2.0 schema."""
         entity_pattern = r"^[a-z_][a-z0-9_]*\.[a-z0-9_]+$"
         return {
-            "type": "object",
-            "description": "Calculated attribute definition",
-            "properties": {
-                "formula": {
-                    "type": "string",
-                    "description": ("Mathematical expression to evaluate for this attribute"),
-                    "minLength": 1,
-                },
-                "variables": {
+            "oneOf": [
+                {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities or numeric literals",
-                    "patternProperties": {
-                        var_pattern: {
-                            "oneOf": [
-                                {
+                    "description": "Calculated attribute definition with formula",
+                    "properties": {
+                        "formula": {
+                            "type": "string",
+                            "description": ("Mathematical expression to evaluate for this attribute"),
+                            "minLength": 1,
+                        },
+                        "variables": {
+                            "type": "object",
+                            "description": "Variable mappings to Home Assistant entities or numeric literals",
+                            "patternProperties": {
+                                var_pattern: {
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "pattern": entity_pattern,
+                                            "description": "Home Assistant entity ID",
+                                        },
+                                        {
+                                            "type": "number",
+                                            "description": "Numeric literal value",
+                                        },
+                                    ]
+                                }
+                            },
+                            "additionalProperties": False,
+                        },
+                        "metadata": {
+                            "type": "object",
+                            "description": "Metadata dictionary for Home Assistant attribute properties",
+                            "properties": {
+                                "device_class": {
                                     "type": "string",
-                                    "pattern": entity_pattern,
-                                    "description": "Home Assistant entity ID",
+                                    "enum": self._get_device_class_enum(),
+                                    "description": "Device class for the attribute",
                                 },
-                                {
-                                    "type": "number",
-                                    "description": "Numeric literal value",
+                                "state_class": {
+                                    "type": "string",
+                                    "enum": self._get_state_class_enum(),
+                                    "description": "State class for the attribute",
                                 },
-                            ]
-                        }
+                                "unit_of_measurement": {
+                                    "type": "string",
+                                    "description": "Unit of measurement for the attribute",
+                                },
+                                "icon": {
+                                    "type": "string",
+                                    "pattern": icon_pattern,
+                                    "description": "Icon for the attribute",
+                                },
+                            },
+                            "additionalProperties": True,
+                        },
                     },
+                    "required": ["formula"],
                     "additionalProperties": False,
                 },
-                "metadata": {
-                    "type": "object",
-                    "description": "Metadata dictionary for Home Assistant attribute properties",
-                    "properties": {
-                        "device_class": {
-                            "type": "string",
-                            "enum": self._get_device_class_enum(),
-                            "description": "Device class for the attribute",
-                        },
-                        "state_class": {
-                            "type": "string",
-                            "enum": self._get_state_class_enum(),
-                            "description": "State class for the attribute",
-                        },
-                        "unit_of_measurement": {
-                            "type": "string",
-                            "description": "Unit of measurement for the attribute",
-                        },
-                        "icon": {
-                            "type": "string",
-                            "pattern": icon_pattern,
-                            "description": "Icon for the attribute",
-                        },
-                    },
-                    "additionalProperties": True,
+                {
+                    "type": "number",
+                    "description": "Literal numeric value for the attribute",
                 },
-            },
-            "required": ["formula"],
-            "additionalProperties": False,
+                {
+                    "type": "string",
+                    "description": "Literal string value for the attribute",
+                },
+                {
+                    "type": "boolean",
+                    "description": "Literal boolean value for the attribute (True/False)",
+                },
+            ]
         }
 
 

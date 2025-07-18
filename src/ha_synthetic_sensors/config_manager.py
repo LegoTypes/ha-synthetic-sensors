@@ -11,13 +11,13 @@ import logging
 from pathlib import Path
 from typing import Any, cast
 
-import aiofiles  # type: ignore[import-untyped] # pylint: disable=import-error
+import aiofiles
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
 from .config_models import Config, FormulaConfig, SensorConfig
-from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, AttributeConfigDict, ConfigDict, GlobalSettingsDict, SensorConfigDict
+from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, AttributeConfig, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .dependency_parser import DependencyParser
 from .schema_validator import validate_yaml_config
 
@@ -316,7 +316,7 @@ class ConfigManager:
         self,
         sensor_key: str,
         attr_name: str,
-        attr_config: AttributeConfigDict,
+        attr_config: AttributeConfig,
         sensor_data: SensorConfigDict,
     ) -> FormulaConfig:
         """Parse a calculated attribute formula (v2.0 format).
@@ -324,12 +324,25 @@ class ConfigManager:
         Args:
             sensor_key: Sensor key (used as base for formula ID)
             attr_name: Attribute name
-            attr_config: Attribute configuration dictionary
+            attr_config: Attribute configuration dictionary or literal value
             sensor_data: Parent sensor configuration dictionary
 
         Returns:
             FormulaConfig: Parsed attribute formula configuration
         """
+        # Handle literal values (new feature)
+        if isinstance(attr_config, (int, float, str)):
+            # Create a formula that just returns the literal value
+            return FormulaConfig(
+                id=f"{sensor_key}_{attr_name}",
+                name=f"{sensor_data.get('name', sensor_key)} - {attr_name}",
+                formula=str(attr_config),  # Convert to string formula
+                attributes={},
+                variables={},
+                metadata={},
+            )
+
+        # Handle formula objects (existing behavior)
         attr_formula = attr_config.get("formula")
         if not attr_formula:
             raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have 'formula' field")
