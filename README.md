@@ -465,14 +465,14 @@ sensors:
     name: "Power Sensor"
     formula: "base_power"
     metadata:
-      device_class: "power"  # ✅ Valid for sensors
+      device_class: "power"  # Valid for sensors
       unit_of_measurement: "W"
     attributes:
       daily_total:
         formula: "state * 24"
         metadata:
-          unit_of_measurement: "Wh"  # ✅ Valid for attributes
-          device_class: "energy"     # ❌ ERROR: Not allowed for attributes
+          unit_of_measurement: "Wh"  # Valid for attributes
+          device_class: "energy"     # ERROR: Not allowed for attributes
 ```
 
 **Attribute Metadata:**
