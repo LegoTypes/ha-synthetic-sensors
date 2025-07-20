@@ -121,7 +121,7 @@ class TestVariableInheritance:
             "name": "Test Sensor",
             "formula": "power_a + power_b",
             "variables": {"power_a": "sensor.meter_a", "power_b": "sensor.meter_b"},
-            "attributes": {"daily_total": {"formula": "power_a * 24"}},
+            "attributes": {"daily_total": {"formula": "test_sensor * 24"}},
         }
 
         # Parse the attribute formula

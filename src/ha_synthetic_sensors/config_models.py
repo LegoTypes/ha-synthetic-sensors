@@ -73,7 +73,7 @@ class FormulaConfig:
 
     def _extract_dependencies(self) -> set[str]:
         """Extract entity dependencies from the formula string and variables."""
-        # Use enhanced dependency parser that handles:
+        # Use dependency parser that handles:
         # - Variable references
         # - Direct entity_ids
         # - Dot notation (sensor1.battery_level)

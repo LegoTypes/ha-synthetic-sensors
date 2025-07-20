@@ -463,7 +463,7 @@ class TestDynamicSensorExtended:
     async def test_handle_dependency_change_functionality(self, dynamic_sensor, mock_evaluator):
         """Test _handle_dependency_change functionality."""
         # Mock the evaluator to return a successful result
-        mock_evaluator.evaluate_formula.return_value = {
+        mock_evaluator.evaluate_formula_with_sensor_config.return_value = {
             "success": True,
             "value": 45.0,
         }
@@ -481,14 +481,14 @@ class TestDynamicSensorExtended:
         """Test _async_update_sensor with successful evaluation."""
 
         # Create a function that returns the expected result
-        def mock_evaluate_formula(formula_config, context=None):
+        def mock_evaluate_formula_with_sensor_config(formula_config, context=None, sensor_config=None):
             return {
                 "success": True,
                 "value": 45.0,
             }
 
         # Mock successful evaluation
-        mock_evaluator.evaluate_formula = mock_evaluate_formula
+        mock_evaluator.evaluate_formula_with_sensor_config = mock_evaluate_formula_with_sensor_config
 
         # Mock async_write_ha_state
         with patch.object(dynamic_sensor, "async_write_ha_state"):
@@ -508,7 +508,7 @@ class TestDynamicSensorExtended:
     async def test_async_update_sensor_evaluation_failure(self, dynamic_sensor, mock_evaluator):
         """Test _async_update_sensor with evaluation failure."""
         # Mock failed evaluation
-        mock_evaluator.evaluate_formula.return_value = {
+        mock_evaluator.evaluate_formula_with_sensor_config.return_value = {
             "success": False,
             "error": "Test error",
         }
@@ -523,7 +523,7 @@ class TestDynamicSensorExtended:
     async def test_async_update_sensor_exception(self, dynamic_sensor, mock_evaluator):
         """Test _async_update_sensor with exception."""
         # Mock evaluator to raise exception
-        mock_evaluator.evaluate_formula.side_effect = Exception("Test exception")
+        mock_evaluator.evaluate_formula_with_sensor_config.side_effect = Exception("Test exception")
 
         # Should not raise exception, just log and continue
         with patch.object(dynamic_sensor, "async_write_ha_state"):
@@ -557,7 +557,7 @@ class TestDynamicSensorExtended:
             dependencies=old_deps,
         )
 
-        mock_evaluator.evaluate_formula.return_value = {
+        mock_evaluator.evaluate_formula_with_sensor_config.return_value = {
             "success": True,
             "value": 100.0,
         }
@@ -581,7 +581,7 @@ class TestDynamicSensorExtended:
             dependencies=new_deps,
         )
 
-        mock_evaluator.evaluate_formula.return_value = {
+        mock_evaluator.evaluate_formula_with_sensor_config.return_value = {
             "success": True,
             "value": 100.0,
         }
@@ -926,11 +926,16 @@ class TestSensorManagerExtended:
     @pytest.mark.asyncio
     async def test_load_configuration_update_existing(self, sensor_manager):
         """Test load_configuration updating existing configuration."""
-        # Set existing config
-        old_config = Config(sensors=[])
+        # Set existing config with one sensor
+        formula = FormulaConfig(id="test", formula="1+1")
+        old_sensor = SensorConfig(unique_id="old_sensor", formulas=[formula])
+        old_config = Config(sensors=[old_sensor])
         sensor_manager._current_config = old_config
 
-        new_config = Config(sensors=[])
+        # New config with different sensor
+        new_formula = FormulaConfig(id="test", formula="2+2")
+        new_sensor = SensorConfig(unique_id="new_sensor", formulas=[new_formula])
+        new_config = Config(sensors=[new_sensor])
 
         with patch.object(sensor_manager, "_update_existing_sensors") as mock_update:
             await sensor_manager.load_configuration(new_config)

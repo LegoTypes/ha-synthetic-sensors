@@ -1,0 +1,37 @@
+version: "1.0"
+
+# Idiom 2 Test Scenario 2.2: Sensor Key Reference
+# Purpose: Validate that main formula uses sensor key name correctly
+# Expected: Resolves to backing entity value (auto-injected variable)
+# Validation: Result matches backing entity state
+
+sensors:
+  power_calculator:
+    name: "Power Calculator"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: power_calculator * 2  # Method 2: Sensor key (auto-injected)
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  voltage_analyzer:
+    name: "Voltage Analyzer"
+    entity_id: sensor.span_panel_voltage  # Backing entity = 240V
+    formula: voltage_analyzer * 1.1  # Sensor key reference
+    metadata:
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:lightning-bolt
+
+  efficiency_monitor:
+    name: "Efficiency Monitor"
+    entity_id: sensor.span_panel_efficiency  # Backing entity = 85%
+    formula: efficiency_monitor / 100  # Sensor key reference
+    metadata:
+      unit_of_measurement: ""
+      device_class: power_factor
+      state_class: measurement
+      icon: mdi:percent

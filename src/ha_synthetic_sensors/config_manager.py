@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import re
 from typing import Any, cast
 
 import aiofiles
@@ -353,10 +354,22 @@ class ConfigManager:
         attr_variables = attr_config.get("variables", {})
         merged_variables.update(attr_variables)
 
-        # Add the parent sensor's main state as a variable reference
+        # Add the parent sensor's main state as a variable reference ONLY if it's referenced in the formula
         # This allows attributes to reference the main sensor by key
-        parent_entity_id = f"sensor.{sensor_key}"
-        merged_variables[sensor_key] = parent_entity_id
+        # The sensor key variable allows attributes to reference the main sensor's calculated value
+        # Use word boundaries to ensure we only match the sensor key as a standalone reference
+        # Exclude matches that are part of entity IDs (e.g., don't match 'comprehensive_analysis' in 'sensor.comprehensive_analysis')
+        if re.search(rf"\b{sensor_key}\b", attr_formula):
+            # Check if the match is part of an entity ID by looking for domain.sensor_key pattern
+            entity_domains = (
+                "sensor|binary_sensor|input_number|input_boolean|switch|light|climate|"
+                "cover|fan|lock|alarm_control_panel|vacuum|media_player|camera|weather|"
+                "device_tracker|person|zone|automation|script|scene|group|timer|counter|sun"
+            )
+            entity_pattern = re.compile(rf"\b(?:{entity_domains})\.{re.escape(sensor_key)}\b")
+            if not entity_pattern.search(attr_formula):
+                parent_entity_id = f"sensor.{sensor_key}"
+                merged_variables[sensor_key] = parent_entity_id
 
         # AUTO-INJECT MISSING ENTITY REFERENCES AS VARIABLES
         # Parse formula to find entity references that aren't explicitly defined as variables

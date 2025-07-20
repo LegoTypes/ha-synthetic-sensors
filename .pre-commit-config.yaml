@@ -65,7 +65,7 @@ repos:
     rev: v0.18.1
     hooks:
       - id: markdownlint-cli2
-        args: ['--config', '.markdownlint-cli2.jsonc']
+        args: ['--fix', '--config', '.markdownlint-cli2.jsonc']
         exclude: '\..*_cache/.*|dist/.*|venv/.*|\.venv/.*|node_modules/.*|htmlcov/.*'
 
   # Check for common security issues

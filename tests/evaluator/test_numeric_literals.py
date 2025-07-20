@@ -31,7 +31,7 @@ class TestNumericLiterals:
     def test_basic_numeric_literals(self, mock_hass: HomeAssistant, numeric_literals_config_manager):
         """Test basic integer and float literals in variables."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Mock the entity reference
         mock_hass.states.get.return_value = MagicMock(state="100")
@@ -67,7 +67,7 @@ class TestNumericLiterals:
     def test_mixed_entity_and_literal_variables(self, mock_hass: HomeAssistant, numeric_literals_config_manager):
         """Test mixing entity references with numeric literals."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Mock the entity references
         def mock_get_state(entity_id):
@@ -94,7 +94,7 @@ class TestNumericLiterals:
     def test_literals_in_attribute_formulas(self, mock_hass: HomeAssistant, numeric_literals_config_manager):
         """Test numeric literals in attribute formulas."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Mock the entity reference
         mock_hass.states.get.return_value = MagicMock(state="500")
@@ -144,7 +144,7 @@ class TestNumericLiterals:
     def test_boolean_numeric_literals(self, mock_hass: HomeAssistant, numeric_literals_config_manager):
         """Test boolean-like numeric literals (0 and 1)."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Mock the entity reference
         mock_hass.states.get.return_value = MagicMock(state="100")
@@ -164,7 +164,7 @@ class TestNumericLiterals:
     def test_complex_math_with_literals(self, mock_hass: HomeAssistant, numeric_literals_config_manager):
         """Test complex mathematical expressions with literals."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Mock the entity references
         def mock_get_state(entity_id):

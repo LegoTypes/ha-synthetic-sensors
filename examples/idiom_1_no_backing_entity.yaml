@@ -1,0 +1,56 @@
+version: "1.0"
+
+# Idiom 1 Test Scenario 1.2: Without Backing Entity
+# Purpose: Validate that 'state' token resolves to sensor's previous calculated value
+# Expected: state refers to sensor's previous calculated value
+# Validation: Formula uses recursive calculation pattern
+
+sensors:
+  # Pure mathematical calculation (no backing entity)
+  efficiency_calculator:
+    name: "Efficiency Calculator"
+    formula: solar_power / total_power * 100  # No 'state' token used
+    variables:
+      solar_power: sensor.solar_panel_power
+      total_power: sensor.total_system_power
+    metadata:
+      unit_of_measurement: "%"
+      device_class: power_factor
+      state_class: measurement
+      icon: mdi:percent
+
+  # Recursive calculation using previous value
+  power_trend:
+    name: "Power Trend"
+    formula: (state + current_power) / 2  # 'state' = previous calculated value
+    variables:
+      current_power: sensor.current_power_reading
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:trending-up
+
+  # Moving average calculation
+  moving_average:
+    name: "Moving Average"
+    formula: (state * 0.9 + new_value * 0.1)  # Exponential moving average
+    variables:
+      new_value: sensor.latest_reading
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:chart-line
+
+  # Accumulator pattern
+  daily_accumulator:
+    name: "Daily Accumulator"
+    formula: state + hourly_reading  # Accumulate hourly readings
+    variables:
+      hourly_reading: sensor.hourly_power_consumption
+    metadata:
+      unit_of_measurement: kWh
+      device_class: energy
+      state_class: total
+      icon: mdi:counter

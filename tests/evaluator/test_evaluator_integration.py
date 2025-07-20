@@ -163,7 +163,10 @@ class TestEvaluationWorkflow:
 
                     # Mock cache storage
                     with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
-                        result = evaluator.evaluate_formula(sample_formula_config)
+                        # Create context with variable values
+                        context = {"temp": 25.0, "humidity": 60.0}
+
+                        result = evaluator.evaluate_formula(sample_formula_config, context)
 
                         # Verify delegation occurred
                         mock_cache_check.assert_called_once()
@@ -238,6 +241,9 @@ class TestEvaluationWorkflow:
 
     def test_evaluation_workflow_global_literal_reference(self, evaluator, mock_hass):
         """Test evaluation workflow where A references a global literal value."""
+        # Enable HA lookups for this test
+        evaluator.update_allow_ha_lookups(True)
+
         # Create a formula config where A is a global literal and B is a variable
         formula_config = FormulaConfig(
             id="test_global_literal",
@@ -290,51 +296,68 @@ class TestCircuitBreakerIntegration:
     def test_circuit_breaker_skips_evaluation(self, evaluator, sample_formula_config):
         """Test that circuit breaker skips evaluation and handler calls."""
         # Trigger circuit breaker by setting error count
-        evaluator._error_count["Test Formula"] = 10  # Above default threshold
+        evaluator._error_handler._error_count["Test Formula"] = 10  # Above default threshold
 
-        with (
-            patch.object(evaluator._cache_handler, "check_cache") as mock_cache,
-            patch.object(evaluator._dependency_handler, "extract_and_prepare_dependencies") as mock_extract,
-        ):
-            result = evaluator.evaluate_formula(sample_formula_config)
+        # Mock the dependency handler to avoid actual evaluation
+        evaluator._dependency_handler = MagicMock()
+        evaluator._dependency_handler.check_dependencies.return_value = (set(), set(), set())
 
-            # Verify handlers were not called due to circuit breaker
-            mock_cache.assert_not_called()
-            mock_extract.assert_not_called()
+        # Mock the cache handler
+        evaluator._cache_handler = MagicMock()
+        evaluator._cache_handler.check_cache.return_value = None
 
-            assert result["success"] is False
-            assert "Skipping formula" in result["error"]
+        # Mock the formula preprocessor
+        evaluator._formula_preprocessor = MagicMock()
+
+        # Mock the build_evaluation_context method
+        evaluator._build_evaluation_context = MagicMock()
+
+        # Attempt evaluation - should be skipped due to circuit breaker
+        result = evaluator.evaluate_formula(sample_formula_config)
+
+        # Verify result indicates skipping
+        assert result["success"] is False
+        assert "Skipping formula" in result["error"]
+
+        # Verify that dependency checking was not called (circuit breaker prevented it)
+        evaluator._dependency_handler.check_dependencies.assert_not_called()
 
     def test_circuit_breaker_reset_on_success(self, evaluator, sample_formula_config, mock_hass):
         """Test that circuit breaker resets error counts on successful evaluation."""
         # Set initial error count
-        evaluator._error_count["Test Formula"] = 3
-        evaluator._transitory_error_count["Test Formula"] = 5
+        evaluator._error_handler._error_count["Test Formula"] = 3
 
         # Mock successful evaluation
-        with patch.object(evaluator._cache_handler, "check_cache") as mock_cache:
-            mock_cache.return_value = None
+        evaluator._dependency_handler = MagicMock()
+        evaluator._dependency_handler.check_dependencies.return_value = (set(), set(), set())
+        evaluator._dependency_handler.extract_formula_dependencies.return_value = set()
+        evaluator._dependency_handler.extract_and_prepare_dependencies.return_value = (set(), set())
 
-            with patch.object(evaluator._dependency_handler, "extract_and_prepare_dependencies") as mock_extract:
-                mock_extract.return_value = ({"temp"}, set())
+        evaluator._cache_handler = MagicMock()
+        evaluator._cache_handler.check_cache.return_value = None
 
-                with patch.object(evaluator._dependency_handler, "check_dependencies") as mock_check_deps:
-                    mock_check_deps.return_value = (set(), set(), set())
+        evaluator._formula_preprocessor = MagicMock()
+        evaluator._formula_preprocessor.preprocess_formula_for_evaluation.return_value = "temp + humidity"
 
-                    # Mock successful state resolution
-                    state = Mock()
-                    state.state = "25.0"
-                    mock_hass.states.get.return_value = state
+        # Mock successful evaluation context
+        evaluator._build_evaluation_context = MagicMock()
+        evaluator._build_evaluation_context.return_value = {"temp": 20.0, "humidity": 60.0}
 
-                    with patch.object(evaluator._cache_handler, "cache_result"):
-                        result = evaluator.evaluate_formula(sample_formula_config)
+        # Mock the SimpleEval evaluation
+        with patch("ha_synthetic_sensors.evaluator.SimpleEval") as mock_simple_eval:
+            mock_eval_instance = MagicMock()
+            mock_eval_instance.eval.return_value = 80.0
+            mock_simple_eval.return_value = mock_eval_instance
 
-                        # Verify success
-                        assert result["success"] is True
+            # Perform successful evaluation
+            result = evaluator.evaluate_formula(sample_formula_config)
 
-                        # Verify error counts were reset
-                        assert evaluator._error_count.get("Test Formula", 0) == 0
-                        assert evaluator._transitory_error_count.get("Test Formula", 0) == 0
+        # Verify successful result
+        assert result["success"] is True
+        assert result["value"] == 80.0
+
+        # Verify error count was reset
+        assert "Test Formula" not in evaluator._error_handler._error_count
 
 
 class TestConfigurationManagement:
@@ -406,9 +429,13 @@ class TestErrorHandling:
 
                 mock_hass.states.get.side_effect = mock_states_get
 
+                # Enable HA lookups for context building
+                evaluator.update_allow_ha_lookups(True)
+
                 # Get evaluation context
                 context = evaluator.get_evaluation_context(sample_formula_config)
 
                 assert "temp" in context
                 assert "humidity" in context
-                # Context should include resolved entity values
+                assert context["temp"] == 25.0
+                assert context["humidity"] == 60.0

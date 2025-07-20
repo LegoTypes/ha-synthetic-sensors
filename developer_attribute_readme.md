@@ -59,8 +59,8 @@ The reason these attributes are public varies:
 ## Type Annotations and Custom EntityDescriptions
 
 When extending an entity description with custom attributes, type checkers will often complain when you try to access the
-custom attributes. This is because the type system only sees the base class type (e.g., `BinarySensorEntityDescription`),
-not your custom type.
+custom attributes. This is because the type system only sees the base class type (e.g., `BinarySensorEntityDescription`), not
+your custom type.
 
 ### Example Issue
 
@@ -168,7 +168,8 @@ This approach is problematic because:
 
 ### The `entity_description` Trap
 
-The most common mistake is using `self._attr_entity_description = description` instead of `self.entity_description = description`.
+The most common mistake is using `self._attr_entity_description = description` instead of
+`self.entity_description = description`.
 
 This can cause subtle bugs because:
 
@@ -213,8 +214,8 @@ def device_class(self) -> str | None:
     return None
 ```
 
-This pattern appears throughout Home Assistant's code. The framework first checks the direct attribute, then falls back to the
-entity description if available.
+This pattern appears throughout Home Assistant's code. The framework first checks the direct attribute, then falls back to
+the entity description if available.
 
 ## Why The Dual Pattern Exists
 
@@ -229,12 +230,11 @@ Home Assistant's approach evolved over time:
 
 Home Assistant likely uses a public attribute for `entity_description` for several reasons:
 
-1. **API Contract**: The entity description represents a public API contract that is meant to be preserved and
-   directly accessed
+1. **API Contract**: The entity description represents a public API contract that is meant to be preserved and directly
+   accessed
 2. **Composition vs. Inheritance**: It emphasizes composition (an entity has a description) rather than inheritance (an
    entity is a description)
-3. **Interoperability**: Allows for more flexible interoperability between integrations and the core
-   framework
+3. **Interoperability**: Allows for more flexible interoperability between integrations and the core framework
 4. **Serialization**: May facilitate easier serialization/deserialization when needed
 5. **Accessor Pattern**: Other parts of Home Assistant can access the description directly without needing accessor methods
 
@@ -244,7 +244,6 @@ different points in Home Assistant's development history.
 ## Best Practices
 
 1. **Use `self._attr_*` for entity attributes** - This automatically gets you:
-
    - Protected attribute storage
    - Cached property getters/setters (via the `CachedProperties` metaclass)
    - Proper type annotation handling
@@ -253,13 +252,11 @@ different points in Home Assistant's development history.
 2. **Use `self.entity_description`** (never `self._attr_entity_description`) for entity descriptions
 
 3. **When extending `Entity` classes:**
-
    - Check the parent class implementation to understand the attribute pattern
    - Use the same pattern as the parent class for consistency
    - Include proper type annotations to help catch issues earlier
 
 4. **For custom entity descriptions:**
-
    - Store direct references to custom description attributes in your entity's `__init__` method
    - Use proper type annotations to avoid type checker issues
    - Test property access, especially for device_class and other properties that might come from entity_description
@@ -281,4 +278,5 @@ Home Assistant's dual attribute pattern can be confusing, but following these gu
 - Use `self.entity_description` (no underscore prefix) for the entity description
 - Store direct references to custom description attributes to avoid type issues
 
-This inconsistency in the framework's design is unfortunately something developers need to be aware of when building integrations.
+This inconsistency in the framework's design is unfortunately something developers need to be aware of when building
+integrations.

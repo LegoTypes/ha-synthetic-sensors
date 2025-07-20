@@ -61,7 +61,7 @@ class TestStateVariableInAttributes:
         main_result = {"success": True, "value": 100.0, "state": "ok"}
 
         # Mock the attribute formula evaluations
-        def mock_evaluate_formula(config, context=None):
+        def mock_evaluate_formula_with_sensor_config(config, context=None, sensor_config=None):
             if config.id == "daily_total":
                 # Should have access to state=100.0
                 assert context is not None
@@ -85,7 +85,7 @@ class TestStateVariableInAttributes:
             else:
                 return main_result
 
-        evaluator.evaluate_formula = mock_evaluate_formula
+        evaluator.evaluate_formula_with_sensor_config = mock_evaluate_formula_with_sensor_config
 
         # Mock the _build_variable_context method to return proper variable values
         def mock_build_context(formula_config):
@@ -141,7 +141,7 @@ class TestStateVariableInAttributes:
         # Mock the evaluator
         main_result = {"success": True, "value": 50.0, "state": "ok"}
 
-        def mock_evaluate_formula(config, context=None):
+        def mock_evaluate_formula_with_sensor_config(config, context=None, sensor_config=None):
             if config.id == "simple_attr":
                 # Should have context with state even though _build_variable_context returned None
                 assert context is not None
@@ -151,7 +151,7 @@ class TestStateVariableInAttributes:
             else:
                 return main_result
 
-        evaluator.evaluate_formula = mock_evaluate_formula
+        evaluator.evaluate_formula_with_sensor_config = mock_evaluate_formula_with_sensor_config
 
         # Mock async_write_ha_state to avoid Home Assistant lifecycle issues
         with patch.object(sensor, "async_write_ha_state"):

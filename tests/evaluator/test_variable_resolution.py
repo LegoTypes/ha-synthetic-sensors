@@ -49,7 +49,7 @@ class TestVariableResolution:
 
     def test_formula_config_with_variables(self, mock_hass):
         """Test that FormulaConfig with variables can be evaluated correctly."""
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Create a formula config similar to SPAN Panel solar sensors
         config = FormulaConfig(

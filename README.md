@@ -16,8 +16,8 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support%20development-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/cayossarian)
 
-A Python package for creating formula-based synthetic sensors in Home Assistant integrations
-using YAML configuration and mathematical expressions.
+A Python package for creating formula-based synthetic sensors in Home Assistant integrations using YAML configuration and
+mathematical expressions.
 
 ## What it does
 
@@ -60,8 +60,8 @@ poetry install --with dev
 
 ## Getting Started
 
-For detailed implementation examples, API documentation, and integration patterns,
-see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
+For detailed implementation examples, API documentation, and integration patterns, see the
+[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
 
 The package provides a public API:
 
@@ -77,7 +77,7 @@ The package provides a public API:
 ### Simple Calculated Sensors
 
 ```yaml
-version: "1.0"  # Required: YAML schema version
+version: "1.0" # Required: YAML schema version
 
 sensors:
   # Single formula sensor (90% of use cases)
@@ -87,7 +87,7 @@ sensors:
     variables:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
-      conversion_factor: 1000                    # Literal: watts to kilowatts
+      conversion_factor: 1000 # Literal: watts to kilowatts
     metadata:
       unit_of_measurement: "¢/h"
       state_class: "measurement"
@@ -100,7 +100,7 @@ sensors:
     formula: "abs(min(grid_power, zero_threshold))"
     variables:
       grid_power: "sensor.span_panel_current_power"
-      zero_threshold: 0                         # Literal: threshold value
+      zero_threshold: 0 # Literal: threshold value
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -170,8 +170,8 @@ sensors:
 
 ### Literal Attribute Values
 
-Attributes can be defined as literal values without requiring formulas. This is useful for static information like
-device specifications, constants, or metadata that doesn't need calculation:
+Attributes can be defined as literal values without requiring formulas. This is useful for static information like device
+specifications, constants, or metadata that doesn't need calculation:
 
 ```yaml
 sensors:
@@ -272,20 +272,22 @@ sensors:
 
 **Device Association Fields:**
 
-- **`device_identifier`** *(required)*: Unique identifier for the device
-- **`device_name`** *(optional)*: Human-readable device name
-- **`device_manufacturer`** *(optional)*: Device manufacturer
-- **`device_model`** *(optional)*: Device model
-- **`device_sw_version`** *(optional)*: Software version
-- **`device_hw_version`** *(optional)*: Hardware version
-- **`suggested_area`** *(optional)*: Suggested Home Assistant area
+- **`device_identifier`** _(required)_: Unique identifier for the device
+- **`device_name`** _(optional)_: Human-readable device name
+- **`device_manufacturer`** _(optional)_: Device manufacturer
+- **`device_model`** _(optional)_: Device model
+- **`device_sw_version`** _(optional)_: Software version
+- **`device_hw_version`** _(optional)_: Hardware version
+- **`suggested_area`** _(optional)_: Suggested Home Assistant area
 
 **Device Behavior:**
 
 - **New devices**: If a device with the `device_identifier` doesn't exist, it will be created with the provided information
-- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are ignored)
+- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are
+  ignored)
 - **No device association**: Sensors without `device_identifier` behave as standalone entities (default behavior)
-- **Entity ID generation**: When using device association, entity IDs automatically include the device name prefix (e.g., `sensor.span_panel_main_power`)
+- **Entity ID generation**: When using device association, entity IDs automatically include the device name prefix (e.g.,
+  `sensor.span_panel_main_power`)
 
 **Integration Domain:**
 
@@ -304,16 +306,16 @@ Device association requires specifying the integration domain. See the
 When sensors are associated with devices, entity IDs are automatically generated using the device's name as a prefix:
 
 - **device_identifier** is used to look up the device in Home Assistant's device registry
-- **Device name** (from the device registry) is "slugified" (converted to lowercase, spaces become
-underscores, special characters removed)
+- **Device name** (from the device registry) is "slugified" (converted to lowercase, spaces become underscores, special
+  characters removed)
 - Entity ID pattern: `sensor.{slugified_device_name}_{sensor_key}`
 - Examples:
   - device_identifier "njs-abc-123" → Device "SPAN Panel House" → `sensor.span_panel_house_current_power`
   - device_identifier "solar_inv_01" → Device "Solar Inverter" → `sensor.solar_inverter_efficiency`
   - device_identifier "circuit_a1" → Device "Circuit - Phase A" → `sensor.circuit_phase_a_current`
 
-This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to,
-while avoiding conflicts between sensors from different devices.
+This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to, while
+avoiding conflicts between sensors from different devices.
 
 ## How attributes work
 
@@ -351,8 +353,8 @@ In this example:
 
 ### Metadata Dictionary
 
-The `metadata` dictionary provides extensible support for all Home Assistant sensor propertiesl.
-This metadata is added directly to the sensor when the sensor is created in Home Assistant.
+The `metadata` dictionary provides extensible support for all Home Assistant sensor propertiesl. This metadata is added
+directly to the sensor when the sensor is created in Home Assistant.
 
 ```yaml
 sensors:
@@ -383,7 +385,7 @@ sensors:
       # Advanced properties
       assumed_state: false
       last_reset: null
-      options: ["low", "medium", "high"]  # for enum device classes
+      options: ["low", "medium", "high"] # for enum device classes
 
       # Custom properties (passed through to HA)
       custom_property: "custom_value"
@@ -443,15 +445,14 @@ The metadata system follows a clear hierarchy:
 
 ### Validation Rules
 
-**Entity-Only Properties:**
-These properties are only valid for sensors and will cause validation errors if used in attribute metadata:
+**Entity-Only Properties:** These properties are only valid for sensors and will cause validation errors if used in attribute
+metadata:
 
 - **Device Properties**: `device_class`, `state_class`
 - **Registry Properties**: `entity_category`, `entity_registry_enabled_default`, `entity_registry_visible_default`
 - **Behavior Properties**: `assumed_state`, `last_reset`, `force_update`, `available`, `options`
 
-**Attribute-Safe Properties:**
-These properties are valid for both sensors and attributes:
+**Attribute-Safe Properties:** These properties are valid for both sensors and attributes:
 
 - **Display Properties**: `unit_of_measurement`, `icon`, `suggested_display_precision`, `suggested_unit_of_measurement`
 - **Attribution**: `attribution`
@@ -465,18 +466,18 @@ sensors:
     name: "Power Sensor"
     formula: "base_power"
     metadata:
-      device_class: "power"  # Valid for sensors
+      device_class: "power" # Valid for sensors
       unit_of_measurement: "W"
     attributes:
       daily_total:
         formula: "state * 24"
         metadata:
-          unit_of_measurement: "Wh"  # Valid for attributes
-          device_class: "energy"     # ERROR: Not allowed for attributes
+          unit_of_measurement: "Wh" # Valid for attributes
+          device_class: "energy" # ERROR: Not allowed for attributes
 ```
 
-**Attribute Metadata:**
-Attributes define their own metadata independently. Attributes cannot use entity-specific metadata properties:
+**Attribute Metadata:** Attributes define their own metadata independently. Attributes cannot use entity-specific metadata
+properties:
 
 ```yaml
 attributes:
@@ -489,8 +490,7 @@ attributes:
       # device_class: "energy"  # ERROR: Not allowed for attributes
 ```
 
-**Attribute Metadata Restrictions:**
-The following properties are only valid for sensors, not attributes:
+**Attribute Metadata Restrictions:** The following properties are only valid for sensors, not attributes:
 
 - `device_class`, `state_class`, `entity_category`
 - `entity_registry_enabled_default`, `entity_registry_visible_default`
@@ -581,18 +581,19 @@ sensors:
 
 ## Entity Reference Patterns
 
-| Pattern Type | Syntax | Example | Use Case |
-| ------------ | ------ | ------- | -------- |
-| **Direct Entity ID** | `sensor.entity_name` | `sensor.power_meter` | Quick references, cross-sensor |
-| **Variable Alias** | `variable_name` | `power_meter` | Most common, clean formulas |
-| **Sensor Key Reference** | `sensor_key` | `energy_analysis` | Reference other synthetic sensors |
-| **State Alias (attributes)** | `state` | `state * 24` | In attributes, reference main sensor |
-| **Attribute Dot Notation** | `entity.attribute` | `sensor1.battery_level` | Access entity attributes |
-| **Collection Functions** | `mathFunc(pattern:value)` | `sum(device_class:temperature)` | Aggregate entities by pattern |
+| Pattern Type                 | Syntax                    | Example                         | Use Case                             |
+| ---------------------------- | ------------------------- | ------------------------------- | ------------------------------------ |
+| **Direct Entity ID**         | `sensor.entity_name`      | `sensor.power_meter`            | Quick references, cross-sensor       |
+| **Variable Alias**           | `variable_name`           | `power_meter`                   | Most common, clean formulas          |
+| **Sensor Key Reference**     | `sensor_key`              | `energy_analysis`               | Reference other synthetic sensors    |
+| **State Alias (attributes)** | `state`                   | `state * 24`                    | In attributes, reference main sensor |
+| **Attribute Dot Notation**   | `entity.attribute`        | `sensor1.battery_level`         | Access entity attributes             |
+| **Collection Functions**     | `mathFunc(pattern:value)` | `sum(device_class:temperature)` | Aggregate entities by pattern        |
 
 **Entity ID Generation**:
 
-- **With device association**: `sensor.{device_prefix}_{sensor_key}` where device_prefix is auto-generated from the device name
+- **With device association**: `sensor.{device_prefix}_{sensor_key}` where device_prefix is auto-generated from the device
+  name
 - **Without device association**: `sensor.{sensor_key}`
 - **Explicit override**: Use the optional `entity_id` field to specify exact entity ID
 
@@ -630,8 +631,8 @@ sensors:
     variables:
       grid_power: "sensor.grid_meter"
       solar_power: "sensor.solar_inverter"
-      efficiency_factor: 0.85                    # Numeric literal: efficiency constant
-      tax_rate: 0.095                           # Numeric literal: tax percentage
+      efficiency_factor: 0.85 # Numeric literal: efficiency constant
+      tax_rate: 0.095 # Numeric literal: tax percentage
     attributes:
       daily_projection:
         formula: "energy_analysis * 24" # References main sensor by key
@@ -644,19 +645,19 @@ sensors:
           unit_of_measurement: "%"
           suggested_display_precision: 1
       cost_with_tax:
-        formula: "energy_analysis * (1 + tax_rate)"  # Uses sensor-level variable
+        formula: "energy_analysis * (1 + tax_rate)" # Uses sensor-level variable
         metadata:
           unit_of_measurement: "¢"
           suggested_display_precision: 2
       low_battery_count:
         formula: "count(battery_devices.battery_level<20)" # Uses attribute-level variable
         variables:
-          battery_devices: "device_class:battery"  # Attribute-specific variable
+          battery_devices: "device_class:battery" # Attribute-specific variable
         metadata:
           unit_of_measurement: "devices"
           icon: "mdi:battery-alert"
       temperature_difference:
-        formula: "outdoor_temp - indoor_temp"  # Uses only attribute-level variables
+        formula: "outdoor_temp - indoor_temp" # Uses only attribute-level variables
         variables:
           outdoor_temp: "sensor.outdoor_temperature"
           indoor_temp: "sensor.indoor_temperature"
@@ -678,8 +679,8 @@ sensors:
     # This formula uses both integration-provided data and HA entities
     formula: "local_meter_power + grid_power + solar_power"
     variables:
-      local_meter_power: "span.meter_001"  # From integration callback
-      grid_power: "sensor.grid_power"      # From Home Assistant
+      local_meter_power: "span.meter_001" # From integration callback
+      grid_power: "sensor.grid_power" # From Home Assistant
       solar_power: "sensor.solar_inverter" # From Home Assistant
     metadata:
       unit_of_measurement: "W"
@@ -691,7 +692,7 @@ sensors:
     name: "Internal Efficiency"
     formula: "internal_sensor_a / internal_sensor_b * 100"
     variables:
-      internal_sensor_a: "span.efficiency_input"   # From integration
+      internal_sensor_a: "span.efficiency_input" # From integration
       internal_sensor_b: "span.efficiency_baseline" # From integration
     metadata:
       unit_of_measurement: "%"
@@ -792,8 +793,8 @@ formula: sum("regex:circuit_pattern")
 
 **Empty Collection Behavior:**
 
-When a collection pattern matches no entities, the collection functions return `0` instead of making the sensor
-unavailable. This provides robust behavior for dynamic entity collections.
+When a collection pattern matches no entities, the collection functions return `0` instead of making the sensor unavailable.
+This provides robust behavior for dynamic entity collections.
 
 ```yaml
 # These return 0 when no entities match the pattern
@@ -830,9 +831,9 @@ For detailed formula examples and programming patterns, see the
 
 ## Variables and Configuration
 
-Numeric literals can be used directly in variable definitions for constants, conversion factors, and thresholds.
-Literals can also be used as attribute values without requiring formulas. Literals can also be used as attribute
-values without requiring formulas.
+Numeric literals can be used directly in variable definitions for constants, conversion factors, and thresholds. Literals can
+also be used as attribute values without requiring formulas. Literals can also be used as attribute values without requiring
+formulas.
 
 ```yaml
 sensors:
@@ -841,9 +842,9 @@ sensors:
     formula: "(temp_f - freezing_f) * conversion_factor / celsius_factor"
     variables:
       temp_f: "sensor.outdoor_temperature_f"
-      freezing_f: 32                     # Literal: Fahrenheit freezing point
-      conversion_factor: 5               # Literal: F to C numerator
-      celsius_factor: 9                  # Literal: F to C denominator
+      freezing_f: 32 # Literal: Fahrenheit freezing point
+      conversion_factor: 5 # Literal: F to C numerator
+      celsius_factor: 9 # Literal: F to C denominator
     metadata:
       unit_of_measurement: "°C"
       device_class: "temperature"
@@ -854,8 +855,8 @@ sensors:
     formula: "actual_power / rated_power * percentage"
     variables:
       actual_power: "sensor.current_power"
-      rated_power: 1000                  # Literal: rated power in watts
-      percentage: 100                    # Literal: convert to percentage
+      rated_power: 1000 # Literal: rated power in watts
+      percentage: 100 # Literal: convert to percentage
     metadata:
       unit_of_measurement: "%"
       suggested_display_precision: 1
@@ -865,8 +866,8 @@ sensors:
     formula: "energy_kwh * rate_per_kwh * (1 + tax_rate)"
     variables:
       energy_kwh: "sensor.energy_usage"
-      rate_per_kwh: 0.12                 # Literal: cost per kWh
-      tax_rate: 0.085                    # Literal: tax percentage
+      rate_per_kwh: 0.12 # Literal: cost per kWh
+      tax_rate: 0.085 # Literal: tax percentage
     metadata:
       unit_of_measurement: "$"
       device_class: "monetary"
@@ -891,9 +892,9 @@ sensors:
     name: "Device Activity Score"
     formula: "motion_sensor * 10 + door_sensor * 5 + switch_state * 2"
     variables:
-      motion_sensor: "binary_sensor.living_room_motion"    # "motion" → 1.0, "clear" → 0.0
-      door_sensor: "binary_sensor.front_door"              # "open" → 1.0, "closed" → 0.0
-      switch_state: "switch.living_room_light"             # "on" → 1.0, "off" → 0.0
+      motion_sensor: "binary_sensor.living_room_motion" # "motion" → 1.0, "clear" → 0.0
+      door_sensor: "binary_sensor.front_door" # "open" → 1.0, "closed" → 0.0
+      switch_state: "switch.living_room_light" # "on" → 1.0, "off" → 0.0
     metadata:
       unit_of_measurement: "points"
       icon: "mdi:chart-line"
@@ -926,7 +927,8 @@ Device class-specific states are also supported (e.g., `normal`/`low` for batter
 
 ## Why use this instead of templates?
 
-This package provides cleaner syntax for mathematical operations and better sensor management compared to Home Assistant templates.
+This package provides cleaner syntax for mathematical operations and better sensor management compared to Home Assistant
+templates.
 
 **This package:** Clean mathematical expressions with variable mapping
 
@@ -942,10 +944,9 @@ variables:
 
 ```yaml
 value_template: >
-  {% set net_power = states('sensor.span_panel_net_power')|float %}
-  {% set buy_rate = states('input_number.electricity_buy_rate')|float %}
-  {% set sell_rate = states('input_number.electricity_sell_rate')|float %}
-  {% if net_power > 0 %}
+  {% set net_power = states('sensor.span_panel_net_power')|float %} {% set buy_rate =
+  states('input_number.electricity_buy_rate')|float %} {% set sell_rate = states('input_number.electricity_sell_rate')|float
+  %} {% if net_power > 0 %}
     {{ net_power * buy_rate / 1000 }}
   {% else %}
     {{ (net_power|abs) * sell_rate / 1000 }}
@@ -993,14 +994,13 @@ The package provides a clean, stable public API:
 
 ### Architecture
 
-The package uses a modular architecture with clear separation between configuration management,
-formula evaluation, and Home Assistant integration. All internal implementation details are
-encapsulated behind the public API.
+The package uses a modular architecture with clear separation between configuration management, formula evaluation, and Home
+Assistant integration. All internal implementation details are encapsulated behind the public API.
 
 ## Contributing
 
-Contributions are welcome! Please see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md)
-for development setup and contribution guidelines.
+Contributions are welcome! Please see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for development
+setup and contribution guidelines.
 
 ## License
 

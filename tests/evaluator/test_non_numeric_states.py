@@ -22,7 +22,7 @@ class TestNonNumericStateHandling:
 
     def test_non_numeric_state_detection(self, mock_hass):
         """Test that boolean-like states are converted to numeric values for mathematical operations."""
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Mock entity with boolean-like state
         mock_state = MagicMock()
@@ -41,7 +41,7 @@ class TestNonNumericStateHandling:
 
     def test_comprehensive_boolean_conversion(self, mock_hass):
         """Test comprehensive boolean-to-numeric conversion for various device types."""
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Test cases: (state, expected_numeric_value, device_class)
         test_cases = [

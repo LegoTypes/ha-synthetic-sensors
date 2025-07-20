@@ -44,8 +44,8 @@ class TestEvaluatorCache:
         evaluator._cache_handler = MagicMock()
         evaluator._cache_handler.get_cache_stats.return_value = mock_stats
 
-        # Add some error counts
-        evaluator._error_count = {"formula1": 2, "formula2": 1}
+        # Add some error counts using the error handler
+        evaluator._error_handler._error_count = {"formula1": 2, "formula2": 1}
 
         # Get cache stats
         stats = evaluator.get_cache_stats()
@@ -139,8 +139,11 @@ class TestEvaluatorCache:
         # Create formula config
         config = FormulaConfig(id="test_formula", formula="sensor_test", variables={"sensor_test": "sensor.test"})
 
-        # Evaluate formula
-        result = evaluator.evaluate_formula(config)
+        # Create context with the variable value
+        context = {"sensor_test": 42.5}
+
+        # Evaluate formula with context
+        result = evaluator.evaluate_formula(config, context)
 
         # Verify evaluation was successful
         assert result["success"] is True
@@ -158,7 +161,7 @@ class TestEvaluatorCache:
         evaluator._cache_handler.get_cache_stats.return_value = mock_stats
 
         # Simulate some error counts
-        evaluator._error_count = {"failing_formula": 3, "another_failing_formula": 1, "third_formula": 5}
+        evaluator._error_handler._error_count = {"failing_formula": 3, "another_failing_formula": 1, "third_formula": 5}
 
         # Get cache stats
         stats = evaluator.get_cache_stats()

@@ -90,15 +90,15 @@ class TestHybridDataAccess:
     @pytest.fixture
     def evaluator_with_registration(self, mock_hass: MagicMock, mock_integration_data_provider: Any):
         """Create an evaluator with push-based registration."""
-        # Create evaluator without callbacks first
-        evaluator = Evaluator(hass=mock_hass)
+        # Create evaluator with HA lookups enabled
+        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
 
         # Register integration entities directly with all available entities
         all_entities = set(mock_integration_data_provider._data.keys())
         evaluator.update_integration_entities(all_entities)
 
         # Mock the data provider callback for backward compatibility
-        evaluator._data_provider_callback = mock_integration_data_provider.get_data
+        evaluator.data_provider_callback = mock_integration_data_provider.get_data
 
         return evaluator
 
@@ -128,7 +128,7 @@ class TestHybridDataAccess:
         formula_config = sensor_config.formulas[0]  # Get the main formula
 
         # Evaluate the formula - should use only integration registered data
-        result = evaluator_with_registration.evaluate_formula(formula_config, {})
+        result = evaluator_with_registration.evaluate_formula_with_sensor_config(formula_config, {}, sensor_config)
 
         assert result["success"] is True
         # 850.0 / 1000.0 * 100 = 85.0
@@ -213,7 +213,7 @@ class TestHybridDataAccess:
                 return {"value": integration_data[entity_id], "exists": True}
             return {"value": None, "exists": False}
 
-        evaluator._data_provider_callback = data_provider
+        evaluator.data_provider_callback = data_provider
 
         # Create a formula that uses an entity ID that exists in both integration and HA
         # Add the same entity to HA with a different value
@@ -248,7 +248,7 @@ class TestHybridDataAccess:
                 return {"value": integration_data[entity_id], "exists": True}
             return {"value": None, "exists": False}
 
-        evaluator._data_provider_callback = failing_data_provider
+        evaluator.data_provider_callback = failing_data_provider
 
         formula_config = FormulaConfig(
             id="test_formula_error",
@@ -295,11 +295,11 @@ class TestHybridDataAccess:
 
     def test_no_registration_defaults_to_ha_only(self, mock_hass):
         """Test that evaluator without registration uses only HA state queries."""
-        evaluator = Evaluator(hass=mock_hass)
+        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
 
         # Should not have registered entities or callbacks
         assert evaluator.get_integration_entities() == set()
-        assert evaluator._data_provider_callback is None
+        assert evaluator.data_provider_callback is None
 
         # Mock HA state for specific entity
         def mock_get_state(entity_id):
@@ -327,7 +327,7 @@ class TestHybridDataAccess:
         """Test that registration correctly determines which entities use integration data."""
 
         # Create evaluator and register only subset of integration entities
-        evaluator = Evaluator(hass=mock_hass)
+        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
 
         # Only register subset of integration entities
         registered_entities = {"span.meter_001", "span.local_sensor"}
@@ -339,7 +339,7 @@ class TestHybridDataAccess:
                 return {"value": integration_data[entity_id], "exists": True}
             return {"value": None, "exists": False}
 
-        evaluator._data_provider_callback = data_provider
+        evaluator.data_provider_callback = data_provider
 
         # Mock HA for entities not in integration registration
         def mock_get_state(entity_id):
@@ -367,7 +367,7 @@ class TestHybridDataAccess:
         )
         result2 = evaluator.evaluate_formula(formula_config2, {})
         assert result2["success"] is True
-        assert result2["value"] == 999.0  # HA value, not integration value (850.0)
+        assert result2["value"] == 999.0  # HA value
 
     def test_registration_update_functionality(self, mock_hass, integration_data):
         """Test that registration can be updated dynamically."""

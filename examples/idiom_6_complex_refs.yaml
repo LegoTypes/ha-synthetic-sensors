@@ -1,0 +1,108 @@
+# Test Scenario 6.3: Complex Attribute References
+# Purpose: Test complex attribute reference patterns
+# Expected: All references resolve correctly
+# Validation: Evaluation order is maintained
+
+sensors:
+  # Test complex attribute references in main formula
+  complex_refs_main:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state.voltage * state.current * state.power_factor  # Complex attribute references
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Refs Main Formula"
+
+  # Test complex attribute references in attributes
+  complex_refs_attributes:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Complex attribute reference in attribute formula
+      voltage_analysis:
+        formula: state.voltage * 1.1  # References main sensor's voltage attribute
+        metadata:
+          unit_of_measurement: V
+          friendly_name: "Voltage Analysis"
+      current_analysis:
+        formula: state.current * 0.9  # References main sensor's current attribute
+        metadata:
+          unit_of_measurement: A
+          friendly_name: "Current Analysis"
+      power_factor_analysis:
+        formula: state.power_factor if state.power_factor else 1.0  # Conditional attribute reference
+        metadata:
+          unit_of_measurement: ratio
+          friendly_name: "Power Factor Analysis"
+      # Complex calculation using multiple attribute references
+      complex_calculation:
+        formula: (state.voltage * state.current * state.power_factor) / 1000  # Multiple attribute refs
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Complex Calculation"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Refs Attributes"
+
+  # Test nested attribute references
+  nested_attr_refs:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Nested attribute reference
+      device_info:
+        formula: state.device_info.manufacturer + " " + state.device_info.model  # Nested attributes
+        metadata:
+          unit_of_measurement: string
+          friendly_name: "Device Info"
+      # Deep nested attribute reference
+      deep_nested:
+        formula: state.attributes.device_info.manufacturer + "_" + state.attributes.device_info.model  # Deep nesting
+        metadata:
+          unit_of_measurement: string
+          friendly_name: "Deep Nested"
+      # Conditional nested attribute reference
+      conditional_nested:
+        formula: state.attributes.power_factor.value if state.attributes.power_factor else 1.0  # Conditional nested
+        metadata:
+          unit_of_measurement: ratio
+          friendly_name: "Conditional Nested"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Nested Attribute Refs"
+
+  # Test mixed attribute reference patterns
+  mixed_attr_patterns:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Mixed direct and attribute references
+      mixed_calculation:
+        formula: state + state.voltage * state.current  # Mixed references
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Mixed Calculation"
+      # Attribute reference with external entity
+      external_attr_ref:
+        formula: state.voltage * sensor.span_panel_instantaneous_power  # External entity reference
+        metadata:
+          unit_of_measurement: V
+          friendly_name: "External Attribute Ref"
+      # Complex conditional with attribute references
+      conditional_attr:
+        formula: state.voltage if state.voltage > 120 else 120  # Conditional with attribute ref
+        metadata:
+          unit_of_measurement: V
+          friendly_name: "Conditional Attribute"
+      # Mathematical operations with attribute references
+      math_attr:
+        formula: (state.voltage ** 2) / state.current  # Mathematical operations with attributes
+        metadata:
+          unit_of_measurement: V
+          friendly_name: "Math Attribute"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Mixed Attribute Patterns"

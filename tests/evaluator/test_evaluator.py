@@ -26,7 +26,9 @@ class TestEvaluator:
         assert evaluator._hass == mock_hass
         assert evaluator._cache is not None
         assert evaluator._dependency_parser is not None
-        assert evaluator._math_functions is not None
+        assert evaluator._handler_factory is not None
+        assert evaluator._variable_resolution_phase is not None
+        assert evaluator._dependency_management_phase is not None
 
     def test_extract_variables(self, mock_hass):
         """Test variable extraction from formulas."""
@@ -50,14 +52,6 @@ class TestEvaluator:
     def test_safe_functions(self, mock_hass):
         """Test that safe functions are available."""
         evaluator = Evaluator(mock_hass)
-
-        # Test that core math functions are available
-        safe_functions = evaluator._math_functions
-        assert "abs" in safe_functions
-        assert "min" in safe_functions
-        assert "max" in safe_functions
-        assert "sum" in safe_functions
-        assert "round" in safe_functions
 
         # Test basic formula with safe functions
         config = FormulaConfig(id="safe_func", name="safe_func", formula="abs(-10) + max(5, 3) + min(1, 2)")
@@ -225,21 +219,27 @@ class TestEvaluator:
         cb_config = CircuitBreakerConfig(max_fatal_errors=2)
         evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config)
 
-        # Mock a missing entity to trigger fatal errors
-        mock_hass.states.get.return_value = None
-
+        # Create a formula that will trigger a fatal error (missing dependency)
+        # Use a formula that references an entity that doesn't exist
         config = FormulaConfig(id="test_formula", name="test", formula="missing_entity + 1")
 
-        # First two evaluations should attempt and fail
+        # Mock the dependency handler to return missing dependencies
+        # This simulates the case where an entity is not found
+        def mock_check_dependencies(dependencies, context=None, collection_pattern_entities=None):
+            return {"missing_entity"}, set(), set()
+
+        evaluator._dependency_handler.check_dependencies = mock_check_dependencies
+
+        # First two evaluations should attempt and fail with fatal errors
         result1 = evaluator.evaluate_formula(config)
         assert result1["success"] is False
         assert "error" in result1
-        assert "missing_entity" in result1["error"]
+        assert "Missing dependencies" in result1["error"]
 
         result2 = evaluator.evaluate_formula(config)
         assert result2["success"] is False
         assert "error" in result2
-        assert "missing_entity" in result2["error"]
+        assert "Missing dependencies" in result2["error"]
 
         # Third evaluation should be skipped due to circuit breaker
         result3 = evaluator.evaluate_formula(config)

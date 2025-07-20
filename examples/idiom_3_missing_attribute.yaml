@@ -1,0 +1,43 @@
+version: "1.0"
+
+# Idiom 3 Test Scenario 3.4: Missing Attribute Error
+# Purpose: Validate that MissingDependencyError is raised when referencing non-existent attribute
+# Expected: MissingDependencyError is raised
+# Validation: Exception is raised immediately
+
+sensors:
+  # This should cause MissingDependencyError
+  problematic_sensor:
+    name: "Problematic Sensor"
+    formula: device.nonexistent_attribute * 2  # Attribute doesn't exist
+    variables:
+      device: sensor.power_meter  # Entity exists but attribute doesn't
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:alert
+
+  # Another problematic case
+  invalid_attribute_access:
+    name: "Invalid Attribute Access"
+    formula: sensor.invalid_attribute_name  # Invalid attribute name
+    variables:
+      sensor: sensor.temperature_sensor  # Entity exists but attribute doesn't
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement
+      icon: mdi:alert-circle
+
+  # Test with malformed attribute reference
+  malformed_attribute:
+    name: "Malformed Attribute"
+    formula: device.attribute.with.dots  # Malformed attribute reference
+    variables:
+      device: sensor.power_meter
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:alert-circle-outline

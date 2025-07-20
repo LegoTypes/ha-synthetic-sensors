@@ -1,6 +1,6 @@
 """Tests for collection function implementation."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
@@ -294,63 +294,65 @@ class TestMathFunctions:
 
 
 class TestFormulaPreprocessing:
-    """Test formula preprocessing with collection functions."""
+    """Test formula preprocessing functionality."""
 
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.mock_hass = Mock()
-        self.mock_hass.data = {}
+    def test_preprocess_formula_no_collection_functions(self, mock_hass):
+        """Test preprocessing formula with no collection functions."""
+        evaluator = Evaluator(mock_hass)
 
-        # Mock successful registry initialization
-        with (
-            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
-            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
-            patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
-        ):
-            self.evaluator = Evaluator(self.mock_hass)
+        formula = "temp + humidity"
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
 
-    def test_preprocess_formula_no_collection_functions(self):
-        """Test formula preprocessing without collection functions."""
-        formula = "sensor.power_meter + 10"
-        result = self.evaluator._preprocess_formula_for_evaluation(formula)
-
-        # Should normalize entity IDs but otherwise leave formula unchanged
-        assert "sensor_power_meter" in result
-        assert "sensor.power_meter" not in result
-
-    def test_collection_resolver_no_queries(self):
-        """Test formula preprocessing with no collection queries."""
-        # Test that normal formulas work without collection functions
-        formula = "sensor.power_meter + 10"
-        result = self.evaluator._preprocess_formula_for_evaluation(formula)
-
-        # Should normalize entity IDs but otherwise leave formula unchanged
-        assert "sensor_power_meter" in result
-        assert "sensor.power_meter" not in result
-
-    def test_collection_resolver_with_queries(self):
-        """Test that collection function formulas are passed through unchanged."""
-        # Collection functions are an advanced feature not yet implemented in preprocessing
-        formula = 'sum("regex:sensor\\.test.*")'
-        result = self.evaluator._preprocess_formula_for_evaluation(formula)
-
-        # Should pass through unchanged since collection functions aren't preprocessed
         assert result == formula
 
-    def test_collection_resolver_no_matches(self):
-        """Test that collection function formulas are passed through when no matches."""
-        # Collection functions are an advanced feature not yet implemented in preprocessing
-        formula = 'sum("regex:nonexistent.*")'
-        result = self.evaluator._preprocess_formula_for_evaluation(formula)
+    def test_collection_resolver_no_queries(self, mock_hass):
+        """Test collection resolver with no queries."""
+        evaluator = Evaluator(mock_hass)
 
-        # Should pass through unchanged since collection functions aren't preprocessed
-        assert result == formula
+        formula = "sum('device_class:power')"
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
 
-    def test_collection_resolver_no_numeric_values(self):
-        """Test that collection function formulas are passed through when no numeric values."""
-        # Collection functions are an advanced feature not yet implemented in preprocessing
-        formula = 'sum("regex:sensor\\.test.*")'
-        result = self.evaluator._preprocess_formula_for_evaluation(formula)
+        # Should replace with default value when no entities found
+        assert result == "0"
 
-        # Should pass through unchanged since collection functions aren't preprocessed
-        assert result == formula
+    def test_collection_resolver_with_queries(self, mock_hass):
+        """Test collection resolver with queries."""
+        evaluator = Evaluator(mock_hass)
+
+        # Mock the collection resolver to return entity IDs and values
+        evaluator._collection_resolver.resolve_collection = MagicMock(return_value=["sensor.power1", "sensor.power2"])
+        evaluator._collection_resolver.get_entity_values = MagicMock(return_value=[100.0, 200.0])
+
+        formula = "sum('device_class:power')"
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+
+        # Should replace with calculated sum
+        assert result == "300.0"
+
+    def test_collection_resolver_no_matches(self, mock_hass):
+        """Test collection resolver with no matching entities."""
+        evaluator = Evaluator(mock_hass)
+
+        # Mock the collection resolver to return no values
+        evaluator._collection_resolver.resolve_collection = MagicMock(return_value=None)
+        evaluator._collection_resolver.parse_query = MagicMock(return_value=MagicMock())
+
+        formula = "count('device_class:power')"
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+
+        # Should replace with default value
+        assert result == "0"
+
+    def test_collection_resolver_no_numeric_values(self, mock_hass):
+        """Test collection resolver with no numeric values."""
+        evaluator = Evaluator(mock_hass)
+
+        # Mock the collection resolver to return no values
+        evaluator._collection_resolver.resolve_collection = MagicMock(return_value=[])
+        evaluator._collection_resolver.parse_query = MagicMock(return_value=MagicMock())
+
+        formula = "avg('device_class:power')"
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+
+        # Should replace with default value
+        assert result == "0"

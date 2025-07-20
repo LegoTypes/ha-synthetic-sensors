@@ -1,0 +1,50 @@
+# Test Scenario 4.2: Sensor Key in Attributes
+# Purpose: Test attribute formula using sensor key name
+# Expected: Resolves to main sensor's post-evaluation result
+# Validation: Attribute uses main sensor's calculated value
+
+sensors:
+  # Test sensor key reference in attributes
+  sensor_key_attribute_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      daily_cost:
+        formula: sensor_key_attribute_test * 24  # Uses sensor key reference
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost (Sensor Key)"
+      weekly_cost:
+        formula: sensor_key_attribute_test * 24 * 7  # Uses sensor key reference
+        metadata:
+          unit_of_measurement: cents/week
+          friendly_name: "Weekly Cost (Sensor Key)"
+      monthly_cost:
+        formula: sensor_key_attribute_test * 24 * 30  # Uses sensor key reference
+        metadata:
+          unit_of_measurement: cents/month
+          friendly_name: "Monthly Cost (Sensor Key)"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Cost Calculator (Sensor Key Test)"
+
+  # Test sensor key with complex calculations
+  complex_sensor_key_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      power_efficiency:
+        formula: complex_sensor_key_test / sensor.span_panel_instantaneous_power * 100
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Power Efficiency"
+      power_trend:
+        formula: (complex_sensor_key_test + sensor.span_panel_instantaneous_power) / 2
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power Trend"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Sensor Key Test"

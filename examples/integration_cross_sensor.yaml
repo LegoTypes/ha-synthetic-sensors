@@ -1,0 +1,115 @@
+# Test Scenario INT.2: Cross-Sensor Dependencies
+# Purpose: Test sensors reference each other using idioms
+# Expected: Cross-sensor references work correctly
+# Validation: Dependency order is maintained
+
+sensors:
+  # Base sensor that others will reference
+  base_power_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.0  # Pass through backing entity value
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Base Power Sensor"
+
+  # Sensor that references base sensor
+  derived_power_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: base_power_sensor * 1.1  # References another sensor
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Derived Power Sensor"
+
+  # Sensor that references multiple other sensors
+  multi_ref_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: base_power_sensor + derived_power_sensor  # References 2 other sensors
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Multi Reference Sensor"
+
+  # Sensor with attributes that reference other sensors
+  attr_cross_ref_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Attribute referencing another sensor
+      base_cost:
+        formula: base_power_sensor * 0.25  # References base sensor
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Base Cost"
+      # Attribute referencing derived sensor
+      derived_cost:
+        formula: derived_power_sensor * 0.25  # References derived sensor
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Derived Cost"
+      # Attribute referencing multiple sensors
+      total_cost:
+        formula: base_cost + derived_cost  # References other attributes
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Total Cost"
+      # Attribute with complex cross-sensor calculation
+      efficiency_cost:
+        formula: (base_power_sensor / derived_power_sensor) * base_cost  # Complex cross-ref
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Efficiency Cost"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Attribute Cross Reference Sensor"
+
+  # Sensor with circular reference to itself (should work for self-reference)
+  self_ref_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Self-reference in attribute (should work)
+      self_cost:
+        formula: self_ref_sensor * 0.25  # Self-reference to main sensor
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Self Cost"
+      # Cross-reference to other sensor
+      external_cost:
+        formula: base_power_sensor * 0.25  # Cross-reference to base sensor
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "External Cost"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Self Reference Sensor"
+
+  # Sensor with deep dependency chain
+  deep_chain_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: multi_ref_sensor * 0.5  # References sensor that references others
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Deep Chain Sensor"
+
+  # Sensor with conditional cross-references
+  conditional_cross_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: base_power_sensor if base_power_sensor > 500 else derived_power_sensor  # Conditional cross-ref
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Conditional Cross Sensor"
+
+  # Sensor with mathematical operations on cross-references
+  math_cross_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: (base_power_sensor ** 2) / derived_power_sensor  # Mathematical cross-refs
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Math Cross Sensor"

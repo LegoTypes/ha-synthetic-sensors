@@ -21,7 +21,8 @@ from homeassistant.util import dt as dt_util, slugify
 from .config_models import Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
 from .evaluator import Evaluator
-from .exceptions import FormulaEvaluationError
+from .evaluator_phases.dependency_management.generic_dependency_manager import GenericDependencyManager
+from .exceptions import CrossSensorResolutionError, DependencyValidationError, FormulaEvaluationError, MissingDependencyError
 from .metadata_handler import MetadataHandler
 from .name_resolver import NameResolver
 from .type_definitions import DataProviderCallback, DataProviderChangeNotifier
@@ -113,6 +114,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # Initialize calculated attributes storage
         self._calculated_attributes: dict[str, Any] = {}
+
+        # Initialize attribute dependency manager for proper evaluation order
+        self._attribute_dependency_manager = GenericDependencyManager()
 
         # Set base extra state attributes
         self._setup_base_attributes()
@@ -290,32 +294,58 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # Build variable context for the main formula
             main_context = self._build_variable_context(self._main_formula)
 
-            # Evaluate the main formula with variable context
-            main_result = self._evaluator.evaluate_formula(self._main_formula, main_context)
+            # Check if this sensor has a backing entity
+            has_backing_entity = self._config.entity_id is not None or (
+                self._sensor_manager.sensor_to_backing_mapping
+                and self._config.unique_id in self._sensor_manager.sensor_to_backing_mapping
+            )
+
+            # If no backing entity and we have a previous state, provide it in context
+            if not has_backing_entity and self._attr_native_value is not None:
+                if main_context is None:
+                    main_context = {}
+                main_context["state"] = self._attr_native_value
+                _LOGGER.debug(
+                    "Providing previous state %s for sensor %s without backing entity", self._attr_native_value, self.entity_id
+                )
+
+            # Evaluate the main formula with variable context and sensor configuration
+            main_result = self._evaluator.evaluate_formula_with_sensor_config(self._main_formula, main_context, self._config)
 
             if main_result["success"] and main_result["value"] is not None:
                 self._attr_native_value = main_result["value"]
                 self._attr_available = True
                 self._last_update = dt_util.utcnow()
 
-                # Evaluate calculated attributes
+                # Evaluate calculated attributes using dependency manager for proper ordering
                 self._calculated_attributes.clear()
-                for attr_formula in self._attribute_formulas:
-                    # Build variable context for each attribute formula
-                    attr_context = self._build_variable_context(attr_formula)
-                    # Add the sensor's state to the context for attribute formulas
-                    if attr_context is None:
-                        attr_context = {}
-                    attr_context["state"] = main_result["value"]
-                    attr_result = self._evaluator.evaluate_formula(attr_formula, attr_context)
-                    if attr_result["success"] and attr_result["value"] is not None:
-                        # Extract attribute name from formula ID (format: {sensor_unique_id}_{attribute_name})
-                        if attr_formula.id.startswith(f"{self._config.unique_id}_"):
-                            attr_name = attr_formula.id[len(self._config.unique_id) + 1 :]
-                        else:
-                            # Fallback: use the full formula ID if it doesn't match expected pattern
-                            attr_name = attr_formula.id
-                        self._calculated_attributes[attr_name] = attr_result["value"]
+                
+                if self._attribute_formulas:
+                    try:
+                        # Build base context with variables
+                        base_context = {}
+                        if self._attribute_formulas:
+                            # Use the first attribute formula to get variable context
+                            # All attributes inherit the same variables from the sensor
+                            sample_formula = self._attribute_formulas[0]
+                            base_context = self._build_variable_context(sample_formula) or {}
+                        
+                        # Use dependency manager to evaluate attributes in correct order
+                        complete_context = self._attribute_dependency_manager.build_evaluation_context(
+                            sensor_config=self._config,
+                            evaluator=self._evaluator,
+                            base_context=base_context
+                        )
+                        
+                        # Extract calculated attribute values from context
+                        for attr_formula in self._attribute_formulas:
+                            attr_name = self._extract_attribute_name(attr_formula)
+                            if attr_name in complete_context:
+                                self._calculated_attributes[attr_name] = complete_context[attr_name]
+                                
+                    except Exception as e:
+                        _LOGGER.error("Error evaluating attributes for sensor '%s': %s", self._config.unique_id, e)
+                        # Continue without attributes rather than failing the entire sensor
 
                 # Update extra state attributes with calculated values
                 self._update_extra_state_attributes()
@@ -410,7 +440,17 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         """Update the sensor value and calculated attributes (public method)."""
         await self._async_update_sensor()
 
-    # ...existing code...
+    def _extract_attribute_name(self, formula: FormulaConfig) -> str:
+        """Extract attribute name from formula ID."""
+        if formula.id.startswith(f"{self._config.unique_id}_"):
+            return formula.id[len(self._config.unique_id) + 1:]
+        else:
+            # Fallback: use the full formula ID if it doesn't match expected pattern
+            return formula.id
+
+    async def async_update(self) -> None:
+        """Update the sensor value and calculated attributes (public method)."""
+        await self._async_update_sensor()
 
 
 class SensorManager:
@@ -447,6 +487,7 @@ class SensorManager:
         self._registered_entities: set[str] = set()  # entity_ids registered by integration
         self._allow_ha_lookups: bool = False  # Whether backing entities can fall back to HA lookups
         self._change_notifier: DataProviderChangeNotifier | None = None  # Callback for data change notifications
+        self._sensor_to_backing_mapping: dict[str, str] = {}  # Mapping from sensor keys to backing entity IDs
 
         # Configuration tracking
         self._current_config: Config | None = None
@@ -455,6 +496,7 @@ class SensorManager:
         self._evaluator = self._manager_config.evaluator or Evaluator(
             self._hass,
             data_provider_callback=self._manager_config.data_provider_callback,
+            allow_ha_lookups=self._allow_ha_lookups,
         )
         self._config_manager = self._manager_config.config_manager
         self._logger = _LOGGER.getChild(self.__class__.__name__)
@@ -516,6 +558,41 @@ class SensorManager:
             suggested_area=sensor_config.suggested_area,
         )
 
+    def _log_sensor_variables(self, formula: FormulaConfig) -> None:
+        """Log formula variables and their registration status."""
+        if not formula.variables:
+            return
+
+        _LOGGER.info("      Variables:")
+        for var_name, var_value in formula.variables.items():
+            _LOGGER.info("        %s: %s", var_name, var_value)
+
+            # Check if this variable references a registered entity
+            if isinstance(var_value, str) and var_value.startswith("sensor."):
+                if var_value in self._registered_entities:
+                    _LOGGER.info("        ✓ %s is registered as backing entity", var_value)
+                else:
+                    _LOGGER.warning("        ✗ %s is NOT registered as backing entity", var_value)
+
+    def _log_sensor_configuration_details(self, config: Config) -> None:
+        """Log detailed sensor configuration information."""
+        if not config.sensors:
+            _LOGGER.error("No sensors in configuration - this is a fatal error")
+            raise ValueError("No sensors found in configuration")
+
+        _LOGGER.info("Sensor configurations:")
+        for sensor in config.sensors:
+            _LOGGER.info("  Sensor: %s", sensor.unique_id)
+            _LOGGER.info("    Entity ID: %s", sensor.entity_id or "None")
+            _LOGGER.info("    Name: %s", sensor.name)
+            _LOGGER.info("    Enabled: %s", sensor.enabled)
+            _LOGGER.info("    Device identifier: %s", sensor.device_identifier or "None")
+
+            if sensor.formulas:
+                for formula in sensor.formulas:
+                    _LOGGER.info("    Formula '%s': %s", formula.id, formula.formula)
+                    self._log_sensor_variables(formula)
+
     @property
     def managed_sensors(self) -> dict[str, DynamicSensor]:
         """Get all managed sensors."""
@@ -536,7 +613,11 @@ class SensorManager:
 
     async def load_configuration(self, config: Config) -> None:
         """Load a new configuration and update sensors accordingly."""
-        _LOGGER.debug("Loading configuration with %d sensors", len(config.sensors))
+        _LOGGER.info("=== LOADING CONFIGURATION ===")
+        _LOGGER.info("Loading configuration with %d sensors", len(config.sensors))
+
+        # Log detailed sensor information
+        self._log_sensor_configuration_details(config)
 
         old_config = self._current_config
         self._current_config = config
@@ -544,11 +625,14 @@ class SensorManager:
         try:
             # Determine what needs to be updated
             if old_config:
+                _LOGGER.info("Updating existing sensors...")
                 await self._update_existing_sensors(old_config, config)
             else:
+                _LOGGER.info("Creating all sensors from scratch...")
                 await self._create_all_sensors(config)
 
-            _LOGGER.debug("Configuration loaded successfully")
+            _LOGGER.info("Configuration loaded successfully")
+            _LOGGER.info("=== END LOADING CONFIGURATION ===")
 
         except Exception as err:
             _LOGGER.error("Failed to load configuration: %s", err)
@@ -573,6 +657,11 @@ class SensorManager:
             return False
 
         sensor = self._sensors_by_unique_id[sensor_unique_id]
+
+        # CROSS-SENSOR REFERENCE SUPPORT
+        # Unregister the sensor from the evaluator's cross-sensor registry
+        if self._evaluator:
+            self._evaluator.unregister_sensor(sensor_unique_id)
 
         # Clean up our tracking
         del self._sensors_by_unique_id[sensor_unique_id]
@@ -623,6 +712,20 @@ class SensorManager:
             state.last_update = dt_util.utcnow()
             state.is_available = True
 
+        # CROSS-SENSOR REFERENCE SUPPORT
+        # Update the sensor's value in the evaluator's cross-sensor registry
+        # This enables other sensors to reference this sensor's value
+        if self._evaluator:
+            # Get the entity_id for this sensor
+            sensor = self._sensors_by_unique_id.get(sensor_unique_id)
+            if sensor and sensor.entity_id:
+                # Register the sensor if not already registered
+                if sensor_unique_id not in self._evaluator.get_registered_sensors():
+                    self._evaluator.register_sensor(sensor_unique_id, sensor.entity_id, main_value)
+                else:
+                    # Update the existing sensor's value
+                    self._evaluator.update_sensor_value(sensor_unique_id, main_value)
+
     def on_sensor_updated(
         self,
         sensor_unique_id: str,
@@ -633,21 +736,33 @@ class SensorManager:
         self._on_sensor_updated(sensor_unique_id, main_value, calculated_attributes)
 
     async def _create_all_sensors(self, config: Config) -> None:
-        """Create all sensors from scratch."""
+        """Enhanced sensor creation with cross-sensor registry integration."""
         new_entities: list[DynamicSensor] = []
+
+        # Enhanced sensor registration with cross-sensor registry integration
+        await self._register_sensors_in_cross_sensor_registry(config.sensors)
 
         # Create one entity per sensor
         for sensor_config in config.sensors:
             if sensor_config.enabled:
-                sensor = await self._create_sensor_entity(sensor_config)
-                new_entities.append(sensor)
-                self._sensors_by_unique_id[sensor_config.unique_id] = sensor
-                self._sensors_by_entity_id[sensor.entity_id] = sensor
+                try:
+                    sensor = await self._create_sensor_entity(sensor_config)
+                    new_entities.append(sensor)
+                    self._sensors_by_unique_id[sensor_config.unique_id] = sensor
+                    self._sensors_by_entity_id[sensor.entity_id] = sensor
+                except Exception as e:
+                    self._logger.error("Failed to create sensor %s: %s", sensor_config.unique_id, e)
+                    raise
+
+        # Validate cross-sensor dependencies after registration
+        self._validate_cross_sensor_dependencies(config.sensors)
 
         # Add entities to Home Assistant
         if new_entities:
             self._add_entities_callback(new_entities)
-            _LOGGER.debug("Created %d sensor entities", len(new_entities))
+            _LOGGER.debug("Created %d sensor entities with enhanced cross-sensor integration", len(new_entities))
+        else:
+            _LOGGER.warning("No sensors found in configuration, not creating any entities.")
 
     async def _create_sensor_entity(self, sensor_config: SensorConfig) -> DynamicSensor:
         """Create a sensor entity from configuration."""
@@ -728,7 +843,16 @@ class SensorManager:
         if self._current_config and self._current_config.global_settings:
             global_settings = self._current_config.global_settings
 
-        return DynamicSensor(self._hass, sensor_config, self._evaluator, self, manager_config, global_settings)
+        sensor = DynamicSensor(self._hass, sensor_config, self._evaluator, self, manager_config, global_settings)
+
+        # CROSS-SENSOR REFERENCE SUPPORT
+        # Register the sensor in the evaluator's cross-sensor registry
+        # This enables other sensors to reference this sensor by name
+        if self._evaluator:
+            # Register with initial value of 0.0 (will be updated when sensor evaluates)
+            self._evaluator.register_sensor(sensor_config.unique_id, sensor.entity_id, 0.0)
+
+        return sensor
 
     async def _update_existing_sensors(self, old_config: Config, new_config: Config) -> None:
         """Update existing sensors based on configuration changes."""
@@ -835,19 +959,198 @@ class SensorManager:
             )
 
     async def async_update_sensors(self, sensor_configs: list[SensorConfig] | None = None) -> None:
-        """Asynchronously update sensors based on configurations."""
+        """Enhanced evaluation loop with cross-sensor dependency management."""
         if sensor_configs is None:
-            # Update all managed sensors
-            for sensor in self._sensors_by_unique_id.values():
-                await sensor.async_update_sensor()
-        else:
-            # Update specific sensors
-            for config in sensor_configs:
-                if config.unique_id in self._sensors_by_unique_id:
-                    sensor = self._sensors_by_unique_id[config.unique_id]
-                    await sensor.async_update_sensor()
+            # Update all managed sensors with cross-sensor evaluation order
+            evaluation_order = self._get_cross_sensor_evaluation_order()
+            for sensor_name in evaluation_order:
+                if sensor_name in self._sensors_by_unique_id:
+                    try:
+                        sensor = self._sensors_by_unique_id[sensor_name]
+                        await sensor.async_update_sensor()
 
-        self._logger.debug("Completed async sensor updates")
+                        # Update cross-sensor registry immediately after evaluation
+                        if self._evaluator and hasattr(sensor, "_attr_native_value"):
+                            self._evaluator.update_sensor_value(sensor_name, sensor._attr_native_value)
+
+                    except Exception as e:
+                        self._handle_cross_sensor_error(sensor_name, e)
+        else:
+            # Update specific sensors with cross-sensor evaluation order
+            evaluation_order = self._get_cross_sensor_evaluation_order_for_sensors(sensor_configs)
+            for sensor_name in evaluation_order:
+                if sensor_name in self._sensors_by_unique_id:
+                    try:
+                        sensor = self._sensors_by_unique_id[sensor_name]
+                        await sensor.async_update_sensor()
+
+                        # Update cross-sensor registry immediately after evaluation
+                        if self._evaluator and hasattr(sensor, "_attr_native_value"):
+                            self._evaluator.update_sensor_value(sensor_name, sensor._attr_native_value)
+
+                    except Exception as e:
+                        self._handle_cross_sensor_error(sensor_name, e)
+
+        self._logger.debug("Completed enhanced async sensor updates")
+
+    def _get_cross_sensor_evaluation_order(self) -> list[str]:
+        """Get evaluation order for all sensors considering cross-sensor dependencies.
+
+        Returns:
+            List of sensor names in evaluation order
+        """
+        if not hasattr(self._evaluator, "_dependency_management_phase"):
+            # Fallback to original order if dependency management not available
+            return list(self._sensors_by_unique_id.keys())
+
+        # Get all sensor configurations
+        sensor_configs = [sensor.config for sensor in self._sensors_by_unique_id.values()]
+
+        # Analyze cross-sensor dependencies
+        sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(sensor_configs)
+
+        # Get evaluation order
+        evaluation_order = self._evaluator._dependency_management_phase.get_cross_sensor_evaluation_order(sensor_dependencies)
+
+        # Validate dependencies
+        validation_result = self._evaluator._dependency_management_phase.validate_cross_sensor_dependencies(sensor_dependencies)
+        if not validation_result.get("valid", True):
+            self._logger.warning("Cross-sensor dependency validation issues: %s", validation_result.get("issues", []))
+
+        return evaluation_order
+
+    def _get_cross_sensor_evaluation_order_for_sensors(self, sensor_configs: list[SensorConfig]) -> list[str]:
+        """Get evaluation order for specific sensors considering cross-sensor dependencies.
+
+        Args:
+            sensor_configs: List of sensor configurations to evaluate
+
+        Returns:
+            List of sensor names in evaluation order
+        """
+        if not hasattr(self._evaluator, "_dependency_management_phase"):
+            # Fallback to original order if dependency management not available
+            return [config.unique_id for config in sensor_configs]
+
+        # Analyze cross-sensor dependencies for the specified sensors
+        sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(sensor_configs)
+
+        # Get evaluation order
+        evaluation_order = self._evaluator._dependency_management_phase.get_cross_sensor_evaluation_order(sensor_dependencies)
+
+        # Validate dependencies
+        validation_result = self._evaluator._dependency_management_phase.validate_cross_sensor_dependencies(sensor_dependencies)
+        if not validation_result.get("valid", True):
+            self._logger.warning("Cross-sensor dependency validation issues: %s", validation_result.get("issues", []))
+
+        return evaluation_order
+
+    async def _register_sensors_in_cross_sensor_registry(self, sensor_configs: list[SensorConfig]) -> None:
+        """Enhanced sensor registration with cross-sensor registry integration.
+
+        Args:
+            sensor_configs: List of sensor configurations to register
+        """
+        if not self._evaluator:
+            self._logger.warning("No evaluator available for cross-sensor registry registration")
+            return
+
+        self._logger.debug("Registering %d sensors in cross-sensor registry", len(sensor_configs))
+
+        for config in sensor_configs:
+            try:
+                # Generate entity_id if not provided
+                entity_id = config.entity_id
+                if not entity_id:
+                    entity_id = self._generate_entity_id(
+                        sensor_key=config.unique_id,
+                        device_identifier=config.device_identifier,
+                        explicit_entity_id=config.entity_id,
+                    )
+
+                # Register sensor in cross-sensor registry
+                self._evaluator.register_sensor(config.unique_id, entity_id, 0.0)
+                self._logger.debug("Registered sensor '%s' in cross-sensor registry", config.unique_id)
+
+            except Exception as e:
+                self._logger.error("Failed to register sensor '%s' in cross-sensor registry: %s", config.unique_id, e)
+                raise
+
+    def _validate_cross_sensor_dependencies(self, sensor_configs: list[SensorConfig]) -> None:
+        """Validate all cross-sensor dependencies across the sensor set.
+
+        Args:
+            sensor_configs: List of sensor configurations to validate
+
+        Raises:
+            ValueError: If cross-sensor dependency validation fails
+        """
+        if not hasattr(self._evaluator, "_dependency_management_phase") or self._evaluator._dependency_management_phase is None:
+            self._logger.debug("Dependency management phase not available, skipping validation")
+            return
+
+        try:
+            # Analyze cross-sensor dependencies
+            sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(sensor_configs)
+
+            # Validate dependencies
+            validation_result = self._evaluator._dependency_management_phase.validate_cross_sensor_dependencies(
+                sensor_dependencies
+            )
+
+            if not validation_result.get("valid", True):
+                issues = validation_result.get("issues", [])
+                circular_refs = validation_result.get("circular_references", [])
+
+                error_msg = f"Cross-sensor dependency validation failed: {issues}"
+                if circular_refs:
+                    error_msg += f" Circular references: {circular_refs}"
+
+                self._logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            self._logger.debug("Cross-sensor dependency validation passed for %d sensors", len(sensor_configs))
+
+        except Exception as e:
+            self._logger.error("Cross-sensor dependency validation error: %s", e)
+            raise
+
+    def _analyze_sensor_cross_dependencies(self, sensor_config: SensorConfig) -> set[str]:
+        """Analyze cross-sensor dependencies for a specific sensor.
+
+        Args:
+            sensor_config: Sensor configuration to analyze
+
+        Returns:
+            Set of sensor names that this sensor depends on
+        """
+        if not hasattr(self._evaluator, "_dependency_management_phase") or self._evaluator._dependency_management_phase is None:
+            return set()
+
+        try:
+            # Analyze dependencies for this single sensor
+            sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(
+                [sensor_config]
+            )
+
+            # Return dependencies for this sensor
+            return sensor_dependencies.get(sensor_config.unique_id, set())
+
+        except Exception as e:
+            self._logger.error("Failed to analyze cross-sensor dependencies for sensor '%s': %s", sensor_config.unique_id, e)
+            return set()
+
+    def _handle_cross_sensor_error(self, sensor_name: str, error: Exception) -> None:
+        """Handle cross-sensor resolution errors with appropriate logging.
+
+        Args:
+            sensor_name: Name of the sensor that encountered an error
+            error: The error that occurred
+        """
+        if isinstance(error, (MissingDependencyError, CrossSensorResolutionError, DependencyValidationError)):
+            self._logger.error("Cross-sensor resolution error for sensor '%s': %s", sensor_name, error)
+        else:
+            self._logger.error("Unexpected error during cross-sensor resolution for sensor '%s': %s", sensor_name, error)
 
     # New push-based registration API
     def register_data_provider_entities(
@@ -864,7 +1167,36 @@ class SensorManager:
                             entities are always virtual and only use data provider callback.
             change_notifier: Optional callback that the integration can call when backing
                            entity data changes to trigger selective sensor updates.
+
+        Raises:
+            ValueError: If the entity_ids set contains invalid entries (None values, empty strings, etc.)
         """
+        _LOGGER.info("=== REGISTERING DATA PROVIDER ENTITIES ===")
+        _LOGGER.info("Registering %d entities for integration data provider", len(entity_ids))
+        _LOGGER.info("Allow HA lookups: %s", allow_ha_lookups)
+        _LOGGER.info("Change notifier: %s", "Provided" if change_notifier else "None")
+
+        # Validate the entity IDs
+        if entity_ids:
+            # Check for None values or invalid strings
+            invalid_entities = []
+            for entity_id in entity_ids:
+                if entity_id is None:
+                    invalid_entities.append("None entity ID")
+                elif not isinstance(entity_id, str) or not entity_id.strip():
+                    invalid_entities.append(f"Invalid entity ID: {entity_id!r}")
+
+            if invalid_entities:
+                error_msg = f"Invalid entity IDs in registration: {', '.join(invalid_entities)}"
+                _LOGGER.error(error_msg)
+                raise ValueError(error_msg)
+
+            _LOGGER.info("Entity IDs being registered:")
+            for entity_id in sorted(entity_ids):
+                _LOGGER.info("  - %s", entity_id)
+        else:
+            _LOGGER.warning("No entity IDs provided for registration")
+
         _LOGGER.debug(
             "Registered %d entities for integration data provider (allow_ha_lookups=%s, change_notifier=%s)",
             len(entity_ids),
@@ -880,6 +1212,68 @@ class SensorManager:
         # Update the evaluator if it has the new registration support
         if hasattr(self._evaluator, "update_integration_entities"):
             self._evaluator.update_integration_entities(entity_ids)
+            _LOGGER.info("Updated evaluator with %d integration entities", len(entity_ids))
+
+        # Update the evaluator's allow_ha_lookups setting
+        if hasattr(self._evaluator, "update_allow_ha_lookups"):
+            self._evaluator.update_allow_ha_lookups(allow_ha_lookups)
+            _LOGGER.info("Updated evaluator allow_ha_lookups setting: %s", allow_ha_lookups)
+
+        _LOGGER.info("=== END REGISTERING DATA PROVIDER ENTITIES ===")
+
+    def register_sensor_to_backing_mapping(self, sensor_to_backing_mapping: dict[str, str]) -> None:
+        """Register the mapping from sensor keys to backing entity IDs.
+
+        This mapping is used for state token resolution in formulas.
+
+        Args:
+            sensor_to_backing_mapping: Mapping from sensor keys to backing entity IDs
+
+        Raises:
+            ValueError: If the mapping contains invalid entries (None values, empty strings, etc.)
+                       or if the mapping is empty (which would break state token resolution)
+        """
+        _LOGGER.info("=== REGISTERING SENSOR-TO-BACKING MAPPING ===")
+        _LOGGER.info("Registering %d sensor-to-backing mappings", len(sensor_to_backing_mapping))
+
+        # Validate the mapping
+        if not sensor_to_backing_mapping:
+            error_msg = (
+                "Empty sensor-to-backing mapping provided. At least one mapping entry is required for state token resolution."
+            )
+            _LOGGER.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Check for None values or invalid strings
+        invalid_entries = []
+        for sensor_key, backing_entity_id in sensor_to_backing_mapping.items():
+            if sensor_key is None:
+                invalid_entries.append("None sensor key")
+            elif not isinstance(sensor_key, str) or not sensor_key.strip():
+                invalid_entries.append(f"Invalid sensor key: {sensor_key!r}")
+            elif backing_entity_id is None:
+                invalid_entries.append(f"None backing entity ID for sensor key: {sensor_key}")
+            elif not isinstance(backing_entity_id, str) or not backing_entity_id.strip():
+                invalid_entries.append(f"Invalid backing entity ID for sensor key {sensor_key}: {backing_entity_id!r}")
+
+        if invalid_entries:
+            error_msg = f"Invalid sensor-to-backing mapping entries: {', '.join(invalid_entries)}"
+            _LOGGER.error(error_msg)
+            raise ValueError(error_msg)
+
+        _LOGGER.info("Sensor-to-backing mappings:")
+        for sensor_key, backing_entity_id in sorted(sensor_to_backing_mapping.items()):
+            _LOGGER.info("  %s -> %s", sensor_key, backing_entity_id)
+
+        # Store the mapping
+        self._sensor_to_backing_mapping = sensor_to_backing_mapping.copy()
+
+        # Update the evaluator if it supports the mapping
+        if hasattr(self._evaluator, "update_sensor_to_backing_mapping"):
+            self._evaluator.update_sensor_to_backing_mapping(sensor_to_backing_mapping)
+            _LOGGER.info("Updated evaluator with sensor-to-backing mapping")
+
+        _LOGGER.info("=== END REGISTERING SENSOR-TO-BACKING MAPPING ===")
 
     def update_data_provider_entities(
         self, entity_ids: set[str], allow_ha_lookups: bool = False, change_notifier: DataProviderChangeNotifier | None = None
@@ -1112,8 +1506,13 @@ class SensorManager:
 
     @property
     def allow_ha_lookups(self) -> bool:
-        """Get whether backing entities can fall back to HA state lookups."""
+        """Get the allow_ha_lookups setting."""
         return self._allow_ha_lookups
+
+    @property
+    def sensor_to_backing_mapping(self) -> dict[str, str]:
+        """Get the sensor-to-backing mapping."""
+        return self._sensor_to_backing_mapping
 
     def _resolve_device_name_prefix(self, device_identifier: str) -> str | None:
         """Resolve device name to slugified prefix for entity_id generation.

@@ -2,32 +2,27 @@
 
 ## Overview
 
-This document outlines the modular architecture implemented to break apart large monolithic files into focused,
-maintainable modules. The architecture follows clear separation of concerns and provides well-defined interfaces for testing.
+This document outlines the modular architecture implemented to break apart large monolithic files into focused, maintainable
+modules. The architecture follows clear separation of concerns and provides well-defined interfaces for testing.
 
 ## Core Design Principles
 
-**Single Responsibility**: Each module handles one specific aspect of functionality
-**Clear Interfaces**: Modules expose well-defined public APIs
-**Dependency Injection**: Main classes delegate to handler modules
-**Testability**: Modules can be tested independently with clear contracts and are segment in appropriate test module directories
-**Maintainability**: Code is organized by functional area, not just size
-**Implementation Lint Compliance**: Imports at the top of the file, strict type checking, mypy and pylint compliant
-(tests do not need mypy or pylint compliance)
-**Strict Typing**:  The implementation must use strict typing, use of Any types is heavily discouraged; use TypedDict where possible
-**No Implementation Pylint Errors**: For example on protect access warnings, use a property getter
-**Real YAML Fixtures**: If YAML is used in a test, reuse the existing robust YAML fixtures in tests/yaml_fixtures
-**Imports relative to repo root**: yaml fixture import should be relative to the repository root for ha-synthetic-sensors
-   as pytest will be run from the root
-**No Dead Code**: No duplicate or dead code
-**No Fallback Code**: No fallback code is allowed, deterministic behavior only
-**No Backward Compatability**: This is clean slate development
-**Minimum Info Logging**: Info logging should be limited to what a user would normally see for operation, not internal details
-**Approriate debug Logging**: Excessive logging will be rejected by HA, Debug only on entry or setup in modules,
-not loop level loggging
-**Use Formatter Fixers**: For fixing whitespace and formatting use a formatter that fixes issues, don't fix white space manually
-**No Anti-Test Patterns**: Tests should tests what they purport to test with meaningful results.
-**Test Results Are Known**: Tests should use known results, not rely on the thing being tested - use test fixtures where possible
+**Single Responsibility**: Each module handles one specific aspect of functionality **Clear Interfaces**: Modules expose
+well-defined public APIs **Dependency Injection**: Main classes delegate to handler modules **Testability**: Modules can be
+tested independently with clear contracts and are segment in appropriate test module directories **Maintainability**: Code is
+organized by functional area, not just size **Implementation Lint Compliance**: Imports at the top of the file, strict type
+checking, mypy and pylint compliant (tests do not need mypy or pylint compliance) **Strict Typing**: The implementation must
+use strict typing, use of Any types is heavily discouraged; use TypedDict where possible **No Implementation Pylint Errors**:
+For example on protect access warnings, use a property getter **Real YAML Fixtures**: If YAML is used in a test, reuse the
+existing robust YAML fixtures in tests/yaml_fixtures **Imports relative to repo root**: yaml fixture import should be
+relative to the repository root for ha-synthetic-sensors as pytest will be run from the root **No Dead Code**: No duplicate
+or dead code **No Fallback Code**: No fallback code is allowed, deterministic behavior only **No Backward Compatability**:
+This is clean slate development **Minimum Info Logging**: Info logging should be limited to what a user would normally see
+for operation, not internal details **Approriate debug Logging**: Excessive logging will be rejected by HA, Debug only on
+entry or setup in modules, not loop level loggging **Use Formatter Fixers**: For fixing whitespace and formatting use a
+formatter that fixes issues, don't fix white space manually **No Anti-Test Patterns**: Tests should tests what they purport
+to test with meaningful results. **Test Results Are Known**: Tests should use known results, not rely on the thing being
+tested - use test fixtures where possible
 
 ## Module Architecture
 
@@ -37,8 +32,7 @@ The `Evaluator` class delegates specialized functionality to focused handler mod
 
 #### EvaluatorDependency (`evaluator_dependency.py`)
 
-**Responsibility**: Dependency parsing, validation, and resolution
-**Interface**:
+**Responsibility**: Dependency parsing, validation, and resolution **Interface**:
 
 ```python
 class EvaluatorDependency:
@@ -76,8 +70,7 @@ class EvaluatorDependency:
 
 #### EvaluatorCache (`evaluator_cache.py`)
 
-**Responsibility**: Formula result caching and cache management
-**Interface**:
+**Responsibility**: Formula result caching and cache management **Interface**:
 
 ```python
 
@@ -117,8 +110,7 @@ The `SensorSet` class delegates specialized functionality to focused handler mod
 
 #### SensorSetGlobalSettings (`sensor_set_global_settings.py`)
 
-**Responsibility**: Global settings management and validation
-**Interface**:
+**Responsibility**: Global settings management and validation **Interface**:
 
 ```python
 class SensorSetGlobalSettings:
@@ -145,8 +137,7 @@ class SensorSetGlobalSettings:
 
 #### SensorSetEntityIndex (`sensor_set_entity_index.py`)
 
-**Responsibility**: Entity tracking and index management
-**Interface**:
+**Responsibility**: Entity tracking and index management **Interface**:
 
 ```python
 class SensorSetEntityIndex:
@@ -174,8 +165,7 @@ class SensorSetEntityIndex:
 
 #### SensorSetBulkOps (`sensor_set_bulk_ops.py`)
 
-**Responsibility**: Bulk operations, validation, and modification workflows
-**Interface**:
+**Responsibility**: Bulk operations, validation, and modification workflows **Interface**:
 
 ```python
 class SensorSetBulkOps:
@@ -259,8 +249,8 @@ class SensorSet:
     def get_global_settings(self) -> dict[str, Any]
 ```
 
-**Note**: SensorSet CRUD operations work through the StorageManager - the SensorSet class coordinates and delegates
-to storage operations while maintaining the clean interface.
+**Note**: SensorSet CRUD operations work through the StorageManager - the SensorSet class coordinates and delegates to
+storage operations while maintaining the clean interface.
 
 ## Testing Strategy
 

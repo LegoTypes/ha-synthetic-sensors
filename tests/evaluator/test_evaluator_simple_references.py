@@ -30,7 +30,10 @@ def test_simple_variable_evaluator() -> None:
         variables={"power_reading": "sensor.power_meter"},
     )
 
-    result = evaluator.evaluate_formula(config)
+    # Create context with the variable value
+    context = {"power_reading": 25.5}
+
+    result = evaluator.evaluate_formula(config, context)
 
     # Should succeed and return the value
     assert result["success"] is True
@@ -53,8 +56,8 @@ def test_direct_entity_reference() -> None:
 
     mock_hass.states.get.return_value = mock_state
 
-    # Create evaluator
-    evaluator = Evaluator(mock_hass)
+    # Create evaluator with HA lookups enabled
+    evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
     # Test direct entity reference (no variables needed)
     config = FormulaConfig(id="test_formula", formula="sensor.temperature", variables={})

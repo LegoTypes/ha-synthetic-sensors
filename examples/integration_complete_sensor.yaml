@@ -1,0 +1,95 @@
+version: "1.0"
+
+# Integration Test INT.1: Complete Idiom Integration
+# Purpose: Test multiple idioms working together in single sensor
+# Expected: All idioms work correctly in combination
+# Validation: Complex sensor evaluates successfully
+
+sensors:
+  comprehensive_energy_analyzer:
+    name: "Comprehensive Energy Analyzer"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W (Idiom 1)
+    # Idiom 2: Self-reference using state token
+    formula: state * 1.1  # Main result = 1100W
+    variables:
+      # Idiom 3: Entity attribute access
+      battery_device: sensor.backup_battery  # Has battery_level attribute
+      power_meter: sensor.power_meter  # Has voltage, current attributes
+    attributes:
+      # Idiom 4: Attribute state reference
+      hourly_power:
+        formula: state  # References main sensor (1100W)
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:flash
+
+      # Idiom 5: Attribute-to-attribute reference
+      daily_power:
+        formula: hourly_power * 24  # A-A reference: 1100W * 24 = 26400W/day
+        metadata:
+          unit_of_measurement: W/day
+          icon: mdi:flash
+
+      weekly_power:
+        formula: daily_power * 7  # A-A reference: 26400W/day * 7 = 184800W/week
+        metadata:
+          unit_of_measurement: W/week
+          icon: mdi:flash
+
+      # Idiom 6: Attribute formula state attribute
+      battery_efficiency:
+        formula: state.battery_level * hourly_power / 100  # 'state.battery_level' = main sensor's battery_level attribute
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:battery
+
+      # Idiom 3: Entity attribute access in attribute
+      voltage_analysis:
+        formula: power_meter.voltage * hourly_power / 1000  # Access power_meter's voltage attribute
+        metadata:
+          unit_of_measurement: V
+          icon: mdi:lightning-bolt
+
+      # Complex attribute calculation using multiple idioms
+      comprehensive_analysis:
+        formula: (hourly_power * battery_device.battery_level * power_meter.power_factor) / 10000
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:chart-line
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  # Second sensor demonstrating cross-sensor references
+  cost_analyzer:
+    name: "Cost Analyzer"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state * 0.25  # Main result = 250 cents/h
+    variables:
+      electricity_rate: input_number.electricity_rate_cents_kwh
+    attributes:
+      hourly_cost:
+        formula: state  # Idiom 4: References main sensor (250 cents/h)
+        metadata:
+          unit_of_measurement: cents/h
+          icon: mdi:currency-usd
+
+      daily_cost:
+        formula: hourly_cost * 24  # Idiom 5: A-A reference
+        metadata:
+          unit_of_measurement: cents/day
+          icon: mdi:currency-usd
+
+      # Cross-sensor reference using comprehensive_energy_analyzer
+      efficiency_cost:
+        formula: daily_cost * comprehensive_energy_analyzer.efficiency / 100
+        metadata:
+          unit_of_measurement: cents/day
+          icon: mdi:currency-usd
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      state_class: measurement
+      icon: mdi:currency-usd

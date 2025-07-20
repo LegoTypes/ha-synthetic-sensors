@@ -13,7 +13,7 @@ from .variable_resolver import HomeAssistantResolutionStrategy
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
 
-    from .config_models import FormulaConfig
+    from .config_models import FormulaConfig, SensorConfig
     from .type_definitions import ContextValue, DataProviderCallback, DependencyValidation
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,17 +76,37 @@ class EvaluatorDependency:
         # Use the comprehensive dependency extraction method
         return self._dependency_parser.extract_dependencies(formula)
 
-    def extract_formula_dependencies(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> set[str]:
+    def extract_formula_dependencies(
+        self, config: FormulaConfig, context: dict[str, ContextValue] | None = None, sensor_config: SensorConfig | None = None
+    ) -> set[str]:
         """Extract dependencies from a formula configuration, handling collection patterns.
 
         Args:
             config: Formula configuration
             context: Optional context for variable resolution
+            sensor_config: Optional sensor configuration for state token resolution
 
         Returns:
             Set of entity IDs that the formula depends on (excluding config variables)
         """
         dependencies = set()
+
+        # Check if the formula contains the 'state' token
+        if "state" in config.formula:
+            # Check if this is an attribute formula (has underscore in ID and not the main formula)
+            is_attribute_formula = sensor_config and "_" in config.id and config.id != sensor_config.unique_id
+
+            _LOGGER.debug(
+                "Formula '%s' (ID: %s) contains state token. Is attribute: %s", config.formula, config.id, is_attribute_formula
+            )
+
+            if not is_attribute_formula:
+                # Main formula: add state token as dependency (will be replaced with backing entity later)
+                dependencies.add("state")
+                _LOGGER.debug("Added 'state' as dependency for main formula")
+            else:
+                _LOGGER.debug("Skipping 'state' dependency for attribute formula")
+            # For attribute formulas, state token will be provided by context, so don't add it as a dependency
 
         # Extract entity references from variables (for backward compatibility)
         if config.variables:
@@ -111,18 +131,19 @@ class EvaluatorDependency:
         return dependencies
 
     def extract_and_prepare_dependencies(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None
+        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None = None
     ) -> tuple[set[str], set[str]]:
         """Extract dependencies and identify collection pattern entities.
 
         Args:
             config: Formula configuration
             context: Optional context for variable resolution
+            sensor_config: Optional sensor configuration for state token resolution
 
         Returns:
             Tuple of (dependencies, collection_pattern_entities)
         """
-        dependencies = self.extract_formula_dependencies(config, context)
+        dependencies = self.extract_formula_dependencies(config, context, sensor_config)
 
         # Identify collection pattern entities that don't need numeric validation
         parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
@@ -181,6 +202,10 @@ class EvaluatorDependency:
         Returns:
             Status: "ok", "missing", or "unavailable"
         """
+        # Special handling for 'state' token - it will be resolved during evaluation
+        if entity_id == "state":
+            return "ok"
+
         # Check data provider first if available
         if self._should_use_data_provider(entity_id):
             return self._check_data_provider_entity(entity_id)
@@ -267,16 +292,18 @@ class EvaluatorDependency:
             if not result["exists"]:
                 return "missing"
 
-            # Validate the value - this will raise DataValidationError for fatal cases (None, unsupported types)
+            # Validate the value - this will raise DataValidationError for fatal cases (unsupported types)
             self._validate_data_provider_value(entity_id, result["value"])
+
+            # Handle None values as "unknown" for graceful handling
+            if result["value"] is None:
+                return "unknown"
 
             # Check for operational state strings that should be handled gracefully
             if isinstance(result["value"], str):
                 value_lower = result["value"].lower()
-                if value_lower == "unavailable":
-                    return "unavailable"
-                if value_lower == "unknown":
-                    return "unknown"
+                if value_lower in ["unavailable", "unknown"]:
+                    return value_lower
 
             return "ok"
 
@@ -298,8 +325,9 @@ class EvaluatorDependency:
             DataValidationError: If value is invalid (fatal error)
         """
         if value is None:
-            # None values from data providers are always fatal - integrations should use "unknown"
-            raise DataValidationError(f"Data provider returned None state value for {entity_id} - fatal error")
+            # None values from data providers should be converted to "unknown" for graceful handling
+            # This allows integrations to use None initially and have it handled gracefully
+            return
 
         # Allow numeric values, strings, and booleans (including "unknown", "unavailable" strings)
         if not isinstance(value, (int, float, str, bool)):

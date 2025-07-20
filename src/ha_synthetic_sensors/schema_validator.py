@@ -503,10 +503,13 @@ class SchemaValidator:
                 "additionalProperties": False,
             },
             "sensors": {
-                "type": "array",
-                "description": "List of synthetic sensor definitions",
-                "items": {"$ref": "#/definitions/sensor"},
-                "minItems": 1,
+                "type": "object",
+                "description": "Dictionary of synthetic sensor definitions",
+                "patternProperties": {
+                    "^[a-zA-Z_][a-zA-Z0-9_]*$": {"$ref": "#/definitions/sensor"},
+                },
+                "minProperties": 1,
+                "additionalProperties": False,
             },
         }
 
@@ -529,12 +532,6 @@ class SchemaValidator:
             "type": "object",
             "description": "Synthetic sensor definition",
             "properties": {
-                "unique_id": {
-                    "type": "string",
-                    "description": "Unique identifier for the sensor",
-                    "pattern": id_pattern,
-                    "minLength": 1,
-                },
                 "name": {
                     "type": "string",
                     "description": "Human-readable name for the sensor",
@@ -558,14 +555,134 @@ class SchemaValidator:
                     "type": "string",
                     "description": "Category for grouping sensors",
                 },
-                "formulas": {
-                    "type": "array",
-                    "description": ("List of formula calculations for this sensor"),
-                    "items": {"$ref": "#/definitions/formula"},
-                    "minItems": 1,
+                "entity_id": {
+                    "type": "string",
+                    "description": "Optional: Explicit entity ID for the sensor",
+                    "pattern": "^[a-z_]+\\.[a-z0-9_]+$",
+                },
+                "formula": {
+                    "type": "string",
+                    "description": "Mathematical expression to evaluate",
+                    "minLength": 1,
+                },
+                "variables": {
+                    "type": "object",
+                    "description": "Variable mappings to Home Assistant entities or numeric literals",
+                    "patternProperties": {
+                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$",
+                                    "description": "Home Assistant entity ID or collection pattern",
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Numeric literal value",
+                                },
+                            ]
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Sensor metadata including unit_of_measurement, device_class, etc.",
+                    "additionalProperties": True,
+                },
+                "attributes": {
+                    "type": "object",
+                    "description": "Calculated attributes for the sensor",
+                    "patternProperties": {
+                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {
+                                            "type": "string",
+                                            "description": "Attribute formula",
+                                            "minLength": 1,
+                                        },
+                                        "metadata": {
+                                            "type": "object",
+                                            "description": "Attribute metadata",
+                                            "additionalProperties": True,
+                                        },
+                                        "variables": {
+                                            "type": "object",
+                                            "description": "Attribute-specific variables",
+                                            "patternProperties": {
+                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                    "oneOf": [
+                                                        {
+                                                            "type": "string",
+                                                            "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$",
+                                                        },
+                                                        {
+                                                            "type": "number",
+                                                        },
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "type": "string",
+                                    "description": "Literal string value",
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Literal numeric value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Literal boolean value",
+                                },
+                            ]
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                "extra_attributes": {
+                    "type": "object",
+                    "description": "Additional attributes for the entity",
+                    "additionalProperties": True,
+                },
+                "device_identifier": {
+                    "type": "string",
+                    "description": "Device identifier to associate with",
+                },
+                "device_name": {
+                    "type": "string",
+                    "description": "Optional device name override",
+                },
+                "device_manufacturer": {
+                    "type": "string",
+                    "description": "Device manufacturer",
+                },
+                "device_model": {
+                    "type": "string",
+                    "description": "Device model",
+                },
+                "device_sw_version": {
+                    "type": "string",
+                    "description": "Device software version",
+                },
+                "device_hw_version": {
+                    "type": "string",
+                    "description": "Device hardware version",
+                },
+                "suggested_area": {
+                    "type": "string",
+                    "description": "Suggested area for the sensor",
                 },
             },
-            "required": ["unique_id", "formulas"],
+            "required": ["formula"],
             "additionalProperties": False,
         }
 

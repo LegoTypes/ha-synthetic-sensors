@@ -1,0 +1,39 @@
+version: "1.0"
+
+# Idiom 1 Test Scenario 1.1: With Backing Entity
+# Purpose: Validate that 'state' token resolves to backing entity's current value
+# Expected: state resolves to backing entity value (e.g., 1000W)
+# Validation: Formula result matches backing entity value
+
+sensors:
+  power_analyzer:
+    name: "Power Analyzer"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity
+    formula: state * 1.1  # 'state' should resolve to backing entity value
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  # Test with different backing entity
+  voltage_monitor:
+    name: "Voltage Monitor"
+    entity_id: sensor.span_panel_voltage  # Different backing entity
+    formula: state / 1000  # Convert mV to V
+    metadata:
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:lightning-bolt
+
+  # Test with backing entity that has attributes
+  battery_analyzer:
+    name: "Battery Analyzer"
+    entity_id: sensor.span_panel_battery  # Backing entity with attributes
+    formula: state * 0.95  # Apply efficiency factor
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:battery

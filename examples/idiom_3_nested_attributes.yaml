@@ -1,0 +1,52 @@
+# Test Scenario 3.3: Nested Attribute Access
+# Purpose: Test accessing nested attribute structures using dot notation
+# Expected: Nested attributes are resolved correctly
+# Validation: Deep attribute access works
+
+sensors:
+  # Test accessing nested attributes from backing entity
+  nested_attribute_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state.attributes.voltage * state.attributes.current
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Nested Attribute Power Test"
+
+  # Test accessing deeply nested attributes
+  deep_nested_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state.attributes.device_info.manufacturer + "_" + state.attributes.device_info.model
+    metadata:
+      unit_of_measurement: string
+      friendly_name: "Deep Nested Attribute Test"
+
+  # Test accessing nested attributes in variables
+  nested_variable_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: voltage_attr * current_attr
+    variables:
+      voltage_attr: sensor.span_panel_instantaneous_power
+      current_attr: sensor.span_panel_instantaneous_power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Nested Variable Test"
+
+  # Test accessing nested attributes in attributes
+  nested_attribute_formula:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1
+    attributes:
+      device_info:
+        formula: state.attributes.device_info.manufacturer + " " + state.attributes.device_info.model
+        metadata:
+          unit_of_measurement: string
+      power_factor:
+        formula: state.attributes.power_factor.value if state.attributes.power_factor else 1.0
+        metadata:
+          unit_of_measurement: ratio
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Nested Attribute Formula Test"

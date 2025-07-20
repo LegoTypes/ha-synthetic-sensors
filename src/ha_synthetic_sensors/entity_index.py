@@ -98,6 +98,21 @@ class EntityIndex:
                             self._entity_ids.add(base_entity_id)
                             entities_added.add(base_entity_id)
 
+        # Add self-reference if sensor has attribute formulas
+        # Attribute formulas are converted to separate formulas with IDs like {sensor_key}_{attr_name}
+        # and they may reference the main sensor using the sensor key
+        has_attribute_formulas = any(
+            formula.id.startswith(f"{sensor_config.unique_id}_")
+            for formula in sensor_config.formulas
+            if formula.id != sensor_config.unique_id
+        )
+
+        if has_attribute_formulas:
+            # Add self-reference for the main sensor
+            self_entity_id = f"sensor.{sensor_config.unique_id}"
+            self._entity_ids.add(self_entity_id)
+            entities_added.add(self_entity_id)
+
         if entities_added:
             self._logger.debug(
                 "Added %d entity IDs from sensor %s: %s", len(entities_added), sensor_config.unique_id, sorted(entities_added)
@@ -127,6 +142,19 @@ class EntityIndex:
                         base_entity_id = self._extract_base_entity_id(var_value)
                         if base_entity_id:
                             entities_to_remove.add(base_entity_id)
+
+        # Remove self-reference if sensor had attribute formulas
+        # Attribute formulas are converted to separate formulas with IDs like {sensor_key}_{attr_name}
+        has_attribute_formulas = any(
+            formula.id.startswith(f"{sensor_config.unique_id}_")
+            for formula in sensor_config.formulas
+            if formula.id != sensor_config.unique_id
+        )
+
+        if has_attribute_formulas:
+            # Remove self-reference for the main sensor
+            self_entity_id = f"sensor.{sensor_config.unique_id}"
+            entities_to_remove.add(self_entity_id)
 
         # Remove from index
         for entity_id in entities_to_remove:

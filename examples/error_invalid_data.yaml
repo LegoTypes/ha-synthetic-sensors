@@ -1,0 +1,109 @@
+# Test Scenario ERR.5: Invalid Data Provider
+# Purpose: Test data provider returns invalid data
+# Expected: DataValidationError is raised
+# Validation: Invalid data is rejected
+
+sensors:
+  # Test invalid backing entity (entity exists but returns None)
+  invalid_backing_entity:
+    entity_id: sensor.invalid_entity  # Entity that returns None or invalid data
+    formula: state * 2  # Should fail when state is None
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid Backing Entity"
+
+  # Test invalid variable reference
+  invalid_variable:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: invalid_var * 2  # Variable that resolves to None
+    variables:
+      invalid_var: sensor.invalid_entity  # Variable references invalid entity
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid Variable"
+
+  # Test invalid attribute reference
+  invalid_attribute:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Attribute that references invalid entity
+      invalid_attr:
+        formula: sensor.invalid_entity * 0.25  # References invalid entity
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Invalid Attribute"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid Attribute"
+
+  # Test invalid data in complex calculation
+  invalid_complex:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.span_panel_instantaneous_power + sensor.invalid_entity  # Mixed valid/invalid
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid Complex"
+
+  # Test invalid data in conditional expression
+  invalid_conditional:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.invalid_entity if sensor.span_panel_instantaneous_power > 500 else state  # Invalid in condition
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid Conditional"
+
+  # Test invalid data in mathematical expression
+  invalid_math:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.span_panel_instantaneous_power / sensor.invalid_entity  # Division by None
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid Math"
+
+  # Test invalid data in attribute calculation
+  invalid_attr_calc:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Attribute calculation with invalid data
+      invalid_calc:
+        formula: (sensor.span_panel_instantaneous_power + sensor.invalid_entity) * 0.25  # Invalid in calc
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Invalid Calculation"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Invalid Attribute Calculation"
+
+  # Test invalid data in nested attribute reference
+  invalid_nested:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Nested attribute reference to invalid entity
+      invalid_nested_attr:
+        formula: sensor.invalid_entity.attributes.voltage  # Nested reference to invalid entity
+        metadata:
+          unit_of_measurement: V
+          friendly_name: "Invalid Nested Attribute"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid Nested"
+
+  # Test invalid data with valid backing entity
+  invalid_with_backing:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state + sensor.invalid_entity  # Valid backing entity + invalid entity
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Invalid With Backing"

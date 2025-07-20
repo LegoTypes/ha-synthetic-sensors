@@ -1,0 +1,74 @@
+version: "1.0"
+
+# Idiom 5 Test Scenario 5.1: Linear Attribute Chain
+# Purpose: Validate that attributes reference each other in linear sequence
+# Expected: Attributes evaluate in dependency order
+# Validation: Linear dependency chain works correctly
+
+sensors:
+  energy_analyzer:
+    name: "Energy Analyzer"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state * 0.25  # Main result = 250 cents/h
+    attributes:
+      hourly_cost:
+        formula: state  # References main sensor (250 cents/h)
+        metadata:
+          unit_of_measurement: cents/h
+          icon: mdi:currency-usd
+      daily_cost:
+        formula: hourly_cost * 24  # A-A reference: 250 * 24 = 6000 cents/day
+        metadata:
+          unit_of_measurement: cents/day
+          icon: mdi:currency-usd
+      weekly_cost:
+        formula: daily_cost * 7    # A-A reference: 6000 * 7 = 42000 cents/week
+        metadata:
+          unit_of_measurement: cents/week
+          icon: mdi:currency-usd
+      monthly_cost:
+        formula: weekly_cost * 4   # A-A reference: 42000 * 4 = 168000 cents/month
+        metadata:
+          unit_of_measurement: cents/month
+          icon: mdi:currency-usd
+      annual_cost:
+        formula: monthly_cost * 12 # A-A reference: 168000 * 12 = 2016000 cents/year
+        metadata:
+          unit_of_measurement: cents/year
+          icon: mdi:currency-usd
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      state_class: measurement
+      icon: mdi:currency-usd
+
+  power_chain:
+    name: "Power Chain"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state * 1.1  # Main result = 1100W
+    attributes:
+      base_power:
+        formula: state  # References main sensor (1100W)
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:flash
+      hourly_power:
+        formula: base_power * 1  # A-A reference: 1100W * 1 = 1100W/h
+        metadata:
+          unit_of_measurement: W/h
+          icon: mdi:flash
+      daily_power:
+        formula: hourly_power * 24  # A-A reference: 1100W/h * 24 = 26400W/day
+        metadata:
+          unit_of_measurement: W/day
+          icon: mdi:flash
+      weekly_power:
+        formula: daily_power * 7    # A-A reference: 26400W/day * 7 = 184800W/week
+        metadata:
+          unit_of_measurement: W/week
+          icon: mdi:flash
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash

@@ -31,8 +31,8 @@ def test_data_provider_returning_none_raises_fatal_error() -> None:
     assert "fatal implementation error" in str(exc_info.value)
 
 
-def test_data_provider_returning_none_value_raises_fatal_error() -> None:
-    """Test that when data provider returns valid structure but None value, it raises fatal error."""
+def test_data_provider_returning_none_value_handled_gracefully() -> None:
+    """Test that when data provider returns valid structure but None value, it's handled gracefully."""
     mock_hass = MagicMock()
 
     # Create evaluator with data provider that returns None value
@@ -40,19 +40,18 @@ def test_data_provider_returning_none_value_raises_fatal_error() -> None:
         return {
             "value": None,
             "exists": True,
-        }  # Entity exists but has None value - should be fatal
+        }  # Entity exists but has None value - should be handled gracefully
 
     evaluator = Evaluator(mock_hass, data_provider_callback=none_value_provider)
     evaluator.update_integration_entities({"sensor.test"})  # Tell evaluator this entity comes from integration
 
     config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
-    # Should raise DataValidationError when evaluating the formula
-    with pytest.raises(DataValidationError) as exc_info:
-        evaluator.evaluate_formula(config)
-
-    assert "None state value" in str(exc_info.value)
-    assert "fatal error" in str(exc_info.value)
+    # Should handle None values gracefully by returning "unknown" state
+    result = evaluator.evaluate_formula(config)
+    assert result["success"] is True
+    assert result["state"] == "unknown"
+    assert result["value"] is None
 
 
 def test_data_provider_returning_unavailable_state_handled_gracefully() -> None:

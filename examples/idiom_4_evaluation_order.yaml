@@ -1,0 +1,89 @@
+# Test Scenario 4.4: Evaluation Order Validation
+# Purpose: Test multiple attributes reference main sensor
+# Expected: All attributes use same main sensor result
+# Validation: Consistent evaluation order maintained
+
+sensors:
+  # Test evaluation order with multiple attributes referencing main sensor
+  evaluation_order_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # All these attributes should use the same main sensor result (250 cents/h)
+      hourly_cost:
+        formula: state  # Direct state reference
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Hourly Cost (State)"
+      hourly_cost_key:
+        formula: evaluation_order_test  # Sensor key reference
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Hourly Cost (Key)"
+      hourly_cost_entity:
+        formula: sensor.evaluation_order_test  # Entity ID reference
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Hourly Cost (Entity)"
+      # Derived attributes that should all be consistent
+      daily_cost_state:
+        formula: state * 24  # Should be 6000 cents/day
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost (State)"
+      daily_cost_key:
+        formula: evaluation_order_test * 24  # Should be 6000 cents/day
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost (Key)"
+      daily_cost_entity:
+        formula: sensor.evaluation_order_test * 24  # Should be 6000 cents/day
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost (Entity)"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Evaluation Order Test"
+
+  # Test evaluation order with complex calculations
+  complex_evaluation_order:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # All should use the same main sensor result (1100W)
+      power_analysis_state:
+        formula: state / 1000  # Should be 1.1 kW
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Power Analysis (State)"
+      power_analysis_key:
+        formula: complex_evaluation_order / 1000  # Should be 1.1 kW
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Power Analysis (Key)"
+      power_analysis_entity:
+        formula: sensor.complex_evaluation_order / 1000  # Should be 1.1 kW
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Power Analysis (Entity)"
+      # Cross-references between attributes
+      efficiency_state:
+        formula: power_analysis_state / 1.0 * 100  # Should be 110%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Efficiency (State)"
+      efficiency_key:
+        formula: power_analysis_key / 1.0 * 100  # Should be 110%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Efficiency (Key)"
+      efficiency_entity:
+        formula: power_analysis_entity / 1.0 * 100  # Should be 110%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Efficiency (Entity)"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Evaluation Order Test"

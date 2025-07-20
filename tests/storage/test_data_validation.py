@@ -75,20 +75,14 @@ class TestDataValidation:
         validate_entity_state_value("", "sensor.empty_string")
 
     def test_validate_entity_state_value_none(self):
-        """Test validate_entity_state_value with None value."""
-        with pytest.raises(DataValidationError) as exc_info:
-            validate_entity_state_value(None, "sensor.test")
-
-        assert "Entity 'sensor.test' has None state value" in str(exc_info.value)
-        assert "entity is unavailable" in str(exc_info.value)
-        assert "fatal error" in str(exc_info.value)
+        """Test validate_entity_state_value with None value converts to 'unknown'."""
+        result = validate_entity_state_value(None, "sensor.test")
+        assert result == "unknown"
 
     def test_validate_entity_state_value_none_different_entity(self):
-        """Test validate_entity_state_value with None value and different entity ID."""
-        with pytest.raises(DataValidationError) as exc_info:
-            validate_entity_state_value(None, "binary_sensor.door")
-
-        assert "Entity 'binary_sensor.door' has None state value" in str(exc_info.value)
+        """Test validate_entity_state_value with None value converts to 'unknown' for different entity."""
+        result = validate_entity_state_value(None, "binary_sensor.door")
+        assert result == "unknown"
 
     def test_validate_data_provider_result_exists_false(self):
         """Test validate_data_provider_result with exists=False."""

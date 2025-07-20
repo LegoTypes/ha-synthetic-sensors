@@ -1,0 +1,40 @@
+version: "1.0"
+
+# Idiom 3 Test Scenario 3.2: Multiple Attribute Access
+# Purpose: Validate that formula accesses multiple attributes from same entity
+# Expected: All attributes are retrieved correctly
+# Validation: Formula combines multiple attributes
+
+sensors:
+  comprehensive_analysis:
+    name: "Comprehensive Analysis"
+    formula: device.voltage * device.current * device.power_factor  # Multiple attributes
+    variables:
+      device: sensor.power_meter  # Has voltage, current, power_factor attributes
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  battery_health:
+    name: "Battery Health"
+    formula: (device.battery_level * device.battery_voltage) / (device.max_voltage * 100)  # Multiple attributes
+    variables:
+      device: sensor.battery_system  # Has battery_level, battery_voltage, max_voltage attributes
+    metadata:
+      unit_of_measurement: ""
+      device_class: battery
+      state_class: measurement
+      icon: mdi:battery-heart
+
+  environmental_analysis:
+    name: "Environmental Analysis"
+    formula: (sensor.humidity * sensor.temperature) / (sensor.pressure * 1000)  # Multiple attributes
+    variables:
+      sensor: sensor.environmental_monitor  # Has humidity, temperature, pressure attributes
+    metadata:
+      unit_of_measurement: ""
+      device_class: temperature
+      state_class: measurement
+      icon: mdi:weather-partly-cloudy

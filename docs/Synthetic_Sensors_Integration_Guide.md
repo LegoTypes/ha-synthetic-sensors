@@ -33,14 +33,14 @@ This approach handles everything automatically using storage-based configuration
 
 ## Data Provider Interface with Real-Time Updates
 
-The library supports **change notification** for real-time synthetic sensor updates when using virtual backing entities.
-This approach provides optimal performance by only updating sensors whose underlying data has actually changed.
+The library supports **change notification** for real-time synthetic sensor updates when using virtual backing entities. This
+approach provides optimal performance by only updating sensors whose underlying data has actually changed.
 
 ### Data Provider Components
 
-**Data Provider Callback**: Returns current values for virtual backing entities
-**Change Notifier Callback**: Receives notifications when specific backing entities change
-**Selective Updates**: Only sensors using changed backing entities are updated
+**Data Provider Callback**: Returns current values for virtual backing entities **Change Notifier Callback**: Receives
+notifications when specific backing entities change **Selective Updates**: Only sensors using changed backing entities are
+updated
 
 ### Type Definitions
 
@@ -70,6 +70,8 @@ async def async_setup_synthetic_sensors(
     device_identifier: str,
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
+    sensor_to_backing_mapping: dict[str, str] | None = None,    # Synthetic Sensor Key -> Backing entity_id
+    allow_ha_lookups: bool = False,
 ) -> SensorManager
 ```
 
@@ -99,7 +101,7 @@ async def async_setup_synthetic_integration(
     integration_domain: str,
     device_identifier: str,
     sensor_configs: list[SensorConfig],
-    backing_entity_ids: set[str] | None = None,
+    sensor_to_backing_mapping: dict[str, str] | None = None,   # Synthetic Sensor Key -> Backing entity_id
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
     sensor_set_name: str | None = None,
@@ -122,6 +124,102 @@ async def async_setup_synthetic_integration_with_auto_backing(
     sensor_set_name: str | None = None,
     allow_ha_lookups: bool = False,
 ) -> tuple[StorageManager, SensorManager]
+```
+
+## Input Validation
+
+The library performs strict validation on key parameters to ensure data integrity and prevent runtime errors:
+
+### Sensor-to-Backing Mapping Validation
+
+The `sensor_to_backing_mapping` parameter is validated to ensure:
+
+- **No `None` values**: Neither keys nor values can be `None`
+- **Valid strings**: All keys and values must be non-empty strings (no empty strings or whitespace-only strings)
+- **Proper types**: All entries must be strings (not integers, booleans, etc.)
+- **HA Compliance**: Entity ID's are NOT validated as HA compliant because in-memory backing may be any valid string
+- **Non-empty mapping**: The mapping cannot be empty (at least one entry is required for state token resolution)
+
+**Example of valid mapping:**
+
+```python
+sensor_to_backing_mapping = {
+    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_power": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power",
+    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_energy_consumed": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_consumed",
+}
+```
+
+**Examples that will raise `ValueError`:**
+
+```python
+# Invalid - Empty mapping (breaks state token resolution)
+{}
+
+# Invalid - None values
+{"sensor_key": None}
+{None: "sensor.backing_entity"}
+
+# Invalid - Empty strings
+{"": "sensor.backing_entity"}
+{"sensor_key": ""}
+
+# Invalid - Whitespace-only strings
+{"   ": "sensor.backing_entity"}
+{"sensor_key": "   "}
+
+# Invalid - Wrong types
+{123: "sensor.backing_entity"}
+{"sensor_key": 456}
+```
+
+### Entity IDs Validation
+
+The `backing_entity_ids` parameter (when used directly) is validated to ensure:
+
+- **No `None` values**: No entity ID can be `None`
+- **Valid strings**: All entity IDs must be non-empty strings
+- **Proper types**: All entity IDs must be strings
+
+**Example of valid entity IDs:**
+
+```python
+backing_entity_ids = {
+    "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power",
+    "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_consumed",
+}
+```
+
+**Examples that will raise `ValueError`:**
+
+```python
+# Invalid - None values
+{None, "sensor.backing_entity"}
+
+# Invalid - Empty strings
+{"", "sensor.backing_entity"}
+
+# Invalid - Whitespace-only strings
+{"   ", "sensor.backing_entity"}
+
+# Invalid - Wrong types
+{123, "sensor.backing_entity"}
+```
+
+### Error Handling
+
+When validation fails, the library raises a `ValueError` with detailed information about all invalid entries:
+
+```python
+try:
+    sensor_manager = await async_setup_synthetic_sensors(
+        # ... other parameters ...
+        sensor_to_backing_mapping=invalid_mapping,
+    )
+except ValueError as e:
+    # Error message will list all invalid entries
+    print(f"Validation failed: {e}")
+    # Example: "Invalid sensor-to-backing mapping entries: None sensor key,
+    # Invalid backing entity ID for sensor key sensor_key_2: None"
 ```
 
 ## Real-Time Update Patterns
@@ -237,7 +335,8 @@ sensor_manager = await async_setup_synthetic_sensors(
 
 ## Data Provider with Change Notification
 
-When you provide both a `data_provider_callback` and `change_notifier`, the synthetic sensors package enables **real-time updates**:
+When you provide both a `data_provider_callback` and `change_notifier`, the synthetic sensors package enables **real-time
+updates**:
 
 - **Variables are resolved through your data provider callback**
 - **Change notifications trigger selective sensor updates**
@@ -332,11 +431,12 @@ sensors: {}
 
 The templates use the `state` special token to reference backing entities:
 
-1. **Backing Entity Registration**: The integration registers virtual entity
-   IDs (e.g., `sensor.span_abc123_0_backing_current_power`) with the synthetic sensors package
-2. **State Token Resolution**: When the formula uses `state`, it automatically calls the integration's data provideri
-   to get the current value
-3. **No Variables Needed**: The backing entity is accessed directly through the `state` token, no variable mapping required
+1. **Sensor-to-Backing Mapping**: The integration provides a mapping from sensor keys to backing entity IDs (e.g.,
+   `{"span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_power": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power"}`)
+2. **State Token Resolution**: When the formula uses `state`, the package looks up the sensor key in the mapping to find the
+   backing entity ID
+3. **Data Provider Callback**: The backing entity ID is passed to the integration's data provider callback to get the current
+   value
 
 So when you see:
 
@@ -346,16 +446,32 @@ formula: "state"
 
 This means:
 
-- `state` is a special token that references the backing entity
-- The backing entity is registered by the integration and provides data on demand
-- No variables section is needed - the `state` token handles the resolution automatically
+- `state` is a special token that references the backing entity for this sensor
+- The package uses the sensor key to look up the backing entity ID in the mapping
+- The backing entity ID is passed to your data provider callback to get the current value
+
+**Example Mapping:**
+
+```python
+sensor_to_backing_mapping = {
+    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_power": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power",
+    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_energy_consumed": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_consumed",
+    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_energy_produced": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_produced"
+}
+```
+
+**Key Points:**
+
+- **Key**: Sensor key (from YAML sensor configuration)
+- **Value**: Backing entity ID (the actual entity that provides data)
+- **Resolution**: Package maps sensor key → backing entity ID → data provider callback
 
 ### Attribute Formulas and the 'state' Variable
 
 Attribute formulas are always evaluated after the main sensor state is calculated. Every attribute formula automatically has
-access to a special variable called `state`, which contains the freshly calculated value of the main sensor.
-This allows attribute formulas to reference the main sensor's value directly, along with any additional variables defined
-for the attribute.
+access to a special variable called `state`, which contains the freshly calculated value of the main sensor. This allows
+attribute formulas to reference the main sensor's value directly, along with any additional variables defined for the
+attribute.
 
 **Example:**
 
@@ -386,7 +502,7 @@ and flexibility in your synthetic sensor definitions.
 
 ```yaml
 # yaml_templates/power_sensor.yaml.txt
-{{sensor_key}}:
+{ { sensor_key } }:
   name: "{{sensor_name}}"
   entity_id: "{{entity_id}}"
   formula: "state"
@@ -400,7 +516,7 @@ and flexibility in your synthetic sensor definitions.
 
 ```yaml
 # yaml_templates/energy_sensor.yaml.txt
-{{sensor_key}}:
+{ { sensor_key } }:
   name: "{{sensor_name}}"
   entity_id: "{{entity_id}}"
   formula: "state"
@@ -472,10 +588,10 @@ PANEL_SENSOR_DEFINITIONS = [
 async def generate_panel_sensors(
     coordinator: YourCoordinator,
     device: DeviceData
-) -> tuple[dict[str, Any], list[BackingEntity]]:
+) -> tuple[dict[str, Any], dict[str, str]]:
     """Generate panel-level synthetic sensors using templates."""
     sensor_configs: dict[str, Any] = {}
-    backing_entities: list[BackingEntity] = []
+    sensor_to_backing_mapping: dict[str, str] = {}
 
     for sensor_def in PANEL_SENSOR_DEFINITIONS:
         # Load the appropriate template
@@ -508,15 +624,10 @@ async def generate_panel_sensors(
         # Add to collection
         sensor_configs[sensor_unique_id] = sensor_yaml[sensor_unique_id]
 
-        # Create backing entity
-        backing_entity = BackingEntity(
-            entity_id=backing_entity_id,
-            value=data_value,
-            data_path=sensor_def["data_path"]
-        )
-        backing_entities.append(backing_entity)
+        # Create sensor-to-backing mapping
+        sensor_to_backing_mapping[sensor_unique_id] = backing_entity_id
 
-    return sensor_configs, backing_entities
+    return sensor_configs, sensor_to_backing_mapping
 
 async def generate_complete_sensor_set_yaml(
     device: DeviceData,
@@ -648,13 +759,15 @@ async def setup_synthetic_configuration(
 
     # Generate sensors and backing entities using templates
     device_data = main_coordinator.data
-    sensor_configs, backing_entities = await generate_panel_sensors(main_coordinator, device_data)
+    sensor_configs, sensor_to_backing_mapping = await generate_panel_sensors(main_coordinator, device_data)
 
     # Register virtual backing entities with the synthetic coordinator
-    for backing_entity in backing_entities:
-        entity_id = backing_entity["entity_id"]
-        api_key = get_api_key_from_data_path(backing_entity["data_path"])
-        synthetic_coord.register_backing_entity(entity_id, api_key)
+    for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
+        # Find the data path for this sensor
+        sensor_def = next((s for s in PANEL_SENSOR_DEFINITIONS if get_entity_suffix(s["key"]) in sensor_unique_id), None)
+        if sensor_def:
+            api_key = sensor_def["data_path"]
+            synthetic_coord.register_backing_entity(backing_entity_id, api_key)
 
     # Create or update sensor set
     if storage_manager.sensor_set_exists(sensor_set_id):
@@ -732,6 +845,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         hass, config_entry, coordinator
     )
 
+    # Generate sensor configurations and mapping
+    device_data = coordinator.data
+    sensor_configs, sensor_to_backing_mapping = await generate_panel_sensors(coordinator, device_data)
+
     # Create callbacks
     data_provider = create_data_provider_callback(coordinator)
     change_notifier = create_change_notifier_callback(synthetic_coord)
@@ -745,6 +862,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         device_identifier=coordinator.data.serial_number,
         data_provider_callback=data_provider,
         change_notifier=change_notifier,  # Enable real-time selective updates
+        sensor_to_backing_mapping=sensor_to_backing_mapping,  # Provide mapping
         allow_ha_lookups=False,
     )
 
@@ -754,71 +872,3 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         "synthetic_coordinator": synthetic_coord,
     })
 ```
-
-## CRUD Operations for Dynamic Sensor Management
-
-For adding optional sensor configurations (like solar or battery sensors), use the CRUD interface:
-
-```python
-# Adding solar sensors dynamically with change notification support
-async def add_solar_sensors(sensor_manager: SensorManager, leg1_circuit: str, leg2_circuit: str):
-    """Add solar sensors using CRUD interface."""
-
-    for sensor_id in solar_sensor_ids:
-        success = await sensor_manager.remove_sensor_with_backing_entities(sensor_id)
-        if not success:
-            _LOGGER.error("Failed to remove solar sensor: %s", sensor_id)
-```
-
-## YAML Export Methods for Sensor Sets
-
-The `SensorSet` class provides both synchronous and asynchronous methods for exporting sensor set configuration to YAML.
-Both methods serialize the current in-memory sensor set configuration to a YAML string. Neither method performs file I/O.
-
-```python
-# Synchronous export
-exported_yaml = sensor_set.export_yaml()  # str
-
-# Asynchronous export
-exported_yaml = await sensor_set.async_export_yaml()  # str
-```
-
-## Bulk Modification Performance Benefits
-
-### Enhanced Selective Updates
-
-```python
-# New approach - updates only sensors using changed backing entities
-async def _handle_coordinator_update(self):
-    # Automatic change detection and selective updates
-    # Only 2-3 sensors updated instead of 20+
-    # 85-90% reduction in unnecessary work
-```
-
-## Migration Guide
-
-To migrate from manual updates to change notification:
-
-**Update your setup function** to use the simplified interface with `change_notifier` parameter
-**Implement change detection** in your coordinator update handler
-**Replace manual bulk updates** with automatic selective updates
-**Use CRUD operations** for dynamic sensor management
-**Test real-time performance** improvements
-
-### Migration Example
-
-```python
-# Before: Manual bulk updates
-async def _handle_coordinator_update(self):
-    await self.sensor_manager.async_update_sensors()
-
-# After: Enhanced change notification (automatic)
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    # Just add change_notifier parameter - everything else automatic
-    sensor_manager = await async_setup_synthetic_sensors(
-        # ... existing parameters ...
-        change_notifier=create_change_notifier_callback(synthetic_coord),  # Add this
-    )
-```
-
-This migration dramatically improves performance while maintaining all existing functionality.

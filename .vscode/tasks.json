@@ -133,7 +133,10 @@
 		{
 			"label": "Fix markdown formatting",
 			"type": "shell",
-			"command": "./scripts/fix-markdown.sh",
+			"command": "/Users/bflood/projects/scripts/fix-markdown.sh",
+			"args": [
+				"${workspaceFolder}"
+			],
 			"group": "test",
 			"options": {
 				"cwd": "${workspaceFolder}"
@@ -146,7 +149,8 @@
 				"showReuseMessage": true,
 				"clear": false
 			},
-			"problemMatcher": []
+			"problemMatcher": [],
+			"detail": "Comprehensive markdown formatting using shared script (Prettier + markdownlint)"
 		}
 	]
 }

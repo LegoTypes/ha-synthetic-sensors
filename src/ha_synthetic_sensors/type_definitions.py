@@ -27,6 +27,7 @@ class DataProviderResult(TypedDict):
 
     value: FormulaResult
     exists: bool
+    attributes: NotRequired[dict[str, Any]]  # Optional attributes dictionary
 
 
 # Type alias for data provider callback

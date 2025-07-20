@@ -1,0 +1,68 @@
+version: "1.0"
+
+# Idiom 5 Test Scenario 5.3: Circular Reference Detection
+# Purpose: Validate that CircularDependencyError is raised when attributes reference each other circularly
+# Expected: CircularDependencyError is raised
+# Validation: Circular references are detected and prevented
+
+sensors:
+  # This should cause CircularDependencyError
+  problematic_sensor:
+    name: "Problematic Sensor"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state * 2  # Main result = 2000W
+    attributes:
+      attr_a:
+        formula: attr_b * 2  # References attr_b
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert
+      attr_b:
+        formula: attr_a * 3  # References attr_a (circular!)
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert-circle
+
+  # Another circular reference pattern
+  circular_chain:
+    name: "Circular Chain"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state * 1.5  # Main result = 1500W
+    attributes:
+      attr1:
+        formula: attr2 + 100  # References attr2
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert
+      attr2:
+        formula: attr3 * 2  # References attr3
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert
+      attr3:
+        formula: attr1 / 2  # References attr1 (circular!)
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert-circle
+
+  # Complex circular reference
+  complex_circular:
+    name: "Complex Circular"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state  # Main result = 1000W
+    attributes:
+      power_a:
+        formula: power_b + power_c  # References power_b and power_c
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert
+      power_b:
+        formula: power_a * 0.5  # References power_a (circular!)
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert
+      power_c:
+        formula: power_b * 0.3  # References power_b (part of circular chain)
+        metadata:
+          unit_of_measurement: W
+          icon: mdi:alert-circle

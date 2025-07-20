@@ -1,16 +1,4 @@
-"""Variable resolution strategies for flexible data access in synthetic sensors.
-
-This module provides a pluggable resolution system that allows synthetic sensors
-to get data from different sources (HA state, integration callbacks, or context)
-in a consistent and predictable way.
-
-Variable Types Supported:
-1. Entity aliases: variable maps to an entity ID (e.g., power: "sensor.power_meter")
-2. Numeric literals: variable contains a direct numeric value (e.g., offset: 5, rate: 1.5)
-
-Note: String literals and string operations are not currently supported since
-the evaluation engine (simpleeval) is focused on mathematical operations.
-"""
+"""Variable resolution strategies for synthetic sensor formulas."""
 
 from __future__ import annotations
 
@@ -22,9 +10,11 @@ from homeassistant.core import HomeAssistant, State
 
 from .data_validation import validate_data_provider_result, validate_entity_state_value
 from .exceptions import MissingDependencyError, NonNumericStateError
+from .type_definitions import ContextValue, DataProviderCallback
+from .utils import denormalize_entity_id
 
 if TYPE_CHECKING:
-    from .type_definitions import ContextValue, DataProviderCallback
+    pass  # No additional imports needed for type checking
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,44 +98,107 @@ class IntegrationResolutionStrategy(VariableResolutionStrategy):
     data without requiring actual HA entities.
     """
 
-    def __init__(self, data_provider_callback: DataProviderCallback, evaluator: Any = None):
-        """Initialize with integration callback and evaluator for push-based pattern."""
+    def __init__(self, data_provider_callback: DataProviderCallback, dependency_handler: Any = None):
+        """Initialize with integration callback and dependency handler for push-based pattern."""
         self._data_provider_callback = data_provider_callback
-        self._evaluator = evaluator  # For accessing new get_integration_entities method
+        self._dependency_handler = dependency_handler  # For accessing get_integration_entities method
 
     def _get_integration_entities(self) -> set[str]:
         """Get the set of entities that the integration can provide using push-based pattern."""
-        # Use new pattern (via evaluator)
-        if self._evaluator and hasattr(self._evaluator, "get_integration_entities"):
-            entities = self._evaluator.get_integration_entities()
+        # Use dependency handler pattern
+        if self._dependency_handler and hasattr(self._dependency_handler, "get_integration_entities"):
+            entities = self._dependency_handler.get_integration_entities()
             return cast(set[str], entities)
 
-        # If no evaluator provided, return empty set (no integration entities available)
+        # If no dependency handler provided, return empty set (no integration entities available)
         return set()
 
     def can_resolve(self, variable_name: str, entity_id: str | None = None) -> bool:
-        """Check if integration can resolve this variable using push-based pattern."""
-        integration_entities = self._get_integration_entities()
+        """Check if integration data provider can resolve this variable."""
         target_entity = entity_id or variable_name
 
-        # If we have registered entities (from push-based pattern), check if entity is in the list
-        if integration_entities:
-            return target_entity in integration_entities
+        # Handle normalized entity IDs (with underscores instead of dots)
+        if "." not in target_entity and "_" in target_entity:
+            original_entity_id = denormalize_entity_id(target_entity)
+            if original_entity_id:
+                return self._check_entity_exists(original_entity_id)
 
-        # If no registered entities, we can't resolve anything
-        return False
+        # Only resolve if it looks like an entity ID
+        if "." not in target_entity:
+            return False
+
+        return self._check_entity_exists(target_entity)
+
+    def _check_entity_exists(self, entity_id: str) -> bool:
+        """Check if an entity exists in the integration data provider."""
+        if self._data_provider_callback is None:
+            return False
+
+        result = self._data_provider_callback(entity_id)
+        return result is not None and result.get("exists", False)
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
-        """Resolve variable using integration callback."""
+        """Resolve variable using integration data provider."""
         target_entity = entity_id or variable_name
 
-        # Call data provider and validate result (let exceptions be fatal)
+        # Check if this is an attribute reference (e.g., "state.voltage")
+        if "." in variable_name and entity_id is None:
+            # This is an attribute reference - split into base entity and attribute
+            parts = variable_name.split(".", 1)
+            base_entity = parts[0]
+            attribute_name = parts[1]
+
+            if base_entity == "state":
+                # For "state.voltage", we need to get the backing entity from the dependency handler
+                # This is a simplified approach - in practice, we'd need to know which sensor we're evaluating
+                # For now, let's assume the backing entity is available in the integration entities
+                integration_entities = self._get_integration_entities()
+                if integration_entities:
+                    # Use the first available integration entity as the backing entity
+                    backing_entity = next(iter(integration_entities))
+                    result = self._data_provider_callback(backing_entity)
+                    validated_result = validate_data_provider_result(
+                        result, f"integration data provider for '{backing_entity}'"
+                    )
+
+                    if validated_result["exists"] and "attributes" in validated_result:
+                        attributes = validated_result["attributes"]
+                        if attribute_name in attributes:
+                            attribute_value = attributes[attribute_name]
+                            sanitized_value = validate_entity_state_value(attribute_value, f"{backing_entity}.{attribute_name}")
+                            return sanitized_value, True, "integration"
+
+                # Fallback: try to resolve "state" as a regular entity
+                result = self._data_provider_callback("state")
+                validated_result = validate_data_provider_result(result, "integration data provider for 'state'")
+            else:
+                # Regular attribute reference
+                result = self._data_provider_callback(base_entity)
+                validated_result = validate_data_provider_result(result, f"integration data provider for '{base_entity}'")
+
+            if not validated_result["exists"]:
+                return None, False, "integration"
+
+            # Check if the result has attributes
+            if "attributes" in validated_result and isinstance(validated_result["attributes"], dict):
+                attributes = validated_result["attributes"]
+                if attribute_name in attributes:
+                    attribute_value = attributes[attribute_name]
+                    # Validate the attribute value
+                    sanitized_value = validate_entity_state_value(attribute_value, f"{base_entity}.{attribute_name}")
+                    return sanitized_value, True, "integration"
+
+            # Attribute not found
+            return None, False, "integration"
+
+        # Regular entity resolution
         result = self._data_provider_callback(target_entity)
         validated_result = validate_data_provider_result(result, f"integration data provider for '{target_entity}'")
 
-        # If entity exists, validate the state value too (per strict error handling requirements)
+        # If entity exists, validate and sanitize the state value
         if validated_result["exists"]:
-            validate_entity_state_value(validated_result["value"], target_entity)
+            sanitized_value = validate_entity_state_value(validated_result["value"], target_entity)
+            return sanitized_value, validated_result["exists"], "integration"
 
         return validated_result["value"], validated_result["exists"], "integration"
 
@@ -165,36 +218,88 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
         """Check if HA has state for this variable."""
         target_entity = entity_id or variable_name
 
+        # Handle normalized entity IDs (with underscores instead of dots)
+        if "." not in target_entity and "_" in target_entity:
+            # Try to convert normalized entity ID back to original format
+            # This handles cases where entity IDs were normalized for simpleeval compatibility
+            original_entity_id = denormalize_entity_id(target_entity)
+            if original_entity_id:
+                state = self._hass.states.get(original_entity_id)
+                result = state is not None
+                return result
+
         # Only resolve if it looks like an entity ID
         if "." not in target_entity:
             return False
 
         state = self._hass.states.get(target_entity)
-        return state is not None
+        result = state is not None
+        return result
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
         """Resolve variable using HA state."""
         target_entity = entity_id or variable_name
 
+        # Check if this is an attribute reference (e.g., "state.voltage")
+        if "." in variable_name and entity_id is None:
+            return self._resolve_attribute_reference(variable_name)
+
+        # Handle normalized entity IDs (with underscores instead of dots)
+        if "." not in target_entity and "_" in target_entity:
+            original_entity_id = denormalize_entity_id(target_entity)
+            if original_entity_id:
+                state = self._hass.states.get(original_entity_id)
+                if state is not None:
+                    return self._process_state(state, "ha")
+
         state = self._hass.states.get(target_entity)
         if state is None:
             return None, False, "ha"
 
+        return self._process_state(state, "ha")
+
+    def _resolve_attribute_reference(self, variable_name: str) -> tuple[Any, bool, str]:
+        """Resolve an attribute reference like 'state.voltage'."""
+        parts = variable_name.split(".", 1)
+        base_entity = parts[0]
+        attribute_name = parts[1]
+
+        # Resolve the base entity first
+        state = self._hass.states.get(base_entity)
+        if state is None:
+            return None, False, "ha"
+
+        # Check if the state has the requested attribute
+        if hasattr(state, "attributes") and attribute_name in state.attributes:
+            attribute_value = state.attributes[attribute_name]
+            # Try to convert to numeric if possible
+            try:
+                numeric_value = float(attribute_value)
+                return numeric_value, True, "ha"
+            except (ValueError, TypeError):
+                # Return as string if not numeric
+                return str(attribute_value), True, "ha"
+
+        # Attribute not found
+        return None, False, "ha"
+
+    def _process_state(self, state: State, source: str) -> tuple[Any, bool, str]:
+        """Process state and return numeric value."""
         # Handle startup race conditions where state exists but state.state is None
         if state.state is None:
-            return None, False, "ha"
+            return None, False, source
 
         # Handle clearly unavailable states
         if str(state.state).lower() in ("unavailable", "unknown"):
-            return None, False, "ha"
+            return None, False, source
 
         try:
             # Try to get numeric state value
             numeric_value = self._get_numeric_state(state)
-            return numeric_value, True, "ha"
+            return numeric_value, True, source
         except (ValueError, TypeError, NonNumericStateError):
             # For truly non-numeric states that can't be converted, treat as unavailable
-            return None, False, "ha"
+            return None, False, source
 
     def get_numeric_state(self, state: State) -> float:
         """Public method to get numeric state value.

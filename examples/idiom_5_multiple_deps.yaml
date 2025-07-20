@@ -1,0 +1,104 @@
+# Test Scenario 5.2: Multiple Attribute Dependencies
+# Purpose: Test attribute depends on multiple other attributes
+# Expected: All dependencies are resolved before evaluation
+# Validation: Complex dependency graphs work
+
+sensors:
+  # Test multiple attribute dependencies
+  multiple_deps_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Base attributes
+      hourly_cost:
+        formula: state  # 250 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Hourly Cost"
+      daily_cost:
+        formula: hourly_cost * 24  # 6000 cents/day
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost"
+      weekly_cost:
+        formula: daily_cost * 7  # 42000 cents/week
+        metadata:
+          unit_of_measurement: cents/week
+          friendly_name: "Weekly Cost"
+      # Complex attribute with multiple dependencies
+      cost_analysis:
+        formula: hourly_cost + daily_cost / 24 + weekly_cost / (24 * 7)  # Uses 3 attributes
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Cost Analysis"
+      # Another complex attribute
+      cost_efficiency:
+        formula: (hourly_cost * 24) / daily_cost * 100  # Uses 2 attributes
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Cost Efficiency"
+      # Deep dependency chain
+      monthly_cost:
+        formula: weekly_cost * 4  # 168000 cents/month
+        metadata:
+          unit_of_measurement: cents/month
+          friendly_name: "Monthly Cost"
+      yearly_cost:
+        formula: monthly_cost * 12  # 2016000 cents/year
+        metadata:
+          unit_of_measurement: cents/year
+          friendly_name: "Yearly Cost"
+      # Complex calculation using multiple levels
+      cost_summary:
+        formula: hourly_cost + daily_cost / 24 + weekly_cost / (24 * 7) + monthly_cost / (24 * 30) + yearly_cost / (24 * 365)
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Cost Summary"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Multiple Dependencies Test"
+
+  # Test complex dependency graph
+  complex_deps_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Power calculations
+      power_kw:
+        formula: state / 1000  # 1.1 kW
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Power (kW)"
+      power_efficiency:
+        formula: state / sensor.span_panel_instantaneous_power * 100  # 110%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Power Efficiency"
+      # Energy calculations
+      hourly_energy:
+        formula: power_kw * 1  # 1.1 kWh
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Hourly Energy"
+      daily_energy:
+        formula: hourly_energy * 24  # 26.4 kWh
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Daily Energy"
+      # Complex multi-dependency attribute
+      energy_cost_analysis:
+        formula: (hourly_energy * 0.25) + (daily_energy * 0.20 / 24) + (power_efficiency / 100)
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Energy Cost Analysis"
+      # Another complex attribute
+      power_metrics:
+        formula: power_kw * power_efficiency / 100 + hourly_energy * 0.1
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Power Metrics"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Dependencies Test"

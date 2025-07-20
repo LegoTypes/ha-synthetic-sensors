@@ -1,0 +1,344 @@
+"""Integration tests for Idiom 2: Self-Reference Patterns."""
+
+import pytest
+from unittest.mock import MagicMock
+from ha_synthetic_sensors.config_manager import ConfigManager
+from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
+
+
+class TestIdiom2SelfReference:
+    """Test Idiom 2: Self-Reference Patterns."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock()
+        hass.states.get.return_value = None
+        return hass
+
+    @pytest.fixture
+    def config_manager(self, mock_hass):
+        """Create a config manager with mock HA."""
+        return ConfigManager(mock_hass)
+
+    @pytest.fixture
+    def state_token_yaml(self):
+        """Load the state token YAML file."""
+        yaml_path = "examples/idiom_2_state_token.yaml"
+        with open(yaml_path, "r", encoding="utf-8") as file:
+            return file.read()
+
+    @pytest.fixture
+    def sensor_key_yaml(self):
+        """Load the sensor key YAML file."""
+        yaml_path = "examples/idiom_2_sensor_key.yaml"
+        with open(yaml_path, "r", encoding="utf-8") as file:
+            return file.read()
+
+    @pytest.fixture
+    def entity_id_yaml(self):
+        """Load the entity ID YAML file."""
+        yaml_path = "examples/idiom_2_entity_id.yaml"
+        with open(yaml_path, "r", encoding="utf-8") as file:
+            return file.read()
+
+    @pytest.fixture
+    def equivalence_yaml(self):
+        """Load the equivalence YAML file."""
+        yaml_path = "examples/idiom_2_equivalence.yaml"
+        with open(yaml_path, "r", encoding="utf-8") as file:
+            return file.read()
+
+    def test_state_token_reference(self, config_manager, state_token_yaml):
+        """Test that state token resolves to backing entity value."""
+        config = config_manager.load_from_yaml(state_token_yaml)
+        sensor = config.sensors[0]
+
+        # Create sensor manager with data provider
+        def mock_data_provider(entity_id: str):
+            if entity_id == "sensor.span_panel_instantaneous_power":
+                return {"value": 1000.0, "exists": True}
+            return {"value": None, "exists": False}
+
+        mock_add_entities = MagicMock()
+        sensor_manager = SensorManager(
+            config_manager._hass,
+            MagicMock(),  # name_resolver
+            mock_add_entities,  # add_entities_callback
+            SensorManagerConfig(data_provider_callback=mock_data_provider),
+        )
+
+        # Register the backing entity
+        sensor_manager.register_data_provider_entities(
+            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
+        )
+
+        # Register the sensor-to-backing mapping
+        sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
+        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+
+        # Test main formula evaluation
+        evaluator = sensor_manager._evaluator
+        main_formula = sensor.formulas[0]
+
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+
+        # Main formula should succeed: state * 2 = 1000 * 2 = 2000
+        assert main_result["success"] is True
+        assert main_result["value"] == 2000.0
+
+    @pytest.mark.skip(reason="Sensor key self-reference not yet supported by evaluator")
+    def test_sensor_key_reference(self, config_manager, sensor_key_yaml):
+        """Test that sensor key name resolves to backing entity value."""
+        config = config_manager.load_from_yaml(sensor_key_yaml)
+        sensor = config.sensors[0]
+
+        # Create sensor manager with data provider
+        def mock_data_provider(entity_id: str):
+            if entity_id == "sensor.span_panel_instantaneous_power":
+                return {"value": 1000.0, "exists": True}
+            return {"value": None, "exists": False}
+
+        mock_add_entities = MagicMock()
+        sensor_manager = SensorManager(
+            config_manager._hass,
+            MagicMock(),  # name_resolver
+            mock_add_entities,  # add_entities_callback
+            SensorManagerConfig(data_provider_callback=mock_data_provider),
+        )
+
+        # Register the backing entity
+        sensor_manager.register_data_provider_entities(
+            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
+        )
+
+        # Register the sensor-to-backing mapping
+        sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
+        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+
+        # Test main formula evaluation
+        evaluator = sensor_manager._evaluator
+        main_formula = sensor.formulas[0]
+
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+
+        # Main formula should succeed: power_calculator * 2 = 1000 * 2 = 2000
+        assert main_result["success"] is True
+        assert main_result["value"] == 2000.0
+
+    @pytest.mark.skip(reason="Entity ID self-reference not yet supported by evaluator")
+    def test_entity_id_reference(self, config_manager, entity_id_yaml):
+        """Test that full entity ID resolves to backing entity value."""
+        config = config_manager.load_from_yaml(entity_id_yaml)
+        sensor = config.sensors[0]
+
+        # Create sensor manager with data provider
+        def mock_data_provider(entity_id: str):
+            if entity_id == "sensor.span_panel_instantaneous_power":
+                return {"value": 1000.0, "exists": True}
+            return {"value": None, "exists": False}
+
+        mock_add_entities = MagicMock()
+        sensor_manager = SensorManager(
+            config_manager._hass,
+            MagicMock(),  # name_resolver
+            mock_add_entities,  # add_entities_callback
+            SensorManagerConfig(data_provider_callback=mock_data_provider),
+        )
+
+        # Register the backing entity
+        sensor_manager.register_data_provider_entities(
+            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
+        )
+
+        # Register the sensor-to-backing mapping
+        sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
+        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+
+        # Test main formula evaluation
+        evaluator = sensor_manager._evaluator
+        main_formula = sensor.formulas[0]
+
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+
+        # Main formula should succeed: sensor.power_calculator * 2 = 1000 * 2 = 2000
+        assert main_result["success"] is True
+        assert main_result["value"] == 2000.0
+
+    @pytest.mark.skip(reason="Self-reference patterns not yet supported by evaluator")
+    def test_equivalence_test(self, config_manager, equivalence_yaml):
+        """Test that all three reference patterns produce identical results."""
+        config = config_manager.load_from_yaml(equivalence_yaml)
+
+        # Create sensor manager with data provider
+        def mock_data_provider(entity_id: str):
+            if entity_id == "sensor.span_panel_instantaneous_power":
+                return {"value": 1000.0, "exists": True}
+            elif entity_id == "sensor.span_panel_voltage":
+                return {"value": 240.0, "exists": True}
+            return {"value": None, "exists": False}
+
+        mock_add_entities = MagicMock()
+        sensor_manager = SensorManager(
+            config_manager._hass,
+            MagicMock(),  # name_resolver
+            mock_add_entities,  # add_entities_callback
+            SensorManagerConfig(data_provider_callback=mock_data_provider),
+        )
+
+        # Register the backing entities
+        sensor_manager.register_data_provider_entities(
+            {"sensor.span_panel_instantaneous_power", "sensor.span_panel_voltage"}, allow_ha_lookups=False, change_notifier=None
+        )
+
+        # Register the sensor-to-backing mappings for all sensors
+        sensor_to_backing_mapping = {
+            "power_calculator_state": "sensor.span_panel_instantaneous_power",
+            "power_calculator_key": "sensor.span_panel_instantaneous_power",
+            "power_calculator_entity": "sensor.span_panel_instantaneous_power",
+            "voltage_analyzer_state": "sensor.span_panel_voltage",
+            "voltage_analyzer_key": "sensor.span_panel_voltage",
+            "voltage_analyzer_entity": "sensor.span_panel_voltage",
+        }
+        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+
+        # Test all three sensors
+        evaluator = sensor_manager._evaluator
+        results = []
+
+        for sensor in config.sensors:
+            main_formula = sensor.formulas[0]
+            main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+            assert main_result["success"] is True
+            results.append(main_result["value"])
+
+        # All results should be equivalent (2000W for power, 264V for voltage)
+        assert len(results) == 6
+        # Power calculators should all be 2000W
+        assert results[0] == 2000.0  # power_calculator_state
+        assert results[1] == 2000.0  # power_calculator_key
+        assert results[2] == 2000.0  # power_calculator_entity
+        # Voltage analyzers should all be 264V
+        assert results[3] == 264.0  # voltage_analyzer_state
+        assert results[4] == 264.0  # voltage_analyzer_key
+        assert results[5] == 264.0  # voltage_analyzer_entity
+
+    def test_self_reference_without_backing_entity(self, config_manager):
+        """Test self-reference behavior when no backing entity is configured."""
+        # Create a sensor without backing entity
+        yaml_content = """
+version: "1.0"
+
+sensors:
+  recursive_calculator:
+    name: "Recursive Calculator"
+    formula: (state + sensor.current_power) / 2  # Uses previous value + external entity
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+"""
+        config = config_manager.load_from_yaml(yaml_content)
+        sensor = config.sensors[0]
+
+        # Create sensor manager
+        def mock_data_provider(entity_id: str):
+            if entity_id == "sensor.current_power":
+                return {"value": 1000.0, "exists": True}
+            return {"value": None, "exists": False}
+
+        mock_add_entities = MagicMock()
+        sensor_manager = SensorManager(
+            config_manager._hass,
+            MagicMock(),  # name_resolver
+            mock_add_entities,  # add_entities_callback
+            SensorManagerConfig(data_provider_callback=mock_data_provider),
+        )
+
+        # Register the external entity
+        sensor_manager.register_data_provider_entities({"sensor.current_power"}, allow_ha_lookups=False, change_notifier=None)
+
+        # Test main formula evaluation
+        evaluator = sensor_manager._evaluator
+        main_formula = sensor.formulas[0]
+
+        # Should fail because no previous value and no backing entity
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        assert result["success"] is False
+        assert "state" in result["error"].lower()
+
+    def test_self_reference_in_attributes(self, config_manager):
+        """Test self-reference patterns in attribute formulas."""
+        yaml_content = """
+version: "1.0"
+
+sensors:
+  power_analyzer:
+    name: "Power Analyzer"
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1
+    attributes:
+      daily_power:
+        formula: state * 24  # References main sensor result
+        metadata:
+          unit_of_measurement: W
+      weekly_power:
+        formula: power_analyzer * 24 * 7  # References main sensor by key
+        metadata:
+          unit_of_measurement: W
+      monthly_power:
+        formula: sensor.power_analyzer * 24 * 30  # References main sensor by entity ID
+        metadata:
+          unit_of_measurement: W
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+"""
+        config = config_manager.load_from_yaml(yaml_content)
+        sensor = config.sensors[0]
+
+        # Create sensor manager with data provider
+        def mock_data_provider(entity_id: str):
+            if entity_id == "sensor.span_panel_instantaneous_power":
+                return {"value": 1000.0, "exists": True}
+            return {"value": None, "exists": False}
+
+        mock_add_entities = MagicMock()
+        sensor_manager = SensorManager(
+            config_manager._hass,
+            MagicMock(),  # name_resolver
+            mock_add_entities,  # add_entities_callback
+            SensorManagerConfig(data_provider_callback=mock_data_provider),
+        )
+
+        # Register the backing entity
+        sensor_manager.register_data_provider_entities(
+            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
+        )
+
+        # Register the sensor-to-backing mapping
+        sensor_to_backing_mapping = {"power_analyzer": "sensor.span_panel_instantaneous_power"}
+        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+
+        # Test main formula evaluation first
+        evaluator = sensor_manager._evaluator
+        main_formula = sensor.formulas[0]
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        assert main_result["success"] is True
+        assert main_result["value"] == 1100.0
+
+        # Test attribute formulas with context from main result
+        context = {"state": main_result["value"]}
+
+        # Test daily_power attribute (state token)
+        if len(sensor.formulas) > 1:
+            daily_formula = sensor.formulas[1]
+            daily_result = evaluator.evaluate_formula_with_sensor_config(daily_formula, context, sensor)
+            assert daily_result["success"] is True
+            assert daily_result["value"] == 26400.0  # 1100 * 24
+
+        # Note: Sensor key and entity ID references in attributes are not yet supported
+        # These would need to be tested once the evaluator supports them

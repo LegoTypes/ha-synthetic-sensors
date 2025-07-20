@@ -58,7 +58,7 @@ class TestReferencePatterns:
     @pytest.fixture
     def reference_patterns_yaml(self):
         """Load the reference patterns YAML fixture."""
-        fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "reference_patterns.yaml"
+        fixture_path = Path(__file__).parent.parent.parent / "examples" / "reference_patterns_example.yaml"
         with open(fixture_path) as f:
             return yaml.safe_load(f)
 
@@ -73,8 +73,7 @@ class TestReferencePatterns:
         # The formula should contain 'state'
         assert daily_formula.formula == "state * 24"
 
-        # Variables should include the sensor key reference and inherited variables
-        assert "energy_cost_analysis" in daily_formula.variables
+        # Variables should include inherited variables but NOT sensor key reference since formula uses 'state'
         assert "current_power" in daily_formula.variables
         assert "electricity_rate" in daily_formula.variables
 
@@ -113,6 +112,18 @@ class TestReferencePatterns:
 
     def test_entity_id_reference(self, config_manager, evaluator, reference_patterns_yaml):
         """Test referencing main sensor by full entity_id."""
+
+        # Set up data provider callback that uses hass.states.get
+        def mock_data_provider(entity_id: str):
+            state = evaluator._hass.states.get(entity_id)
+            if state:
+                return {"value": float(state.state), "exists": True}
+            return {"value": None, "exists": False}
+
+        # Set the data provider callback and enable HA lookups
+        evaluator.data_provider_callback = mock_data_provider
+        evaluator.update_allow_ha_lookups(True)
+
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 
         # Find the energy_cost_analysis sensor and its annual_projected attribute
@@ -126,7 +137,7 @@ class TestReferencePatterns:
 
         # Test evaluation - the evaluator should resolve the entity_id from hass.states
         context = None  # Let evaluator resolve everything from dependencies
-        result = evaluator.evaluate_formula(annual_formula, context)
+        result = evaluator.evaluate_formula_with_sensor_config(annual_formula, context, sensor_config)
 
         assert result["success"] is True
         assert result["value"] == 219000.0  # 25 * 24 * 365 = 219000
@@ -147,12 +158,32 @@ class TestReferencePatterns:
         for formula in [daily_formula, monthly_formula, annual_formula]:
             assert "base_power" in formula.variables
             assert "base_efficiency" in formula.variables
-            # All should have sensor key reference
-            assert "comprehensive_analysis" in formula.variables
-            assert formula.variables["comprehensive_analysis"] == "sensor.comprehensive_analysis"
+
+        # Only formulas that reference the sensor key should have sensor key reference
+        # daily_formula uses 'state' - no sensor key reference
+        assert "comprehensive_analysis" not in daily_formula.variables
+
+        # monthly_formula uses 'comprehensive_analysis' - should have sensor key reference
+        assert "comprehensive_analysis" in monthly_formula.variables
+        assert monthly_formula.variables["comprehensive_analysis"] == "sensor.comprehensive_analysis"
+
+        # annual_formula uses 'sensor.comprehensive_analysis' - no sensor key reference needed
+        assert "comprehensive_analysis" not in annual_formula.variables
 
     def test_entity_id_reference_in_main_formula(self, config_manager, evaluator, reference_patterns_yaml):
         """Test entity_id reference in main formula (not just attributes)."""
+
+        # Set up data provider callback that uses hass.states.get
+        def mock_data_provider(entity_id: str):
+            state = evaluator._hass.states.get(entity_id)
+            if state:
+                return {"value": float(state.state), "exists": True}
+            return {"value": None, "exists": False}
+
+        # Set the data provider callback and enable HA lookups
+        evaluator.data_provider_callback = mock_data_provider
+        evaluator.update_allow_ha_lookups(True)
+
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 
         # Find the grid_dependency_analysis sensor
@@ -165,7 +196,7 @@ class TestReferencePatterns:
 
         # Test evaluation
         context = None  # Let evaluator resolve from dependencies
-        result = evaluator.evaluate_formula(formula_config, context)
+        result = evaluator.evaluate_formula_with_sensor_config(formula_config, context, sensor_config)
         assert result["success"] is True
         assert result["value"] == 1025.0  # 1000 + 25 = 1025
 
@@ -195,11 +226,10 @@ class TestReferencePatterns:
         sensor_config = next(s for s in config.sensors if s.unique_id == "power_efficiency")
         battery_formula = next(f for f in sensor_config.formulas if f.id == "power_efficiency_battery_adjusted")
 
-        # Should inherit parent variables plus have main sensor reference
+        # Should inherit parent variables but NOT main sensor reference since formula uses entity_id
         assert "current_power" in battery_formula.variables  # Inherited
         assert "device_efficiency" in battery_formula.variables  # Inherited
         assert "backup_device" in battery_formula.variables  # Inherited
-        assert "power_efficiency" in battery_formula.variables  # Main sensor reference
 
         # Should also extract the direct entity_id reference
         assert "sensor.energy_cost_analysis" in battery_formula.variables
