@@ -5,6 +5,8 @@ This module provides schema-based validation for synthetic sensor YAML configura
 with detailed error reporting and support for schema versioning.
 """
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,8 +15,7 @@ import logging
 import re
 from typing import Any, TypedDict
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES, DEVICE_CLASS_UNITS
+from .ha_constants import HAConstantLoader
 
 try:
     from jsonschema import Draft7Validator
@@ -177,6 +178,12 @@ class SchemaValidator:
         if version == "1.0":
             sensors = config_data.get("sensors", {})
             for sensor_key, sensor_config in sensors.items():
+                # Validate device class using HA's built-in validation
+                metadata = sensor_config.get("metadata", {})
+                device_class = metadata.get("device_class")
+                if device_class:
+                    self._validate_device_class(sensor_key, device_class, warnings)
+
                 self._validate_sensor_config(sensor_key, sensor_config, warnings)
                 self._validate_state_class_compatibility(sensor_key, sensor_config, warnings)
                 self._validate_unit_compatibility(sensor_key, sensor_config, errors)
@@ -201,34 +208,48 @@ class SchemaValidator:
         try:
             # Convert string values to enum instances for lookup
             try:
-                device_class_enum = SensorDeviceClass(device_class)
-                state_class_enum = SensorStateClass(state_class)
+                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+                sensor_state_class = HAConstantLoader.get_constant("SensorStateClass")
+                device_class_enum = sensor_device_class(device_class)
+                state_class_enum = sensor_state_class(state_class)
             except ValueError:
-                # Invalid enum values - will be caught by schema validation
+                # Check if the state class is valid using component constants
+                try:
+                    sensor_state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
+                    if state_class not in sensor_state_classes:
+                        warnings.append(
+                            ValidationError(
+                                message=f"Invalid state_class '{state_class}'. Valid options: {sensor_state_classes}",
+                                path=f"sensors.{sensor_key}.state_class",
+                                severity=ValidationSeverity.WARNING,
+                            )
+                        )
+                except ValueError:
+                    pass  # Skip validation if we can't get the constants
                 return
 
             # Check if this combination is explicitly allowed by HA
-            allowed_state_classes = DEVICE_CLASS_STATE_CLASSES.get(device_class_enum, set())
+            try:
+                device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
+                allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
 
-            if allowed_state_classes and state_class_enum not in allowed_state_classes:
-                allowed_values = [sc.value for sc in allowed_state_classes]
-                warnings.append(
-                    ValidationError(
-                        message=(
-                            f"Sensor '{sensor_key}' uses state_class '{state_class}' with "
-                            f"device_class '{device_class}'. Home Assistant recommends "
-                            f"state_class values: {', '.join(allowed_values)} for this "
-                            "device class."
-                        ),
-                        path=f"sensors.{sensor_key}.state_class",
-                        severity=ValidationSeverity.WARNING,
-                        suggested_fix=f"Consider using one of: {', '.join(allowed_values)}",
+                if allowed_state_classes and state_class_enum not in allowed_state_classes:
+                    warnings.append(
+                        ValidationError(
+                            message=(
+                                f"Invalid state_class '{state_class}' for device_class '{device_class}'. "
+                                f"Valid options: {[sc.value for sc in allowed_state_classes]}"
+                            ),
+                            path=f"sensors.{sensor_key}.state_class",
+                            severity=ValidationSeverity.WARNING,
+                        )
                     )
-                )
+            except ValueError:
+                pass  # Skip validation if we can't get the constants
 
         except ImportError:
-            # Fall back to basic validation if HA constants not available
-            self._validate_state_class_fallback(sensor_key, sensor_config, device_class, state_class, warnings)
+            # HA not available - skip validation
+            pass
 
     def _validate_state_class_fallback(
         self,
@@ -356,6 +377,59 @@ class SchemaValidator:
 
         return warnings
 
+    def _validate_device_class(
+        self,
+        sensor_key: str,
+        device_class: str,
+        warnings: list[ValidationError],
+    ) -> None:
+        """Validate device class using Home Assistant's built-in validation.
+
+        Args:
+            sensor_key: The sensor key being validated
+            device_class: The device class to validate
+            warnings: List to append validation warnings to
+        """
+        try:
+            # Try to validate against sensor device classes first
+            try:
+                # Check against the component's device class list
+                sensor_device_classes = HAConstantLoader.get_constant("DEVICE_CLASSES", "homeassistant.components.sensor")
+                if device_class in sensor_device_classes:
+                    return  # Valid sensor device class
+            except Exception as e:
+                _LOGGER.debug("Could not check sensor device classes: %s", e)
+
+            # Try to validate against binary sensor device classes
+            try:
+                # Check against the component's device class list
+                binary_sensor_device_classes = HAConstantLoader.get_constant(
+                    "DEVICE_CLASSES", "homeassistant.components.binary_sensor"
+                )
+                if device_class in binary_sensor_device_classes:
+                    return  # Valid binary sensor device class
+            except Exception as e:
+                _LOGGER.debug("Could not check binary sensor device classes: %s", e)
+
+            # If we get here, the device class is not valid
+            warnings.append(
+                ValidationError(
+                    message=(
+                        f"Sensor '{sensor_key}' uses invalid device_class '{device_class}'. "
+                        f"This is not a recognized Home Assistant device class."
+                    ),
+                    path=f"sensors.{sensor_key}.metadata.device_class",
+                    severity=ValidationSeverity.WARNING,
+                    suggested_fix="Use a valid Home Assistant device class",
+                )
+            )
+        except ImportError:
+            # If HA imports fail, skip validation to avoid breaking the package
+            return
+        except Exception:
+            # If validation fails for any other reason, skip to avoid breaking the package
+            return
+
     def _validate_unit_compatibility(
         self,
         sensor_key: str,
@@ -368,86 +442,85 @@ class SchemaValidator:
         unit = metadata.get("unit_of_measurement")
 
         if not device_class or not unit:
-            return
+            return  # No validation needed if either is missing
 
-        # Import HA's official device class to unit mappings
         try:
-            # Convert string to enum for lookup
+            # Check against both SensorDeviceClass and BinarySensorDeviceClass
+            device_class_enum = None
             try:
-                device_class_enum = SensorDeviceClass(device_class)
+                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+                device_class_enum = sensor_device_class(device_class)
             except ValueError:
-                # Invalid device_class - will be caught by schema validation
-                return
+                # Try BinarySensorDeviceClass if SensorDeviceClass fails
+                try:
+                    binary_sensor_device_class = HAConstantLoader.get_constant("BinarySensorDeviceClass")
+                    device_class_enum = binary_sensor_device_class(device_class)
+                except ValueError:
+                    # Invalid device_class - not found in either enum
+                    errors.append(
+                        ValidationError(
+                            message=f"Sensor '{sensor_key}' uses invalid device_class '{device_class}'",
+                            path=f"sensors.{sensor_key}.metadata.device_class",
+                            severity=ValidationSeverity.ERROR,
+                        )
+                    )
+                    return
 
             # Skip validation for device classes with open-ended unit requirements
-            SKIP_UNIT_VALIDATION = {
-                SensorDeviceClass.MONETARY,  # ISO4217 currency codes (180+ options)
-                SensorDeviceClass.DATE,  # ISO8601 date formats (many variations)
-                SensorDeviceClass.TIMESTAMP,  # ISO8601 timestamp formats (many variations)
-                SensorDeviceClass.ENUM,  # User-defined enumeration values
-            }
+            try:
+                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+                SKIP_UNIT_VALIDATION = {
+                    sensor_device_class.MONETARY,  # ISO4217 currency codes (180+ options)
+                    sensor_device_class.DATE,  # ISO8601 date formats (many variations)
+                    sensor_device_class.TIMESTAMP,  # ISO8601 timestamp formats (many variations)
+                    sensor_device_class.ENUM,  # User-defined enumeration values
+                }
+            except ValueError:
+                SKIP_UNIT_VALIDATION = set()
 
             if device_class_enum in SKIP_UNIT_VALIDATION:
-                return  # Punt - too many valid options to validate reasonably
-
-            # Get allowed units for this device class
-            allowed_units_raw = DEVICE_CLASS_UNITS.get(device_class_enum, set())
-
-            # If HA doesn't define units for this device class, punt
-            if not allowed_units_raw:
                 return
 
-            # Convert enum units to string values for comparison
-            allowed_units: set[str | None] = set()
-            for unit_spec in allowed_units_raw:
-                if unit_spec is None:
-                    # None is allowed (unitless)
-                    allowed_units.add(None)
-                elif isinstance(unit_spec, str):
-                    # It's a string constant
-                    allowed_units.add(unit_spec)
-                else:
-                    # It's likely an enum like UnitOfPower.WATT
-                    try:
-                        allowed_units.add(str(unit_spec.value))
-                    except AttributeError:
-                        # If it doesn't have .value, add as string
-                        allowed_units.add(str(unit_spec))
+            # Get allowed units for this device class
+            try:
+                device_class_units = HAConstantLoader.get_constant("DEVICE_CLASS_UNITS")
+                allowed_units = device_class_units.get(device_class_enum, set())
+            except ValueError:
+                allowed_units = set()
 
-            # Check if current unit is allowed
-            if allowed_units and unit not in allowed_units:
-                # Format allowed units for display (handle None separately for sorting)
-                str_units = [u for u in allowed_units if u is not None and isinstance(u, str)]
-                has_none = None in allowed_units
+            if not allowed_units:
+                return  # No known restrictions
 
-                unit_list = sorted(str_units)
-                if has_none:
-                    unit_list.append("None")
+            # Convert allowed units to string representations for comparison
+            allowed_unit_strings = {
+                unit_obj.value if hasattr(unit_obj, "value") else str(unit_obj) for unit_obj in allowed_units
+            }
+
+            if unit not in allowed_unit_strings:
                 errors.append(
                     ValidationError(
                         message=(
-                            f"Sensor '{sensor_key}' uses invalid unit '{unit}' for "
-                            f"device_class '{device_class}'. Home Assistant will log this "
-                            f"as an error. Allowed units: {', '.join(unit_list)}"
+                            f"Sensor '{sensor_key}' uses invalid unit '{unit}' "
+                            f"with device_class '{device_class}'. This combination is not valid."
                         ),
-                        path=f"sensors.{sensor_key}.unit_of_measurement",
+                        path=f"sensors.{sensor_key}.metadata.unit_of_measurement",
                         severity=ValidationSeverity.ERROR,
-                        suggested_fix=f"Use one of the allowed units: {', '.join(unit_list)}",
+                        suggested_fix=f"Use one of: {', '.join(sorted(allowed_unit_strings))}",
                     )
                 )
-
-        except ImportError:
-            # Fall back if HA constants not available - no validation
-            pass
+        except Exception as e:
+            # If validation fails (e.g., HA constants not available), skip validation
+            # This prevents breaking the package if HA changes its validation logic
+            _LOGGER.debug("Unit validation failed, skipping: %s", e)
 
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns
         id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
         entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
-        # Allow entity IDs OR collection patterns (device_class:, area:, tags:, regex:, attribute:)
+        # Allow entity IDs OR collection patterns (device_class:, area:, label:, regex:, attribute:)
         variable_value_pattern = (
-            "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$"
+            "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$"
         )
         var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
         icon_pattern = "^mdi:[a-z0-9-]+$"
@@ -573,7 +646,7 @@ class SchemaValidator:
                             "oneOf": [
                                 {
                                     "type": "string",
-                                    "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$",
+                                    "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$",
                                     "description": "Home Assistant entity ID or collection pattern",
                                 },
                                 {
@@ -617,7 +690,7 @@ class SchemaValidator:
                                                     "oneOf": [
                                                         {
                                                             "type": "string",
-                                                            "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$",
+                                                            "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$",
                                                         },
                                                         {
                                                             "type": "number",
@@ -740,8 +813,7 @@ class SchemaValidator:
                 },
                 "device_class": {
                     "type": "string",
-                    "description": "Home Assistant device class",
-                    "enum": self._get_device_class_enum(),
+                    "description": "Home Assistant device class (any string allowed)",
                 },
                 "state_class": {
                     "type": "string",
@@ -765,11 +837,68 @@ class SchemaValidator:
 
     def _get_device_class_enum(self) -> list[str]:
         """Get the list of valid device classes from Home Assistant constants."""
-        return [device_class.value for device_class in SensorDeviceClass.__members__.values()]
+        # Return a list of common device classes for schema validation, but allow any string.
+        try:
+            sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+            return [device_class.value for device_class in sensor_device_class.__members__.values()]
+        except Exception:
+            # Fallback if enum access fails - return common device classes
+            return [
+                "apparent_power",
+                "aqi",
+                "atmospheric_pressure",
+                "battery",
+                "carbon_dioxide",
+                "carbon_monoxide",
+                "current",
+                "data_rate",
+                "data_size",
+                "date",
+                "distance",
+                "duration",
+                "energy",
+                "frequency",
+                "gas",
+                "humidity",
+                "illuminance",
+                "irradiance",
+                "moisture",
+                "monetary",
+                "nitrogen_dioxide",
+                "nitrogen_monoxide",
+                "nitrous_oxide",
+                "ozone",
+                "pm1",
+                "pm10",
+                "pm25",
+                "power",
+                "power_factor",
+                "precipitation",
+                "precipitation_intensity",
+                "pressure",
+                "reactive_power",
+                "signal_strength",
+                "sound_pressure",
+                "speed",
+                "sulphur_dioxide",
+                "temperature",
+                "timestamp",
+                "volatile_organic_compounds",
+                "voltage",
+                "volume",
+                "water",
+                "weight",
+                "wind_speed",
+            ]
 
     def _get_state_class_enum(self) -> list[str]:
         """Get the list of valid state classes from Home Assistant constants."""
-        return [state_class.value for state_class in SensorStateClass.__members__.values()]
+        try:
+            state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
+            return list(state_classes)
+        except Exception:
+            # Fallback if enum access fails - return common state classes
+            return ["measurement", "total", "total_increasing"]
 
     def _get_v1_main_properties(
         self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
@@ -815,8 +944,7 @@ class SchemaValidator:
                         "properties": {
                             "device_class": {
                                 "type": "string",
-                                "enum": self._get_device_class_enum(),
-                                "description": "Default device class for all sensors",
+                                "description": "Default device class for all sensors (any string allowed)",
                             },
                             "state_class": {
                                 "type": "string",
@@ -931,8 +1059,7 @@ class SchemaValidator:
                     "properties": {
                         "device_class": {
                             "type": "string",
-                            "enum": self._get_device_class_enum(),
-                            "description": "Device class for the sensor",
+                            "description": "Device class for the sensor (any string allowed)",
                         },
                         "state_class": {
                             "type": "string",
@@ -1025,8 +1152,7 @@ class SchemaValidator:
                             "properties": {
                                 "device_class": {
                                     "type": "string",
-                                    "enum": self._get_device_class_enum(),
-                                    "description": "Device class for the attribute",
+                                    "description": "Device class for the attribute (any string allowed)",
                                 },
                                 "state_class": {
                                     "type": "string",

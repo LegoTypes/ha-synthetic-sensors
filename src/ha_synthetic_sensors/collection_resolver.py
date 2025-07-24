@@ -6,7 +6,7 @@ Home Assistant's entity registry to find entities matching specific patterns.
 Supported collection patterns:
 - regex: Pattern matching against entity IDs
 - device_class: Filter by device class
-- tags: Filter by entity tags/labels
+- label: Filter by entity labels
 - area: Filter by area assignment
 - attribute: Filter by attribute conditions
 - state: Filter by entity state values
@@ -18,14 +18,16 @@ All patterns support OR logic using pipe (|) syntax.
 from __future__ import annotations
 
 import logging
-import operator
 import re
+from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
+from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er, label_registry as lr
 
+from .condition_parser import ConditionParser
 from .dependency_parser import DynamicQuery
-from .exceptions import InvalidCollectionPatternError, MissingDependencyError
+from .exceptions import InvalidCollectionPatternError
+from .shared_constants import get_ha_domains
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,31 +36,53 @@ class CollectionResolver:
     """Resolves collection function patterns to actual entity values."""
 
     def __init__(self, hass: HomeAssistant):
-        """Initialize collection resolver with Home Assistant instance.
+        """Initialize the collection resolver.
 
         Args:
-            hass: Home Assistant instance for entity registry access
+            hass: Home Assistant instance
         """
         self._hass = hass
 
-        # Try to get registries, but handle cases where they might not be available (testing)
+        # Get registry references
         try:
-            self._entity_registry: er.EntityRegistry | None = er.async_get(hass)
-            self._device_registry: dr.DeviceRegistry | None = dr.async_get(hass)
             self._area_registry: ar.AreaRegistry | None = ar.async_get(hass)
-        except (AttributeError, KeyError):
-            # For testing or when registries aren't fully initialized
-            self._entity_registry = None
-            self._device_registry = None
+            self._device_registry: dr.DeviceRegistry | None = dr.async_get(hass)
+            self._entity_registry: er.EntityRegistry | None = er.async_get(hass)
+        except Exception:
             self._area_registry = None
+            self._device_registry = None
+            self._entity_registry = None
 
         # Pattern for detecting entity references within collection patterns
-        entity_domains = (
-            r"sensor|binary_sensor|input_number|input_boolean|input_select|input_text|switch|light|climate|"
-            r"cover|fan|lock|alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|"
-            r"zone|automation|script|scene|group|timer|counter|sun"
-        )
-        self.entity_reference_pattern = re.compile(rf"\b(?:{entity_domains})\.[a-zA-Z0-9_.]+\b")
+        # Uses centralized domain cache from constants_entities
+        self._entity_reference_pattern: re.Pattern[str] | None = None
+
+    @property
+    def _entity_domains_pattern(self) -> str:
+        """Get the entity domains pattern for regex compilation.
+
+        Uses centralized domain cache from constants_entities.
+        """
+        return "|".join(sorted(get_ha_domains(self._hass)))
+
+    @property
+    def entity_reference_pattern(self) -> re.Pattern[str]:
+        """Get the compiled entity reference pattern."""
+        if self._entity_reference_pattern is None:
+            self._entity_reference_pattern = re.compile(rf"\b(?:{self._entity_domains_pattern})\.[a-zA-Z0-9_.]+\b")
+        return self._entity_reference_pattern
+
+    def invalidate_domain_cache(self) -> None:
+        """Invalidate the cached domain pattern.
+
+        This method is kept for backward compatibility but now delegates
+        to the centralized cache invalidation system.
+        """
+        # Clear local pattern cache
+        self._entity_reference_pattern = None
+
+        # Note: The centralized domain cache is managed by constants_entities
+        # and will be invalidated by the registry listener when needed
 
     def resolve_collection(self, query: DynamicQuery) -> list[str]:
         """Resolve a dynamic query to a list of matching entity IDs.
@@ -73,334 +97,507 @@ class CollectionResolver:
 
         # First, resolve any entity references within the pattern
         resolved_pattern = self._resolve_entity_references_in_pattern(query.pattern)
-
         _LOGGER.debug("Pattern after entity resolution: %s", resolved_pattern)
 
-        if query.query_type == "regex":
-            return self._resolve_regex_pattern(resolved_pattern)
-        if query.query_type == "device_class":
-            return self._resolve_device_class_pattern(resolved_pattern)
-        if query.query_type == "tags":
-            return self._resolve_tags_pattern(resolved_pattern)
-        if query.query_type == "area":
-            return self._resolve_area_pattern(resolved_pattern)
-        if query.query_type == "attribute":
-            return self._resolve_attribute_pattern(resolved_pattern)
-        if query.query_type == "state":
-            return self._resolve_state_pattern(resolved_pattern)
+        # Use dispatch pattern to reduce complexity
+        return self._dispatch_query_resolution(query.query_type, resolved_pattern)
+
+    def _dispatch_query_resolution(self, query_type: str, resolved_pattern: str) -> list[str]:
+        """Dispatch query resolution to appropriate handler.
+
+        Args:
+            query_type: Type of query to resolve
+            resolved_pattern: Pattern with entity references resolved
+
+        Returns:
+            List of entity IDs that match the query criteria
+        """
+        # Dispatch table for query resolution
+        resolvers = {
+            "regex": self._resolve_regex_pattern,
+            "device_class": self._resolve_device_class_pattern,
+            "label": self._resolve_label_pattern,
+            "area": self._resolve_area_pattern,
+            "attribute": self._resolve_attribute_pattern,
+            "state": self._resolve_state_pattern,
+        }
+
+        resolver = resolvers.get(query_type)
+        if resolver:
+            return resolver(resolved_pattern)
 
         # Unknown collection query type - this is a configuration error
-        _LOGGER.error("Unknown collection query type: %s", query.query_type)
-
-        raise InvalidCollectionPatternError(
-            query.query_type,
-            f"Query type '{query.query_type}' is not supported. Supported types are: regex, device_class, area, tags",
-        )
+        _LOGGER.error("Unknown collection query type: %s", query_type)
+        return []
 
     def _resolve_entity_references_in_pattern(self, pattern: str) -> str:
         """Resolve entity references within a collection pattern.
 
-        This method detects entity references like 'input_select.device_type' within
-        collection patterns and replaces them with their current state values.
-
         Args:
-            pattern: Collection pattern that may contain entity references
+            pattern: Pattern that may contain entity references
 
         Returns:
             Pattern with entity references resolved to their current values
         """
+        if not self._entity_registry:
+            return pattern
 
         def replace_entity_ref(match: re.Match[str]) -> str:
-            """Replace an entity reference with its current state value."""
             entity_id = match.group(0)
-            state = self._hass.states.get(entity_id)
-            if state is not None:
-                _LOGGER.debug(
-                    "Resolving entity reference '%s' to value '%s'",
-                    entity_id,
-                    state.state,
-                )
-                return str(state.state)
+            try:
+                if self._entity_registry is not None:
+                    entity_entry = self._entity_registry.async_get(entity_id)
+                    if entity_entry is not None and hasattr(entity_entry, "state") and entity_entry.state is not None:
+                        return str(entity_entry.state.state)
+            except Exception as e:
+                _LOGGER.warning("Failed to resolve entity reference %s: %s", entity_id, e)
+            return entity_id
 
-            # Entity reference not found - this is a configuration error
-            _LOGGER.error("Entity reference '%s' not found - entity does not exist", entity_id)
-
-            raise MissingDependencyError(f"Entity reference '{entity_id}' not found in collection pattern")
-
-        # Replace all entity references in the pattern
-        resolved_pattern = self.entity_reference_pattern.sub(replace_entity_ref, pattern)
-
-        return resolved_pattern
+        return self.entity_reference_pattern.sub(replace_entity_ref, pattern)
 
     def _resolve_regex_pattern(self, pattern: str) -> list[str]:
-        """Resolve regex pattern against entity IDs.
+        """Resolve a regex pattern to matching entity IDs.
 
         Args:
-            pattern: Regular expression pattern to match (supports OR with pipe |)
+            pattern: Regex pattern to match against entity IDs (supports OR logic with | separator)
 
         Returns:
-            List of matching entity IDs
+            List of entity IDs that match the pattern
         """
-        matching_entities: list[str] = []
+        if not self._entity_registry:
+            return []
 
-        # Split by pipe (|) for OR logic
-        regex_patterns = [p.strip() for p in pattern.split("|")]
+        # Parse multiple regex patterns separated by '|'
+        # Note: We need to be careful here since | is also regex OR syntax
+        # We'll split on | but then treat each part as a separate complete regex
+        regex_patterns = [regex_pattern.strip() for regex_pattern in pattern.split("|")]
+        matching_entities = []
 
         for regex_pattern in regex_patterns:
             try:
-                regex = re.compile(regex_pattern)
+                regex = re.compile(regex_pattern, re.IGNORECASE)
 
-                for entity_id in self._hass.states.entity_ids():
-                    if regex.match(entity_id) and entity_id not in matching_entities:
+                for entity_id in self._entity_registry.entities:
+                    if regex.search(entity_id) and entity_id not in matching_entities:  # Avoid duplicates
                         matching_entities.append(entity_id)
 
             except re.error as e:
                 _LOGGER.error("Invalid regex pattern '%s': %s", regex_pattern, e)
-                continue
+                raise InvalidCollectionPatternError(regex_pattern, f"Invalid regex pattern: {e}") from e
 
         _LOGGER.debug("Regex pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
 
     def _resolve_device_class_pattern(self, pattern: str) -> list[str]:
-        """Resolve device_class pattern.
+        """Resolve a device class pattern to matching entity IDs.
+
+        Supports:
+        - Inclusion: "power", "energy", "temperature"
+        - Exclusion: "!diagnostic", "!humidity"
+        - OR logic: "power|energy", "!diagnostic|!humidity", "power|!humidity"
+        - Shorthand: "power|energy" (second pattern without device_class: prefix)
 
         Args:
-            pattern: Device class to match (e.g., "temperature", "power", "door|window")
+            pattern: Device class pattern to match (supports OR logic with | separator and ! negation)
 
         Returns:
-            List of matching entity IDs
+            List of entity IDs that match the device class
         """
-        matching_entities: list[str] = []
-
-        # Split by pipe (|) for OR logic
-        device_classes = [cls.strip() for cls in pattern.split("|")]
-
-        for entity_id in self._hass.states.entity_ids():
-            state = self._hass.states.get(entity_id)
-            if state and hasattr(state, "attributes"):
-                entity_device_class = state.attributes.get("device_class")
-                if entity_device_class in device_classes:
-                    matching_entities.append(entity_id)
-
-        _LOGGER.debug(
-            "Device class pattern '%s' matched %d entities",
-            pattern,
-            len(matching_entities),
-        )
-        return matching_entities
-
-    def _resolve_tags_pattern(self, pattern: str) -> list[str]:
-        """Resolve tags/labels pattern.
-
-        Args:
-            pattern: Tags to match using OR logic (e.g., "critical|important|warning")
-
-        Returns:
-            List of matching entity IDs
-        """
-        matching_entities: list[str] = []
-
         if not self._entity_registry:
-            # Entity registry not available - this is a configuration/initialization error
-            _LOGGER.error("Entity registry not available for tags pattern resolution - collection will be empty")
-            return matching_entities
+            return []
 
-        # Split by pipe (|) for OR logic
-        target_tags = [tag.strip() for tag in pattern.split("|")]
+        # Parse multiple device class patterns separated by '|' (removed comma AND logic)
+        device_class_patterns = [dc_pattern.strip() for dc_pattern in pattern.split("|")]
+        matching_entities = []
 
-        for entity_entry in self._entity_registry.entities.values():
-            entity_labels = set(entity_entry.labels) if entity_entry.labels else set()
+        for device_class_pattern in device_class_patterns:
+            device_class_pattern = device_class_pattern.strip()
 
-            # Check if entity has any of the target tags (OR logic)
-            if any(tag in entity_labels for tag in target_tags):
-                matching_entities.append(entity_entry.entity_id)
+            # Check for negation
+            is_negation = device_class_pattern.startswith("!")
+            target_device_class = device_class_pattern[1:].strip().lower() if is_negation else device_class_pattern.lower()
 
-        _LOGGER.debug("Tags pattern '%s' matched %d entities", pattern, len(matching_entities))
+            for entity_id, _entity_entry in self._entity_registry.entities.items():
+                entity_device_class = getattr(_entity_entry, "device_class", None)
+                if entity_device_class:
+                    entity_device_class = entity_device_class.lower()
+
+                    # Include/exclude based on pattern
+                    if is_negation:
+                        # Exclude entities with this device class
+                        if entity_device_class != target_device_class and entity_id not in matching_entities:
+                            matching_entities.append(entity_id)
+                    else:
+                        # Include entities with this device class
+                        if entity_device_class == target_device_class and entity_id not in matching_entities:
+                            matching_entities.append(entity_id)
+
+        _LOGGER.debug("Device class pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
+
+    def _resolve_label_pattern(self, pattern: str) -> list[str]:
+        """Resolve a label pattern to matching entity IDs.
+
+        Supports:
+        - Inclusion: "critical", "important"
+        - Exclusion: "!deprecated", "!test"
+        - OR logic: "critical|important", "!deprecated|!test", "critical|!test"
+
+        Args:
+            pattern: Label pattern to match (supports OR logic with | separator and ! negation)
+
+        Returns:
+            List of entity IDs that match the labels
+        """
+        if not self._entity_registry:
+            return []
+
+        # Get label registry for label name resolution
+        label_registry = self._get_label_registry()
+
+        # Parse multiple label patterns separated by '|'
+        label_patterns = [label_pattern.strip() for label_pattern in pattern.split("|")]
+        matching_entities: list[str] = []
+
+        for label_pattern in label_patterns:
+            self._process_label_pattern(label_pattern, label_registry, matching_entities)
+
+        _LOGGER.debug("Label pattern '%s' matched %d entities", pattern, len(matching_entities))
+        return matching_entities
+
+    def _get_label_registry(self) -> Any:
+        """Get label registry for label name resolution."""
+        try:
+            return lr.async_get(self._hass)
+        except Exception:
+            return None
+
+    def _process_label_pattern(self, label_pattern: str, label_registry: Any, matching_entities: list[str]) -> None:
+        """Process a single label pattern and add matching entities.
+
+        Args:
+            label_pattern: Single label pattern to process
+            label_registry: Label registry for ID resolution
+            matching_entities: List to append matching entities to
+        """
+        label_pattern = label_pattern.strip()
+
+        # Check for negation
+        is_negation = label_pattern.startswith("!")
+        target_label = label_pattern[1:].strip().lower() if is_negation else label_pattern.lower()
+
+        if self._entity_registry is None:
+            return
+
+        for entity_id, entity_entry in self._entity_registry.entities.items():
+            entity_labels = self._extract_entity_labels(entity_entry, label_registry)
+
+            if self._entity_matches_label_pattern(target_label, entity_labels, is_negation, entity_id, matching_entities):
+                matching_entities.append(entity_id)
+
+    def _extract_entity_labels(self, entity_entry: Any, label_registry: Any) -> set[str]:
+        """Extract labels from an entity entry.
+
+        Args:
+            entity_entry: Entity registry entry
+            label_registry: Label registry for ID resolution
+
+        Returns:
+            Set of lowercase label names
+        """
+        entity_labels: set[str] = set()
+
+        # Check if entity has labels
+        if not (hasattr(entity_entry, "labels") and entity_entry.labels):
+            return entity_labels
+
+        # Handle test fixtures where labels are already strings
+        if isinstance(entity_entry.labels, (list, tuple)):
+            entity_labels = {label.lower() for label in entity_entry.labels if isinstance(label, str)}
+        # Handle real HA where labels are label IDs that need resolution
+        elif label_registry and hasattr(entity_entry.labels, "__iter__") and not callable(entity_entry.labels):
+            for label_id in entity_entry.labels:
+                label_entry = label_registry.async_get_label(label_id)
+                if label_entry and label_entry.name:
+                    entity_labels.add(label_entry.name.lower())
+
+        return entity_labels
+
+    def _entity_matches_label_pattern(
+        self, target_label: str, entity_labels: set[str], is_negation: bool, entity_id: str, matching_entities: list[str]
+    ) -> bool:
+        """Check if entity matches the label pattern.
+
+        Args:
+            target_label: Target label to match/exclude
+            entity_labels: Set of entity's labels
+            is_negation: Whether this is a negation pattern
+            entity_id: Entity ID being checked
+            matching_entities: List of already matched entities
+
+        Returns:
+            True if entity should be added to matching list
+        """
+        if entity_id in matching_entities:
+            return False
+
+        if is_negation:
+            # Exclude entities with this label
+            return target_label not in entity_labels
+
+        # Include entities with this label
+        return target_label in entity_labels
 
     def _resolve_area_pattern(self, pattern: str) -> list[str]:
-        """Resolve area pattern with OR logic support.
+        """Resolve an area pattern to matching entity IDs.
+
+        Supports:
+        - Inclusion: "kitchen", "living_room"
+        - Exclusion: "!garage", "!basement"
+        - OR logic: "kitchen|living_room", "!garage|!basement", "kitchen|!garage"
 
         Args:
-            pattern: Area names using OR logic (e.g., "living_room|kitchen|dining_room")
+            pattern: Area pattern to match (supports OR logic with | separator and ! negation)
 
         Returns:
-            List of matching entity IDs
+            List of entity IDs that match the area
         """
+        if not self._entity_registry or not self._area_registry:
+            return []
+
+        # Parse multiple area patterns separated by '|' (removed comma AND logic)
+        area_patterns = [area.strip() for area in pattern.split("|")]
         matching_entities: list[str] = []
 
-        if not self._area_registry or not self._entity_registry:
-            # Area or entity registry not available - this is a configuration/initialization error
-            _LOGGER.error("Area or entity registry not available for area pattern resolution - collection will be empty")
-            return matching_entities
-
-        # Split by pipe (|) for OR logic
-        target_areas = [area_name.strip() for area_name in pattern.split("|")]
-        area_ids = self._find_matching_area_ids(target_areas)
-        matching_entities = self._find_entities_in_areas(area_ids)
+        for area_pattern in area_patterns:
+            self._process_area_pattern(area_pattern.strip(), matching_entities)
 
         _LOGGER.debug("Area pattern '%s' matched %d entities", pattern, len(matching_entities))
         return matching_entities
 
+    def _process_area_pattern(self, area_pattern: str, matching_entities: list[str]) -> None:
+        """Process a single area pattern and add matching entities.
+
+        Args:
+            area_pattern: Single area pattern to process
+            matching_entities: List to append matching entities to
+        """
+        # Check for negation
+        is_negation = area_pattern.startswith("!")
+        target_area = area_pattern[1:].strip() if is_negation else area_pattern
+
+        # Find matching area IDs for this pattern
+        area_ids = self._find_matching_area_ids([target_area])
+        if not area_ids:
+            return
+
+        if is_negation:
+            self._add_entities_excluding_areas(area_ids, matching_entities)
+        else:
+            self._add_entities_from_areas(area_ids, matching_entities)
+
+    def _add_entities_excluding_areas(
+        self, excluded_area_ids: set[tuple[str, str | None]], matching_entities: list[str]
+    ) -> None:
+        """Add entities that are NOT in the excluded areas.
+
+        Args:
+            excluded_area_ids: Set of area IDs to exclude
+            matching_entities: List to append matching entities to
+        """
+        if self._entity_registry is None:
+            return
+
+        for entity_id, entity_entry in self._entity_registry.entities.items():
+            entity_area_id = getattr(entity_entry, "area_id", None)
+            if entity_area_id not in excluded_area_ids and entity_id not in matching_entities:
+                matching_entities.append(entity_id)
+
+    def _add_entities_from_areas(self, included_area_ids: set[tuple[str, str | None]], matching_entities: list[str]) -> None:
+        """Add entities from the included areas.
+
+        Args:
+            included_area_ids: Set of area IDs to include
+            matching_entities: List to append matching entities to
+        """
+        if self._entity_registry is None:
+            return
+
+        for entity_id, entity_entry in self._entity_registry.entities.items():
+            entity_area_id = getattr(entity_entry, "area_id", None)
+            if not entity_area_id or entity_id in matching_entities:
+                continue
+
+            for area_id, _ in included_area_ids:
+                if entity_area_id == area_id:
+                    matching_entities.append(entity_id)
+                    break
+
     def _find_matching_area_ids(self, target_areas: list[str]) -> set[tuple[str, str | None]]:
-        """Find area IDs matching the target area names.
+        """Find area IDs that match the target area names.
 
         Args:
             target_areas: List of area names to match
 
         Returns:
-            Set of (area_id, device_class_filter) tuples
+            Set of (area_id, device_id) tuples
         """
-        area_ids = set()
-        for target_area_name in target_areas:
-            # Handle device_class filter if present
-            parts = target_area_name.split("device_class:")
-            area_name = parts[0].strip()
-            device_class_filter = parts[1].strip() if len(parts) > 1 else None
+        area_ids: set[tuple[str, str | None]] = set()
+
+        if self._area_registry is None:
+            return area_ids
+
+        for area_name in target_areas:
+            # First try to find area by ID (for test fixtures)
+            if area_name in self._area_registry.areas:
+                area_ids.add((area_name, None))
+                continue
 
             # Find area by name
-            if self._area_registry:
-                for area in self._area_registry.areas.values():
-                    if area.name.lower() == area_name.lower():
-                        area_ids.add((area.id, device_class_filter))
-                        break
+            for area_id, area_entry in self._area_registry.areas.items():
+                if area_entry.name.lower() == area_name.lower():
+                    area_ids.add((area_id, None))
+                    break
 
         return area_ids
 
     def _find_entities_in_areas(self, area_ids: set[tuple[str, str | None]]) -> list[str]:
-        """Find entities in the specified areas.
+        """Find entities that belong to the specified areas.
 
         Args:
-            area_ids: Set of (area_id, device_class_filter) tuples
+            area_ids: Set of (area_id, device_id) tuples
 
         Returns:
-            List of matching entity IDs
+            List of entity IDs in the specified areas
         """
-        matching_entities = []
+        matching_entities: list[str] = []
 
-        if self._entity_registry:
-            for entity_entry in self._entity_registry.entities.values():
-                entity_area_id = self._get_entity_area_id(entity_entry)
+        if self._entity_registry is None:
+            return matching_entities
 
-                # Check if entity is in any of the target areas
-                for area_id, device_class_filter in area_ids:
+        for entity_id, entity_entry in self._entity_registry.entities.items():
+            entity_area_id = self._get_entity_area_id(entity_entry)
+            if entity_area_id:
+                for area_id, _ in area_ids:
                     if entity_area_id == area_id:
-                        if self._entity_matches_device_class_filter(entity_entry.entity_id, device_class_filter):
-                            matching_entities.append(entity_entry.entity_id)
-                        break  # Avoid adding the same entity multiple times
+                        matching_entities.append(entity_id)
+                        break
 
         return matching_entities
 
     def _get_entity_area_id(self, entity_entry: er.RegistryEntry) -> str | None:
-        """Get the area ID for an entity, checking device if needed.
+        """Get the area ID for an entity.
 
         Args:
             entity_entry: Entity registry entry
 
         Returns:
-            Area ID or None
+            Area ID if the entity belongs to an area, None otherwise
         """
-        entity_area_id: str | None = getattr(entity_entry, "area_id", None)
+        if entity_entry.area_id:
+            return entity_entry.area_id
 
-        # Check device area if entity doesn't have direct area assignment
-        if not entity_area_id and hasattr(entity_entry, "device_id") and entity_entry.device_id and self._device_registry:
-            device_entry = self._device_registry.devices.get(entity_entry.device_id)
-            if device_entry:
-                entity_area_id = getattr(device_entry, "area_id", None)
+        # Check if entity belongs to a device in an area
+        if entity_entry.device_id and self._device_registry:
+            device_entry = self._device_registry.async_get(entity_entry.device_id)
+            if device_entry and device_entry.area_id:
+                return device_entry.area_id
 
-        return entity_area_id
+        return None
 
     def _entity_matches_device_class_filter(self, entity_id: str, device_class_filter: str | None) -> bool:
-        """Check if entity matches device class filter.
+        """Check if an entity matches a device class filter.
 
         Args:
             entity_id: Entity ID to check
-            device_class_filter: Device class filter or None
+            device_class_filter: Device class to filter by
 
         Returns:
-            True if entity matches filter (or no filter specified)
+            True if entity matches the filter
         """
         if not device_class_filter:
             return True
 
-        state = self._hass.states.get(entity_id)
-        if state and hasattr(state, "attributes"):
-            entity_device_class = state.attributes.get("device_class")
-            return bool(entity_device_class == device_class_filter)
+        if self._entity_registry is None:
+            return False
 
-        return False
+        entity_entry = self._entity_registry.async_get(entity_id)
+        if not entity_entry:
+            return False
+
+        return bool(entity_entry.device_class and entity_entry.device_class.lower() == device_class_filter.lower())
 
     def _resolve_attribute_pattern(self, pattern: str) -> list[str]:
-        """Resolve attribute condition pattern with OR logic support.
+        """Resolve an attribute pattern to matching entity IDs.
 
         Args:
-            pattern: Attribute conditions using OR logic (e.g., "battery_level<20|online=false")
+            pattern: Attribute pattern to match
 
         Returns:
-            List of matching entity IDs
+            List of entity IDs that match the attribute conditions
         """
-        matching_entities: list[str] = []
-        attribute_conditions = [condition.strip() for condition in pattern.split("|")]
+        if not self._entity_registry:
+            return []
 
-        for condition in attribute_conditions:
+        # Parse multiple conditions separated by '|'
+        conditions = [cond.strip() for cond in pattern.split("|")]
+        matching_entities: list[str] = []
+
+        for condition in conditions:
             condition_matches = self._resolve_single_attribute_condition(condition, matching_entities)
             matching_entities.extend(condition_matches)
 
-        _LOGGER.debug(
-            "Attribute pattern '%s' matched %d entities",
-            pattern,
-            len(matching_entities),
-        )
-        return matching_entities
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_matches = []
+        for entity_id in matching_entities:
+            if entity_id not in seen:
+                seen.add(entity_id)
+                unique_matches.append(entity_id)
+
+        _LOGGER.debug("Attribute pattern '%s' matched %d entities", pattern, len(unique_matches))
+        return unique_matches
 
     def _resolve_single_attribute_condition(self, condition: str, existing_matches: list[str]) -> list[str]:
         """Resolve a single attribute condition.
 
         Args:
-            condition: Single attribute condition (e.g., "battery_level<20")
-            existing_matches: Entities already matched to avoid duplicates
+            condition: Single attribute condition
+            existing_matches: Existing matches to avoid duplicates
 
         Returns:
-            List of newly matching entity IDs
+            List of entity IDs that match the condition
         """
-        matches: list[str] = []
-
-        # Parse the condition
         parsed = self._parse_attribute_condition(condition)
         if not parsed:
-            # Invalid attribute condition - this is a configuration error
-            _LOGGER.error("Invalid attribute condition '%s' - check syntax", condition)
-            return matches
+            _LOGGER.warning("Invalid attribute condition: %s", condition)
+            return []
 
         attribute_name, op, expected_value = parsed
+        matching_entities: list[str] = []
 
-        # Check entities for matching attribute
-        for entity_id in self._hass.states.entity_ids():
+        if self._entity_registry is None:
+            return matching_entities
+
+        for entity_id, _entity_entry in self._entity_registry.entities.items():
             if entity_id in existing_matches:
-                continue  # Already matched by previous condition
+                continue
 
             if self._entity_matches_attribute_condition(entity_id, attribute_name, op, expected_value):
-                matches.append(entity_id)
+                matching_entities.append(entity_id)
 
-        return matches
+        return matching_entities
 
     def _parse_attribute_condition(self, condition: str) -> tuple[str, str, bool | float | int | str] | None:
-        """Parse a single attribute condition into components.
+        """Parse an attribute condition string.
 
         Args:
-            condition: Attribute condition string
+            condition: Attribute condition string (e.g., "friendly_name == 'Living Room'")
 
         Returns:
             Tuple of (attribute_name, operator, expected_value) or None if invalid
         """
-        for op in ["<=", ">=", "!=", "<", ">", "="]:
-            if op in condition:
-                attribute_name, value_str = condition.split(op, 1)
-                attribute_name = attribute_name.strip()
-                value_str = value_str.strip()
-                expected_value = self._convert_value_string(value_str)
-                return attribute_name, op, expected_value
-        return None
+        return ConditionParser.parse_attribute_condition(condition)
 
     def _entity_matches_attribute_condition(
         self,
@@ -412,239 +609,250 @@ class CollectionResolver:
         """Check if an entity matches an attribute condition.
 
         Args:
-            entity_id: Entity to check
-            attribute_name: Name of attribute to check
+            entity_id: Entity ID to check
+            attribute_name: Name of the attribute
             op: Comparison operator
             expected_value: Expected value to compare against
 
         Returns:
-            True if entity matches condition
+            True if entity matches the condition
         """
-        state = self._hass.states.get(entity_id)
-        if not state or not hasattr(state, "attributes"):
-            return False
-
-        actual_value = state.attributes.get(attribute_name)
-        if actual_value is None:
-            return False
-
-        # Convert actual value to same type as expected
         try:
+            # Get entity state from HA
+            state = self._hass.states.get(entity_id)
+            if not state:
+                return False
+
+            # Get attribute value
+            actual_value = state.attributes.get(attribute_name)
+            if actual_value is None:
+                return False
+
+            # Convert actual value to comparable type
             if isinstance(expected_value, bool):
-                converted_value: bool | float | str = str(actual_value).lower() == "true"
+                actual_value = bool(actual_value)
             elif isinstance(expected_value, (int, float)):
-                converted_value = float(actual_value)
-            else:
-                converted_value = str(actual_value)
-        except (ValueError, TypeError):
+                try:
+                    actual_value = float(actual_value)
+                except (ValueError, TypeError):
+                    return False
+
+            # Perform comparison
+            return self._compare_values(actual_value, op, expected_value)
+
+        except Exception as e:
+            _LOGGER.warning("Error checking attribute condition for %s: %s", entity_id, e)
             return False
-
-        return self._compare_values(converted_value, op, expected_value)
-
-    def _convert_value_string(self, value_str: str) -> bool | float | int | str:
-        """Convert a string value to appropriate type.
-
-        Args:
-            value_str: String to convert
-
-        Returns:
-            Converted value (bool, float, int, or str)
-        """
-        try:
-            if value_str.lower() in ("true", "false"):
-                return value_str.lower() == "true"
-            if "." in value_str:
-                return float(value_str)
-
-            return int(value_str)
-        except ValueError:
-            return value_str  # Keep as string
 
     def _resolve_state_pattern(self, pattern: str) -> list[str]:
-        """Resolve state condition pattern with OR logic support.
+        """Resolve a state pattern to matching entity IDs.
 
         Args:
-            pattern: State conditions using OR logic (e.g., ">100|=on|<50")
+            pattern: State pattern to match
 
         Returns:
-            List of matching entity IDs
+            List of entity IDs that match the state conditions
         """
-        matching_entities: list[str] = []
-        state_conditions = [condition.strip() for condition in pattern.split("|")]
+        if not self._entity_registry:
+            return []
 
-        for condition in state_conditions:
+        # Parse multiple conditions separated by '|'
+        conditions = [cond.strip() for cond in pattern.split("|")]
+        matching_entities: list[str] = []
+
+        for condition in conditions:
             condition_matches = self._resolve_single_state_condition(condition, matching_entities)
             matching_entities.extend(condition_matches)
 
-        _LOGGER.debug("State pattern '%s' matched %d entities", pattern, len(matching_entities))
-        return matching_entities
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_matches = []
+        for entity_id in matching_entities:
+            if entity_id not in seen:
+                seen.add(entity_id)
+                unique_matches.append(entity_id)
+
+        _LOGGER.debug("State pattern '%s' matched %d entities", pattern, len(unique_matches))
+        return unique_matches
 
     def _resolve_single_state_condition(self, condition: str, existing_matches: list[str]) -> list[str]:
         """Resolve a single state condition.
 
         Args:
-            condition: Single state condition (e.g., ">100")
-            existing_matches: Entities already matched to avoid duplicates
+            condition: Single state condition
+            existing_matches: Existing matches to avoid duplicates
 
         Returns:
-            List of newly matching entity IDs
+            List of entity IDs that match the condition
+
+        Raises:
+            DataValidationError: If condition format is invalid
         """
-        matches: list[str] = []
+        # Let DataValidationError propagate - fatal errors should not be silently converted
+        op, expected_value = self._parse_state_condition(condition)
+        matching_entities: list[str] = []
 
-        # Parse the condition
-        parsed = self._parse_state_condition(condition)
-        if not parsed:
-            # Invalid state condition - this is a configuration error
-            _LOGGER.error("Invalid state condition '%s' - check syntax", condition)
-            return matches
+        if self._entity_registry is None:
+            return matching_entities
 
-        op, expected_value = parsed
-
-        # Check entities for matching state
-        for entity_id in self._hass.states.entity_ids():
+        for entity_id, _entity_entry in self._entity_registry.entities.items():
             if entity_id in existing_matches:
-                continue  # Already matched by previous condition
+                continue
 
             if self._entity_matches_state_condition(entity_id, op, expected_value):
-                matches.append(entity_id)
+                matching_entities.append(entity_id)
 
-        return matches
+        return matching_entities
 
-    def _parse_state_condition(self, condition: str) -> tuple[str, bool | float | int | str] | None:
-        """Parse a single state condition into components.
+    def _parse_state_condition(self, condition: str) -> tuple[str, bool | float | int | str]:
+        """Parse a state condition string into operator and expected value.
 
         Args:
-            condition: State condition string
+            condition: State condition string (e.g., "== on", ">= 50", "!off")
 
         Returns:
-            Tuple of (operator, expected_value) or None if invalid
+            Tuple of (operator, expected_value)
+
+        Raises:
+            DataValidationError: If condition format is invalid
         """
-        for op in ["<=", ">=", "!=", "<", ">", "="]:
-            if op in condition:
-                value_str = condition.replace(op, "", 1).strip()
-                expected_value = self._convert_value_string(value_str)
-                return op, expected_value
-        return None
+        return ConditionParser.parse_state_condition(condition)
 
     def _entity_matches_state_condition(self, entity_id: str, op: str, expected_value: bool | float | int | str) -> bool:
         """Check if an entity matches a state condition.
 
         Args:
-            entity_id: Entity to check
+            entity_id: Entity ID to check
             op: Comparison operator
             expected_value: Expected value to compare against
 
         Returns:
-            True if entity matches condition
+            True if entity matches the condition
         """
-        state = self._hass.states.get(entity_id)
-        if not state or state.state in ("unknown", "unavailable", "none"):
-            return False
-
-        # Convert actual state to same type as expected
         try:
-            if isinstance(expected_value, bool):
-                converted_state: bool | float | str = str(state.state).lower() == "true"
-            elif isinstance(expected_value, (int, float)):
-                converted_state = float(state.state)
-            else:
-                converted_state = str(state.state)
-        except (ValueError, TypeError):
+            # Get entity state from HA
+            state = self._hass.states.get(entity_id)
+            if not state:
+                return False
+
+            actual_value = self._process_state_value(state.state, expected_value)
+            if actual_value is None:
+                return False
+
+            return self._compare_values(actual_value, op, expected_value)
+
+        except Exception as e:
+            _LOGGER.warning("Error checking state condition for %s: %s", entity_id, e)
             return False
 
-        return self._compare_values(converted_state, op, expected_value)
+    def _process_state_value(self, state_value: str, expected_value: bool | float | int | str) -> bool | float | str | None:
+        """Process state value for comparison.
+
+        Args:
+            state_value: Raw state value
+            expected_value: Expected value type
+
+        Returns:
+            Processed value or None if conversion failed
+        """
+        if isinstance(expected_value, bool):
+            return state_value.lower() in ("on", "true", "yes", "1")
+        if isinstance(expected_value, (int, float)):
+            try:
+                return float(state_value)
+            except (ValueError, TypeError):
+                return None
+        return state_value
 
     def _compare_values(self, actual: bool | float | str, op: str, expected: bool | float | int | str) -> bool:
         """Compare two values using the specified operator.
 
         Args:
-            actual: Actual value from entity
-            op: Comparison operator (=, !=, <, >, <=, >=)
-            expected: Expected value from pattern
+            actual: Actual value
+            op: Comparison operator
+            expected: Expected value
 
         Returns:
-            True if comparison matches, False otherwise
+            True if comparison is true
         """
-        # Use operator module for type-safe comparisons
-        operations = {
-            "=": operator.eq,
-            "!=": operator.ne,
-            "<": operator.lt,
-            ">": operator.gt,
-            "<=": operator.le,
-            ">=": operator.ge,
-        }
-
-        try:
-            if op in operations:
-                result = operations[op](actual, expected)
-                return bool(result)
-            return False
-        except TypeError:
-            # Type mismatch, try string comparison
-            return str(actual) == str(expected) if op == "=" else False
+        return ConditionParser.compare_values(actual, op, expected)
 
     def get_entity_values(self, entity_ids: list[str]) -> list[float]:
         """Get numeric values for a list of entity IDs.
 
         Args:
-            entity_ids: List of entity IDs to get values for
+            entity_ids: List of entity IDs
 
         Returns:
-            List of numeric values (non-numeric entities are skipped)
+            List of numeric values (0.0 for non-numeric or missing entities)
         """
-        values: list[float] = []
-
+        values = []
         for entity_id in entity_ids:
-            state = self._hass.states.get(entity_id)
-            if state is not None:
-                try:
-                    # Try to convert state to float
-                    value = float(state.state)
-                    values.append(value)
-                except (ValueError, TypeError):
-                    # Skip non-numeric entities
-                    _LOGGER.debug("Skipping non-numeric entity %s with state '%s'", entity_id, state.state)
-                    continue
+            try:
+                state = self._hass.states.get(entity_id)
+                if state and state.state not in ("unavailable", "unknown"):
+                    try:
+                        value = float(state.state)
+                        values.append(value)
+                    except (ValueError, TypeError):
+                        # Non-numeric state, use 0.0
+                        values.append(0.0)
+                else:
+                    # Missing or unavailable entity, use 0.0
+                    values.append(0.0)
+            except Exception as e:
+                _LOGGER.warning("Error getting value for entity %s: %s", entity_id, e)
+                values.append(0.0)
 
         return values
 
     def get_entities_matching_patterns(self, dependencies: set[str]) -> set[str]:
-        """Get entities that match collection patterns from a set of dependencies.
+        """Get all entities that match collection patterns in dependencies.
 
         Args:
-            dependencies: Set of entity IDs and potential collection patterns
+            dependencies: Set of dependency strings
 
         Returns:
-            Set of entity IDs that are collection patterns (not actual entities)
+            Set of entity IDs that match the patterns
         """
-        collection_patterns = set()
+        matching_entities = set()
 
-        for dep in dependencies:
-            # Check if this looks like a collection pattern
-            # Collection patterns typically don't exist as actual entities
-            if not self._hass.states.get(dep) and any(
-                pattern in dep for pattern in [":", "*", "regex", "device_class", "area", "tags", "attribute", "state"]
-            ):
-                collection_patterns.add(dep)
+        for dependency in dependencies:
+            try:
+                entities = self.resolve_collection_pattern(dependency)
+                matching_entities.update(entities)
+            except Exception as e:
+                _LOGGER.warning("Error resolving collection pattern '%s': %s", dependency, e)
 
-        return collection_patterns
+        return matching_entities
 
     def resolve_collection_pattern(self, pattern: str) -> set[str]:
-        """Resolve a collection pattern to actual entity IDs.
+        """Resolve a collection pattern to entity IDs.
 
         Args:
-            pattern: Collection pattern string
+            pattern: Collection pattern string (e.g., "device_class:power", "regex:sensor.*")
 
         Returns:
             Set of entity IDs that match the pattern
         """
-        # This is a simplified version - in a full implementation,
-        # this would parse the pattern and resolve it properly
-        try:
-            # For now, return empty set for patterns we can't resolve
-            _LOGGER.debug("Resolving collection pattern: %s", pattern)
+        if not pattern or not pattern.strip():
             return set()
-        except Exception as err:
-            _LOGGER.warning("Error resolving collection pattern '%s': %s", pattern, err)
+
+        pattern = pattern.strip()
+
+        # Parse pattern to extract query type and value
+        if ":" not in pattern:
+            _LOGGER.warning("Invalid collection pattern format: '%s'. Expected 'type:value'", pattern)
+            return set()
+
+        query_type, query_pattern = pattern.split(":", 1)
+        query_type = query_type.strip()
+        query_pattern = query_pattern.strip()
+
+        # Dispatch to appropriate resolver
+        try:
+            entities = self._dispatch_query_resolution(query_type, query_pattern)
+            return set(entities)
+        except Exception as e:
+            _LOGGER.warning("Error resolving collection pattern '%s': %s", pattern, e)
             return set()

@@ -72,11 +72,11 @@ Tests boundary conditions and unusual configurations
 - **Expected**: Resolves to backing entity value
 - **Validation**: Result matches backing entity state
 
-#### Test Scenario 2.2: Sensor Key Reference
+#### Test Scenario 2.2: Main Formula State Patterns
 
-- **File**: `examples/idiom_2_sensor_key.yaml`
-- **Test**: Main formula uses sensor key name
-- **Expected**: Resolves to backing entity value (auto-injected variable)
+- **File**: `examples/idiom_2_main_formula_state.yaml`
+- **Test**: Main formula uses state token patterns
+- **Expected**: Resolves to backing entity value
 - **Validation**: Result matches backing entity state
 
 #### Test Scenario 2.3: Direct Entity ID Reference

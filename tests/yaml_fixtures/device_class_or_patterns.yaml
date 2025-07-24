@@ -72,3 +72,23 @@ sensors:
     metadata:
       unit_of_measurement: devices
       state_class: measurement
+  direct_device_class_or:
+    name: Direct Device Class OR
+    formula: count("device_class:input_select.device_type_1|input_select.device_type_2")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
+  mixed_device_class_or:
+    name: Mixed Device Class OR
+    formula: count("device_class:variable_type|input_select.direct_device_type")
+    variables:
+      variable_type: input_select.variable_device_class
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
+  direct_three_way_device_class:
+    name: Direct Three-Way Device Class
+    formula: avg("device_class:input_select.type1|input_select.type2|input_select.type3")
+    metadata:
+      unit_of_measurement: avg
+      state_class: measurement

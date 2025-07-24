@@ -95,12 +95,12 @@ sensors:
     entity_id: sensor.span_panel_instantaneous_power
     formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
     attributes:
-      # Self-reference to nested attribute
-      device_info:
-        formula: device_info.manufacturer + " " + device_info.model  # Self-reference to nested
+      # Self-reference with mathematical operations instead of string concatenation
+      power_factor:
+        formula: power_factor * 0.95 + 0.05  # Self-reference with math operations
         metadata:
-          unit_of_measurement: string
-          friendly_name: "Device Info (Self Reference)"
+          unit_of_measurement: ratio
+          friendly_name: "Power Factor (Self Reference)"
     metadata:
       unit_of_measurement: W
       device_class: power

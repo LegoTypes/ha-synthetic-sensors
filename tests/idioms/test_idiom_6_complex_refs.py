@@ -10,13 +10,6 @@ class TestIdiom6ComplexRefs:
     """Test Idiom 6: Complex Attribute References."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states.get.return_value = None
-        return hass
-
-    @pytest.fixture
     def config_manager(self, mock_hass):
         """Create a config manager with mock HA."""
         return ConfigManager(mock_hass)
@@ -28,7 +21,12 @@ class TestIdiom6ComplexRefs:
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
-    def test_complex_refs_main_formula(self, config_manager, complex_refs_yaml):
+    @pytest.fixture
+    def nested_attr_refs_yaml(self, load_yaml_fixture):
+        """Load the nested attribute refs YAML fixture."""
+        return load_yaml_fixture("nested_attr_refs")
+
+    def test_complex_refs_main_formula(self, mock_hass, mock_entity_registry, mock_states, config_manager, complex_refs_yaml):
         """Test complex attribute references in main formula."""
         config = config_manager.load_from_yaml(complex_refs_yaml)
         sensor = config.sensors[0]
@@ -71,7 +69,7 @@ class TestIdiom6ComplexRefs:
         expected_value = 240.0 * 4.17 * 0.95
         assert abs(main_result["value"] - expected_value) < 0.1
 
-    def test_complex_refs_attributes(self, config_manager, complex_refs_yaml):
+    def test_complex_refs_attributes(self, mock_hass, mock_entity_registry, mock_states, config_manager, complex_refs_yaml):
         """Test complex attribute references in attributes."""
         config = config_manager.load_from_yaml(complex_refs_yaml)
 
@@ -121,9 +119,9 @@ class TestIdiom6ComplexRefs:
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
 
-    def test_nested_attr_refs(self, config_manager, complex_refs_yaml):
+    def test_nested_attr_refs(self, mock_hass, mock_entity_registry, mock_states, config_manager, nested_attr_refs_yaml):
         """Test nested attribute references."""
-        config = config_manager.load_from_yaml(complex_refs_yaml)
+        config = config_manager.load_from_dict(nested_attr_refs_yaml)
 
         # Find the nested attr refs sensor
         sensor = next(s for s in config.sensors if s.unique_id == "nested_attr_refs")
@@ -138,7 +136,6 @@ class TestIdiom6ComplexRefs:
                     "attributes": {
                         "voltage": 240.0,
                         "current": 4.17,
-                        "device_info": {"manufacturer": "SpanPanel", "model": "SPAN-200"},
                         "power_factor": {"value": 0.95, "unit": "ratio"},
                     },
                 }
@@ -176,7 +173,15 @@ class TestIdiom6ComplexRefs:
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
 
-    def test_mixed_attr_patterns(self, config_manager, complex_refs_yaml):
+            # Verify specific attribute calculations
+            if attribute_formula.name == "power_calculation":
+                assert attr_result["value"] == 1000.8  # voltage * current = 240 * 4.17
+            elif attribute_formula.name == "efficiency_calc":
+                assert attr_result["value"] == 95.0  # power_factor.value * 100 = 0.95 * 100
+            elif attribute_formula.name == "voltage_squared":
+                assert attr_result["value"] == 57600.0  # voltage * voltage = 240 * 240
+
+    def test_mixed_attr_patterns(self, mock_hass, mock_entity_registry, mock_states, config_manager, complex_refs_yaml):
         """Test mixed attribute reference patterns."""
         config = config_manager.load_from_yaml(complex_refs_yaml)
 
@@ -226,7 +231,9 @@ class TestIdiom6ComplexRefs:
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
 
-    def test_complex_calculation_with_attributes(self, config_manager, complex_refs_yaml):
+    def test_complex_calculation_with_attributes(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, complex_refs_yaml
+    ):
         """Test complex calculation using multiple attribute references."""
         config = config_manager.load_from_yaml(complex_refs_yaml)
 

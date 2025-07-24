@@ -10,15 +10,6 @@ class TestEntityManagement:
     """Test cases for entity management functionality."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        hass.config = MagicMock()
-        hass.config.config_dir = "/config"
-        return hass
-
-    @pytest.fixture
     def mock_add_entities_callback(self):
         """Create a mock add entities callback."""
         return AsyncMock()
@@ -52,7 +43,15 @@ class TestEntityManagement:
         sensor_manager.get_sensor_statistics = MagicMock(return_value={})
         return sensor_manager
 
-    def test_dynamic_entity_creation(self, sensor_manager, mock_add_entities_callback, entity_management_test_yaml):
+    def test_dynamic_entity_creation(
+        self,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
+        sensor_manager,
+        mock_add_entities_callback,
+        entity_management_test_yaml,
+    ):
         """Test dynamic creation of sensor entities."""
         # Test entity creation using the actual interface
         import asyncio
@@ -62,7 +61,9 @@ class TestEntityManagement:
         # Verify create_sensors was called
         sensor_manager.create_sensors.assert_called_once()
 
-    def test_entity_lifecycle_management(self, sensor_manager, entity_management_test_yaml):
+    def test_entity_lifecycle_management(
+        self, mock_hass, mock_entity_registry, mock_states, sensor_manager, entity_management_test_yaml
+    ):
         """Test complete entity lifecycle: create, update, remove."""
         import asyncio
 
@@ -76,7 +77,7 @@ class TestEntityManagement:
         sensor_manager.reload_configuration.assert_called_once()
         sensor_manager.remove_sensor.assert_called_once()
 
-    def test_entity_registry_integration(self, sensor_manager):
+    def test_entity_registry_integration(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test integration with Home Assistant entity registry."""
         # Mock entity registry operations
         sensor_config = {
@@ -103,7 +104,7 @@ class TestEntityManagement:
         # For now, verify the method was called
         sensor_manager.create_sensors.assert_called_once()
 
-    def test_sensor_state_preservation(self, sensor_manager, mock_hass):
+    def test_sensor_state_preservation(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that sensor states are preserved during reloads."""
         # Mock existing sensor state
         mock_hass.states.get.return_value = MagicMock(state="42.5")
@@ -132,7 +133,7 @@ class TestEntityManagement:
         assert sensor_manager.create_sensors.call_count >= 1
         assert sensor_manager.reload_configuration.call_count >= 1
 
-    def test_entity_update_workflows(self, sensor_manager):
+    def test_entity_update_workflows(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test various entity update workflows."""
         import asyncio
 
@@ -182,7 +183,7 @@ class TestEntityManagement:
         assert sensor_manager.create_sensors.call_count == 1
         assert sensor_manager.reload_configuration.call_count == 2
 
-    def test_entity_removal_cleanup(self, sensor_manager):
+    def test_entity_removal_cleanup(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that entity removal properly cleans up resources."""
         import asyncio
 
@@ -205,7 +206,7 @@ class TestEntityManagement:
         assert sensor_manager.remove_sensor.call_count == 1
         sensor_manager._remove_all_sensors.assert_called_once()
 
-    def test_multiple_entity_operations(self, sensor_manager):
+    def test_multiple_entity_operations(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test handling multiple entities simultaneously."""
         import asyncio
 
@@ -231,7 +232,7 @@ class TestEntityManagement:
         # Verify all were added
         assert sensor_manager.create_sensors.call_count == 5
 
-    def test_entity_error_handling(self, sensor_manager):
+    def test_entity_error_handling(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test error handling in entity operations."""
         import asyncio
 
@@ -251,7 +252,9 @@ class TestEntityManagement:
             asyncio.run(sensor_manager.remove_sensor("non_existent_sensor"))
             # Should handle gracefully
 
-    def test_configuration_loading_integration(self, sensor_manager, entity_management_test_yaml):
+    def test_configuration_loading_integration(
+        self, mock_hass, mock_entity_registry, mock_states, sensor_manager, entity_management_test_yaml
+    ):
         """Test loading complete configuration with multiple sensors."""
         import asyncio
 
@@ -261,7 +264,7 @@ class TestEntityManagement:
         # Verify configuration was processed
         sensor_manager.load_configuration.assert_called_once()
 
-    def test_entity_unique_id_generation(self, sensor_manager):
+    def test_entity_unique_id_generation(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that entities get proper unique IDs."""
         import asyncio
 
@@ -287,7 +290,7 @@ class TestEntityManagement:
         # For mock, just verify operation completed
         sensor_manager.create_sensors.assert_called_once()
 
-    def test_entity_relationship_tracking(self, sensor_manager):
+    def test_entity_relationship_tracking(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test tracking of entity relationships and dependencies."""
         import asyncio
 
@@ -326,7 +329,7 @@ class TestEntityManagement:
         # Verify both sensors were added
         assert sensor_manager.create_sensors.call_count == 2
 
-    def test_entity_factory_patterns(self, mock_hass, mock_name_resolver):
+    def test_entity_factory_patterns(self, mock_hass, mock_entity_registry, mock_states, mock_name_resolver):
         """Test entity factory patterns for creating different sensor types."""
         # Test EntityFactory pattern (if implemented)
         try:
@@ -353,7 +356,9 @@ class TestEntityManagement:
             # EntityFactory not implemented yet - skip test
             pytest.skip("EntityFactory not implemented yet")
 
-    def test_sensor_manager_initialization(self, mock_hass, mock_name_resolver, mock_add_entities_callback):
+    def test_sensor_manager_initialization(
+        self, mock_hass, mock_entity_registry, mock_states, mock_name_resolver, mock_add_entities_callback
+    ):
         """Test sensor manager initialization and setup."""
         try:
             from ha_synthetic_sensors.sensor_manager import SensorManager

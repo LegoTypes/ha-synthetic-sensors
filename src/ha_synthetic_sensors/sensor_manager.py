@@ -20,12 +20,13 @@ from homeassistant.util import dt as dt_util, slugify
 
 from .config_models import Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
+from .cross_sensor_reference_manager import CrossSensorReferenceManager
 from .evaluator import Evaluator
 from .evaluator_phases.dependency_management.generic_dependency_manager import GenericDependencyManager
 from .exceptions import CrossSensorResolutionError, DependencyValidationError, FormulaEvaluationError, MissingDependencyError
 from .metadata_handler import MetadataHandler
 from .name_resolver import NameResolver
-from .type_definitions import DataProviderCallback, DataProviderChangeNotifier
+from .type_definitions import DataProviderCallback, DataProviderChangeNotifier, EvaluationResult
 
 if TYPE_CHECKING:
     from homeassistant.core import EventStateChangedData
@@ -128,7 +129,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Collect all dependencies from all formulas
         self._dependencies: set[str] = set()
         for formula in config.formulas:
-            self._dependencies.update(formula.dependencies)
+            self._dependencies.update(formula.get_dependencies(hass))
 
         # IMPORTANT: When using data provider callbacks, we still need to listen to state changes
         # to trigger re-evaluation. Add variable entity IDs to dependencies for state tracking.
@@ -195,7 +196,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         """Set up base extra state attributes."""
         base_attributes: dict[str, Any] = {}
         base_attributes["formula"] = self._main_formula.formula
-        base_attributes["dependencies"] = list(self._main_formula.dependencies)
+        base_attributes["dependencies"] = list(self._main_formula.get_dependencies(self._hass))
         if self._config.category:
             base_attributes["sensor_category"] = self._config.category
         self._attr_extra_state_attributes = base_attributes
@@ -221,6 +222,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Handle entity added to hass."""
         await super().async_added_to_hass()
+
+        # Phase 2: Register actual entity ID for cross-sensor reference resolution
+        if hasattr(self, "entity_id") and self.entity_id:
+            await self._sensor_manager.register_cross_sensor_entity_id(self._config.unique_id, self.entity_id)
 
         # Restore previous state
         last_state = await self.async_get_last_state()
@@ -288,6 +293,96 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         return context if context else None
 
+    def _evaluate_attributes(self, main_result: EvaluationResult) -> None:
+        """Evaluate calculated attributes using the main result context."""
+        if not self._attribute_formulas:
+            return
+
+        # Clear previous calculated attributes
+        self._calculated_attributes.clear()
+
+        # Evaluate attributes in the order they appear in the config
+        for formula in self._attribute_formulas:
+            try:
+                # Build variable context for this attribute formula
+                attr_context = self._build_variable_context(formula)
+
+                # Add the main result value to context if available
+                if main_result["success"] and main_result["value"] is not None:
+                    if attr_context is None:
+                        attr_context = {}
+                    attr_context["state"] = main_result["value"]
+
+                # Evaluate the attribute formula
+                attr_result = self._evaluator.evaluate_formula_with_sensor_config(formula, attr_context, self._config)
+
+                if attr_result["success"] and attr_result["value"] is not None:
+                    # Extract attribute name from formula ID
+                    attr_name = self._extract_attribute_name(formula)
+                    self._calculated_attributes[attr_name] = attr_result["value"]
+                    _LOGGER.debug(
+                        "Calculated attribute '%s' for sensor %s: %s",
+                        attr_name,
+                        self.entity_id,
+                        attr_result["value"],
+                    )
+                else:
+                    _LOGGER.warning(
+                        "Failed to evaluate attribute formula '%s' for sensor %s: %s",
+                        formula.id,
+                        self.entity_id,
+                        attr_result.get("error", "Unknown error"),
+                    )
+
+            except Exception as e:
+                _LOGGER.error(
+                    "Error evaluating attribute formula '%s' for sensor %s: %s",
+                    formula.id,
+                    self.entity_id,
+                    e,
+                )
+                # Continue without attributes rather than failing the entire sensor
+
+    def _handle_main_result(self, main_result: EvaluationResult) -> None:
+        """Handle the main formula evaluation result."""
+        if main_result["success"] and main_result["value"] is not None:
+            self._attr_native_value = main_result["value"]
+            self._attr_available = True
+            self._last_update = dt_util.utcnow()
+
+            # Evaluate calculated attributes
+            self._evaluate_attributes(main_result)
+
+            # Update extra state attributes with calculated values
+            self._update_extra_state_attributes()
+
+            # Notify sensor manager of successful update
+            self._sensor_manager.on_sensor_updated(
+                self._config.unique_id,
+                main_result["value"],
+                self._calculated_attributes.copy(),
+            )
+            return
+
+        if main_result["success"] and main_result.get("state") == "unknown":
+            # Handle case where evaluation succeeded but dependencies are unavailable
+            # This is not an error - just set sensor to unavailable state until dependencies are ready
+            self._attr_native_value = None
+            self._attr_available = False
+            self._last_update = dt_util.utcnow()
+            _LOGGER.debug(
+                "Sensor %s set to unavailable due to unknown dependencies",
+                self.entity_id,
+            )
+            return
+
+        # Handle evaluation failure
+        self._attr_available = False
+        error_msg = main_result.get("error", "Unknown evaluation error")
+        # Treat formula evaluation failure as a fatal error
+        _LOGGER.error("Formula evaluation failed for %s: %s", self.entity_id, error_msg)
+        raise FormulaEvaluationError(f"Formula evaluation failed for {self.entity_id}: {error_msg}")
+
     async def _async_update_sensor(self) -> None:
         """Update the sensor value and calculated attributes by evaluating formulas."""
         try:
@@ -312,66 +407,8 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # Evaluate the main formula with variable context and sensor configuration
             main_result = self._evaluator.evaluate_formula_with_sensor_config(self._main_formula, main_context, self._config)
 
-            if main_result["success"] and main_result["value"] is not None:
-                self._attr_native_value = main_result["value"]
-                self._attr_available = True
-                self._last_update = dt_util.utcnow()
-
-                # Evaluate calculated attributes using dependency manager for proper ordering
-                self._calculated_attributes.clear()
-                
-                if self._attribute_formulas:
-                    try:
-                        # Build base context with variables
-                        base_context = {}
-                        if self._attribute_formulas:
-                            # Use the first attribute formula to get variable context
-                            # All attributes inherit the same variables from the sensor
-                            sample_formula = self._attribute_formulas[0]
-                            base_context = self._build_variable_context(sample_formula) or {}
-                        
-                        # Use dependency manager to evaluate attributes in correct order
-                        complete_context = self._attribute_dependency_manager.build_evaluation_context(
-                            sensor_config=self._config,
-                            evaluator=self._evaluator,
-                            base_context=base_context
-                        )
-                        
-                        # Extract calculated attribute values from context
-                        for attr_formula in self._attribute_formulas:
-                            attr_name = self._extract_attribute_name(attr_formula)
-                            if attr_name in complete_context:
-                                self._calculated_attributes[attr_name] = complete_context[attr_name]
-                                
-                    except Exception as e:
-                        _LOGGER.error("Error evaluating attributes for sensor '%s': %s", self._config.unique_id, e)
-                        # Continue without attributes rather than failing the entire sensor
-
-                # Update extra state attributes with calculated values
-                self._update_extra_state_attributes()
-
-                # Notify sensor manager of successful update
-                self._sensor_manager.on_sensor_updated(
-                    self._config.unique_id,
-                    main_result["value"],
-                    self._calculated_attributes.copy(),
-                )
-            elif main_result["success"] and main_result.get("state") == "unknown":
-                # Handle case where evaluation succeeded but dependencies are unavailable
-                # This is not an error - just set sensor to unavailable state until dependencies are ready
-                self._attr_native_value = None
-                self._attr_available = False
-                self._last_update = dt_util.utcnow()
-                _LOGGER.debug(
-                    "Sensor %s set to unavailable due to unknown dependencies",
-                    self.entity_id,
-                )
-            else:
-                self._attr_available = False
-                error_msg = main_result.get("error", "Unknown evaluation error")
-                # Treat formula evaluation failure as a fatal error
-                _LOGGER.error("Formula evaluation failed for %s: %s", self.entity_id, error_msg)
-                raise FormulaEvaluationError(f"Formula evaluation failed for {self.entity_id}: {error_msg}")
+            # Handle the main result
+            self._handle_main_result(main_result)
 
             # Schedule entity update
             self.async_write_ha_state()
@@ -427,6 +464,18 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         await self._async_update_sensor()
 
     @property
+    def native_value(self) -> Any:
+        """Get the native value of the sensor."""
+        return self._attr_native_value
+
+    @property
+    def dependency_management_phase(self) -> Any:
+        """Get the dependency management phase from the evaluator."""
+        if hasattr(self._evaluator, "dependency_management_phase"):
+            return self._evaluator.dependency_management_phase
+        return None
+
+    @property
     def config_unique_id(self) -> str:
         """Get the unique ID from the sensor configuration."""
         return self._config.unique_id
@@ -443,10 +492,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     def _extract_attribute_name(self, formula: FormulaConfig) -> str:
         """Extract attribute name from formula ID."""
         if formula.id.startswith(f"{self._config.unique_id}_"):
-            return formula.id[len(self._config.unique_id) + 1:]
-        else:
-            # Fallback: use the full formula ID if it doesn't match expected pattern
-            return formula.id
+            return formula.id[len(self._config.unique_id) + 1 :]
+        # Fallback: use the full formula ID if it doesn't match expected pattern
+        return formula.id
 
     async def async_update(self) -> None:
         """Update the sensor value and calculated attributes (public method)."""
@@ -503,6 +551,12 @@ class SensorManager:
 
         # Device registry for device association
         self._device_registry = dr.async_get(self._hass)
+
+        # Cross-sensor reference manager for Phase 2 of cross-sensor reference system
+        self._cross_sensor_ref_manager = CrossSensorReferenceManager(self._hass)
+
+        # Storage manager reference (set via register_with_storage_manager)
+        self._storage_manager: StorageManager | None = None
 
         _LOGGER.debug("SensorManager initialized with device integration support")
 
@@ -610,6 +664,82 @@ class SensorManager:
     def get_all_sensor_entities(self) -> list[DynamicSensor]:
         """Get all sensor entities."""
         return list(self._sensors_by_unique_id.values())
+
+    async def register_cross_sensor_entity_id(self, sensor_key: str, actual_entity_id: str) -> None:
+        """Register entity ID for cross-sensor reference resolution.
+
+        Called by DynamicSensor during async_added_to_hass() to capture actual entity IDs.
+
+        Args:
+            sensor_key: Original YAML sensor key (unique_id)
+            actual_entity_id: Actual entity ID assigned by HA
+        """
+        await self._cross_sensor_ref_manager.register_sensor_entity_id(sensor_key, actual_entity_id)
+
+    async def _on_phase_3_complete(self) -> None:
+        """Called when Phase 3 formula reference resolution is complete.
+
+        Updates sensor configs with resolved references and persists to storage.
+        """
+        resolved_config = self._cross_sensor_ref_manager.get_resolved_config()
+        if not resolved_config:
+            _LOGGER.warning("Phase 3 completion callback called but no resolved config available")
+            return
+
+        _LOGGER.info("Phase 3 complete - updating sensor configs with resolved references")
+
+        # Update sensor configs with resolved formulas and entity_id fields
+        for resolved_sensor in resolved_config.sensors:
+            if resolved_sensor.unique_id in self._sensors_by_unique_id:
+                sensor_entity = self._sensors_by_unique_id[resolved_sensor.unique_id]
+
+                # Update the sensor's config with resolved formulas and entity_id
+                # Note: This is a protected access but necessary for cross-sensor reference resolution
+                sensor_entity._config = resolved_sensor  # pylint: disable=protected-access
+
+                _LOGGER.debug(
+                    "Updated sensor '%s' config with resolved cross-sensor references and entity_id: %s",
+                    resolved_sensor.unique_id,
+                    resolved_sensor.entity_id,
+                )
+
+        # Persist resolved configurations to storage if storage manager is available
+        if hasattr(self, "_storage_manager") and self._storage_manager:
+            await self._persist_resolved_configs_to_storage(resolved_config)
+
+        _LOGGER.info("All sensors updated with resolved cross-sensor references")
+
+    async def _persist_resolved_configs_to_storage(self, resolved_config: Config) -> None:
+        """Persist resolved sensor configurations to storage.
+
+        This ensures that entity_id field updates and resolved formulas are persisted
+        to storage and will be reflected in YAML exports.
+
+        Args:
+            resolved_config: Config with resolved cross-sensor references and updated entity_id fields
+        """
+        try:
+            _LOGGER.debug("Persisting resolved sensor configurations to storage")
+
+            # Update each sensor in storage with the resolved configuration
+            if self._storage_manager is not None:
+                for resolved_sensor in resolved_config.sensors:
+                    # Update the sensor in storage if it exists
+                    await self._storage_manager.async_update_sensor(resolved_sensor)
+
+                    _LOGGER.debug(
+                        "Persisted resolved config for sensor '%s' with entity_id: %s",
+                        resolved_sensor.unique_id,
+                        resolved_sensor.entity_id,
+                    )
+
+                # Save all changes to storage
+                await self._storage_manager.async_save()
+            _LOGGER.info("Successfully persisted resolved configurations to storage")
+
+        except Exception as err:
+            _LOGGER.error("Failed to persist resolved configurations to storage: %s", err)
+            # Don't raise - this shouldn't block the main functionality
 
     async def load_configuration(self, config: Config) -> None:
         """Load a new configuration and update sensors accordingly."""
@@ -915,6 +1045,14 @@ class SensorManager:
         """Create sensors from configuration - public interface for testing."""
         _LOGGER.debug("Creating sensors from config with %d sensor configs", len(config.sensors))
 
+        # Phase 2: Initialize cross-sensor reference manager with detected references
+        if hasattr(config, "cross_sensor_references") and config.cross_sensor_references:
+            self._cross_sensor_ref_manager.initialize_from_config(config.cross_sensor_references, config)
+            _LOGGER.debug("Cross-sensor reference manager initialized for Phase 2")
+
+            # Add callback to update sensor configs when Phase 3 completes
+            self._cross_sensor_ref_manager.add_completion_callback(self._on_phase_3_complete)
+
         # Store the config temporarily for global settings access
         old_config = self._current_config
         self._current_config = config
@@ -970,8 +1108,8 @@ class SensorManager:
                         await sensor.async_update_sensor()
 
                         # Update cross-sensor registry immediately after evaluation
-                        if self._evaluator and hasattr(sensor, "_attr_native_value"):
-                            self._evaluator.update_sensor_value(sensor_name, sensor._attr_native_value)
+                        if self._evaluator and hasattr(sensor, "native_value"):
+                            self._evaluator.update_sensor_value(sensor_name, sensor.native_value)
 
                     except Exception as e:
                         self._handle_cross_sensor_error(sensor_name, e)
@@ -985,8 +1123,8 @@ class SensorManager:
                         await sensor.async_update_sensor()
 
                         # Update cross-sensor registry immediately after evaluation
-                        if self._evaluator and hasattr(sensor, "_attr_native_value"):
-                            self._evaluator.update_sensor_value(sensor_name, sensor._attr_native_value)
+                        if self._evaluator and hasattr(sensor, "native_value"):
+                            self._evaluator.update_sensor_value(sensor_name, sensor.native_value)
 
                     except Exception as e:
                         self._handle_cross_sensor_error(sensor_name, e)
@@ -999,7 +1137,7 @@ class SensorManager:
         Returns:
             List of sensor names in evaluation order
         """
-        if not hasattr(self._evaluator, "_dependency_management_phase"):
+        if not self.dependency_management_phase:
             # Fallback to original order if dependency management not available
             return list(self._sensors_by_unique_id.keys())
 
@@ -1007,17 +1145,21 @@ class SensorManager:
         sensor_configs = [sensor.config for sensor in self._sensors_by_unique_id.values()]
 
         # Analyze cross-sensor dependencies
-        sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(sensor_configs)
+        dependency_phase = self.dependency_management_phase
+        sensor_dependencies = dependency_phase.analyze_cross_sensor_dependencies(sensor_configs)
 
         # Get evaluation order
-        evaluation_order = self._evaluator._dependency_management_phase.get_cross_sensor_evaluation_order(sensor_dependencies)
+        evaluation_order = dependency_phase.get_cross_sensor_evaluation_order(sensor_dependencies)
 
         # Validate dependencies
-        validation_result = self._evaluator._dependency_management_phase.validate_cross_sensor_dependencies(sensor_dependencies)
+        validation_result = dependency_phase.validate_cross_sensor_dependencies(sensor_dependencies)
         if not validation_result.get("valid", True):
             self._logger.warning("Cross-sensor dependency validation issues: %s", validation_result.get("issues", []))
 
-        return evaluation_order
+        # Ensure we return a list of strings
+        if isinstance(evaluation_order, list):
+            return [str(item) for item in evaluation_order]
+        return list(self._sensors_by_unique_id.keys())
 
     def _get_cross_sensor_evaluation_order_for_sensors(self, sensor_configs: list[SensorConfig]) -> list[str]:
         """Get evaluation order for specific sensors considering cross-sensor dependencies.
@@ -1028,22 +1170,26 @@ class SensorManager:
         Returns:
             List of sensor names in evaluation order
         """
-        if not hasattr(self._evaluator, "_dependency_management_phase"):
+        if not self.dependency_management_phase:
             # Fallback to original order if dependency management not available
             return [config.unique_id for config in sensor_configs]
 
         # Analyze cross-sensor dependencies for the specified sensors
-        sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(sensor_configs)
+        dependency_phase = self.dependency_management_phase
+        sensor_dependencies = dependency_phase.analyze_cross_sensor_dependencies(sensor_configs)
 
         # Get evaluation order
-        evaluation_order = self._evaluator._dependency_management_phase.get_cross_sensor_evaluation_order(sensor_dependencies)
+        evaluation_order = dependency_phase.get_cross_sensor_evaluation_order(sensor_dependencies)
 
         # Validate dependencies
-        validation_result = self._evaluator._dependency_management_phase.validate_cross_sensor_dependencies(sensor_dependencies)
+        validation_result = dependency_phase.validate_cross_sensor_dependencies(sensor_dependencies)
         if not validation_result.get("valid", True):
             self._logger.warning("Cross-sensor dependency validation issues: %s", validation_result.get("issues", []))
 
-        return evaluation_order
+        # Ensure we return a list of strings
+        if isinstance(evaluation_order, list):
+            return [str(item) for item in evaluation_order]
+        return [config.unique_id for config in sensor_configs]
 
     async def _register_sensors_in_cross_sensor_registry(self, sensor_configs: list[SensorConfig]) -> None:
         """Enhanced sensor registration with cross-sensor registry integration.
@@ -1085,18 +1231,17 @@ class SensorManager:
         Raises:
             ValueError: If cross-sensor dependency validation fails
         """
-        if not hasattr(self._evaluator, "_dependency_management_phase") or self._evaluator._dependency_management_phase is None:
+        if not self.dependency_management_phase:
             self._logger.debug("Dependency management phase not available, skipping validation")
             return
 
         try:
             # Analyze cross-sensor dependencies
-            sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(sensor_configs)
+            dependency_phase = self.dependency_management_phase
+            sensor_dependencies = dependency_phase.analyze_cross_sensor_dependencies(sensor_configs)
 
             # Validate dependencies
-            validation_result = self._evaluator._dependency_management_phase.validate_cross_sensor_dependencies(
-                sensor_dependencies
-            )
+            validation_result = dependency_phase.validate_cross_sensor_dependencies(sensor_dependencies)
 
             if not validation_result.get("valid", True):
                 issues = validation_result.get("issues", [])
@@ -1124,17 +1269,19 @@ class SensorManager:
         Returns:
             Set of sensor names that this sensor depends on
         """
-        if not hasattr(self._evaluator, "_dependency_management_phase") or self._evaluator._dependency_management_phase is None:
+        if not self.dependency_management_phase:
             return set()
 
         try:
             # Analyze dependencies for this single sensor
-            sensor_dependencies = self._evaluator._dependency_management_phase.analyze_cross_sensor_dependencies(
-                [sensor_config]
-            )
+            dependency_phase = self.dependency_management_phase
+            sensor_dependencies = dependency_phase.analyze_cross_sensor_dependencies([sensor_config])
 
             # Return dependencies for this sensor
-            return sensor_dependencies.get(sensor_config.unique_id, set())
+            dependencies = sensor_dependencies.get(sensor_config.unique_id, set())
+            if isinstance(dependencies, set):
+                return {str(item) for item in dependencies}
+            return set()
 
         except Exception as e:
             self._logger.error("Failed to analyze cross-sensor dependencies for sensor '%s': %s", sensor_config.unique_id, e)
@@ -1484,6 +1631,9 @@ class SensorManager:
         Args:
             storage_manager: StorageManager instance to register with
         """
+        # Store reference for cross-sensor resolution persistence
+        self._storage_manager = storage_manager
+
         storage_manager.register_sensor_manager(self)
         storage_manager.register_evaluator(self._evaluator)
         self._logger.debug("Registered SensorManager and Evaluator with StorageManager")
@@ -1495,14 +1645,24 @@ class SensorManager:
         Args:
             storage_manager: StorageManager instance to unregister from
         """
+        # Clear reference
+        self._storage_manager = None
+
         storage_manager.unregister_sensor_manager(self)
         storage_manager.unregister_evaluator(self._evaluator)
         self._logger.debug("Unregistered SensorManager and Evaluator from StorageManager")
 
     @property
     def evaluator(self) -> Evaluator:
-        """Get the evaluator instance used by this SensorManager."""
+        """Get the evaluator instance."""
         return self._evaluator
+
+    @property
+    def dependency_management_phase(self) -> Any:
+        """Get the dependency management phase from the evaluator."""
+        if hasattr(self._evaluator, "dependency_management_phase"):
+            return self._evaluator.dependency_management_phase
+        return None
 
     @property
     def allow_ha_lookups(self) -> bool:

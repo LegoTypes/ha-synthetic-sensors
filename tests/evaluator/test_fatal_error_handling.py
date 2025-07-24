@@ -10,30 +10,25 @@ from ha_synthetic_sensors.exceptions import DataValidationError
 from ha_synthetic_sensors.type_definitions import DataProviderResult
 
 
-def test_data_provider_returning_none_raises_fatal_error() -> None:
-    """Test that when data provider callback returns None, it raises a fatal error."""
-    mock_hass = MagicMock()
+def test_data_provider_returning_none_causes_fatal_error(mock_hass, mock_entity_registry, mock_states) -> None:
+    """Test that when data provider callback returns None, it causes a fatal DataValidationError."""
 
     # Create evaluator with data provider callback that returns None
     def bad_data_provider(entity_id: str) -> None:
-        return None  # This should be fatal
+        return None  # This should cause a fatal error
 
     evaluator = Evaluator(mock_hass, data_provider_callback=bad_data_provider)
     evaluator.update_integration_entities({"sensor.test"})  # Tell evaluator this entity comes from integration
 
-    config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
+    config = FormulaConfig(id="test_formula", formula="test_var + 10", variables={"test_var": "sensor.test"})
 
-    # Should raise DataValidationError, not return success with warnings
-    with pytest.raises(DataValidationError) as exc_info:
+    # Should raise DataValidationError for None data provider
+    with pytest.raises(DataValidationError, match="Data provider callback returned None"):
         evaluator.evaluate_formula(config)
 
-    assert "returned None" in str(exc_info.value)
-    assert "fatal implementation error" in str(exc_info.value)
 
-
-def test_data_provider_returning_none_value_handled_gracefully() -> None:
+def test_data_provider_returning_none_value_handled_gracefully(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that when data provider returns valid structure but None value, it's handled gracefully."""
-    mock_hass = MagicMock()
 
     # Create evaluator with data provider that returns None value
     def none_value_provider(entity_id: str) -> DataProviderResult:
@@ -54,9 +49,8 @@ def test_data_provider_returning_none_value_handled_gracefully() -> None:
     assert result["value"] is None
 
 
-def test_data_provider_returning_unavailable_state_handled_gracefully() -> None:
+def test_data_provider_returning_unavailable_state_handled_gracefully(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that unavailable state values are handled gracefully with state reflection."""
-    mock_hass = MagicMock()
 
     # Create evaluator with data provider that returns unavailable state
     def unavailable_provider(entity_id: str) -> DataProviderResult:
@@ -72,4 +66,6 @@ def test_data_provider_returning_unavailable_state_handled_gracefully() -> None:
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
     assert result.get("state") == "unavailable"  # Reflects unavailable dependency
-    assert "sensor.test" in result.get("unavailable_dependencies", [])
+    # Check that the enhanced dependency reporting includes the entity ID
+    deps = result.get("unavailable_dependencies", [])
+    assert any("sensor.test" in dep for dep in deps), f"Expected 'sensor.test' in dependencies: {deps}"

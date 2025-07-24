@@ -269,4 +269,4 @@ class EntityIndex:
 
         # Use NameResolver for validation
         temp_resolver = NameResolver(self._hass, {})
-        return temp_resolver.is_valid_entity_id(value)
+        return temp_resolver.validate_entity_id(value)

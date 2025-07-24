@@ -59,7 +59,7 @@ class TestPreEvaluationPhase:
             ],
         )
 
-    def test_initialization(self, phase: PreEvaluationPhase) -> None:
+    def test_initialization(self, phase: PreEvaluationPhase, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test phase initialization."""
         assert phase._hass is None
         assert phase._data_provider_callback is None
@@ -69,7 +69,9 @@ class TestPreEvaluationPhase:
         assert phase._sensor_to_backing_mapping is None
         assert phase._allow_ha_lookups is False
 
-    def test_set_evaluator_dependencies(self, phase: PreEvaluationPhase, mock_dependencies: dict) -> None:
+    def test_set_evaluator_dependencies(
+        self, phase: PreEvaluationPhase, mock_dependencies: dict, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test setting evaluator dependencies."""
         phase.set_evaluator_dependencies(**mock_dependencies)
 
@@ -82,7 +84,13 @@ class TestPreEvaluationPhase:
         assert phase._allow_ha_lookups == mock_dependencies["allow_ha_lookups"]
 
     def test_perform_pre_evaluation_checks_circuit_breaker(
-        self, phase: PreEvaluationPhase, mock_dependencies: dict, basic_config: FormulaConfig
+        self,
+        phase: PreEvaluationPhase,
+        mock_dependencies: dict,
+        basic_config: FormulaConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test circuit breaker check in pre-evaluation."""
         # Setup circuit breaker to skip evaluation
@@ -97,7 +105,13 @@ class TestPreEvaluationPhase:
         assert context is None
 
     def test_perform_pre_evaluation_checks_cache_hit(
-        self, phase: PreEvaluationPhase, mock_dependencies: dict, basic_config: FormulaConfig
+        self,
+        phase: PreEvaluationPhase,
+        mock_dependencies: dict,
+        basic_config: FormulaConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test cache check in pre-evaluation."""
         # Setup cache to return a result
@@ -113,7 +127,13 @@ class TestPreEvaluationPhase:
         assert context is None
 
     def test_perform_pre_evaluation_checks_state_token_validation_no_sensor_config(
-        self, phase: PreEvaluationPhase, mock_dependencies: dict, basic_config: FormulaConfig
+        self,
+        phase: PreEvaluationPhase,
+        mock_dependencies: dict,
+        basic_config: FormulaConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test state token validation when no sensor config is provided."""
         # Setup no cache hit and no circuit breaker
@@ -134,7 +154,7 @@ class TestPreEvaluationPhase:
         assert context == {"var1": 100}
 
     def test_validate_state_token_resolution_no_sensor_config(
-        self, phase: PreEvaluationPhase, basic_config: FormulaConfig
+        self, phase: PreEvaluationPhase, basic_config: FormulaConfig, mock_hass, mock_entity_registry, mock_states
     ) -> None:
         """Test state token validation with no sensor config."""
         result = phase._validate_state_token_resolution(None, basic_config)
@@ -143,7 +163,13 @@ class TestPreEvaluationPhase:
         assert "State token requires sensor configuration" in result["error"]
 
     def test_validate_state_token_resolution_attribute_formula(
-        self, phase: PreEvaluationPhase, basic_config: FormulaConfig, basic_sensor_config: SensorConfig
+        self,
+        phase: PreEvaluationPhase,
+        basic_config: FormulaConfig,
+        basic_sensor_config: SensorConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test state token validation for attribute formulas."""
         # Create attribute formula (has underscore in ID)
@@ -160,7 +186,13 @@ class TestPreEvaluationPhase:
         assert result is None
 
     def test_validate_state_token_resolution_no_backing_entity_mapping(
-        self, phase: PreEvaluationPhase, basic_config: FormulaConfig, basic_sensor_config: SensorConfig
+        self,
+        phase: PreEvaluationPhase,
+        basic_config: FormulaConfig,
+        basic_sensor_config: SensorConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test state token validation when no backing entity mapping exists."""
         # Setup phase with empty mapping
@@ -174,7 +206,13 @@ class TestPreEvaluationPhase:
             phase._validate_state_token_resolution(basic_sensor_config, basic_config)
 
     def test_validate_state_token_resolution_backing_entity_not_registered(
-        self, phase: PreEvaluationPhase, basic_config: FormulaConfig, basic_sensor_config: SensorConfig
+        self,
+        phase: PreEvaluationPhase,
+        basic_config: FormulaConfig,
+        basic_sensor_config: SensorConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test state token validation when backing entity is not registered."""
         # Setup phase with backing entity mapping but not registered
@@ -188,7 +226,13 @@ class TestPreEvaluationPhase:
             phase._validate_state_token_resolution(basic_sensor_config, basic_config)
 
     def test_validate_state_token_resolution_backing_entity_registered(
-        self, phase: PreEvaluationPhase, basic_config: FormulaConfig, basic_sensor_config: SensorConfig
+        self,
+        phase: PreEvaluationPhase,
+        basic_config: FormulaConfig,
+        basic_sensor_config: SensorConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test state token validation when backing entity is registered."""
         # Setup phase with backing entity mapping and registered
@@ -202,7 +246,13 @@ class TestPreEvaluationPhase:
         assert result is None
 
     def test_validate_state_token_resolution_allow_ha_lookups(
-        self, phase: PreEvaluationPhase, basic_config: FormulaConfig, basic_sensor_config: SensorConfig
+        self,
+        phase: PreEvaluationPhase,
+        basic_config: FormulaConfig,
+        basic_sensor_config: SensorConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test state token validation when allow_ha_lookups is enabled."""
         # Setup phase with backing entity mapping but not registered, but allow_ha_lookups enabled
@@ -217,7 +267,7 @@ class TestPreEvaluationPhase:
         assert result is None
 
     def test_validate_state_token_resolution_self_reference(
-        self, phase: PreEvaluationPhase, basic_config: FormulaConfig
+        self, phase: PreEvaluationPhase, basic_config: FormulaConfig, mock_hass, mock_entity_registry, mock_states
     ) -> None:
         """Test state token validation for self-reference sensors."""
         # Create sensor config without entity_id (self-reference)
@@ -242,7 +292,9 @@ class TestPreEvaluationPhase:
         # Should pass validation for self-reference
         assert result is None
 
-    def test_handle_dependency_issues_no_issues(self, phase: PreEvaluationPhase, mock_dependencies: dict) -> None:
+    def test_handle_dependency_issues_no_issues(
+        self, phase: PreEvaluationPhase, mock_dependencies: dict, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test handling dependency issues when there are no issues."""
         phase.set_evaluator_dependencies(**mock_dependencies)
 
@@ -253,7 +305,9 @@ class TestPreEvaluationPhase:
 
         assert result is None
 
-    def test_handle_dependency_issues_with_error(self, phase: PreEvaluationPhase, mock_dependencies: dict) -> None:
+    def test_handle_dependency_issues_with_error(
+        self, phase: PreEvaluationPhase, mock_dependencies: dict, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test handling dependency issues when there is an error."""
         phase.set_evaluator_dependencies(**mock_dependencies)
 
@@ -267,7 +321,9 @@ class TestPreEvaluationPhase:
         assert result["error"] == "Missing dependencies"
         assert result["state"] == "unavailable"
 
-    def test_validate_evaluation_context_no_issues(self, phase: PreEvaluationPhase, mock_dependencies: dict) -> None:
+    def test_validate_evaluation_context_no_issues(
+        self, phase: PreEvaluationPhase, mock_dependencies: dict, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test evaluation context validation when there are no issues."""
         phase.set_evaluator_dependencies(**mock_dependencies)
 
@@ -278,7 +334,9 @@ class TestPreEvaluationPhase:
 
         assert result is None
 
-    def test_validate_evaluation_context_with_error(self, phase: PreEvaluationPhase, mock_dependencies: dict) -> None:
+    def test_validate_evaluation_context_with_error(
+        self, phase: PreEvaluationPhase, mock_dependencies: dict, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test evaluation context validation when there is an error."""
         phase.set_evaluator_dependencies(**mock_dependencies)
 
@@ -295,7 +353,14 @@ class TestPreEvaluationPhase:
         phase._error_handler.increment_error_count.assert_called_once_with("test_formula")
 
     def test_perform_pre_evaluation_checks_success(
-        self, phase: PreEvaluationPhase, mock_dependencies: dict, basic_config: FormulaConfig, basic_sensor_config: SensorConfig
+        self,
+        phase: PreEvaluationPhase,
+        mock_dependencies: dict,
+        basic_config: FormulaConfig,
+        basic_sensor_config: SensorConfig,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
     ) -> None:
         """Test successful pre-evaluation checks."""
         # Setup all checks to pass

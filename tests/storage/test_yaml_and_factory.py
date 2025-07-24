@@ -97,7 +97,7 @@ class TestYamlConfigurationLoading:
         basic_sensor = sensors["simple_test_sensor"]
         assert basic_sensor["formula"] == "var_a + var_b"
 
-    def test_yaml_to_service_integration(self, mock_hass, solar_analytics_yaml):
+    def test_yaml_to_service_integration(self, mock_hass, mock_entity_registry, mock_states, solar_analytics_yaml):
         """Test that YAML configuration can be used with service layer."""
         from ha_synthetic_sensors.config_manager import ConfigManager
 
@@ -134,7 +134,6 @@ class TestYamlConfigurationLoading:
         assert len(parsed_config["sensors"]) == 2
 
 
-@pytest.mark.skipif(EntityFactory is None, reason="EntityFactory not implemented yet")
 class TestEntityFactory:
     """Test cases for EntityFactory functionality."""
 

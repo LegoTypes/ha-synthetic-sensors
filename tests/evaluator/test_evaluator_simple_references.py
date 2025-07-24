@@ -1,25 +1,14 @@
 """Test simple variable reference with actual evaluator."""
 
+import pytest
 from unittest.mock import MagicMock
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 
 
-def test_simple_variable_evaluator() -> None:
+def test_simple_variable_evaluator(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that evaluator works with simple variable references."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
-
-    # Mock state object with a numeric value
-    mock_state = MagicMock()
-    mock_state.state = "25.5"
-    mock_state.attributes = {}
-
-    # Mock the get method to return our state
-    mock_hass.states.get.return_value = mock_state
-
     # Create evaluator
     evaluator = Evaluator(mock_hass)
 
@@ -39,43 +28,33 @@ def test_simple_variable_evaluator() -> None:
     assert result["success"] is True
     assert result["value"] == 25.5
 
-    # Verify it called the right entity
-    mock_hass.states.get.assert_called_with("sensor.power_meter")
+    # Should not call Home Assistant since context provides the value
+    mock_hass.states.get.assert_not_called()
 
 
-def test_direct_entity_reference() -> None:
+def test_direct_entity_reference(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test direct entity reference without variables."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
-
-    # Mock state object
-    mock_state = MagicMock()
-    mock_state.state = "42.0"
-    mock_state.attributes = {}
-
-    mock_hass.states.get.return_value = mock_state
-
     # Create evaluator with HA lookups enabled
     evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
     # Test direct entity reference (no variables needed)
     config = FormulaConfig(id="test_formula", formula="sensor.temperature", variables={})
 
-    result = evaluator.evaluate_formula(config)
+    # Create context with the entity value
+    context = {"sensor.temperature": 22.0}
+
+    result = evaluator.evaluate_formula(config, context)
 
     # Should succeed and return the value
     assert result["success"] is True
-    assert result["value"] == 42.0
+    assert result["value"] == 22.0
 
-    # Verify it called the right entity
-    mock_hass.states.get.assert_called_with("sensor.temperature")
+    # Should not call Home Assistant since context provides the value
+    mock_hass.states.get.assert_not_called()
 
 
-def test_numeric_literal() -> None:
+def test_numeric_literal(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test numeric literal (no variables or entities needed)."""
-    mock_hass = MagicMock()
-
     # Create evaluator
     evaluator = Evaluator(mock_hass)
 

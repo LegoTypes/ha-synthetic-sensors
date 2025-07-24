@@ -10,43 +10,7 @@ from ha_synthetic_sensors.name_resolver import NameResolver
 class TestHierarchicalSyntheticDependencies:
     """Test hierarchical dependencies between synthetic sensors."""
 
-    @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance with hierarchical sensor states."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-
-        # Mock hierarchical sensor state chain
-        def mock_get_state(entity_id):
-            state_values = {
-                # Level 1: Base sensors (real HA entities)
-                "sensor.circuit_1_power": "100.0",
-                "sensor.circuit_2_power": "150.0",
-                "sensor.circuit_3_power": "75.0",
-                "sensor.circuit_4_power": "125.0",
-                # Level 2: Intermediate synthetic sensors
-                # circuit_1 + circuit_2
-                "sensor.hvac_total_hvac_total": "250.0",
-                # circuit_3 + circuit_4
-                "sensor.lighting_total_lighting_total": "200.0",
-                # Level 3: Parent synthetic sensor
-                # hvac_total + lighting_total
-                "sensor.home_total_home_total": "450.0",
-                # Level 4: Grandparent synthetic sensor
-                # home_total * 0.19
-                "sensor.energy_analysis_efficiency": "85.5",
-            }
-
-            if entity_id in state_values:
-                mock_state = MagicMock()
-                mock_state.state = state_values[entity_id]
-                return mock_state
-            return None
-
-        hass.states.get.side_effect = mock_get_state
-        return hass
-
-    def test_level_1_base_sensors(self, mock_hass):
+    def test_level_1_base_sensors(self, mock_hass, mock_entity_registry, mock_states):
         """Test that base HA sensors resolve correctly."""
         resolver = NameResolver(mock_hass, {})
 
@@ -60,7 +24,7 @@ class TestHierarchicalSyntheticDependencies:
         assert resolver.resolve_name(MockNode("sensor.circuit_3_power")) == 75.0
         assert resolver.resolve_name(MockNode("sensor.circuit_4_power")) == 125.0
 
-    def test_level_2_synthetic_sensors(self, mock_hass):
+    def test_level_2_synthetic_sensors(self, mock_hass, mock_entity_registry, mock_states):
         """Test that level 2 synthetic sensors can reference base sensors."""
         # Variables for HVAC total sensor (level 2)
         hvac_variables = {
@@ -80,7 +44,7 @@ class TestHierarchicalSyntheticDependencies:
         # Test that the synthetic sensor itself is a valid entity
         assert resolver.resolve_name(MockNode("sensor.hvac_total_hvac_total")) == 250.0
 
-    def test_level_3_parent_synthetic_sensors(self, mock_hass):
+    def test_level_3_parent_synthetic_sensors(self, mock_hass, mock_entity_registry, mock_states):
         """Test that level 3 synthetic sensors can reference level 2 synsensors."""
         # Variables for home total sensor (level 3)
         #  - references level 2 synthetic sensors
@@ -101,7 +65,7 @@ class TestHierarchicalSyntheticDependencies:
         # Test that the parent synthetic sensor itself is available
         assert resolver.resolve_name(MockNode("sensor.home_total_home_total")) == 450.0
 
-    def test_level_4_grandparent_synthetic_sensors(self, mock_hass):
+    def test_level_4_grandparent_synthetic_sensors(self, mock_hass, mock_entity_registry, mock_states):
         """Test level 4 synthetic sensors can reference level 3 synthetic sensors."""
         # Variables for energy analysis sensor (level 4) -
         #     references level 3 synthetic sensor
@@ -118,7 +82,7 @@ class TestHierarchicalSyntheticDependencies:
         # Test that the grandparent synthetic sensor itself is available
         assert resolver.resolve_name(MockNode("sensor.energy_analysis_efficiency")) == 85.5
 
-    def test_mixed_variable_and_direct_hierarchical_references(self, mock_hass):
+    def test_mixed_variable_and_direct_hierarchical_references(self, mock_hass, mock_entity_registry, mock_states):
         """Test mixed variable mapping / direct entity references in setup."""
         # Variables that mix direct references and variable mapping
         mixed_variables = {
@@ -142,7 +106,7 @@ class TestHierarchicalSyntheticDependencies:
         # Test direct entity ID reference to base sensor
         assert resolver.resolve_name(MockNode("sensor.circuit_1_power")) == 100.0
 
-    def test_state_propagation_simulation(self, mock_hass):
+    def test_state_propagation_simulation(self, mock_hass, mock_entity_registry, mock_states):
         """Test simulated state propagation through hierarchical chain."""
         # This simulates what happens when state changes propagate
         # In real implementation, this would be handled by Home Assistant's
@@ -195,7 +159,7 @@ class TestHierarchicalSyntheticDependencies:
         # Level 4: Grandparent synthetic sensor
         assert resolver.resolve_name(MockNode("sensor.energy_analysis_efficiency")) == 90.25
 
-    def test_realistic_yaml_scenario(self, mock_hass):
+    def test_realistic_yaml_scenario(self, mock_hass, mock_entity_registry, mock_states):
         """Test a realistic YAML configuration scenario."""
         # This represents what would be in a real YAML config
 

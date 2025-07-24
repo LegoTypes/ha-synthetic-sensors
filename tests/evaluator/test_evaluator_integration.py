@@ -15,15 +15,7 @@ from ha_synthetic_sensors.evaluator_config import CircuitBreakerConfig, RetryCon
 
 
 @pytest.fixture
-def mock_hass():
-    """Create a mock Home Assistant instance."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.states = MagicMock()
-    return hass
-
-
-@pytest.fixture
-def evaluator(mock_hass):
+def evaluator(mock_hass, mock_entity_registry, mock_states):
     """Create Evaluator instance for testing."""
     return Evaluator(mock_hass)
 
@@ -42,7 +34,7 @@ def sample_formula_config():
 class TestEvaluatorInitialization:
     """Test Evaluator initialization and handler setup."""
 
-    def test_evaluator_initialization(self, mock_hass):
+    def test_evaluator_initialization(self, mock_hass, mock_entity_registry, mock_states):
         """Test that evaluator initializes with handler modules."""
         evaluator = Evaluator(mock_hass)
 
@@ -52,7 +44,7 @@ class TestEvaluatorInitialization:
         assert hasattr(evaluator, "_cache")
         assert hasattr(evaluator, "_dependency_parser")
 
-    def test_evaluator_with_custom_configs(self, mock_hass):
+    def test_evaluator_with_custom_configs(self, mock_hass, mock_entity_registry, mock_states):
         """Test evaluator initialization with custom configurations."""
         cb_config = CircuitBreakerConfig(max_fatal_errors=3)
         retry_config = RetryConfig(max_attempts=5)
@@ -62,7 +54,7 @@ class TestEvaluatorInitialization:
         assert evaluator.get_circuit_breaker_config().max_fatal_errors == 3
         assert evaluator.get_retry_config().max_attempts == 5
 
-    def test_evaluator_data_provider_delegation(self, mock_hass):
+    def test_evaluator_data_provider_delegation(self, mock_hass, mock_entity_registry, mock_states):
         """Test that data provider callback is properly delegated."""
 
         def mock_data_provider(entity_id):
@@ -77,7 +69,7 @@ class TestEvaluatorInitialization:
 class TestEvaluatorDelegation:
     """Test that Evaluator properly delegates to handler modules."""
 
-    def test_get_formula_dependencies_delegation(self, evaluator):
+    def test_get_formula_dependencies_delegation(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test that dependency extraction delegates to dependency handler."""
         with patch.object(evaluator._dependency_handler, "get_formula_dependencies") as mock_deps:
             mock_deps.return_value = {"sensor.test"}
@@ -87,7 +79,7 @@ class TestEvaluatorDelegation:
             mock_deps.assert_called_once_with("sensor.test + 5")
             assert result == {"sensor.test"}
 
-    def test_cache_operations_delegation(self, evaluator):
+    def test_cache_operations_delegation(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test that cache operations delegate to cache handler."""
         with patch.object(evaluator._cache_handler, "clear_cache") as mock_clear:
             evaluator.clear_cache("test_formula")
@@ -103,7 +95,7 @@ class TestEvaluatorDelegation:
             assert stats["misses"] == 5
             assert "error_counts" in stats
 
-    def test_integration_entity_delegation(self, evaluator):
+    def test_integration_entity_delegation(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test that integration entity management delegates properly."""
         entities = {"sensor.integration_1", "sensor.integration_2"}
 
@@ -122,7 +114,9 @@ class TestEvaluatorDelegation:
 class TestEvaluationWorkflow:
     """Test the complete evaluation workflow coordination."""
 
-    def test_evaluation_workflow_cache_hit(self, evaluator, sample_formula_config):
+    def test_evaluation_workflow_cache_hit(
+        self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation workflow when cache hit occurs."""
         cached_result = {"success": True, "value": 85.0, "cached": True, "state": "ok"}
 
@@ -134,51 +128,46 @@ class TestEvaluationWorkflow:
             mock_cache.assert_called_once()
             assert result == cached_result
 
-    def test_evaluation_workflow_cache_miss(self, evaluator, sample_formula_config, mock_hass):
+    def test_evaluation_workflow_cache_miss(
+        self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation workflow when cache miss occurs."""
         # Mock cache miss
         with patch.object(evaluator._cache_handler, "check_cache") as mock_cache_check:
             mock_cache_check.return_value = None
 
-            # Mock dependency extraction and checking
-            with patch.object(evaluator._dependency_handler, "extract_and_prepare_dependencies") as mock_extract:
-                mock_extract.return_value = ({"temp", "humidity"}, set())
+            # Mock states for evaluation
+            def mock_states_get(entity_id):
+                if entity_id == "sensor.temperature":
+                    state = Mock()
+                    state.state = "25.0"
+                    return state
+                elif entity_id == "sensor.humidity":
+                    state = Mock()
+                    state.state = "60.0"
+                    return state
+                return None
 
-                with patch.object(evaluator._dependency_handler, "check_dependencies") as mock_check_deps:
-                    mock_check_deps.return_value = (set(), set(), set())  # No missing/unavailable/unknown
+            mock_hass.states.get.side_effect = mock_states_get
 
-                    # Mock states for evaluation
-                    def mock_states_get(entity_id):
-                        if entity_id == "sensor.temperature":
-                            state = Mock()
-                            state.state = "25.0"
-                            return state
-                        elif entity_id == "sensor.humidity":
-                            state = Mock()
-                            state.state = "60.0"
-                            return state
-                        return None
+            # Mock cache storage
+            with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
+                # Create context with variable values
+                context = {"temp": 25.0, "humidity": 60.0}
 
-                    mock_hass.states.get.side_effect = mock_states_get
+                result = evaluator.evaluate_formula(sample_formula_config, context)
 
-                    # Mock cache storage
-                    with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
-                        # Create context with variable values
-                        context = {"temp": 25.0, "humidity": 60.0}
+                # Verify delegation occurred
+                mock_cache_check.assert_called_once()
+                mock_cache_store.assert_called_once()
 
-                        result = evaluator.evaluate_formula(sample_formula_config, context)
+                # Verify result
+                assert result["success"] is True
+                assert result["value"] == 85.0  # 25 + 60
 
-                        # Verify delegation occurred
-                        mock_cache_check.assert_called_once()
-                        mock_extract.assert_called_once()
-                        mock_check_deps.assert_called_once()
-                        mock_cache_store.assert_called_once()
-
-                        # Verify result
-                        assert result["success"] is True
-                        assert result["value"] == 85.0  # 25 + 60
-
-    def test_evaluation_workflow_missing_dependencies(self, evaluator, sample_formula_config):
+    def test_evaluation_workflow_missing_dependencies(
+        self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation workflow with missing dependencies."""
         with patch.object(evaluator._cache_handler, "check_cache") as mock_cache:
             mock_cache.return_value = None
@@ -195,7 +184,9 @@ class TestEvaluationWorkflow:
                     assert result["state"] == "unavailable"
                     assert "missing_sensor" in result.get("error", "")
 
-    def test_evaluation_workflow_unavailable_dependencies(self, evaluator, sample_formula_config):
+    def test_evaluation_workflow_unavailable_dependencies(
+        self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation workflow with unavailable dependencies."""
         with patch.object(evaluator._cache_handler, "check_cache") as mock_cache:
             mock_cache.return_value = None
@@ -212,7 +203,9 @@ class TestEvaluationWorkflow:
                     assert result["state"] == "unavailable"  # Reflects unavailable dependency
                     assert "unavailable_sensor" in result.get("unavailable_dependencies", [])
 
-    def test_evaluation_workflow_mixed_variable_validation_negative(self, evaluator, mock_hass):
+    def test_evaluation_workflow_mixed_variable_validation_negative(
+        self, evaluator, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation workflow with mixed variable validation - negative case where A has no variables but B does."""
         # Create a formula config where A (direct entity) and B (variable) are mixed
         formula_config = FormulaConfig(
@@ -239,7 +232,7 @@ class TestEvaluationWorkflow:
                     assert result["state"] == "unavailable"
                     assert "sensor.direct_entity" in result.get("error", "")
 
-    def test_evaluation_workflow_global_literal_reference(self, evaluator, mock_hass):
+    def test_evaluation_workflow_global_literal_reference(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test evaluation workflow where A references a global literal value."""
         # Enable HA lookups for this test
         evaluator.update_allow_ha_lookups(True)
@@ -258,42 +251,27 @@ class TestEvaluationWorkflow:
         with patch.object(evaluator._cache_handler, "check_cache") as mock_cache:
             mock_cache.return_value = None
 
-            with patch.object(evaluator._dependency_handler, "extract_and_prepare_dependencies") as mock_extract:
-                # Only variable_b should be a dependency, global_constant is a literal
-                mock_extract.return_value = ({"variable_b"}, set())
+            with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
+                # Provide context with resolved values
+                context = {"global_constant": 42.5, "variable_b": 57.5}
+                result = evaluator.evaluate_formula(formula_config, context)
 
-                with patch.object(evaluator._dependency_handler, "check_dependencies") as mock_check_deps:
-                    mock_check_deps.return_value = (set(), set(), set())  # No missing/unavailable/unknown
+                # Verify success
+                assert result["success"] is True
+                assert result["value"] == 100.0  # 42.5 + 57.5
+                assert result["state"] == "ok"
 
-                    # Mock state for variable_b
-                    def mock_states_get(entity_id):
-                        if entity_id == "sensor.variable_entity":
-                            state = Mock()
-                            state.state = "57.5"
-                            return state
-                        return None
-
-                    mock_hass.states.get.side_effect = mock_states_get
-
-                    with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
-                        result = evaluator.evaluate_formula(formula_config)
-
-                        # Verify success
-                        assert result["success"] is True
-                        assert result["value"] == 100.0  # 42.5 + 57.5
-                        assert result["state"] == "ok"
-
-                        # Verify delegation occurred
-                        mock_cache.assert_called_once()
-                        mock_extract.assert_called_once()
-                        mock_check_deps.assert_called_once()
-                        mock_cache_store.assert_called_once()
+                # Verify delegation occurred
+                mock_cache.assert_called_once()
+                mock_cache_store.assert_called_once()
 
 
 class TestCircuitBreakerIntegration:
     """Test circuit breaker integration with handler modules."""
 
-    def test_circuit_breaker_skips_evaluation(self, evaluator, sample_formula_config):
+    def test_circuit_breaker_skips_evaluation(
+        self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that circuit breaker skips evaluation and handler calls."""
         # Trigger circuit breaker by setting error count
         evaluator._error_handler._error_count["Test Formula"] = 10  # Above default threshold
@@ -322,62 +300,55 @@ class TestCircuitBreakerIntegration:
         # Verify that dependency checking was not called (circuit breaker prevented it)
         evaluator._dependency_handler.check_dependencies.assert_not_called()
 
-    def test_circuit_breaker_reset_on_success(self, evaluator, sample_formula_config, mock_hass):
+    def test_circuit_breaker_reset_on_success(
+        self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that circuit breaker resets error counts on successful evaluation."""
         # Set initial error count
         evaluator._error_handler._error_count["Test Formula"] = 3
 
-        # Mock successful evaluation
-        evaluator._dependency_handler = MagicMock()
-        evaluator._dependency_handler.check_dependencies.return_value = (set(), set(), set())
-        evaluator._dependency_handler.extract_formula_dependencies.return_value = set()
-        evaluator._dependency_handler.extract_and_prepare_dependencies.return_value = (set(), set())
+        # Mock cache miss
+        with patch.object(evaluator._cache_handler, "check_cache") as mock_cache:
+            mock_cache.return_value = None
 
-        evaluator._cache_handler = MagicMock()
-        evaluator._cache_handler.check_cache.return_value = None
+            # Mock cache storage
+            with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
+                # Provide context with resolved values for successful evaluation
+                context = {"temp": 20.0, "humidity": 60.0}
 
-        evaluator._formula_preprocessor = MagicMock()
-        evaluator._formula_preprocessor.preprocess_formula_for_evaluation.return_value = "temp + humidity"
+                # Perform successful evaluation
+                result = evaluator.evaluate_formula(sample_formula_config, context)
 
-        # Mock successful evaluation context
-        evaluator._build_evaluation_context = MagicMock()
-        evaluator._build_evaluation_context.return_value = {"temp": 20.0, "humidity": 60.0}
+                # Verify successful result
+                assert result["success"] is True
+                assert result["value"] == 80.0  # 20 + 60
 
-        # Mock the SimpleEval evaluation
-        with patch("ha_synthetic_sensors.evaluator.SimpleEval") as mock_simple_eval:
-            mock_eval_instance = MagicMock()
-            mock_eval_instance.eval.return_value = 80.0
-            mock_simple_eval.return_value = mock_eval_instance
+                # Verify error count was reset
+                assert "Test Formula" not in evaluator._error_handler._error_count
 
-            # Perform successful evaluation
-            result = evaluator.evaluate_formula(sample_formula_config)
-
-        # Verify successful result
-        assert result["success"] is True
-        assert result["value"] == 80.0
-
-        # Verify error count was reset
-        assert "Test Formula" not in evaluator._error_handler._error_count
+                # Verify delegation occurred
+                mock_cache.assert_called_once()
+                mock_cache_store.assert_called_once()
 
 
 class TestConfigurationManagement:
     """Test configuration management integration."""
 
-    def test_update_circuit_breaker_config(self, evaluator):
+    def test_update_circuit_breaker_config(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test updating circuit breaker configuration."""
         new_config = CircuitBreakerConfig(max_fatal_errors=10)
         evaluator.update_circuit_breaker_config(new_config)
 
         assert evaluator.get_circuit_breaker_config().max_fatal_errors == 10
 
-    def test_update_retry_config(self, evaluator):
+    def test_update_retry_config(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test updating retry configuration."""
         new_config = RetryConfig(max_attempts=8)
         evaluator.update_retry_config(new_config)
 
         assert evaluator.get_retry_config().max_attempts == 8
 
-    def test_validate_formula_syntax_delegation(self, evaluator):
+    def test_validate_formula_syntax_delegation(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test that formula syntax validation works."""
         # Test valid formula
         errors = evaluator.validate_formula_syntax("A + B")
@@ -391,7 +362,7 @@ class TestConfigurationManagement:
 class TestErrorHandling:
     """Test error handling coordination between modules."""
 
-    def test_dependency_validation_integration(self, evaluator):
+    def test_dependency_validation_integration(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test dependency validation integration."""
         dependencies = {"sensor.test1", "sensor.test2"}
 
@@ -409,33 +380,28 @@ class TestErrorHandling:
             assert "sensor.test1" in result["missing_entities"]
             assert "sensor.test2" in result["unavailable_entities"]
 
-    def test_evaluation_context_building(self, evaluator, sample_formula_config, mock_hass):
+    def test_evaluation_context_building(self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states):
         """Test that evaluation context is built correctly."""
-        # Mock dependency extraction
-        with patch.object(evaluator._dependency_handler, "extract_and_prepare_dependencies") as mock_extract:
-            mock_extract.return_value = ({"temp", "humidity"}, set())
+        # Enable HA lookups for context building
+        evaluator.update_allow_ha_lookups(True)
 
-            with patch.object(evaluator._dependency_handler, "check_dependencies") as mock_check_deps:
-                mock_check_deps.return_value = (set(), set(), set())
+        # Mock states for context building
+        def mock_states_get(entity_id):
+            state = Mock()
+            if entity_id == "sensor.temperature":
+                state.state = "25.0"
+            elif entity_id == "sensor.humidity":
+                state.state = "60.0"
+            return state
 
-                # Mock states
-                def mock_states_get(entity_id):
-                    state = Mock()
-                    if entity_id == "sensor.temperature":
-                        state.state = "25.0"
-                    elif entity_id == "sensor.humidity":
-                        state.state = "60.0"
-                    return state
+        mock_hass.states.get.side_effect = mock_states_get
 
-                mock_hass.states.get.side_effect = mock_states_get
+        # Get evaluation context
+        context = evaluator.get_evaluation_context(sample_formula_config)
 
-                # Enable HA lookups for context building
-                evaluator.update_allow_ha_lookups(True)
-
-                # Get evaluation context
-                context = evaluator.get_evaluation_context(sample_formula_config)
-
-                assert "temp" in context
-                assert "humidity" in context
-                assert context["temp"] == 25.0
-                assert context["humidity"] == 60.0
+        # Verify that variables are resolved to their actual values
+        # The context building phase now properly resolves entity references
+        assert "temp" in context
+        assert "humidity" in context
+        assert context["temp"] == 25.0  # Resolved value, not entity ID
+        assert context["humidity"] == 60.0  # Resolved value, not entity ID

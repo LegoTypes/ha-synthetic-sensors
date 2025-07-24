@@ -2,37 +2,37 @@ version: '1.0'
 sensors:
   critical_important_count:
     name: Critical and Important Count
-    formula: count("tags:critical|important")
+    formula: count("label:critical|important")
     metadata:
       unit_of_measurement: devices
       state_class: measurement
   alert_status_sum:
     name: Alert Status Sum
-    formula: sum("tags:critical|important|warning")
+    formula: sum("label:critical|important|warning")
     metadata:
       unit_of_measurement: count
       state_class: measurement
   priority_average:
     name: Priority Average
-    formula: avg("tags:high_priority|medium_priority")
+    formula: avg("label:high_priority|medium_priority")
     metadata:
       unit_of_measurement: units
       state_class: measurement
   monitoring_total:
     name: Monitoring Total
-    formula: sum("tags:monitor|alert")
+    formula: sum("label:monitor|alert")
     metadata:
       unit_of_measurement: count
       state_class: measurement
   quoted_or_pattern:
     name: Quoted OR Pattern
-    formula: max("tags:emergency|urgent")
+    formula: max("label:emergency|urgent")
     metadata:
       unit_of_measurement: count
       state_class: measurement
   alert_efficiency:
     name: Alert Efficiency
-    formula: count("tags:critical|important") / total_devices * 100
+    formula: count("label:critical|important") / total_devices * 100
     variables:
       total_devices: input_number.total_devices
     metadata:
@@ -40,22 +40,22 @@ sensors:
       state_class: measurement
   comprehensive_tag_monitoring:
     name: Comprehensive Tag Monitoring
-    formula: sum("tags:monitor|alert") + count("tags:critical|important|warning")
+    formula: sum("label:monitor|alert") + count("label:critical|important|warning")
     metadata:
       unit_of_measurement: units
       state_class: measurement
   multi_status_average:
     name: Multi-Status Average
-    formula: avg("tags:critical|important|warning|info")
+    formula: avg("label:critical|important|warning|info")
     metadata:
       unit_of_measurement: units
       state_class: measurement
   advanced_tag_analysis:
     name: Advanced Tag Analysis
-    formula: count("tags:critical|important|warning")
+    formula: count("label:critical|important|warning")
     attributes:
       active_alerts:
-        formula: count("tags:critical|important" > 0)
+        formula: count("label:critical|important" > 0)
         metadata:
           unit_of_measurement: devices
       alert_percentage:
@@ -65,34 +65,34 @@ sensors:
       daily_average:
         formula: state * 24
         metadata:
-          unit_of_measurement: tag-hours
+          unit_of_measurement: label-hours
     metadata:
       unit_of_measurement: devices
       state_class: measurement
-  dynamic_or_tags:
-    name: Dynamic OR Tags
-    formula: count("tags:primary_tag|secondary_tag")
+  dynamic_or_label:
+    name: Dynamic OR Labels
+    formula: count("label:primary_tag|secondary_tag")
     variables:
       primary_tag: input_select.primary_tag
       secondary_tag: input_select.secondary_tag
     metadata:
       unit_of_measurement: devices
       state_class: measurement
-  multi_tag_efficiency:
-    name: Multi-Tag Efficiency
-    formula: (sum("tags:monitor|alert") / count("tags:critical|important")) * 100
+  multi_label_efficiency:
+    name: Multi-Label Efficiency
+    formula: (sum("label:monitor|alert") / count("label:critical|important")) * 100
     metadata:
       unit_of_measurement: '%'
       state_class: measurement
-  direct_tag_or_config:
-    name: Direct Tag OR Config
-    formula: count("tags:input_select.tag_type_1|input_select.tag_type_2")
+  direct_label_or_config:
+    name: Direct Label OR Config
+    formula: count("label:input_select.tag_type_1|input_select.tag_type_2")
     metadata:
       unit_of_measurement: devices
       state_class: measurement
-  mixed_tag_or_config:
-    name: Mixed Tag OR Config
-    formula: count("tags:variable_tag|input_select.direct_tag")
+  mixed_label_or_config:
+    name: Mixed Label OR Config
+    formula: count("label:variable_tag|input_select.direct_tag")
     variables:
       variable_tag: input_select.variable_tag_type
     metadata:
@@ -100,7 +100,7 @@ sensors:
       state_class: measurement
   direct_three_way_tag_config:
     name: Direct Three-Way Tag Config
-    formula: avg("tags:input_select.tag1|input_select.tag2|input_select.tag3")
+    formula: avg("label:input_select.tag1|input_select.tag2|input_select.tag3")
     metadata:
       unit_of_measurement: units
       state_class: measurement

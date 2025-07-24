@@ -1,0 +1,51 @@
+sensors:
+  # Base power sensor with self-references using state token
+  roundtrip_base_power_sensor:
+    entity_id: sensor.roundtrip_panel_power
+    formula: state * 1.0
+    variables:
+      my_ref: sensor.roundtrip_base_power_sensor      # Self-reference in variable (will be resolved to 'state')
+      scale_factor: 0.95
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+    attributes:
+      # Self-references should use state token
+      daily_power:
+        formula: state * 24          # Self-reference → 'state'
+        metadata:
+          unit_of_measurement: W
+      weekly_power:
+        formula: state * 24 * 7      # Self-reference → 'state'
+        metadata:
+          unit_of_measurement: W
+      efficiency_calc:
+        formula: state * my_ref       # Self-reference in variable → 'state'
+        metadata:
+          unit_of_measurement: W
+
+  # Second sensor that references the first (cross-sensor reference)
+  roundtrip_efficiency_calc:
+    entity_id: sensor.roundtrip_panel_power  # Will cause collision
+    formula: sensor.roundtrip_base_power_sensor * 0.85 # Cross-sensor reference to Sensor A
+    variables:
+      other_power: sensor.roundtrip_base_power_sensor              # Cross-sensor reference in variable
+      local_factor: 0.9
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+    attributes:
+      # Cross-sensor references should resolve to entity IDs
+      power_ratio:
+        formula: state / sensor.roundtrip_base_power_sensor         # Cross-sensor reference
+        metadata:
+          unit_of_measurement: ratio
+      combined_power:
+        formula: state + other_power               # Cross-sensor reference in variable
+        metadata:
+          unit_of_measurement: W
+      # Self-references should use state token
+      daily_efficiency:
+        formula: state * 24                        # Self-reference → 'state'
+        metadata:
+          unit_of_measurement: W

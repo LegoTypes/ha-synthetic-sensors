@@ -56,8 +56,7 @@ class CrossSensorReferenceResolver(VariableResolver):
         # Enhanced error handling for missing sensor values
         if self._sensor_registry_phase.is_sensor_registered(variable_value):
             raise DependencyValidationError(variable_value, "sensor registered but value not yet evaluated")
-        else:
-            raise MissingDependencyError(f"Cross-sensor reference '{variable_value}' not found in registry")
+        raise MissingDependencyError(f"Cross-sensor reference '{variable_value}' not found in registry")
 
     def _track_dependency_usage(self, variable_name: str, variable_value: str) -> None:
         """Track dependency usage for debugging and validation."""

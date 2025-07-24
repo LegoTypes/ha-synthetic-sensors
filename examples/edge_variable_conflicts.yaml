@@ -12,14 +12,14 @@ sensors:
       power_value: sensor.span_panel_instantaneous_power  # Main sensor variable
       cost_rate: 0.25  # Main sensor variable
     attributes:
-      # Attribute with same variable name (should override main sensor variable)
-      power_value:
-        formula: power_value * 0.25  # Uses attribute's own 'power_value' variable
+      # Attribute with different variable name (should use its own variable)
+      power_cost:
+        formula: power_factor * 0.25  # Uses attribute's own 'power_factor' variable
         variables:
-          power_value: 2000  # Attribute variable (should override main sensor variable)
+          power_factor: 2000  # Attribute variable with different name
         metadata:
           unit_of_measurement: cents/h
-          friendly_name: "Power Value (Attribute)"
+          friendly_name: "Power Cost (Attribute)"
       # Attribute with different variable name
       cost_calculation:
         formula: cost_rate * 100  # Uses inherited 'cost_rate' from main sensor
@@ -66,7 +66,7 @@ sensors:
       device_class: monetary
       friendly_name: "Attribute Variable Conflict"
 
-  # Test variable name conflicts with sensor key injection
+  # Test variable name conflicts with sensor key injection (DEPRECATED - UNSAFE)
   sensor_key_conflict:
     entity_id: sensor.span_panel_instantaneous_power
     formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
@@ -74,9 +74,9 @@ sensors:
       sensor_key_conflict: 500  # Variable with same name as sensor key
       power_value: 1000  # Regular variable
     attributes:
-      # Attribute using sensor key (should use auto-injected sensor reference)
+      # Attribute using explicit entity ID (SAFE: Use explicit entity ID instead of sensor key)
       sensor_reference:
-        formula: sensor_key_conflict * 0.25  # Uses auto-injected sensor reference
+        formula: sensor.sensor_key_conflict * 0.25  # SAFE: Use explicit entity ID
         metadata:
           unit_of_measurement: cents/h
           friendly_name: "Sensor Reference"
@@ -88,7 +88,7 @@ sensors:
           friendly_name: "Variable Reference"
       # Attribute with conflicting variable name
       conflict_test:
-        formula: sensor_key_conflict + power_value  # Mix of sensor reference and variable
+        formula: sensor.sensor_key_conflict + power_value  # SAFE: Use explicit entity ID + variable
         metadata:
           unit_of_measurement: W
           friendly_name: "Conflict Test"

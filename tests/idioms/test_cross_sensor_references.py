@@ -11,13 +11,6 @@ class TestCrossSensorReferences:
     """Test cross-sensor reference functionality."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states.get.return_value = None
-        return hass
-
-    @pytest.fixture
     def config_manager(self, mock_hass):
         """Create a config manager."""
         return ConfigManager(mock_hass)
@@ -46,7 +39,9 @@ sensors:
       friendly_name: "Derived Sensor"
 """
 
-    def test_simple_cross_sensor_reference(self, config_manager, simple_cross_sensor_yaml):
+    def test_simple_cross_sensor_reference(
+        self, config_manager, simple_cross_sensor_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test simple cross-sensor reference functionality."""
         config = config_manager.load_from_yaml(simple_cross_sensor_yaml)
 
@@ -94,7 +89,9 @@ sensors:
         assert derived_result["success"] is True
         assert derived_result["value"] == 1100.0  # base_sensor * 1.1 = 1000 * 1.1 = 1100
 
-    def test_cross_sensor_reference_with_attributes(self, config_manager, simple_cross_sensor_yaml):
+    def test_cross_sensor_reference_with_attributes(
+        self, config_manager, simple_cross_sensor_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test cross-sensor references in attribute formulas."""
         config = config_manager.load_from_yaml(simple_cross_sensor_yaml)
 

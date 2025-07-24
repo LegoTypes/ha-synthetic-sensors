@@ -1,0 +1,78 @@
+version: '1.0'
+global_settings:
+  device_identifier: test-device-001
+  metadata:
+    attribution: Data from Test Device
+    entity_registry_enabled_default: true
+    suggested_display_precision: 2
+sensors:
+  test_current_power:
+    name: Current Power
+    entity_id: sensor.current_power
+    formula: state
+    attributes:
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 2
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  test_feed_through_power:
+    name: Feed Through Power
+    entity_id: sensor.feed_through_power
+    formula: state
+    attributes:
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 2
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  test_energy_consumed:
+    name: Energy Consumed
+    entity_id: sensor.energy_consumed
+    formula: state
+    attributes:
+      voltage: 240
+    metadata:
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 0
+  # Example demonstrating state token in both main formula and attributes
+  # Main sensor 'state' evaluates the backing entity first, then attribute 'state' evaluates the main sensor state second
+  test_power_with_processing:
+    name: Processed Power
+    entity_id: sensor.raw_power
+    # Main formula: 'state' refers to backing entity (sensor.raw_power)
+    # This could include smoothing, filtering, or other processing
+    formula: state * 1.1  # Example: 10% adjustment factor
+    attributes:
+      # Attribute formula: 'state' refers to the main sensor's result (processed value)
+      # This allows attributes to use the processed/smoothed value from the main sensor
+      amperage:
+        formula: state / 240  # Uses processed power value, not raw backing entity
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 2
+      efficiency:
+        formula: state / (state / 1.1) * 100  # Calculates efficiency using processed value
+        metadata:
+          unit_of_measurement: "%"
+          device_class: power_factor
+          suggested_display_precision: 1
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

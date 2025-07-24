@@ -9,14 +9,6 @@ from ha_synthetic_sensors.evaluator import Evaluator
 
 
 @pytest.fixture
-def mock_hass():
-    """Create a mock Home Assistant instance."""
-    hass = MagicMock()
-    hass.states = MagicMock()
-    return hass
-
-
-@pytest.fixture
 def data_provider_callback():
     """Create a mock data provider callback."""
 
@@ -54,7 +46,7 @@ def sensor_config_ha_only():
     )
 
 
-def test_register_data_provider_entities_with_allow_ha_lookups():
+def test_register_data_provider_entities_with_allow_ha_lookups(mock_hass, mock_entity_registry, mock_states):
     """Test that register_data_provider_entities properly sets allow_ha_lookups flag."""
     # Create evaluator with data provider callback
     evaluator = Evaluator(MagicMock(), data_provider_callback=lambda x: {"value": 42, "success": True})
@@ -79,7 +71,9 @@ def test_register_data_provider_entities_with_allow_ha_lookups():
     assert sensor_manager._allow_ha_lookups is False
 
 
-def test_build_variable_context_with_data_provider_and_allow_ha_lookups_false(mock_hass, data_provider_callback):
+def test_build_variable_context_with_data_provider_and_allow_ha_lookups_false(
+    mock_hass, mock_entity_registry, mock_states, data_provider_callback
+):
     """Test _build_variable_context when data provider exists and allow_ha_lookups=False."""
     # Create evaluator with data provider callback
     evaluator = Evaluator(mock_hass, data_provider_callback=data_provider_callback)
@@ -115,7 +109,9 @@ def test_build_variable_context_with_data_provider_and_allow_ha_lookups_false(mo
     mock_hass.states.get.assert_not_called()
 
 
-def test_build_variable_context_with_data_provider_and_allow_ha_lookups_true(mock_hass, data_provider_callback):
+def test_build_variable_context_with_data_provider_and_allow_ha_lookups_true(
+    mock_hass, mock_entity_registry, mock_states, data_provider_callback
+):
     """Test _build_variable_context when data provider exists and allow_ha_lookups=True."""
     # Create evaluator with data provider callback
     evaluator = Evaluator(mock_hass, data_provider_callback=data_provider_callback)
@@ -138,10 +134,10 @@ def test_build_variable_context_with_data_provider_and_allow_ha_lookups_true(moc
     # Create sensor
     sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager)
 
-    # Mock HA state
+    # Mock HA state by adding it to the mock_states dictionary
     mock_state = MagicMock()
     mock_state.state = "42.5"
-    mock_hass.states.get.return_value = mock_state
+    mock_states["sensor.backing_ha_only"] = mock_state
 
     # Build variable context - should return context with HA values
     context = sensor._build_variable_context(sensor_config.formulas[0])
@@ -152,7 +148,7 @@ def test_build_variable_context_with_data_provider_and_allow_ha_lookups_true(moc
     mock_hass.states.get.assert_called_with("sensor.backing_ha_only")
 
 
-def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass):
+def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass, mock_entity_registry, mock_states):
     """Test _build_variable_context when no data provider is configured."""
     # Create evaluator without data provider callback
     evaluator = Evaluator(mock_hass, data_provider_callback=None)
@@ -175,10 +171,10 @@ def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass):
     # Create sensor
     sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager)
 
-    # Mock HA state
+    # Mock HA state by adding it to the mock_states dictionary
     mock_state = MagicMock()
     mock_state.state = "123.45"
-    mock_hass.states.get.return_value = mock_state
+    mock_states["sensor.backing_virtual"] = mock_state
 
     # Build variable context - should return context with HA values since no data provider
     context = sensor._build_variable_context(sensor_config.formulas[0])

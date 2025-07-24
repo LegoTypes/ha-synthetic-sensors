@@ -19,3 +19,13 @@ class VariableResolver:
     def get_resolver_name(self) -> str:
         """Get the name of this resolver for logging and debugging."""
         return self.__class__.__name__
+
+    def set_sensor_to_backing_mapping(self, mapping: dict[str, str]) -> None:
+        """Set the sensor-to-backing mapping for this resolver."""
+        if hasattr(self, "_sensor_to_backing_mapping"):
+            self._sensor_to_backing_mapping = mapping
+
+    def set_data_provider_callback(self, callback: Any) -> None:
+        """Set the data provider callback for this resolver."""
+        if hasattr(self, "_data_provider_callback"):
+            self._data_provider_callback = callback

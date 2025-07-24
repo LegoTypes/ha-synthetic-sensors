@@ -1,0 +1,38 @@
+version: '1.0'
+sensors:
+  online_active_count:
+    name: Online or Active Count
+    formula: count("attribute:online=true|status=active")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
+  high_value_sum:
+    name: High Value Sum
+    formula: sum("state:>90|>75")
+    metadata:
+      unit_of_measurement: W
+      state_class: measurement
+  mixed_conditions_count:
+    name: Mixed Conditions Count
+    formula: count("attribute:online=true|state:>90|status=active")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
+  complex_or_pattern:
+    name: Complex OR Pattern
+    formula: sum("attribute:online=true|status=active|state:>90")
+    metadata:
+      unit_of_measurement: W
+      state_class: measurement
+  quoted_or_patterns:
+    name: Quoted OR Patterns
+    formula: count("attribute:online=true|status=active")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
+  three_way_or_pattern:
+    name: Three-Way OR Pattern
+    formula: count("attribute:online=true|status=active|mode=auto")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement

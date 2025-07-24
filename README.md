@@ -26,7 +26,7 @@ mathematical expressions.
 - **Advanced dependency resolution** with automatic entity discovery
 - **Storage-based configuration** with runtime modification capabilities
 - **Variable support** for reusable calculations and shared configuration
-- **Dynamic entity aggregation** using regex, tags, areas, and device class patterns
+- **Dynamic entity aggregation** using regex, label, areas, and device class patterns
 - **Comprehensive caching** with AST compilation for optimal performance
 - **Integration with Home Assistant** device and entity registries
 
@@ -125,7 +125,7 @@ sensors:
           unit_of_measurement: "¢"
           suggested_display_precision: 2
       monthly_projected:
-        formula: "energy_cost_analysis * 24 * 30" # ref by main sensor key
+        formula: "state * 24 * 30" # ref by main sensor state (preferred)
         metadata:
           unit_of_measurement: "¢"
           suggested_display_precision: 2
@@ -218,13 +218,6 @@ sensors:
 - **Formula attributes**: Calculated values that depend on sensor state or other entities
 - **Mixed usage**: Both literal and formula attributes can be used together in the same sensor
 
-**Use Cases for Literal Attributes:**
-
-- Device specifications (voltage, capacity, model numbers)
-- Installation information (dates, serial numbers, warranty periods)
-- Configuration constants (thresholds, limits, default values)
-- Metadata that doesn't require calculation (manufacturer, location, notes)
-
 ### Device Association
 
 Associate sensors with Home Assistant devices for better organization and device-centric management:
@@ -252,22 +245,6 @@ sensors:
     device_sw_version: "2.1.0"
     device_hw_version: "1.0"
     suggested_area: "Garage"
-
-  # Sensor associated with an existing device (minimal config)
-  battery_status:
-    name: "Battery Status"
-    formula: "battery_level * battery_capacity / 100"
-    variables:
-      battery_level: "sensor.battery_percentage"
-      battery_capacity: "sensor.battery_total_capacity"
-    metadata:
-      unit_of_measurement: "kWh"
-      device_class: "energy_storage"
-      state_class: "measurement"
-      suggested_display_precision: 2
-      icon: "mdi:battery"
-    # Only device_identifier needed for existing devices
-    device_identifier: "solar_inverter_001"
 ```
 
 **Device Association Fields:**
@@ -293,13 +270,6 @@ sensors:
 
 Device association requires specifying the integration domain. See the
 [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for implementation details.
-
-**Benefits of device association:**
-
-- Sensors appear grouped under their device in the Home Assistant UI
-- Better organization for complex setups with multiple related sensors
-- Device-level controls and automations
-- Cleaner entity management and discovery
 
 **Device-Aware Entity Naming:**
 
@@ -391,35 +361,7 @@ sensors:
       custom_property: "custom_value"
 ```
 
-**Examples of Metadata Properties:**
-
-**Core Sensor Properties:**
-
-- `unit_of_measurement` - Primary unit for the sensor value
-- `native_unit_of_measurement` - Native unit before conversion
-- `device_class` - HA device class (power, energy, temperature, etc.)
-- `state_class` - How HA should handle the state (measurement, total, total_increasing)
-
-**Display Properties:**
-
-- `suggested_display_precision` - Number of decimal places to show
-- `suggested_unit_of_measurement` - Preferred unit for display
-- `icon` - Material Design icon (mdi:icon-name)
-- `attribution` - Data source attribution text
-
-**Entity Registry Properties:**
-
-- `entity_category` - Category for grouping (config, diagnostic, system)
-- `entity_registry_enabled_default` - Whether enabled by default
-- `entity_registry_visible_default` - Whether visible by default
-
-**Advanced Properties:**
-
-- `assumed_state` - Whether the state is assumed or confirmed
-- `last_reset` - When the sensor was last reset (for totals)
-- `options` - List of valid options for enum device classes
-
-**Extensibility:**
+**Metadata Extensibility:**
 
 - Any additional properties are passed through to Home Assistant
 - Custom properties can be added for integration-specific needs
@@ -585,7 +527,6 @@ sensors:
 | ---------------------------- | ------------------------- | ------------------------------- | ------------------------------------ |
 | **Direct Entity ID**         | `sensor.entity_name`      | `sensor.power_meter`            | Quick references, cross-sensor       |
 | **Variable Alias**           | `variable_name`           | `power_meter`                   | Most common, clean formulas          |
-| **Sensor Key Reference**     | `sensor_key`              | `energy_analysis`               | Reference other synthetic sensors    |
 | **State Alias (attributes)** | `state`                   | `state * 24`                    | In attributes, reference main sensor |
 | **Attribute Dot Notation**   | `entity.attribute`        | `sensor1.battery_level`         | Access entity attributes             |
 | **Collection Functions**     | `mathFunc(pattern:value)` | `sum(device_class:temperature)` | Aggregate entities by pattern        |
@@ -596,6 +537,24 @@ sensors:
   name
 - **Without device association**: `sensor.{sensor_key}`
 - **Explicit override**: Use the optional `entity_id` field to specify exact entity ID
+
+**Cross-Sensor References**:
+
+Cross-sensor references work through **variable aliases**, not direct sensor key references. To reference other synthetic
+sensors, define them as variables:
+
+```yaml
+sensors:
+  base_power:
+    name: "Base Power"
+    formula: "1000"
+
+  derived_power:
+    name: "Derived Power"
+    formula: "base_power * 1.1" # Equivalent to "sensor.base_power * 1.1"
+    variables:
+      base_power: "sensor.base_power" # Alias to base_power sensor
+```
 
 **Device prefix examples:**
 
@@ -739,6 +698,28 @@ sensors:
       device_class: "power"
       state_class: "measurement"
 
+  # Enhanced syntax examples
+  active_devices:
+    name: "Active Devices"
+    formula: count("state:on|active|connected")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:check-circle"
+
+  non_diagnostic_sensors:
+    name: "Non-Diagnostic Sensors"
+    formula: count("device_class:!diagnostic|area:!basement")
+    metadata:
+      unit_of_measurement: "sensors"
+      icon: "mdi:sensor"
+
+  battery_health:
+    name: "Battery Health Check"
+    formula: count("battery_level<20|device_class:!battery")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:battery-alert"
+
   # Attribute filtering with collection variables
   low_battery_devices:
     name: "Low Battery Devices"
@@ -765,9 +746,60 @@ sensors:
 - `"device_class:power"` - Entities with specific device class
 - `"regex:pattern_variable"` - Entities matching regex pattern from variable (variable must reference an `input_text` entity)
 - `"area:kitchen"` - Entities in specific area
-- `"tags:tag1,tag2"` - Entities with specified tags
+- `"label:critical|important"` - Entities with specified label (pipe-separated OR logic)
 - `"attribute:battery_level<50"` - Entities with attribute conditions
-- `"state:>100|=on"` - Entities with state conditions (supports OR with `|`)
+- `"state:>100|on"` - Entities with state conditions (supports OR with `|`)
+
+**Sensor State Token:**
+
+The `state` of the sensor is referenced by this special token and can be used anywhere a formula is used either in the main
+sensor or in attribute formulas. When `state` is referenced in the main formula the reference is to the senosr state before
+the formula is evaluated since the calculation is based on the prior state and the result then sets the state of the sensor.
+When `state` is used in an attribute formula the token refers to the main sensor's formula result (post-eval). This
+disctinction makes sense because the main sensor state is evaluated _before_ attributes. The state flow is always logically
+evaluated in order.
+
+References to attributes can also be made from the state like `state.my_sensor_attribute` which evaluates beased on where
+this reference is used consistent with the evaluation order of main sensor first and then attributes. So if
+`state.my_attribute *10` is used in the main formula the result is the state of the main sensor's `my_attribute` prior to the
+formula being evaluated.
+
+If that same `state.my_attribute` is used in the attribute formula the reference is to the main formula's state after the
+main sensor is evaluted. This ordering matters if the attribute was influcened by the main sensor state. The key is to always
+remember the the main sensor state is evaluated first before attributes are calculated.
+
+- **Explicit operators**: `"state:==on|!=off|>50"`
+- **Shorthand boolean**: `"state:on|!off|>50"` (implicit equality for simple values)
+- **Negation**: `"state:!off|!inactive"` (excludes specific states)
+
+**Attribute Patterns:**
+
+- **Explicit operators**: `"battery_level>50|status==active"`
+- **Shorthand with colon**: `"battery_level>50|status:active|mode:!inactive"`
+- **Negation**: `"device_class:!humidity|battery_level:!<20"`
+
+**Simple Patterns (device_class, area, label):**
+
+- **Inclusion**: `"device_class:power|area:kitchen|label:critical"`
+- **Negation**: `"device_class:!diagnostic|area:!garage|label:!deprecated"`
+- **Mixed**: `"device_class:power|!humidity|area:kitchen|!basement"`
+
+**Syntax Reference:**
+
+| Pattern Type     | Explicit Syntax                             | Shorthand Syntax                    | Negation Syntax              |
+| ---------------- | ------------------------------------------- | ----------------------------------- | ---------------------------- |
+| **State**        | `"state:==on\|!=off\|>50"`                  | `"state:on\|!off\|>50"`             | `"state:!off\|!inactive"`    |
+| **Attribute**    | `"battery_level>50\|status==active"`        | `"battery_level>50\|status:active"` | `"battery_level:!<20"`       |
+| **Device Class** | `"device_class:power\|device_class:energy"` | `"device_class:power\|energy"`      | `"device_class:!diagnostic"` |
+| **Area**         | `"area:kitchen\|area:living_room"`          | `"area:kitchen\|living_room"`       | `"area:!basement"`           |
+| **Label**        | `"label:critical\|label:important"`         | `"label:critical\|important"`       | `"label:!deprecated"`        |
+
+**Key Features:**
+
+- **Pipe-only OR logic**: All patterns use `\|` for OR conditions (no comma support)
+- **Shorthand evaluation**: Simple values like `on`, `active`, `connected` are automatically evaluated as boolean
+- **Negation support**: `!` prefix excludes specific values or patterns
+- **Mixed patterns**: Combine inclusion and exclusion in the same pattern
 
 **Important:** For regex patterns, the variable must reference an `input_text` entity containing the regex pattern:
 
@@ -783,13 +815,13 @@ variables:
 formula: sum("regex:circuit_pattern")
 ```
 
-**Important:** Collection patterns use the pipe (`|`) character for OR logic between fully qualified patterns:
+Collection patterns use the pipe (`|`) character for OR logic between patterns:
 
-- Correct: `"device_class:power|device_class:energy"`
-- Correct: `"area:kitchen|area:living_room|area:dining_room"`
-- Wrong: `"device_class:power|energy"` (incomplete second pattern)
-- Wrong: `"device_class:power or energy"` (treated as literal string)
-- Wrong: `"area:kitchen or living_room"` (treated as literal string)
+- Correct: `"device_class:power|device_class:energy"`(long hand inclusion of power and energy)
+- Correct: `"state:on|active|connected"` (shorthand boolean evaluation that includes active and connected)
+- Correct: `"device_class:power|!humidity"` (inclusion of power and exclusion of humidity)
+- Wrong: `"device_class:power or energy"` (must use the pipe `|`operator)
+- Wrong: `"label:critical,important"` (comma syntax not supported - use pipe)
 
 **Empty Collection Behavior:**
 
@@ -800,7 +832,7 @@ This provides robust behavior for dynamic entity collections.
 # These return 0 when no entities match the pattern
 sum("device_class:nonexistent")     # Returns: 0
 avg("area:empty_room")              # Returns: 0
-count("tags:missing_tag")           # Returns: 0
+count("label:missing_label")       # Returns: 0
 min("state:>9999")                  # Returns: 0
 max("attribute:invalid<0")          # Returns: 0
 ```
@@ -1008,5 +1040,6 @@ MIT License
 
 ## Repository
 
-- GitHub: <https://github.com/SpanPanel/ha-synthetic-sensors>
-- Issues: <https://github.com/SpanPanel/ha-synthetic-sensors/issues>
+- GitHub: [https://github.com/SpanPanel/ha-synthetic-sensors](https://github.com/SpanPanel/ha-synthetic-sensors)
+- Issues:
+  [https://github.com/SpanPanel/ha-synthetic-sensors/issues](https://github.com/SpanPanel/ha-synthetic-sensors/issues)

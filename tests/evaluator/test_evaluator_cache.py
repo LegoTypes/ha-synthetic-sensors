@@ -9,7 +9,7 @@ from ha_synthetic_sensors.evaluator import Evaluator
 class TestEvaluatorCache:
     """Test evaluator cache methods."""
 
-    def test_clear_cache_all(self, mock_hass):
+    def test_clear_cache_all(self, mock_hass, mock_entity_registry, mock_states):
         """Test clearing all cache entries."""
         evaluator = Evaluator(mock_hass)
 
@@ -22,7 +22,7 @@ class TestEvaluatorCache:
         # Verify clear_cache was called
         evaluator._cache_handler.clear_cache.assert_called_once_with(None)
 
-    def test_clear_cache_specific_formula(self, mock_hass):
+    def test_clear_cache_specific_formula(self, mock_hass, mock_entity_registry, mock_states):
         """Test clearing cache for specific formula."""
         evaluator = Evaluator(mock_hass)
 
@@ -35,7 +35,7 @@ class TestEvaluatorCache:
         # Verify clear_cache was called with formula name
         evaluator._cache_handler.clear_cache.assert_called_once_with("test_formula")
 
-    def test_get_cache_stats(self, mock_hass):
+    def test_get_cache_stats(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting cache statistics."""
         evaluator = Evaluator(mock_hass)
 
@@ -60,7 +60,7 @@ class TestEvaluatorCache:
         # Verify cache handler was called
         evaluator._cache_handler.get_cache_stats.assert_called_once()
 
-    def test_get_cache_stats_no_errors(self, mock_hass):
+    def test_get_cache_stats_no_errors(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting cache statistics with no error counts."""
         evaluator = Evaluator(mock_hass)
 
@@ -81,7 +81,7 @@ class TestEvaluatorCache:
         assert stats["cache_size"] == 7
         assert stats["error_counts"] == {}
 
-    def test_cache_integration_with_formula_dependencies(self, mock_hass):
+    def test_cache_integration_with_formula_dependencies(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache integration with formula dependency extraction."""
         evaluator = Evaluator(mock_hass)
 
@@ -99,7 +99,7 @@ class TestEvaluatorCache:
         # Verify correct result returned
         assert result == test_dependencies
 
-    def test_cache_hit_for_formula_dependencies(self, mock_hass):
+    def test_cache_hit_for_formula_dependencies(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache hit for formula dependencies."""
         evaluator = Evaluator(mock_hass)
 
@@ -117,7 +117,7 @@ class TestEvaluatorCache:
         # Verify correct cached result returned
         assert result == cached_dependencies
 
-    def test_cache_result_storage_on_successful_evaluation(self, mock_hass):
+    def test_cache_result_storage_on_successful_evaluation(self, mock_hass, mock_entity_registry, mock_states):
         """Test that successful formula evaluation stores result in cache."""
         evaluator = Evaluator(mock_hass)
 
@@ -151,7 +151,7 @@ class TestEvaluatorCache:
         # Verify cache_result was called
         assert evaluator._cache_handler.cache_result.called
 
-    def test_error_count_tracking_in_cache_stats(self, mock_hass):
+    def test_error_count_tracking_in_cache_stats(self, mock_hass, mock_entity_registry, mock_states):
         """Test that error counts are properly tracked and reported in cache stats."""
         evaluator = Evaluator(mock_hass)
 

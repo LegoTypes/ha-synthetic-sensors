@@ -11,7 +11,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .config_manager import ConfigManager
+from .config_models import Config
 from .config_types import GlobalSettingsDict
+from .cross_sensor_reference_reassignment import BulkYamlReassignment
 from .exceptions import SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -235,11 +237,14 @@ class SensorSetOpsHandler:
         config_manager = ConfigManager(self.storage_manager.hass)
         config = config_manager.load_from_yaml(yaml_content)
 
+        # Resolve cross-sensor references before storage
+        resolved_config = await self._resolve_cross_sensor_references(config, sensor_set_id, device_identifier)
+
         # Use the existing async_from_config method to avoid code duplication
         if replace_existing and self.sensor_set_exists(sensor_set_id):
             await self.async_delete_sensor_set(sensor_set_id)
 
-        await self.storage_manager.async_from_config(config, sensor_set_id, device_identifier)
+        await self.storage_manager.async_from_config(resolved_config, sensor_set_id, device_identifier)
         stored_sensors = [sensor_config.unique_id for sensor_config in config.sensors]
 
         return {
@@ -248,3 +253,45 @@ class SensorSetOpsHandler:
             "sensor_unique_ids": stored_sensors,
             "global_settings": config.global_settings,
         }
+
+    async def _resolve_cross_sensor_references(
+        self, config: Config, sensor_set_id: str, device_identifier: str | None
+    ) -> Config:
+        """Resolve cross-sensor references in configuration before storage.
+
+        Args:
+            config: Configuration with potential cross-sensor references
+            sensor_set_id: Target sensor set ID
+            device_identifier: Optional device identifier
+
+        Returns:
+            Configuration with resolved cross-sensor references
+        """
+
+        # Create bulk reassignment processor
+        bulk_reassignment = BulkYamlReassignment(self.storage_manager.hass)
+
+        # Create callback to collect entity IDs by registering with HA
+        async def collect_entity_ids_callback(config: Config) -> dict[str, str]:
+            """Register sensors with HA entity registry and collect assigned entity IDs."""
+            from homeassistant.helpers import entity_registry as er  # pylint: disable=import-outside-toplevel
+
+            entity_mappings = {}
+            entity_registry = er.async_get(self.storage_manager.hass)
+
+            # Register each sensor with HA entity registry
+            for sensor_config in config.sensors:
+                # Let HA entity registry handle collision resolution
+                entry = await entity_registry.async_get_or_create(  # type: ignore[misc] # HA type stubs incomplete
+                    domain="sensor",
+                    platform="synthetic_sensors",
+                    unique_id=sensor_config.unique_id,
+                    suggested_object_id=sensor_config.unique_id,
+                )
+                entity_mappings[sensor_config.unique_id] = entry.entity_id
+
+            return entity_mappings
+
+        # Process with cross-reference resolution
+        resolved_config = await bulk_reassignment.process_bulk_yaml(config, collect_entity_ids_callback)
+        return resolved_config

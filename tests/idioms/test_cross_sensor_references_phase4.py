@@ -20,7 +20,7 @@ class TestCrossSensorReferencesPhase4:
     """Test Phase 4 enhanced integration points and advanced dependency analysis."""
 
     @pytest.fixture
-    def mock_hass(self) -> MagicMock:
+    def mock_hass(self, mock_hass, mock_entity_registry, mock_states) -> MagicMock:
         """Create a mock Home Assistant instance."""
         hass = MagicMock()
         hass.states.get.return_value = None
@@ -45,7 +45,9 @@ class TestCrossSensorReferencesPhase4:
         sensor_manager._evaluator = evaluator
         return sensor_manager
 
-    def test_enhanced_sensor_registration_integration(self, sensor_manager: SensorManager, evaluator: Evaluator) -> None:
+    def test_enhanced_sensor_registration_integration(
+        self, sensor_manager: SensorManager, evaluator: Evaluator, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test enhanced sensor registration with cross-sensor registry integration."""
         # Create test sensor configurations
         base_sensor = SensorConfig(
@@ -71,7 +73,9 @@ class TestCrossSensorReferencesPhase4:
         assert evaluator._sensor_registry_phase.is_sensor_registered("base_sensor")
         assert evaluator._sensor_registry_phase.is_sensor_registered("derived_sensor")
 
-    def test_cross_sensor_dependency_validation(self, sensor_manager: SensorManager, evaluator: Evaluator) -> None:
+    def test_cross_sensor_dependency_validation(
+        self, sensor_manager: SensorManager, evaluator: Evaluator, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test cross-sensor dependency validation."""
 
         # Mock dependency management phase
@@ -102,7 +106,9 @@ class TestCrossSensorReferencesPhase4:
         # Test dependency validation (should pass)
         sensor_manager._validate_cross_sensor_dependencies(sensor_configs)
 
-    def test_cross_sensor_dependency_validation_failure(self, sensor_manager: SensorManager, evaluator: Evaluator) -> None:
+    def test_cross_sensor_dependency_validation_failure(
+        self, sensor_manager: SensorManager, evaluator: Evaluator, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test cross-sensor dependency validation failure."""
 
         # Mock dependency management phase that returns validation failure
@@ -141,7 +147,9 @@ class TestCrossSensorReferencesPhase4:
         assert "Cross-sensor dependency validation failed" in str(exc_info.value)
         assert "Circular references" in str(exc_info.value)
 
-    def test_analyze_sensor_cross_dependencies(self, sensor_manager: SensorManager, evaluator: Evaluator) -> None:
+    def test_analyze_sensor_cross_dependencies(
+        self, sensor_manager: SensorManager, evaluator: Evaluator, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test analyzing cross-sensor dependencies for a specific sensor."""
 
         # Mock dependency management phase
@@ -165,7 +173,9 @@ class TestCrossSensorReferencesPhase4:
 
         assert dependencies == {"base_sensor", "other_sensor"}
 
-    def test_handle_cross_sensor_error(self, sensor_manager: SensorManager) -> None:
+    def test_handle_cross_sensor_error(
+        self, sensor_manager: SensorManager, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test cross-sensor error handling."""
         # Test handling of different error types
         missing_error = MissingDependencyError("test_dependency")
@@ -181,7 +191,9 @@ class TestCrossSensorReferencesPhase4:
         unexpected_error = Exception("Unexpected error")
         sensor_manager._handle_cross_sensor_error("test_sensor", unexpected_error)
 
-    def test_enhanced_evaluation_loop_integration(self, sensor_manager: SensorManager, evaluator: Evaluator) -> None:
+    def test_enhanced_evaluation_loop_integration(
+        self, sensor_manager: SensorManager, evaluator: Evaluator, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test enhanced evaluation loop with cross-sensor dependency management."""
 
         # Mock sensors
@@ -189,6 +201,10 @@ class TestCrossSensorReferencesPhase4:
             def __init__(self, name: str, value: Any) -> None:
                 self.name = name
                 self._attr_native_value = value
+
+            @property
+            def native_value(self) -> Any:
+                return self._attr_native_value
 
             async def async_update_sensor(self) -> None:
                 pass
@@ -218,7 +234,9 @@ class TestCrossSensorReferencesPhase4:
         assert evaluator._sensor_registry_phase.get_sensor_value("sensor1") == 100.0
         assert evaluator._sensor_registry_phase.get_sensor_value("sensor2") == 200.0
 
-    def test_enhanced_evaluation_loop_error_handling(self, sensor_manager: SensorManager, evaluator: Evaluator) -> None:
+    def test_enhanced_evaluation_loop_error_handling(
+        self, sensor_manager: SensorManager, evaluator: Evaluator, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test enhanced evaluation loop error handling."""
 
         # Mock sensor that raises an error
@@ -246,7 +264,9 @@ class TestCrossSensorReferencesPhase4:
         # Should not raise an exception, should handle the error gracefully
         asyncio.run(sensor_manager.async_update_sensors())
 
-    def test_no_dependency_management_phase_fallback(self, sensor_manager: SensorManager, evaluator: Evaluator) -> None:
+    def test_no_dependency_management_phase_fallback(
+        self, sensor_manager: SensorManager, evaluator: Evaluator, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test fallback behavior when dependency management phase is not available."""
         # Remove dependency management phase
         evaluator._dependency_management_phase = None  # type: ignore[assignment]
@@ -263,7 +283,7 @@ class TestCrossSensorReferencesPhase4:
         dependencies = sensor_manager._analyze_sensor_cross_dependencies(test_sensor)
         assert dependencies == set()
 
-    def test_no_evaluator_fallback(self, mock_hass: MagicMock) -> None:
+    def test_no_evaluator_fallback(self, mock_hass: MagicMock, mock_entity_registry, mock_states) -> None:
         """Test fallback behavior when evaluator is not available."""
         # Create sensor manager without evaluator
         sensor_manager = SensorManager(

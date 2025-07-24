@@ -217,7 +217,9 @@ sensors:
         assert result["exists"] is False
 
     @pytest.mark.asyncio
-    async def test_tabs_literal_integration_real_yaml(self, mock_hass, mock_config_entry, mock_add_entities):
+    async def test_tabs_literal_integration_real_yaml(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_add_entities
+    ):
         """Test integration with real YAML containing tabs literal that was causing issues."""
         yaml_content = """
 version: "1.0"

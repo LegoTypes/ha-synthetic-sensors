@@ -22,18 +22,22 @@ _LOGGER = logging.getLogger(__name__)
 class EvaluatorDependency:
     """Handles dependency parsing, validation, and resolution for formula evaluation."""
 
-    def __init__(self, hass: HomeAssistant, data_provider_callback: DataProviderCallback | None = None) -> None:
+    def __init__(
+        self, hass: HomeAssistant, data_provider_callback: DataProviderCallback | None = None, allow_ha_lookups: bool = False
+    ) -> None:
         """Initialize dependency manager.
 
         Args:
             hass: Home Assistant instance
             data_provider_callback: Optional callback for getting data directly from integrations
+            allow_ha_lookups: Whether to allow fallback to HA state lookups for backing entities
         """
         self._hass = hass
         self._dependency_parser = DependencyParser()
         self._collection_resolver = CollectionResolver(hass)
         self._data_provider_callback = data_provider_callback
         self._registered_integration_entities: set[str] | None = None
+        self._allow_ha_lookups = allow_ha_lookups
 
     def update_integration_entities(self, entity_ids: set[str]) -> None:
         """Update the set of entities that the integration can provide (push-based pattern).
@@ -63,6 +67,16 @@ class EvaluatorDependency:
     def data_provider_callback(self, value: DataProviderCallback | None) -> None:
         """Set the data provider callback."""
         self._data_provider_callback = value
+
+    @property
+    def allow_ha_lookups(self) -> bool:
+        """Get the allow_ha_lookups setting."""
+        return self._allow_ha_lookups
+
+    @property
+    def hass(self) -> HomeAssistant:
+        """Get the Home Assistant instance."""
+        return self._hass
 
     def get_formula_dependencies(self, formula: str) -> set[str]:
         """Get all dependencies for a formula (entities and variables).
@@ -210,8 +224,14 @@ class EvaluatorDependency:
         if self._should_use_data_provider(entity_id):
             return self._check_data_provider_entity(entity_id)
 
-        # Check Home Assistant entity
-        return self._check_home_assistant_entity(entity_id, collection_pattern_entities)
+        # Check Home Assistant entity only if allow_ha_lookups is True
+        # This implements the user's architecture for registration validation
+        if self._allow_ha_lookups:
+            return self._check_home_assistant_entity(entity_id, collection_pattern_entities)
+
+        # If allow_ha_lookups is False and entity is not in data provider, it's missing
+        # This prevents hiding registration errors by falling back to HA lookups
+        return "missing"
 
     def validate_dependencies(self, dependencies: set[str]) -> DependencyValidation:
         """Validate dependencies and return validation result."""
@@ -255,17 +275,29 @@ class EvaluatorDependency:
 
         return context_dict
 
-    def _should_use_data_provider(self, entity_id: str) -> bool:
-        """Check if we should use the data provider for this entity."""
+    def should_use_data_provider(self, entity_id: str) -> bool:
+        """Check if we should use the data provider for this entity.
+
+        Implements proper registration filtering according to the architecture:
+        - If integration entities are registered, only use data provider for those entities
+        - Registration validation prevents hiding configuration errors
+        - HA fallback is controlled by allow_ha_lookups flag at dependency checking level
+        """
         if not self._data_provider_callback:
             return False
 
-        # Use push-based pattern if available
+        # If we have registered integration entities, only use data provider for registered entities
+        # This implements the user's architecture to prevent hiding registration errors
         if self._registered_integration_entities is not None:
             return entity_id in self._registered_integration_entities
 
-        # Fallback: assume data provider can handle any entity
+        # If no integration entities are registered, data provider can handle any entity
+        # This supports the flexible data provider usage described in the guide
         return True
+
+    def _should_use_data_provider(self, entity_id: str) -> bool:
+        """Protected method for internal use."""
+        return self.should_use_data_provider(entity_id)
 
     def _check_data_provider_entity(self, entity_id: str) -> str:
         """Check entity status using data provider callback.

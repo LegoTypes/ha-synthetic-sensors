@@ -18,13 +18,18 @@ repos:
       - id: trailing-whitespace
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
 
-  # Ruff for linting, import sorting, and formatting
+  # Ruff for linting and import sorting
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.13
     hooks:
       - id: ruff-check
         args: ['--fix']
         exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*'
+
+  # Ruff for formatting (runs after linting fixes)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.13
+    hooks:
       - id: ruff-format
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
 
@@ -43,7 +48,7 @@ repos:
           - types-jsonschema
           - homeassistant-stubs
         args: ['--config-file=pyproject.toml']
-        exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|docs/.*|scripts/.*|\..*_cache/.*|dist/.*|venv/.*'
 
   # Pylint for additional code quality checks
   - repo: https://github.com/PyCQA/pylint

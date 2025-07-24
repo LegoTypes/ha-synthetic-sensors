@@ -10,13 +10,6 @@ class TestIntegration:
     """Test integration scenarios."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states.get.return_value = None
-        return hass
-
-    @pytest.fixture
     def config_manager(self, mock_hass):
         """Create a config manager with mock HA."""
         return ConfigManager(mock_hass)
@@ -28,7 +21,7 @@ class TestIntegration:
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
-    def test_cross_sensor_dependencies(self, config_manager, cross_sensor_yaml):
+    def test_cross_sensor_dependencies(self, mock_hass, mock_entity_registry, mock_states, config_manager, cross_sensor_yaml):
         """Test sensors reference each other using idioms."""
         config = config_manager.load_from_yaml(cross_sensor_yaml)
 
@@ -85,7 +78,9 @@ class TestIntegration:
         attr_sensor = next(s for s in config.sensors if s.unique_id == "attr_cross_ref_sensor")
         assert attr_sensor is not None
 
-    def test_complex_integration_scenario(self, config_manager, cross_sensor_yaml):
+    def test_complex_integration_scenario(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, cross_sensor_yaml
+    ):
         """Test complex integration scenario with multiple sensors and attributes."""
         config = config_manager.load_from_yaml(cross_sensor_yaml)
 
@@ -128,7 +123,9 @@ class TestIntegration:
         # main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, multi_ref_sensor)
         # assert main_result["success"] is True
 
-    def test_dependency_order_maintenance(self, config_manager, cross_sensor_yaml):
+    def test_dependency_order_maintenance(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, cross_sensor_yaml
+    ):
         """Test that dependency order is maintained across sensors."""
         config = config_manager.load_from_yaml(cross_sensor_yaml)
 
@@ -171,7 +168,9 @@ class TestIntegration:
         # main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, deep_chain_sensor)
         # assert main_result["success"] is True
 
-    def test_cross_sensor_with_attributes(self, config_manager, cross_sensor_yaml):
+    def test_cross_sensor_with_attributes(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, cross_sensor_yaml
+    ):
         """Test cross-sensor references work with attributes."""
         config = config_manager.load_from_yaml(cross_sensor_yaml)
 
@@ -197,6 +196,12 @@ class TestIntegration:
         # Register the sensor-to-backing mappings
         sensor_to_backing_mapping = {"attr_cross_ref_sensor": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+
+        # Populate cross-sensor registry with expected sensor values for testing
+        # In a real scenario, these would be populated by evaluating the actual sensors
+        evaluator = sensor_manager._evaluator
+        evaluator._sensor_registry_phase.register_sensor("base_power_sensor", "sensor.base_power_sensor", 1000.0)
+        evaluator._sensor_registry_phase.register_sensor("derived_power_sensor", "sensor.derived_power_sensor", 1100.0)
 
         # Test attr_cross_ref_sensor (which exists in the YAML)
         attr_sensor = next(s for s in config.sensors if s.unique_id == "attr_cross_ref_sensor")

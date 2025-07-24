@@ -80,9 +80,4 @@ class ConfigDict(TypedDict, total=False):
 
 
 # Common error structures for validation
-YAML_SYNTAX_ERROR_TEMPLATE = {
-    "path": "file",
-    "severity": "error",
-    "schema_path": "",
-    "suggested_fix": "Check YAML syntax and formatting",
-}
+YAML_SYNTAX_ERROR_TEMPLATE = "YAML syntax error: {error}"

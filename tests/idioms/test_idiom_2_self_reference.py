@@ -10,13 +10,6 @@ class TestIdiom2SelfReference:
     """Test Idiom 2: Self-Reference Patterns."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states.get.return_value = None
-        return hass
-
-    @pytest.fixture
     def config_manager(self, mock_hass):
         """Create a config manager with mock HA."""
         return ConfigManager(mock_hass)
@@ -30,8 +23,8 @@ class TestIdiom2SelfReference:
 
     @pytest.fixture
     def sensor_key_yaml(self):
-        """Load the sensor key YAML file."""
-        yaml_path = "examples/idiom_2_sensor_key.yaml"
+        """Load the main formula state YAML file."""
+        yaml_path = "examples/idiom_2_main_formula_state.yaml"
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
@@ -42,14 +35,7 @@ class TestIdiom2SelfReference:
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
-    @pytest.fixture
-    def equivalence_yaml(self):
-        """Load the equivalence YAML file."""
-        yaml_path = "examples/idiom_2_equivalence.yaml"
-        with open(yaml_path, "r", encoding="utf-8") as file:
-            return file.read()
-
-    def test_state_token_reference(self, config_manager, state_token_yaml):
+    def test_state_token_reference(self, config_manager, state_token_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test that state token resolves to backing entity value."""
         config = config_manager.load_from_yaml(state_token_yaml)
         sensor = config.sensors[0]
@@ -87,8 +73,7 @@ class TestIdiom2SelfReference:
         assert main_result["success"] is True
         assert main_result["value"] == 2000.0
 
-    @pytest.mark.skip(reason="Sensor key self-reference not yet supported by evaluator")
-    def test_sensor_key_reference(self, config_manager, sensor_key_yaml):
+    def test_sensor_key_reference(self, config_manager, sensor_key_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test that sensor key name resolves to backing entity value."""
         config = config_manager.load_from_yaml(sensor_key_yaml)
         sensor = config.sensors[0]
@@ -126,8 +111,8 @@ class TestIdiom2SelfReference:
         assert main_result["success"] is True
         assert main_result["value"] == 2000.0
 
-    @pytest.mark.skip(reason="Entity ID self-reference not yet supported by evaluator")
-    def test_entity_id_reference(self, config_manager, entity_id_yaml):
+    # @pytest.mark.skip(reason="Entity ID self-reference not yet supported by evaluator")
+    def test_entity_id_reference(self, config_manager, entity_id_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test that full entity ID resolves to backing entity value."""
         config = config_manager.load_from_yaml(entity_id_yaml)
         sensor = config.sensors[0]
@@ -165,65 +150,7 @@ class TestIdiom2SelfReference:
         assert main_result["success"] is True
         assert main_result["value"] == 2000.0
 
-    @pytest.mark.skip(reason="Self-reference patterns not yet supported by evaluator")
-    def test_equivalence_test(self, config_manager, equivalence_yaml):
-        """Test that all three reference patterns produce identical results."""
-        config = config_manager.load_from_yaml(equivalence_yaml)
-
-        # Create sensor manager with data provider
-        def mock_data_provider(entity_id: str):
-            if entity_id == "sensor.span_panel_instantaneous_power":
-                return {"value": 1000.0, "exists": True}
-            elif entity_id == "sensor.span_panel_voltage":
-                return {"value": 240.0, "exists": True}
-            return {"value": None, "exists": False}
-
-        mock_add_entities = MagicMock()
-        sensor_manager = SensorManager(
-            config_manager._hass,
-            MagicMock(),  # name_resolver
-            mock_add_entities,  # add_entities_callback
-            SensorManagerConfig(data_provider_callback=mock_data_provider),
-        )
-
-        # Register the backing entities
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power", "sensor.span_panel_voltage"}, allow_ha_lookups=False, change_notifier=None
-        )
-
-        # Register the sensor-to-backing mappings for all sensors
-        sensor_to_backing_mapping = {
-            "power_calculator_state": "sensor.span_panel_instantaneous_power",
-            "power_calculator_key": "sensor.span_panel_instantaneous_power",
-            "power_calculator_entity": "sensor.span_panel_instantaneous_power",
-            "voltage_analyzer_state": "sensor.span_panel_voltage",
-            "voltage_analyzer_key": "sensor.span_panel_voltage",
-            "voltage_analyzer_entity": "sensor.span_panel_voltage",
-        }
-        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
-
-        # Test all three sensors
-        evaluator = sensor_manager._evaluator
-        results = []
-
-        for sensor in config.sensors:
-            main_formula = sensor.formulas[0]
-            main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
-            assert main_result["success"] is True
-            results.append(main_result["value"])
-
-        # All results should be equivalent (2000W for power, 264V for voltage)
-        assert len(results) == 6
-        # Power calculators should all be 2000W
-        assert results[0] == 2000.0  # power_calculator_state
-        assert results[1] == 2000.0  # power_calculator_key
-        assert results[2] == 2000.0  # power_calculator_entity
-        # Voltage analyzers should all be 264V
-        assert results[3] == 264.0  # voltage_analyzer_state
-        assert results[4] == 264.0  # voltage_analyzer_key
-        assert results[5] == 264.0  # voltage_analyzer_entity
-
-    def test_self_reference_without_backing_entity(self, config_manager):
+    def test_self_reference_without_backing_entity(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test self-reference behavior when no backing entity is configured."""
         # Create a sensor without backing entity
         yaml_content = """
@@ -268,7 +195,7 @@ sensors:
         assert result["success"] is False
         assert "state" in result["error"].lower()
 
-    def test_self_reference_in_attributes(self, config_manager):
+    def test_self_reference_in_attributes(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test self-reference patterns in attribute formulas."""
         yaml_content = """
 version: "1.0"

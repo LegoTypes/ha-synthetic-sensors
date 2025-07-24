@@ -32,28 +32,28 @@ class TestEntityChangeHandler:
         """Create a mock callback function."""
         return Mock()
 
-    def test_initialization(self, handler):
+    def test_initialization(self, handler, mock_hass, mock_entity_registry, mock_states):
         """Test EntityChangeHandler initialization."""
         assert handler._evaluators == []
         assert handler._sensor_managers == []
         assert handler._integration_callbacks == []
         assert handler._logger is not None
 
-    def test_register_evaluator(self, handler, mock_evaluator):
+    def test_register_evaluator(self, handler, mock_evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test registering an evaluator."""
         handler.register_evaluator(mock_evaluator)
 
         assert mock_evaluator in handler._evaluators
         assert len(handler._evaluators) == 1
 
-    def test_register_evaluator_duplicate(self, handler, mock_evaluator):
+    def test_register_evaluator_duplicate(self, handler, mock_evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test registering the same evaluator twice doesn't create duplicates."""
         handler.register_evaluator(mock_evaluator)
         handler.register_evaluator(mock_evaluator)
 
         assert len(handler._evaluators) == 1
 
-    def test_unregister_evaluator(self, handler, mock_evaluator):
+    def test_unregister_evaluator(self, handler, mock_evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test unregistering an evaluator."""
         handler.register_evaluator(mock_evaluator)
         handler.unregister_evaluator(mock_evaluator)
@@ -61,27 +61,29 @@ class TestEntityChangeHandler:
         assert mock_evaluator not in handler._evaluators
         assert len(handler._evaluators) == 0
 
-    def test_unregister_evaluator_not_registered(self, handler, mock_evaluator):
+    def test_unregister_evaluator_not_registered(self, handler, mock_evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test unregistering an evaluator that wasn't registered."""
         # Should not raise an error
         handler.unregister_evaluator(mock_evaluator)
         assert len(handler._evaluators) == 0
 
-    def test_register_sensor_manager(self, handler, mock_sensor_manager):
+    def test_register_sensor_manager(self, handler, mock_sensor_manager, mock_hass, mock_entity_registry, mock_states):
         """Test registering a sensor manager."""
         handler.register_sensor_manager(mock_sensor_manager)
 
         assert mock_sensor_manager in handler._sensor_managers
         assert len(handler._sensor_managers) == 1
 
-    def test_register_sensor_manager_duplicate(self, handler, mock_sensor_manager):
+    def test_register_sensor_manager_duplicate(
+        self, handler, mock_sensor_manager, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test registering the same sensor manager twice doesn't create duplicates."""
         handler.register_sensor_manager(mock_sensor_manager)
         handler.register_sensor_manager(mock_sensor_manager)
 
         assert len(handler._sensor_managers) == 1
 
-    def test_unregister_sensor_manager(self, handler, mock_sensor_manager):
+    def test_unregister_sensor_manager(self, handler, mock_sensor_manager, mock_hass, mock_entity_registry, mock_states):
         """Test unregistering a sensor manager."""
         handler.register_sensor_manager(mock_sensor_manager)
         handler.unregister_sensor_manager(mock_sensor_manager)
@@ -89,27 +91,31 @@ class TestEntityChangeHandler:
         assert mock_sensor_manager not in handler._sensor_managers
         assert len(handler._sensor_managers) == 0
 
-    def test_unregister_sensor_manager_not_registered(self, handler, mock_sensor_manager):
+    def test_unregister_sensor_manager_not_registered(
+        self, handler, mock_sensor_manager, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test unregistering a sensor manager that wasn't registered."""
         # Should not raise an error
         handler.unregister_sensor_manager(mock_sensor_manager)
         assert len(handler._sensor_managers) == 0
 
-    def test_register_integration_callback(self, handler, mock_callback):
+    def test_register_integration_callback(self, handler, mock_callback, mock_hass, mock_entity_registry, mock_states):
         """Test registering an integration callback."""
         handler.register_integration_callback(mock_callback)
 
         assert mock_callback in handler._integration_callbacks
         assert len(handler._integration_callbacks) == 1
 
-    def test_register_integration_callback_duplicate(self, handler, mock_callback):
+    def test_register_integration_callback_duplicate(
+        self, handler, mock_callback, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test registering the same callback twice doesn't create duplicates."""
         handler.register_integration_callback(mock_callback)
         handler.register_integration_callback(mock_callback)
 
         assert len(handler._integration_callbacks) == 1
 
-    def test_unregister_integration_callback(self, handler, mock_callback):
+    def test_unregister_integration_callback(self, handler, mock_callback, mock_hass, mock_entity_registry, mock_states):
         """Test unregistering an integration callback."""
         handler.register_integration_callback(mock_callback)
         handler.unregister_integration_callback(mock_callback)
@@ -117,18 +123,22 @@ class TestEntityChangeHandler:
         assert mock_callback not in handler._integration_callbacks
         assert len(handler._integration_callbacks) == 0
 
-    def test_unregister_integration_callback_not_registered(self, handler, mock_callback):
+    def test_unregister_integration_callback_not_registered(
+        self, handler, mock_callback, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test unregistering a callback that wasn't registered."""
         # Should not raise an error
         handler.unregister_integration_callback(mock_callback)
         assert len(handler._integration_callbacks) == 0
 
-    def test_handle_entity_id_change_empty_handlers(self, handler):
+    def test_handle_entity_id_change_empty_handlers(self, handler, mock_hass, mock_entity_registry, mock_states):
         """Test handling entity ID change with no registered handlers."""
         # Should not raise an error
         handler.handle_entity_id_change("sensor.old", "sensor.new")
 
-    def test_handle_entity_id_change_with_evaluator(self, handler, mock_evaluator):
+    def test_handle_entity_id_change_with_evaluator(
+        self, handler, mock_evaluator, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test handling entity ID change with registered evaluator."""
         handler.register_evaluator(mock_evaluator)
 
@@ -136,7 +146,9 @@ class TestEntityChangeHandler:
 
         mock_evaluator.clear_cache.assert_called_once()
 
-    def test_handle_entity_id_change_with_sensor_manager(self, handler, mock_sensor_manager):
+    def test_handle_entity_id_change_with_sensor_manager(
+        self, handler, mock_sensor_manager, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test handling entity ID change with registered sensor manager."""
         handler.register_sensor_manager(mock_sensor_manager)
 
@@ -145,7 +157,7 @@ class TestEntityChangeHandler:
         # Sensor manager should be notified (placeholder behavior)
         # This test verifies the loop executes without error
 
-    def test_handle_entity_id_change_with_callback(self, handler, mock_callback):
+    def test_handle_entity_id_change_with_callback(self, handler, mock_callback, mock_hass, mock_entity_registry, mock_states):
         """Test handling entity ID change with registered callback."""
         handler.register_integration_callback(mock_callback)
 
@@ -153,7 +165,9 @@ class TestEntityChangeHandler:
 
         mock_callback.assert_called_once_with("sensor.old", "sensor.new")
 
-    def test_handle_entity_id_change_with_all_handlers(self, handler, mock_evaluator, mock_sensor_manager, mock_callback):
+    def test_handle_entity_id_change_with_all_handlers(
+        self, handler, mock_evaluator, mock_sensor_manager, mock_callback, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test handling entity ID change with all types of handlers registered."""
         handler.register_evaluator(mock_evaluator)
         handler.register_sensor_manager(mock_sensor_manager)
@@ -164,7 +178,9 @@ class TestEntityChangeHandler:
         mock_evaluator.clear_cache.assert_called_once()
         mock_callback.assert_called_once_with("sensor.old", "sensor.new")
 
-    def test_handle_entity_id_change_evaluator_error(self, handler, mock_evaluator):
+    def test_handle_entity_id_change_evaluator_error(
+        self, handler, mock_evaluator, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test handling entity ID change when evaluator clear_cache raises an error."""
         mock_evaluator.clear_cache.side_effect = Exception("Cache clear failed")
         handler.register_evaluator(mock_evaluator)
@@ -174,7 +190,7 @@ class TestEntityChangeHandler:
 
         mock_evaluator.clear_cache.assert_called_once()
 
-    def test_handle_entity_id_change_callback_error(self, handler, mock_callback):
+    def test_handle_entity_id_change_callback_error(self, handler, mock_callback, mock_hass, mock_entity_registry, mock_states):
         """Test handling entity ID change when callback raises an error."""
         mock_callback.side_effect = Exception("Callback failed")
         handler.register_integration_callback(mock_callback)
@@ -184,7 +200,7 @@ class TestEntityChangeHandler:
 
         mock_callback.assert_called_once_with("sensor.old", "sensor.new")
 
-    def test_handle_entity_id_change_multiple_evaluators(self, handler):
+    def test_handle_entity_id_change_multiple_evaluators(self, handler, mock_hass, mock_entity_registry, mock_states):
         """Test handling entity ID change with multiple evaluators."""
         evaluator1 = MagicMock()
         evaluator2 = MagicMock()
@@ -199,7 +215,7 @@ class TestEntityChangeHandler:
         evaluator1.clear_cache.assert_called_once()
         evaluator2.clear_cache.assert_called_once()
 
-    def test_handle_entity_id_change_multiple_callbacks(self, handler):
+    def test_handle_entity_id_change_multiple_callbacks(self, handler, mock_hass, mock_entity_registry, mock_states):
         """Test handling entity ID change with multiple callbacks."""
         callback1 = Mock()
         callback2 = Mock()
@@ -212,7 +228,7 @@ class TestEntityChangeHandler:
         callback1.assert_called_once_with("sensor.old", "sensor.new")
         callback2.assert_called_once_with("sensor.old", "sensor.new")
 
-    def test_get_stats_empty(self, handler):
+    def test_get_stats_empty(self, handler, mock_hass, mock_entity_registry, mock_states):
         """Test get_stats with no registered handlers."""
         stats = handler.get_stats()
 
@@ -223,7 +239,9 @@ class TestEntityChangeHandler:
         }
         assert stats == expected
 
-    def test_get_stats_with_handlers(self, handler, mock_evaluator, mock_sensor_manager, mock_callback):
+    def test_get_stats_with_handlers(
+        self, handler, mock_evaluator, mock_sensor_manager, mock_callback, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test get_stats with registered handlers."""
         handler.register_evaluator(mock_evaluator)
         handler.register_sensor_manager(mock_sensor_manager)
@@ -238,7 +256,7 @@ class TestEntityChangeHandler:
         }
         assert stats == expected
 
-    def test_get_stats_multiple_handlers(self, handler):
+    def test_get_stats_multiple_handlers(self, handler, mock_hass, mock_entity_registry, mock_states):
         """Test get_stats with multiple handlers of each type."""
         # Add multiple evaluators
         for _ in range(3):

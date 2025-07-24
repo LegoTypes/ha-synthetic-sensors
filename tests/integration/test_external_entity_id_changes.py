@@ -27,7 +27,7 @@ class TestExternalEntityIdChanges:
         return _load_yaml_fixture
 
     @pytest.fixture
-    async def storage_manager_with_test_data(self, mock_hass, load_yaml_fixture):
+    async def storage_manager_with_test_data(self, mock_hass, mock_entity_registry, mock_states, load_yaml_fixture):
         """Create StorageManager with test data loaded via public API."""
         import json
         import tempfile
@@ -115,7 +115,7 @@ class TestExternalEntityIdChanges:
         }
 
     async def test_global_variable_entity_id_change_via_event(
-        self, storage_manager_with_test_data, mock_entity_states, mock_hass
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
     ):
         """Test external entity ID change for global variable via event system."""
         storage_manager = storage_manager_with_test_data
@@ -165,7 +165,7 @@ class TestExternalEntityIdChanges:
         assert global_settings["variables"]["global_power_meter"] == "sensor.new_main_power_meter"
 
     async def test_sensor_variable_entity_id_change_via_event(
-        self, storage_manager_with_test_data, mock_entity_states, mock_hass
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
     ):
         """Test external entity ID change for sensor-specific variable via event system."""
         storage_manager = storage_manager_with_test_data
@@ -216,7 +216,7 @@ class TestExternalEntityIdChanges:
         assert main_formula.variables["local_power"] == "sensor.new_local_power_meter"
 
     async def test_attribute_variable_entity_id_change_via_event(
-        self, storage_manager_with_test_data, mock_entity_states, mock_hass
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
     ):
         """Test external entity ID change for attribute-specific variable via event system."""
         storage_manager = storage_manager_with_test_data
@@ -266,7 +266,9 @@ class TestExternalEntityIdChanges:
         assert efficiency_ratio_formula is not None
         assert efficiency_ratio_formula.variables["reference_power"] == "sensor.new_reference_power_meter"
 
-    async def test_multiple_entity_id_changes_via_events(self, storage_manager_with_test_data, mock_entity_states, mock_hass):
+    async def test_multiple_entity_id_changes_via_events(
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
+    ):
         """Test multiple external entity ID changes via event system."""
         storage_manager = storage_manager_with_test_data
         sensor_set = storage_manager.get_sensor_set("test_set")
@@ -313,7 +315,9 @@ class TestExternalEntityIdChanges:
             assert not sensor_set.is_entity_tracked(old_entity_id)
             assert sensor_set.is_entity_tracked(new_entity_id)
 
-    async def test_untracked_entity_id_change_ignored(self, storage_manager_with_test_data, mock_entity_states, mock_hass):
+    async def test_untracked_entity_id_change_ignored(
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
+    ):
         """Test that untracked entity ID changes are ignored."""
         storage_manager = storage_manager_with_test_data
         sensor_set = storage_manager.get_sensor_set("test_set")
@@ -340,7 +344,9 @@ class TestExternalEntityIdChanges:
         assert not sensor_set.is_entity_tracked("sensor.untracked_entity")
         assert not sensor_set.is_entity_tracked("sensor.new_untracked_entity")
 
-    async def test_entity_change_cache_invalidation(self, storage_manager_with_test_data, mock_entity_states, mock_hass):
+    async def test_entity_change_cache_invalidation(
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
+    ):
         """Test that entity ID changes trigger cache invalidation."""
         storage_manager = storage_manager_with_test_data
 
@@ -370,7 +376,9 @@ class TestExternalEntityIdChanges:
             # Verify cache invalidation was triggered
             mock_handle_change.assert_called_once_with("sensor.main_power_meter", "sensor.new_main_power_meter")
 
-    async def test_concurrent_entity_id_changes_via_events(self, storage_manager_with_test_data, mock_entity_states, mock_hass):
+    async def test_concurrent_entity_id_changes_via_events(
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
+    ):
         """Test handling of concurrent entity ID changes via events."""
         storage_manager = storage_manager_with_test_data
         sensor_set = storage_manager.get_sensor_set("test_set")
@@ -411,7 +419,7 @@ class TestExternalEntityIdChanges:
             assert sensor_set.is_entity_tracked(new_entity_id)
 
     async def test_integration_workflow_with_sensor_creation_and_entity_changes(
-        self, storage_manager_with_test_data, mock_entity_states, mock_hass
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager_with_test_data, mock_entity_states
     ):
         """Test complete integration workflow: create sensors, then handle entity changes."""
         storage_manager = storage_manager_with_test_data

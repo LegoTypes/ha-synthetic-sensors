@@ -213,18 +213,24 @@ class ValidationHandler:
 
         # Check each attribute formula for conflicts
         for attr_formula in attribute_formulas:
-            if not attr_formula.variables:
-                continue
-
             # Extract attribute name from formula ID
             attribute_name = attr_formula.id[len(sensor.unique_id) + 1 :]
 
-            # Check for conflicting variables
-            for var_name, var_value in attr_formula.variables.items():
-                if var_name in sensor_variables and sensor_variables[var_name] != var_value:
-                    errors.append(
-                        f"Sensor '{sensor.unique_id}' attribute '{attribute_name}' has conflicting variable '{var_name}': "
-                        f"'{var_value}' vs sensor variable '{sensor_variables[var_name]}'"
-                    )
+            if attr_formula.variables:
+                # Check for attribute name conflicting with its own variable names
+                for var_name in attr_formula.variables:
+                    if var_name == attribute_name:
+                        errors.append(
+                            f"Sensor '{sensor.unique_id}' attribute '{attribute_name}' cannot have a variable "
+                            f"with the same name '{var_name}' - this creates ambiguity in formula references"
+                        )
+
+                # Check for conflicting variables with sensor-level variables
+                for var_name, var_value in attr_formula.variables.items():
+                    if var_name in sensor_variables and sensor_variables[var_name] != var_value:
+                        errors.append(
+                            f"Sensor '{sensor.unique_id}' attribute '{attribute_name}' has conflicting variable '{var_name}': "
+                            f"'{var_value}' vs sensor variable '{sensor_variables[var_name]}'"
+                        )
 
         return errors

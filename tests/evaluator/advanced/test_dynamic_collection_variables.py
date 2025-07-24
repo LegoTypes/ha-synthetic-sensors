@@ -18,66 +18,6 @@ class TestDynamicCollectionVariables:
         return Path(__file__).parent.parent.parent / "yaml_fixtures" / "dynamic_collection_variables.yaml"
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance with comprehensive entity states."""
-        hass = Mock()
-        hass.data = {}
-
-        mock_states = {
-            # Device class: power sensors
-            "sensor.circuit_main_power": Mock(
-                state="350.5",
-                entity_id="sensor.circuit_main_power",
-                attributes={"device_class": "power"},
-            ),
-            "sensor.circuit_lighting_power": Mock(
-                state="125.3",
-                entity_id="sensor.circuit_lighting_power",
-                attributes={"device_class": "power"},
-            ),
-            # Device class: temperature sensors
-            "sensor.kitchen_temperature": Mock(
-                state="22.5",
-                entity_id="sensor.kitchen_temperature",
-                attributes={"device_class": "temperature"},
-            ),
-            "sensor.living_room_temperature": Mock(
-                state="21.8",
-                entity_id="sensor.living_room_temperature",
-                attributes={"device_class": "temperature"},
-            ),
-            # Battery sensors for attribute testing
-            "sensor.phone_battery": Mock(
-                state="85",
-                entity_id="sensor.phone_battery",
-                attributes={"device_class": "battery", "battery_level": 85},
-            ),
-            "sensor.tablet_battery": Mock(
-                state="15",
-                entity_id="sensor.tablet_battery",
-                attributes={"device_class": "battery", "battery_level": 15},
-            ),
-            "sensor.laptop_battery": Mock(
-                state="92",
-                entity_id="sensor.laptop_battery",
-                attributes={"device_class": "battery", "battery_level": 92},
-            ),
-            # Variable source entities (for future dynamic patterns)
-            "input_select.monitoring_device_class": Mock(state="power", entity_id="input_select.monitoring_device_class"),
-            "input_select.focus_area": Mock(state="kitchen", entity_id="input_select.focus_area"),
-            "input_number.battery_alert_threshold": Mock(state="20", entity_id="input_number.battery_alert_threshold"),
-            "input_text.circuit_group_name": Mock(state="main", entity_id="input_text.circuit_group_name"),
-            # Additional entities for comprehensive testing
-            "sensor.main_panel_power": Mock(state="100.0", entity_id="sensor.main_panel_power"),
-            "input_number.power_rate_multiplier": Mock(state="1.5", entity_id="input_number.power_rate_multiplier"),
-        }
-
-        hass.states.entity_ids.return_value = list(mock_states.keys())
-        hass.states.get.side_effect = lambda entity_id: mock_states.get(entity_id)
-
-        return hass
-
-    @pytest.fixture
     def evaluator(self, mock_hass):
         """Create an evaluator instance with mocked dependencies."""
         with (
@@ -92,7 +32,9 @@ class TestDynamicCollectionVariables:
         """Create a config manager instance."""
         return ConfigManager(mock_hass)
 
-    async def test_yaml_fixture_loads_correctly(self, config_manager, yaml_config_path):
+    async def test_yaml_fixture_loads_correctly(
+        self, config_manager, yaml_config_path, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that the YAML fixture loads without errors."""
         try:
             config = await config_manager.async_load_from_file(yaml_config_path)
@@ -112,7 +54,9 @@ class TestDynamicCollectionVariables:
             else:
                 raise
 
-    async def test_yaml_dynamic_device_sum_sensor(self, config_manager, yaml_config_path, evaluator):
+    async def test_yaml_dynamic_device_sum_sensor(
+        self, config_manager, yaml_config_path, evaluator, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test the dynamic_device_sum sensor from YAML fixture."""
         # Load config and get the specific sensor
         try:
@@ -144,7 +88,9 @@ class TestDynamicCollectionVariables:
             else:
                 raise
 
-    async def test_yaml_circuit_group_power_syntax(self, config_manager, yaml_config_path):
+    async def test_yaml_circuit_group_power_syntax(
+        self, config_manager, yaml_config_path, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test the circuit_group_power sensor syntax from YAML fixture."""
         try:
             config = await config_manager.async_load_from_file(yaml_config_path)
@@ -172,7 +118,9 @@ class TestDynamicCollectionVariables:
             else:
                 raise
 
-    async def test_yaml_dynamic_patterns_syntax_validation(self, config_manager, yaml_config_path):
+    async def test_yaml_dynamic_patterns_syntax_validation(
+        self, config_manager, yaml_config_path, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that YAML dynamic patterns have correct syntax for future implementation."""
         config = await config_manager.async_load_from_file(yaml_config_path)
 
@@ -191,7 +139,9 @@ class TestDynamicCollectionVariables:
         assert "device_type" in formula_config.variables
         assert formula_config.variables["device_type"] == "input_select.monitoring_device_class"
 
-    async def test_yaml_mixed_patterns_syntax(self, config_manager, yaml_config_path):
+    async def test_yaml_mixed_patterns_syntax(
+        self, config_manager, yaml_config_path, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test mixed static and dynamic regex patterns in YAML."""
         config = await config_manager.async_load_from_file(yaml_config_path)
 
@@ -211,7 +161,9 @@ class TestDynamicCollectionVariables:
         assert "circuit_pattern" in formula_config.variables
         assert "kitchen_pattern" in formula_config.variables
 
-    async def test_variable_inheritance_in_yaml_attributes(self, config_manager, yaml_config_path):
+    async def test_variable_inheritance_in_yaml_attributes(
+        self, config_manager, yaml_config_path, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that attribute formulas inherit variables correctly in YAML."""
         config = await config_manager.async_load_from_file(yaml_config_path)
 

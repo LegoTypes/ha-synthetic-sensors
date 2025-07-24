@@ -7,11 +7,8 @@ from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.type_definitions import DataProviderResult
 
 
-def test_evaluator_handles_unknown_value_from_data_provider() -> None:
+def test_evaluator_handles_unknown_value_from_data_provider(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that evaluator properly handles unknown values from data provider callbacks gracefully."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider that returns unknown for an entity (e.g., panel-level sensor)
     def mock_data_provider(entity_id: str) -> DataProviderResult:
@@ -35,14 +32,13 @@ def test_evaluator_handles_unknown_value_from_data_provider() -> None:
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
     assert result["state"] == "unknown"  # Reflects unknown dependency
-    assert "sensor.panel_power" in result.get("unavailable_dependencies", [])
+    # Check that the enhanced dependency reporting includes the entity ID
+    deps = result.get("unavailable_dependencies", [])
+    assert any("sensor.panel_power" in dep for dep in deps), f"Expected 'sensor.panel_power' in dependencies: {deps}"
 
 
-def test_evaluator_handles_unavailable_entity_reference() -> None:
+def test_evaluator_handles_unavailable_entity_reference(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that evaluator handles unavailable values for direct entity references gracefully."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider that returns unavailable for an entity
     def mock_data_provider(entity_id: str) -> DataProviderResult:
@@ -64,14 +60,13 @@ def test_evaluator_handles_unavailable_entity_reference() -> None:
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
     assert result["state"] == "unavailable"  # Reflects unavailable dependency
-    assert "sensor.offline_sensor" in result.get("unavailable_dependencies", [])
+    # Check that the enhanced dependency reporting includes the entity ID
+    deps = result.get("unavailable_dependencies", [])
+    assert any("sensor.offline_sensor" in dep for dep in deps), f"Expected 'sensor.offline_sensor' in dependencies: {deps}"
 
 
-def test_evaluator_works_with_valid_values() -> None:
+def test_evaluator_works_with_valid_values(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that evaluator still works correctly with valid values."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider that returns valid values
     def mock_data_provider(entity_id: str) -> DataProviderResult:

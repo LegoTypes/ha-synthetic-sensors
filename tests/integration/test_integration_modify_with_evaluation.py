@@ -194,7 +194,7 @@ class TestIntegrationModifyWithEvaluation:
         assert power_percentage_formula.variables["max_power"] == 6000
 
     async def test_formula_evaluation_with_changed_globals(
-        self, mock_hass, storage_manager, config_manager, sensor_set_before, after_yaml_path
+        self, mock_hass, mock_entity_registry, mock_states, storage_manager, config_manager, sensor_set_before, after_yaml_path
     ):
         """Test that formula evaluation works correctly after global variable changes."""
         sensor_set_id = "test_globals_integration"

@@ -49,6 +49,7 @@ exclude = [
     "dist/",
     "venv/",
     ".venv/",
+    "scripts/",
 ]
 
 [tool.ruff.lint]
@@ -72,6 +73,7 @@ ignore = [
 # Exclude tests from ALL linting checks (formatting still applies)
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["ALL"]
+"scripts/**/*.py" = ["ALL"]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
@@ -160,4 +162,11 @@ disable = [
     "too-many-positional-arguments",  # HA constructors often need many params
     "too-many-locals",                # Complex functions often need many variables
     "import-error",                   # aiofiles import issue in pre-commit environment
+    "relative-beyond-top-level",      # Relative imports in nested packages are acceptable
+    "no-name-in-module",              # Home Assistant constants import issues
+]
+
+[tool.pylint.master]
+ignore-paths = [
+    "scripts",
 ]

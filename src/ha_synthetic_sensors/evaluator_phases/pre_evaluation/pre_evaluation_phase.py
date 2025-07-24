@@ -17,6 +17,7 @@ from ...evaluator_phases.variable_resolution import VariableResolutionPhase
 from ...evaluator_results import EvaluatorResults
 from ...exceptions import BackingEntityResolutionError, SensorMappingError
 from ...type_definitions import ContextValue, DataProviderCallback, EvaluationResult
+from .circular_reference_validator import CircularReferenceValidator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ class PreEvaluationPhase:
         self._variable_resolution_phase: VariableResolutionPhase | None = None
         self._dependency_management_phase: DependencyManagementPhase | None = None
         self._context_building_phase: ContextBuildingPhase | None = None
+
+        # Validation components
+        self._circular_reference_validator = CircularReferenceValidator()
 
     def set_evaluator_dependencies(
         self,
@@ -95,6 +99,10 @@ class PreEvaluationPhase:
         if not all([self._error_handler, self._cache_handler, self._dependency_handler]):
             raise RuntimeError("Pre-evaluation phase dependencies not set")
 
+        # Step 0: Validate for circular references (must be first - before any resolution attempts)
+        # Note: CircularDependencyError will propagate up as a fatal error
+        self._circular_reference_validator.validate_formula_config(config, sensor_config)
+
         # Step 1: Check circuit breaker
         if self._error_handler and self._error_handler.should_skip_evaluation(formula_name):
             return (
@@ -141,22 +149,16 @@ class PreEvaluationPhase:
         if dependency_result:
             return dependency_result, None
 
-        # PHASE 1: Variable Resolution - Resolve config variables first
-        eval_context: dict[str, ContextValue] = {}
-        if self._variable_resolution_phase:
-            self._variable_resolution_phase.resolve_config_variables(eval_context, config, sensor_config)
+        # PHASE 1: Variable Resolution - Config variables will be resolved in context building phase
+        # with correct priority order (context > config variables)
 
         # PHASE 3: Context Building - Build evaluation context with resolved variables
         if not self._context_building_phase:
-            return None, eval_context
+            return None, {}
 
         final_context = self._context_building_phase.build_evaluation_context(
             dependencies, context, config, sensor_config, allow_ha_lookups=self._allow_ha_lookups
         )
-
-        # Merge resolved config variables into the final context (config variables have priority)
-        for var_name, var_value in eval_context.items():
-            final_context[var_name] = var_value
 
         context_result = self._validate_evaluation_context(final_context, formula_name)
         if context_result:

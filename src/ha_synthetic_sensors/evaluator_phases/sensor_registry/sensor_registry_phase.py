@@ -73,6 +73,18 @@ class SensorRegistryPhase:
         """
         return self._sensor_registry.get(sensor_name)
 
+    def get_all_sensor_values(self) -> dict[str, float | str | bool]:
+        """
+        Get all sensor values from the cross-sensor reference registry.
+
+        This method is used during dependency-aware evaluation to provide
+        cross-sensor values in the evaluation context.
+
+        Returns:
+            Dictionary of sensor_name -> value for all registered sensors
+        """
+        return self._sensor_registry.copy()
+
     def unregister_sensor(self, sensor_name: str) -> None:
         """
         Unregister a sensor from the cross-sensor reference registry.

@@ -57,9 +57,8 @@ class TestLiteralAttributes:
         result = validate_yaml_config(yaml_data)
         assert result["valid"], f"Schema validation failed: {result['errors']}"
 
-    def test_config_manager_parses_literal_attributes(self) -> None:
+    def test_config_manager_parses_literal_attributes(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test that ConfigManager correctly parses literal attributes."""
-        mock_hass = MagicMock()
         config_manager = ConfigManager(mock_hass)
 
         yaml_content = """
@@ -103,9 +102,8 @@ sensors:
         enabled_formula = next(f for f in literal_formulas if f.id == "test_sensor_is_enabled")
         assert enabled_formula.formula == "True"
 
-    def test_storage_manager_roundtrip_literal_attributes(self) -> None:
+    def test_storage_manager_roundtrip_literal_attributes(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test that literal attributes survive round-trip through storage manager."""
-        mock_hass = MagicMock()
         storage_manager = StorageManager(mock_hass)
 
         # Create sensor set with literal attributes
@@ -366,7 +364,7 @@ sensors:
         result = validate_yaml_config(yaml_data)
         assert result["valid"], f"Schema validation failed: {result['errors']}"
 
-    def test_exact_user_yaml_pattern(self) -> None:
+    def test_exact_user_yaml_pattern(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test the exact YAML pattern mentioned by the user."""
         yaml_data = {
             "version": "1.0",
@@ -405,7 +403,6 @@ sensors:
         from ha_synthetic_sensors.storage_manager import StorageManager
         from ha_synthetic_sensors.config_manager import ConfigManager
 
-        mock_hass = MagicMock()
         config_manager = ConfigManager(mock_hass)
         config = config_manager.load_from_yaml(yaml_lib.dump(yaml_data))
 

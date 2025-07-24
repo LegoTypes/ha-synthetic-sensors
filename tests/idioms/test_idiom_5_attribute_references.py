@@ -11,13 +11,6 @@ class TestIdiom5AttributeReferences:
     """Test Idiom 5: Attribute-to-Attribute References."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states.get.return_value = None
-        return hass
-
-    @pytest.fixture
     def config_manager(self, mock_hass):
         """Create a config manager with mock HA."""
         return ConfigManager(mock_hass)
@@ -50,7 +43,7 @@ class TestIdiom5AttributeReferences:
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
-    def test_linear_attribute_chain(self, config_manager, linear_chain_yaml):
+    def test_linear_attribute_chain(self, mock_hass, mock_entity_registry, mock_states, config_manager, linear_chain_yaml):
         """Test attributes reference each other in linear sequence."""
         config = config_manager.load_from_yaml(linear_chain_yaml)
         sensor = config.sensors[0]
@@ -93,7 +86,9 @@ class TestIdiom5AttributeReferences:
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
 
-    def test_multiple_attribute_dependencies(self, config_manager, multiple_deps_yaml):
+    def test_multiple_attribute_dependencies(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, multiple_deps_yaml
+    ):
         """Test attribute depends on multiple other attributes."""
         config = config_manager.load_from_yaml(multiple_deps_yaml)
         sensor = config.sensors[0]
@@ -142,7 +137,9 @@ class TestIdiom5AttributeReferences:
             if hasattr(attribute_formula, "attribute_name"):
                 context[attribute_formula.attribute_name] = attr_result["value"]
 
-    def test_circular_reference_detection(self, config_manager, circular_reference_yaml):
+    def test_circular_reference_detection(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, circular_reference_yaml
+    ):
         """Test attributes reference each other circularly."""
         config = config_manager.load_from_yaml(circular_reference_yaml)
         sensor = config.sensors[0]
@@ -180,7 +177,7 @@ class TestIdiom5AttributeReferences:
         # This should be handled by the dependency resolution system
         # The exact behavior depends on the implementation
 
-    def test_self_reference_detection(self, config_manager, self_reference_yaml):
+    def test_self_reference_detection(self, mock_hass, mock_entity_registry, mock_states, config_manager, self_reference_yaml):
         """Test attribute references itself."""
         config = config_manager.load_from_yaml(self_reference_yaml)
         sensor = config.sensors[0]
@@ -218,7 +215,7 @@ class TestIdiom5AttributeReferences:
         # This should be handled by the dependency resolution system
         # The exact behavior depends on the implementation
 
-    def test_complex_dependency_graph(self, config_manager, multiple_deps_yaml):
+    def test_complex_dependency_graph(self, mock_hass, mock_entity_registry, mock_states, config_manager, multiple_deps_yaml):
         """Test complex dependency graphs work correctly."""
         config = config_manager.load_from_yaml(multiple_deps_yaml)
 
@@ -266,7 +263,9 @@ class TestIdiom5AttributeReferences:
             assert attr_result["success"] is True
             assert attr_result["value"] == 1.1  # state / 1000 = 1100 / 1000 = 1.1
 
-    def test_valid_linear_dependency_chain(self, config_manager, linear_chain_yaml):
+    def test_valid_linear_dependency_chain(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, linear_chain_yaml
+    ):
         """Test valid linear dependency chain works correctly."""
         config = config_manager.load_from_yaml(linear_chain_yaml)
 

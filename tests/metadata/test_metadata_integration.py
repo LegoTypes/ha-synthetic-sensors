@@ -14,7 +14,7 @@ from ha_synthetic_sensors.sensor_manager import DynamicSensor
 class TestMetadataIntegration:
     """Integration tests for metadata functionality."""
 
-    def test_sensor_creation_with_metadata(self):
+    def test_sensor_creation_with_metadata(self, mock_hass, mock_entity_registry, mock_states):
         """Test that sensors are created with proper metadata application."""
         # Create test configuration with metadata hierarchy
         global_settings = {
@@ -45,12 +45,11 @@ class TestMetadataIntegration:
         )
 
         # Mock dependencies
-        hass = Mock()
         evaluator = Mock()
         sensor_manager = Mock()
 
         # Create sensor with global settings
-        sensor = DynamicSensor(hass, sensor_config, evaluator, sensor_manager, None, global_settings)
+        sensor = DynamicSensor(mock_hass, sensor_config, evaluator, sensor_manager, None, global_settings)
 
         # Verify metadata inheritance hierarchy
         assert sensor._attr_native_unit_of_measurement == "W"  # From formula
@@ -193,7 +192,7 @@ class TestMetadataIntegration:
         assert sensor_metadata == {}
         assert attribute_metadata == {}
 
-    def test_yaml_metadata_import_export(self):
+    def test_yaml_metadata_import_export(self, mock_hass, mock_entity_registry, mock_states):
         """Test that metadata is properly handled in YAML import/export."""
         # For now, test that the ConfigManager can parse the basic structure
         # The full metadata parsing will be implemented when ConfigManager is updated
@@ -216,8 +215,7 @@ sensors:
         # Test that ConfigManager can parse this YAML
         from ha_synthetic_sensors.config_manager import ConfigManager
 
-        hass = Mock()
-        config_manager = ConfigManager(hass)
+        config_manager = ConfigManager(mock_hass)
 
         config = config_manager.load_from_yaml(yaml_content)
 

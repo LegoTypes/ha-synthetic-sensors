@@ -40,13 +40,13 @@ class CrossSensorDependencyManager(DependencyManager):
 
         if manager_type == "cross_sensor_analysis":
             return self._analyze_cross_sensor_dependencies(context.get("sensors", []), context.get("sensor_registry", {}))
-        elif manager_type == "evaluation_order":
+        if manager_type == "evaluation_order":
             return self._get_evaluation_order(context.get("sensor_dependencies", {}), context.get("sensor_registry", {}))
-        elif manager_type == "cross_sensor_circular_detection":
+        if manager_type == "cross_sensor_circular_detection":
             return self._detect_cross_sensor_circular_references(
                 context.get("sensor_dependencies", {}), context.get("sensor_registry", {})
             )
-        elif manager_type == "validate_cross_sensor_deps":
+        if manager_type == "validate_cross_sensor_deps":
             return self._validate_cross_sensor_dependencies(
                 context.get("sensor_dependencies", {}), context.get("sensor_registry", {})
             )

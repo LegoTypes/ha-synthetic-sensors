@@ -17,19 +17,15 @@ def load_yaml_fixture(fixture_name: str) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def test_basic_readme_examples():
+def test_basic_readme_examples(mock_hass, mock_entity_registry, mock_states):
     """Test basic README examples are valid YAML and can be parsed correctly."""
-
-    # Mock hass object
-    hass = MagicMock()
-    hass.states.get = MagicMock()
 
     # Load basic examples fixture
     config_data = load_yaml_fixture("basic_examples.yaml")
     assert config_data is not None
 
     # Test config validation
-    config_manager = ConfigManager(hass)
+    config_manager = ConfigManager(mock_hass)
     validation_result = config_manager.validate_yaml_data(config_data)
     assert validation_result["valid"], f"Configuration validation failed: {validation_result.get('errors', 'Unknown error')}"
 
@@ -69,19 +65,15 @@ def test_basic_readme_examples():
     assert percentage == 100, f"Expected percentage=100, got {percentage}"
 
 
-def test_advanced_readme_examples():
+def test_advanced_readme_examples(mock_hass, mock_entity_registry, mock_states):
     """Test advanced README examples with attributes and device association."""
-
-    # Mock hass object
-    hass = MagicMock()
-    hass.states.get = MagicMock()
 
     # Load advanced examples fixture
     config_data = load_yaml_fixture("advanced_examples.yaml")
     assert config_data is not None
 
     # Test config validation
-    config_manager = ConfigManager(hass)
+    config_manager = ConfigManager(mock_hass)
     validation_result = config_manager.validate_yaml_data(config_data)
     assert validation_result["valid"], f"Configuration validation failed: {validation_result.get('errors', 'Unknown error')}"
 
@@ -99,26 +91,26 @@ def test_advanced_readme_examples():
     assert "monthly_projected" in attributes
     assert "annual_projected" in attributes
 
-    # Check device association sensor
+    # Verify device association (check solar_inverter_efficiency sensor instead)
     solar_sensor = sensors["solar_inverter_efficiency"]
-    assert solar_sensor["variables"]["percentage_factor"] == 100
+    assert "device_identifier" in solar_sensor
     assert solar_sensor["device_identifier"] == "solar_inverter_001"
+
+    # Check device info
     assert solar_sensor["device_name"] == "Solar Inverter"
+    assert solar_sensor["device_manufacturer"] == "SolarTech"
+    assert solar_sensor["device_model"] == "ST-5000"
 
 
-def test_numeric_literals_readme_examples():
+def test_numeric_literals_readme_examples(mock_hass, mock_entity_registry, mock_states):
     """Test numeric literals focused README examples."""
-
-    # Mock hass object
-    hass = MagicMock()
-    hass.states.get = MagicMock()
 
     # Load numeric literals examples fixture
     config_data = load_yaml_fixture("numeric_literals.yaml")
     assert config_data is not None
 
     # Test config validation
-    config_manager = ConfigManager(hass)
+    config_manager = ConfigManager(mock_hass)
     validation_result = config_manager.validate_yaml_data(config_data)
     assert validation_result["valid"], f"Configuration validation failed: {validation_result.get('errors', 'Unknown error')}"
 

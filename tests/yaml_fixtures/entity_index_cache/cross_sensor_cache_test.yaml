@@ -1,0 +1,16 @@
+sensors:
+  base_sensor_cache:
+    entity_id: sensor.base_power_panel
+    formula: state * 1.0
+    variables:
+      self_ref: sensor.base_sensor_cache  # Self-reference (should become 'state')
+    metadata:
+      unit_of_measurement: W
+
+  derived_sensor_cache:
+    entity_id: sensor.base_power_panel  # Same entity_id - will cause collision
+    formula: sensor.base_sensor_cache * 0.9  # Cross-sensor reference
+    variables:
+      other_sensor: sensor.base_sensor_cache  # Cross-sensor reference in variable
+    metadata:
+      unit_of_measurement: W

@@ -140,21 +140,13 @@ class TestDataProviderEntitiesValidation:
     """Test validation of data provider entities registration."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        hass.states.async_all = MagicMock(return_value=[])
-        return hass
-
-    @pytest.fixture
-    def sensor_manager(self, mock_hass):
+    def sensor_manager(self, mock_hass, mock_entity_registry, mock_states):
         """Create a SensorManager instance for testing."""
         name_resolver = NameResolver(mock_hass, {})
         add_entities_callback = MagicMock()
         return SensorManager(mock_hass, name_resolver, add_entities_callback)
 
-    def test_valid_entity_ids(self, sensor_manager):
+    def test_valid_entity_ids(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that valid entity IDs are accepted."""
         valid_entities = {
             "sensor.backing_entity_1",
@@ -167,7 +159,7 @@ class TestDataProviderEntitiesValidation:
         # Verify the entities were stored
         assert sensor_manager._registered_entities == valid_entities
 
-    def test_empty_entity_ids_is_allowed(self, sensor_manager):
+    def test_empty_entity_ids_is_allowed(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that empty entity IDs set is allowed (just logs a warning)."""
         empty_entities = set()
 
@@ -177,7 +169,7 @@ class TestDataProviderEntitiesValidation:
         # Verify the entities were stored
         assert sensor_manager._registered_entities == empty_entities
 
-    def test_none_entity_id_raises_error(self, sensor_manager):
+    def test_none_entity_id_raises_error(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that None entity ID raises ValueError."""
         invalid_entities = {
             "sensor.backing_entity_1",
@@ -187,7 +179,7 @@ class TestDataProviderEntitiesValidation:
         with pytest.raises(ValueError, match="None entity ID"):
             sensor_manager.register_data_provider_entities(invalid_entities)
 
-    def test_empty_string_entity_id_raises_error(self, sensor_manager):
+    def test_empty_string_entity_id_raises_error(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that empty string entity ID raises ValueError."""
         invalid_entities = {
             "sensor.backing_entity_1",
@@ -197,7 +189,7 @@ class TestDataProviderEntitiesValidation:
         with pytest.raises(ValueError, match="Invalid entity ID"):
             sensor_manager.register_data_provider_entities(invalid_entities)
 
-    def test_whitespace_only_entity_id_raises_error(self, sensor_manager):
+    def test_whitespace_only_entity_id_raises_error(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that whitespace-only entity ID raises ValueError."""
         invalid_entities = {
             "sensor.backing_entity_1",
@@ -207,7 +199,7 @@ class TestDataProviderEntitiesValidation:
         with pytest.raises(ValueError, match="Invalid entity ID"):
             sensor_manager.register_data_provider_entities(invalid_entities)
 
-    def test_non_string_entity_id_raises_error(self, sensor_manager):
+    def test_non_string_entity_id_raises_error(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that non-string entity ID raises ValueError."""
         invalid_entities = {
             "sensor.backing_entity_1",
@@ -217,7 +209,9 @@ class TestDataProviderEntitiesValidation:
         with pytest.raises(ValueError, match="Invalid entity ID"):
             sensor_manager.register_data_provider_entities(invalid_entities)
 
-    def test_multiple_invalid_entity_ids_raises_error_with_all_details(self, sensor_manager):
+    def test_multiple_invalid_entity_ids_raises_error_with_all_details(
+        self, mock_hass, mock_entity_registry, mock_states, sensor_manager
+    ):
         """Test that multiple invalid entity IDs are all reported."""
         invalid_entities = {
             None,

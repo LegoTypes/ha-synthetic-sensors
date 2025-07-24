@@ -12,21 +12,12 @@ class TestStateTokenInMainFormula:
     """Test that the 'state' token in main formulas resolves to the backing entity."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        hass.states.get = MagicMock(return_value=None)
-        hass.async_create_task = MagicMock()
-        return hass
-
-    @pytest.fixture
-    def evaluator(self, mock_hass):
+    def evaluator(self, mock_hass, mock_entity_registry, mock_states):
         """Create an evaluator instance."""
         return Evaluator(mock_hass)
 
     @pytest.fixture
-    def sensor_manager(self, mock_hass):
+    def sensor_manager(self, mock_hass, mock_entity_registry, mock_states):
         """Create a sensor manager instance."""
         name_resolver = MagicMock()
         add_entities_callback = MagicMock()
@@ -46,7 +37,9 @@ class TestStateTokenInMainFormula:
             ],
         )
 
-    async def test_state_token_resolves_to_backing_entity(self, mock_hass, sensor_manager, state_token_sensor_config):
+    async def test_state_token_resolves_to_backing_entity(
+        self, mock_hass, mock_entity_registry, mock_states, sensor_manager, state_token_sensor_config
+    ):
         """Test that the 'state' token in main formula resolves to the backing entity."""
 
         # Set up data provider callback to return the backing entity value
@@ -84,7 +77,9 @@ class TestStateTokenInMainFormula:
             assert "amperage" in sensor._calculated_attributes
             assert sensor._calculated_attributes["amperage"] == 5.0
 
-    async def test_state_token_without_backing_entity_fails(self, mock_hass, evaluator, sensor_manager):
+    async def test_state_token_without_backing_entity_fails(
+        self, mock_hass, mock_entity_registry, mock_states, evaluator, sensor_manager
+    ):
         """Test that using 'state' token without backing entity fails gracefully."""
         config = SensorConfig(
             unique_id="test_sensor",

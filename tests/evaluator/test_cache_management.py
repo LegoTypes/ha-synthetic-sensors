@@ -17,14 +17,7 @@ from ha_synthetic_sensors.evaluator import Evaluator
 class TestCacheValidation:
     """Test cases to validate cache behavior and prevent regressions."""
 
-    @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        return hass
-
-    def test_unique_cache_keys_for_different_formulas(self, mock_hass):
+    def test_unique_cache_keys_for_different_formulas(self, mock_hass, mock_entity_registry, mock_states):
         """Validate that different formulas get unique cache keys even with similar IDs."""
         evaluator = Evaluator(mock_hass)
 
@@ -57,7 +50,7 @@ class TestCacheValidation:
         assert result2_cached["value"] == 5
         assert result2_cached.get("cached", False) is True
 
-    def test_cache_isolation_with_same_names(self, mock_hass):
+    def test_cache_isolation_with_same_names(self, mock_hass, mock_entity_registry, mock_states):
         """Validate that formulas with the same name but different IDs are cached separately."""
         evaluator = Evaluator(mock_hass)
 
@@ -83,7 +76,7 @@ class TestCacheValidation:
         assert result1_cached["value"] == 30
         assert result2_cached["value"] == 100
 
-    def test_cache_with_edge_case_identifiers(self, mock_hass):
+    def test_cache_with_edge_case_identifiers(self, mock_hass, mock_entity_registry, mock_states):
         """Validate caching behavior with empty, None, or special character IDs."""
         evaluator = Evaluator(mock_hass)
 
@@ -109,7 +102,7 @@ class TestCacheValidation:
         # The last evaluation (repeat of first) should be cached
         assert results[-1].get("cached", False) is True
 
-    def test_cache_key_uniqueness_validation(self, mock_hass):
+    def test_cache_key_uniqueness_validation(self, mock_hass, mock_entity_registry, mock_states):
         """Validate that different formulas generate different cache keys."""
         evaluator = Evaluator(mock_hass)
 
@@ -166,7 +159,7 @@ class TestCacheValidation:
             else:
                 assert result_value == expected, f"Cached formula {formula}: expected {expected}, got {result_value}"
 
-    def test_cache_context_variable_handling(self, mock_hass):
+    def test_cache_context_variable_handling(self, mock_hass, mock_entity_registry, mock_states):
         """Validate caching behavior when context variables are involved."""
         evaluator = Evaluator(mock_hass)
 

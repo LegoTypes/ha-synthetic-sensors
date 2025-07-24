@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from homeassistant.core import HomeAssistant
+
 from .config_types import AttributeValue, GlobalSettingsDict
 from .dependency_parser import DependencyParser
 
@@ -68,17 +70,17 @@ class FormulaConfig:
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""
         # Only extract dependencies if not already set (e.g., from deserialization)
-        if not self.dependencies:
-            self.dependencies = self._extract_dependencies()
+        # Note: Dependencies are now extracted at runtime when hass is available
+        # This avoids issues with entity registry access during config creation
 
-    def _extract_dependencies(self) -> set[str]:
+    def _extract_dependencies(self, hass: HomeAssistant | None = None) -> set[str]:
         """Extract entity dependencies from the formula string and variables."""
         # Use dependency parser that handles:
         # - Variable references
         # - Direct entity_ids
         # - Dot notation (sensor1.battery_level)
-        # - Dynamic queries (regex:, tags:, device_class:, etc.)
-        parser = DependencyParser()
+        # - Dynamic queries (regex:, label:, device_class:, etc.)
+        parser = DependencyParser(hass)
 
         # Extract static dependencies (direct entity references and variables)
         static_deps = parser.extract_static_dependencies(self.formula, self.variables)
@@ -86,6 +88,12 @@ class FormulaConfig:
         # Note: Dynamic query patterns are extracted but resolved at runtime by evaluator
         # Dynamic dependencies cannot be pre-computed as they depend on HA state
         return static_deps
+
+    def get_dependencies(self, hass: HomeAssistant | None = None) -> set[str]:
+        """Get dependencies for this formula, extracting them at runtime if needed."""
+        if not self.dependencies:
+            self.dependencies = self._extract_dependencies(hass)
+        return self.dependencies
 
 
 @dataclass
@@ -142,6 +150,8 @@ class Config:
     version: str = "1.0"
     sensors: list[SensorConfig] = field(default_factory=_default_sensors)
     global_settings: GlobalSettingsDict = field(default_factory=_default_global_settings)
+    # Cross-sensor reference mapping (Phase 1 of cross-sensor reference system)
+    cross_sensor_references: dict[str, set[str]] = field(default_factory=dict)
 
     def get_sensor_by_unique_id(self, unique_id: str) -> SensorConfig | None:
         """Get a sensor configuration by unique_id."""

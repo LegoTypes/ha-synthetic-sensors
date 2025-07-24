@@ -8,7 +8,9 @@ from .attribute_reference_resolver import AttributeReferenceResolver
 from .base_resolver import VariableResolver
 from .config_variable_resolver import ConfigVariableResolver
 from .cross_sensor_resolver import CrossSensorReferenceResolver
+from .entity_attribute_resolver import EntityAttributeResolver
 from .entity_reference_resolver import EntityReferenceResolver
+from .self_reference_resolver import SelfReferenceResolver
 from .state_attribute_resolver import StateAttributeResolver
 from .state_resolver import StateResolver
 
@@ -26,6 +28,8 @@ class VariableResolverFactory:
         """Initialize the variable resolver factory with default resolvers."""
         self._resolvers: list[VariableResolver] = []
         self._cross_sensor_resolver: CrossSensorReferenceResolver | None = None
+        self._self_reference_resolver: SelfReferenceResolver | None = None
+        self._entity_attribute_resolver: EntityAttributeResolver | None = None
         self._sensor_to_backing_mapping = sensor_to_backing_mapping or {}
         self._data_provider_callback = data_provider_callback
         self._state_resolver: StateResolver | None = None
@@ -50,6 +54,15 @@ class VariableResolverFactory:
         self._state_resolver = StateResolver(self._sensor_to_backing_mapping, self._data_provider_callback)
         self.register_resolver(self._state_resolver)
 
+        # Create and store self-reference resolver for entity ID self-references
+        self._self_reference_resolver = SelfReferenceResolver()
+        self._self_reference_resolver.set_sensor_to_backing_mapping(self._sensor_to_backing_mapping)
+        self.register_resolver(self._self_reference_resolver)
+
+        # Create and store entity attribute resolver for variable.attribute patterns
+        self._entity_attribute_resolver = EntityAttributeResolver()
+        self.register_resolver(self._entity_attribute_resolver)
+
         self.register_resolver(EntityReferenceResolver())
 
         # Register attribute reference resolver for attribute-to-attribute references
@@ -63,10 +76,14 @@ class VariableResolverFactory:
         self.register_resolver(ConfigVariableResolver())
 
     def set_sensor_registry_phase(self, sensor_registry_phase: Any) -> None:
-        """Set the sensor registry phase for the cross-sensor resolver."""
+        """Set the sensor registry phase for resolvers that need it."""
         if self._cross_sensor_resolver and hasattr(self._cross_sensor_resolver, "set_sensor_registry_phase"):
             self._cross_sensor_resolver.set_sensor_registry_phase(sensor_registry_phase)
             _LOGGER.debug("Updated cross-sensor resolver with sensor registry phase")
+
+        if self._self_reference_resolver and hasattr(self._self_reference_resolver, "set_sensor_registry_phase"):
+            self._self_reference_resolver.set_sensor_registry_phase(sensor_registry_phase)
+            _LOGGER.debug("Updated self-reference resolver with sensor registry phase")
 
     def set_dependency_handler(self, dependency_handler: Any) -> None:
         """Set the dependency handler for entity resolution."""
@@ -114,11 +131,10 @@ class VariableResolverFactory:
 
         # Update existing resolvers that need the mapping
         for resolver in self._resolvers:
-            # Use setattr to avoid protected access warnings
-            if hasattr(resolver, "_sensor_to_backing_mapping"):
-                resolver._sensor_to_backing_mapping = self.sensor_to_backing_mapping
-            if hasattr(resolver, "_data_provider_callback") and data_provider_callback:
-                resolver._data_provider_callback = self.data_provider_callback
+            # Use public methods to avoid protected access warnings
+            resolver.set_sensor_to_backing_mapping(self.sensor_to_backing_mapping)
+            if data_provider_callback:
+                resolver.set_data_provider_callback(self.data_provider_callback)
 
         _LOGGER.debug("Updated resolver factory with sensor-to-backing mapping: %d mappings", len(sensor_to_backing_mapping))
 

@@ -30,11 +30,8 @@ def test_data_provider_returns_none_value() -> None:
     assert result[0] == "unknown"  # First element is the value
 
 
-def test_evaluator_handles_none_from_data_provider() -> None:
+def test_evaluator_handles_none_from_data_provider(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that evaluator handles None values from data provider gracefully."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider callback that returns None value (entity exists but unavailable)
     def mock_data_provider(entity_id: str) -> DataProviderResult:
@@ -58,11 +55,8 @@ def test_evaluator_handles_none_from_data_provider() -> None:
     assert result["value"] is None
 
 
-def test_evaluator_handles_callback_returning_none() -> None:
+def test_evaluator_handles_callback_returning_none(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that evaluator handles callback returning None as fatal error."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider callback that returns None (bad implementation)
     def mock_bad_data_provider(entity_id: str) -> DataProviderResult:
@@ -84,11 +78,8 @@ def test_evaluator_handles_callback_returning_none() -> None:
         evaluator.evaluate_formula(config)
 
 
-def test_data_provider_with_valid_values() -> None:
+def test_data_provider_with_valid_values(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that data provider works correctly with valid values."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider that returns valid values
     def mock_data_provider(entity_id: str) -> DataProviderResult:

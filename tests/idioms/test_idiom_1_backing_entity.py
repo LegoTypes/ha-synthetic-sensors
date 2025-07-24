@@ -11,13 +11,6 @@ class TestIdiom1BackingEntity:
     """Test Idiom 1: Backing Entity State Resolution."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states.get.return_value = None
-        return hass
-
-    @pytest.fixture
     def config_manager(self, mock_hass):
         """Create a config manager with mock HA."""
         return ConfigManager(mock_hass)
@@ -43,7 +36,9 @@ class TestIdiom1BackingEntity:
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
-    def test_backing_entity_loads_correctly(self, config_manager, backing_entity_yaml):
+    def test_backing_entity_loads_correctly(
+        self, config_manager, backing_entity_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that the backing entity YAML loads without errors."""
         config = config_manager.load_from_yaml(backing_entity_yaml)
 
@@ -55,7 +50,9 @@ class TestIdiom1BackingEntity:
         assert sensor is not None
         assert sensor.entity_id == "sensor.span_panel_instantaneous_power"
 
-    def test_backing_entity_state_resolution(self, config_manager, backing_entity_yaml):
+    def test_backing_entity_state_resolution(
+        self, config_manager, backing_entity_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that state token resolves to backing entity's current value."""
         config = config_manager.load_from_yaml(backing_entity_yaml)
 
@@ -96,7 +93,9 @@ class TestIdiom1BackingEntity:
         assert main_result["success"] is True
         assert main_result["value"] == 1100.0
 
-    def test_no_backing_entity_state_resolution(self, config_manager, no_backing_entity_yaml):
+    def test_no_backing_entity_state_resolution(
+        self, config_manager, no_backing_entity_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that state token resolves to sensor's previous calculated value when no backing entity."""
         config = config_manager.load_from_yaml(no_backing_entity_yaml)
 
@@ -135,7 +134,9 @@ class TestIdiom1BackingEntity:
         assert result["success"] is False
         assert "state" in result["error"].lower()
 
-    def test_missing_backing_entity_error(self, config_manager, missing_backing_entity_yaml):
+    def test_missing_backing_entity_error(
+        self, config_manager, missing_backing_entity_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that BackingEntityResolutionError is raised when backing entity doesn't exist."""
         config = config_manager.load_from_yaml(missing_backing_entity_yaml)
         sensor = config.sensors[0]
@@ -163,7 +164,9 @@ class TestIdiom1BackingEntity:
         assert "problematic_sensor" in error_msg
         assert "not registered" in error_msg.lower()
 
-    def test_backing_entity_with_attributes(self, config_manager, backing_entity_yaml):
+    def test_backing_entity_with_attributes(
+        self, config_manager, backing_entity_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test backing entity with attributes that reference main sensor state."""
         config = config_manager.load_from_yaml(backing_entity_yaml)
 

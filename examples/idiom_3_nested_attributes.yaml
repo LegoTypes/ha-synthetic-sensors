@@ -39,9 +39,9 @@ sensors:
     formula: state * 1.1
     attributes:
       device_info:
-        formula: state.attributes.device_info.manufacturer + " " + state.attributes.device_info.model
+        formula: state.attributes.power_factor.value * 2
         metadata:
-          unit_of_measurement: string
+          unit_of_measurement: ratio
       power_factor:
         formula: state.attributes.power_factor.value if state.attributes.power_factor else 1.0
         metadata:

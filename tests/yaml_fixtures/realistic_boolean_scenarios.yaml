@@ -1,0 +1,126 @@
+version: '1.0'
+
+sensors:
+  # System Health Monitoring
+  system_health_score:
+    name: System Health Score
+    formula: 100 - count("state:=unavailable") - count("state:=unknown")
+    metadata:
+      unit_of_measurement: "%"
+      icon: mdi:heart-pulse
+      description: "Overall system health based on entity availability"
+
+  devices_needing_attention:
+    name: Devices Needing Attention
+    formula: count("state:=unavailable") + count("state:=unknown")
+    metadata:
+      unit_of_measurement: devices
+      icon: mdi:alert-circle
+      description: "Count of devices in unavailable or unknown state"
+
+  # Security Monitoring
+  security_status:
+    name: Security Status
+    formula: count("device_class:door|state:=open") + count("device_class:window|state:=open")
+    metadata:
+      unit_of_measurement: openings
+      icon: mdi:shield-home
+      description: "Count of open doors and windows"
+
+  motion_activity:
+    name: Motion Activity
+    formula: count("device_class:motion|state:=motion")
+    metadata:
+      unit_of_measurement: sensors
+      icon: mdi:motion-sensor
+      description: "Count of motion sensors detecting activity"
+
+  # Energy Management
+  active_devices:
+    name: Active Devices
+    formula: count("state:=on")
+    metadata:
+      unit_of_measurement: devices
+      icon: mdi:power
+      description: "Total devices currently on across entire system"
+
+  lights_on:
+    name: Lights On
+    formula: count("regex:^light\\.|state:=on")
+    metadata:
+      unit_of_measurement: lights
+      icon: mdi:lightbulb-on
+      description: "Count of lights currently on"
+
+  # Maintenance Alerts
+  battery_alerts:
+    name: Battery Alerts
+    formula: count("device_class:battery|state:=low") + count("attribute:battery_level<20")
+    metadata:
+      unit_of_measurement: devices
+      icon: mdi:battery-alert
+      description: "Devices with low battery"
+
+  connectivity_issues:
+    name: Connectivity Issues
+    formula: count("device_class:connectivity|state:=off")
+    metadata:
+      unit_of_measurement: devices
+      icon: mdi:wifi-off
+      description: "Devices with connectivity problems"
+
+  # Area-Specific Monitoring
+  bedroom_activity:
+    name: Bedroom Activity
+    formula: count("area:bedroom|state:=on") + count("area:bedroom|state:=motion")
+    metadata:
+      unit_of_measurement: activities
+      icon: mdi:bed
+      description: "Activity level in bedroom areas"
+
+  kitchen_safety:
+    name: Kitchen Safety
+    formula: count("area:kitchen|device_class:smoke|state:=smoke") + count("area:kitchen|device_class:gas|state:=gas")
+    metadata:
+      unit_of_measurement: alerts
+      icon: mdi:fire-alert
+      description: "Safety alerts in kitchen"
+
+  # Boolean Logic Examples
+  house_secure:
+    name: House Secure
+    formula: (count("device_class:door|state:=open") + count("device_class:window|state:=open")) == 0
+    metadata:
+      unit_of_measurement: boolean
+      icon: mdi:shield-check
+      description: "True if all doors and windows are closed"
+
+  anyone_home:
+    name: Anyone Home
+    formula: count("device_class:presence|state:=home") > 0
+    metadata:
+      unit_of_measurement: boolean
+      icon: mdi:home-account
+      description: "True if any presence sensor detects someone home"
+
+  # Single Sensor Boolean Conversion Tests
+  front_door_open:
+    name: Front Door Open
+    formula: front_door
+    variables:
+      front_door: binary_sensor.front_door
+    metadata:
+      unit_of_measurement: boolean
+      device_class: door
+      icon: mdi:door
+      description: "1.0 if open, 0.0 if closed"
+
+  garage_available:
+    name: Garage Available
+    formula: garage != 0
+    variables:
+      garage: binary_sensor.garage_door
+    metadata:
+      unit_of_measurement: boolean
+      icon: mdi:garage
+      description: "True if garage sensor is not unavailable"

@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import ast
 import logging
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -12,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from .cache import CacheConfig, FormulaCache
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
-from .config_types import GlobalSettingsDict
+from .constants_formula import is_reserved_word
 from .dependency_parser import DependencyParser
 from .evaluator_cache import EvaluatorCache
 from .evaluator_config import CircuitBreakerConfig, RetryConfig
@@ -26,7 +27,13 @@ from .evaluator_phases.pre_evaluation import PreEvaluationPhase
 from .evaluator_phases.sensor_registry import SensorRegistryPhase
 from .evaluator_phases.variable_resolution import VariableResolutionPhase
 from .evaluator_results import EvaluatorResults
-from .exceptions import BackingEntityResolutionError, DataValidationError, MissingDependencyError, SensorMappingError
+from .exceptions import (
+    BackingEntityResolutionError,
+    CircularDependencyError,
+    DataValidationError,
+    MissingDependencyError,
+    SensorMappingError,
+)
 from .formula_preprocessor import FormulaPreprocessor
 from .type_definitions import CacheStats, ContextValue, DataProviderCallback, DependencyValidation, EvaluationResult
 
@@ -102,7 +109,7 @@ class Evaluator(FormulaEvaluator):
 
         # Initialize components
         self._cache = FormulaCache(cache_config)
-        self._dependency_parser = DependencyParser()
+        self._dependency_parser = DependencyParser(hass)
         self._collection_resolver = CollectionResolver(hass)
 
         # Initialize configuration objects
@@ -110,7 +117,7 @@ class Evaluator(FormulaEvaluator):
         self._retry_config = retry_config or RetryConfig()
 
         # Initialize handler modules
-        self._dependency_handler = EvaluatorDependency(hass, data_provider_callback)
+        self._dependency_handler = EvaluatorDependency(hass, data_provider_callback, allow_ha_lookups)
         self._cache_handler = EvaluatorCache(cache_config)
         self._error_handler = EvaluatorErrorHandler(self._circuit_breaker_config, self._retry_config)
         self._formula_preprocessor = FormulaPreprocessor(self._collection_resolver)
@@ -130,6 +137,7 @@ class Evaluator(FormulaEvaluator):
 
         # Initialize generic dependency manager for universal dependency tracking
         self._generic_dependency_manager = GenericDependencyManager()
+        self._generic_dependency_manager.set_sensor_registry_phase(self._sensor_registry_phase)
 
         # Support for push-based entity registration (new pattern)
         self._registered_integration_entities: set[str] | None = None
@@ -227,60 +235,124 @@ class Evaluator(FormulaEvaluator):
         return self._pre_evaluation_phase.perform_pre_evaluation_checks(config, context, sensor_config, formula_name)
 
     def evaluate_formula_with_sensor_config(
-        self, 
-        config: FormulaConfig, 
-        context: dict[str, ContextValue] | None = None, 
+        self,
+        config: FormulaConfig,
+        context: dict[str, ContextValue] | None = None,
         sensor_config: SensorConfig | None = None,
-        bypass_dependency_management: bool = False
+        bypass_dependency_management: bool = False,
     ) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling and sensor context."""
         formula_name = config.name or config.id
 
         try:
-            # If we have sensor config and context, check if we need dependency-aware evaluation
-            # BUT only if we're not bypassing dependency management (to prevent recursive loops)
-            if (sensor_config and context and not bypass_dependency_management and 
-                self._needs_dependency_resolution(config, sensor_config)):
-                # Use generic dependency manager for automatic dependency resolution
-                return self._evaluate_with_dependency_management(config, context, sensor_config)
-
-            # Perform all pre-evaluation checks
-            check_result, eval_context = self._perform_pre_evaluation_checks(config, context, sensor_config, formula_name)
-            if check_result:
-                return check_result
-
-            # Ensure eval_context is not None (should be guaranteed by the helper method)
-            if eval_context is None:
-                return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unavailable")
-
-            # Evaluate the formula
-            result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
-
-            # Handle success
-            self._error_handler.handle_successful_evaluation(formula_name)
-
-            # Return appropriate result type
-            return self._create_success_result(result)
-
+            return self._evaluate_formula_core(config, context, sensor_config, bypass_dependency_management, formula_name)
         except ValueError as e:
-            # Handle formula evaluation failures due to None values
-            if "Formula evaluation failed due to None values" in str(e):
-                _LOGGER.warning("Formula '%s': %s", formula_name, str(e))
-                self._error_handler.increment_error_count(formula_name)
-                return EvaluatorResults.create_success_result_with_state("unknown", value="unknown")
-            # Re-raise other ValueError exceptions
-            raise
-
+            return self._handle_value_error(e, formula_name)
         except BackingEntityResolutionError as e:
-            # Convert backing entity resolution errors to error results
-            self._error_handler.increment_error_count(formula_name)
-            return EvaluatorResults.create_error_result(str(e), state="unavailable")
-
-        except (DataValidationError, MissingDependencyError, SensorMappingError):
+            return self._handle_backing_entity_error(e, formula_name)
+        except (DataValidationError, MissingDependencyError, SensorMappingError, CircularDependencyError):
             # Let these specialized exceptions propagate - they should be raised, not converted to error results
             raise
         except Exception as err:
             return self._error_handler.handle_evaluation_error(err, formula_name)
+
+    def _evaluate_formula_core(
+        self,
+        config: FormulaConfig,
+        context: dict[str, ContextValue] | None,
+        sensor_config: SensorConfig | None,
+        bypass_dependency_management: bool,
+        formula_name: str,
+    ) -> EvaluationResult:
+        """Core formula evaluation logic without exception handling."""
+        # Perform all pre-evaluation checks
+        check_result, eval_context = self._perform_pre_evaluation_checks(config, context, sensor_config, formula_name)
+        if check_result:
+            return check_result
+
+        # Ensure eval_context is not None (should be guaranteed by the helper method)
+        if eval_context is None:
+            return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unavailable")
+
+        # Use enhanced variable resolution with HA state detection
+        resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
+            config.formula, sensor_config, eval_context, config
+        )
+        _LOGGER.debug(
+            "Evaluator: formula '%s' resolved to '%s' with context: %s",
+            config.formula,
+            resolution_result.resolved_formula,
+            eval_context,
+        )
+
+        # Check if HA state was detected during variable resolution
+        if resolution_result.has_ha_state and resolution_result.ha_state_value:
+            return self._handle_ha_state_detection(resolution_result, formula_name)
+
+        # Check if we need dependency-aware evaluation
+        if self._should_use_dependency_management(sensor_config, context, bypass_dependency_management, config):
+            # At this point, we know context and sensor_config are not None due to the check above
+            # Type checking: these should never be None here due to the guard condition
+            if context is None or sensor_config is None:
+                return EvaluatorResults.create_error_result("Context or sensor config is None", state="unavailable")
+            return self._evaluate_with_dependency_management(config, context, sensor_config)
+
+        # Evaluate the formula normally
+        return self._evaluate_formula_normally(config, eval_context, context, sensor_config, formula_name)
+
+    def _handle_ha_state_detection(self, resolution_result: Any, formula_name: str) -> EvaluationResult:
+        """Handle HA state detection during variable resolution."""
+        _LOGGER.debug(
+            "Formula '%s' resolved to HA state '%s' during variable resolution, returning corresponding sensor state",
+            formula_name,
+            resolution_result.ha_state_value,
+        )
+        self._error_handler.handle_successful_evaluation(formula_name)
+        return EvaluatorResults.create_success_result_with_state(
+            resolution_result.ha_state_value,
+            value=None,
+            unavailable_dependencies=resolution_result.unavailable_dependencies or [],
+        )
+
+    def _should_use_dependency_management(
+        self,
+        sensor_config: SensorConfig | None,
+        context: dict[str, ContextValue] | None,
+        bypass_dependency_management: bool,
+        config: FormulaConfig,
+    ) -> bool:
+        """Determine if dependency management should be used."""
+        if not sensor_config or not context or bypass_dependency_management:
+            return False
+        return self._needs_dependency_resolution(config, sensor_config)
+
+    def _evaluate_formula_normally(
+        self,
+        config: FormulaConfig,
+        eval_context: dict[str, ContextValue],
+        context: dict[str, ContextValue] | None,
+        sensor_config: SensorConfig | None,
+        formula_name: str,
+    ) -> EvaluationResult:
+        """Evaluate formula using normal evaluation path."""
+        result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
+        self._error_handler.handle_successful_evaluation(formula_name)
+        return self._create_success_result(result)
+
+    def _handle_value_error(self, error: ValueError, formula_name: str) -> EvaluationResult:
+        """Handle ValueError exceptions during formula evaluation."""
+        # Handle formula evaluation failures due to None values
+        if "Formula evaluation failed due to None values" in str(error):
+            _LOGGER.warning("Formula '%s': %s", formula_name, str(error))
+            self._error_handler.increment_error_count(formula_name)
+            return EvaluatorResults.create_success_result_with_state("unknown", value="unknown")
+        # Re-raise other ValueError exceptions
+        raise error
+
+    def _handle_backing_entity_error(self, error: BackingEntityResolutionError, formula_name: str) -> EvaluationResult:
+        """Handle BackingEntityResolutionError exceptions."""
+        self._error_handler.increment_error_count(formula_name)
+        return EvaluatorResults.create_error_result(str(error), state="unavailable")
 
     def _create_success_result(self, result: float | str | bool) -> EvaluationResult:
         """Create appropriate success result based on result type."""
@@ -337,38 +409,30 @@ class Evaluator(FormulaEvaluator):
     def _needs_dependency_resolution(self, config: FormulaConfig, sensor_config: SensorConfig) -> bool:
         """
         Check if a formula needs dependency-aware evaluation.
-        
+
         This method determines if the formula contains attribute references that might
         need dependency resolution from other attributes in the same sensor.
         """
-        import re
-        
         # Check if the formula contains potential attribute references
         # Look for simple identifiers that could be attribute names
-        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b'
-        
-        # Reserved words that are not attribute dependencies
-        reserved_words = {
-            'state', 'and', 'or', 'not', 'if', 'else', 'in', 'is', 
-            'True', 'False', 'None', 'sum', 'avg', 'max', 'min', 'count'
-        }
-        
+        pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b"
+
         for match in re.finditer(pattern, config.formula):
             identifier = match.group(1)
-            
+
             # Skip reserved words
-            if identifier in reserved_words:
+            if is_reserved_word(identifier):
                 continue
-                
+
             # Skip if it looks like an entity ID (contains dot)
-            if '.' in identifier:
+            if "." in identifier:
                 continue
-                
+
             # Check if this identifier could be an attribute in the sensor
             # If the sensor has multiple formulas (main + attributes), this could be an attribute reference
             if len(sensor_config.formulas) > 1:
                 return True
-        
+
         return False
 
     def _evaluate_with_dependency_management(
@@ -376,23 +440,23 @@ class Evaluator(FormulaEvaluator):
     ) -> EvaluationResult:
         """
         Evaluate a formula with automatic dependency management.
-        
+
         This method uses the generic dependency manager to ensure that any attribute
         dependencies are properly resolved before evaluating the current formula.
         """
         try:
             # Build complete evaluation context using dependency manager
             complete_context = self._generic_dependency_manager.build_evaluation_context(
-                sensor_config=sensor_config,
-                evaluator=self,
-                base_context=context
+                sensor_config=sensor_config, evaluator=self, base_context=context
             )
-            
+
             # Now evaluate the formula with the complete context
             formula_name = config.name or config.id
-            
+
             # Perform pre-evaluation checks with the complete context
-            check_result, eval_context = self._perform_pre_evaluation_checks(config, complete_context, sensor_config, formula_name)
+            check_result, eval_context = self._perform_pre_evaluation_checks(
+                config, complete_context, sensor_config, formula_name
+            )
             if check_result:
                 return check_result
 
@@ -405,24 +469,32 @@ class Evaluator(FormulaEvaluator):
 
             # Handle success
             self._error_handler.handle_successful_evaluation(formula_name)
-            
+
             # Convert result to proper EvaluationResult
             if isinstance(result, (int, float)):
                 return EvaluatorResults.create_success_result(float(result))
-            else:
-                return EvaluatorResults.create_success_result_with_state("ok", value=result)
-            
+            return EvaluatorResults.create_success_result_with_state("ok", value=result)
+
         except Exception as e:
             _LOGGER.error("Error in dependency-aware evaluation for formula '%s': %s", config.formula, e)
-            # Fall back to normal evaluation
+            # Re-raise MissingDependencyError and other fatal errors
+            if isinstance(e, (MissingDependencyError, DataValidationError, SensorMappingError)):
+                raise
+            # Fall back to normal evaluation for other errors
             return self._fallback_to_normal_evaluation(config, context, sensor_config)
+
+    def fallback_to_normal_evaluation(
+        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None
+    ) -> EvaluationResult:
+        """Public method to fallback to normal evaluation if dependency management fails."""
+        return self._fallback_to_normal_evaluation(config, context, sensor_config)
 
     def _fallback_to_normal_evaluation(
         self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None
     ) -> EvaluationResult:
         """Fallback to normal evaluation if dependency management fails."""
         formula_name = config.name or config.id
-        
+
         # Perform all pre-evaluation checks
         check_result, eval_context = self._perform_pre_evaluation_checks(config, context, sensor_config, formula_name)
         if check_result:
@@ -434,12 +506,11 @@ class Evaluator(FormulaEvaluator):
 
         # Evaluate the formula
         result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
-        
+
         # Convert result to proper EvaluationResult
         if isinstance(result, (int, float)):
             return EvaluatorResults.create_success_result(float(result))
-        else:
-            return EvaluatorResults.create_success_result_with_state("ok", value=result)
+        return EvaluatorResults.create_success_result_with_state("ok", value=result)
 
     def _execute_formula_evaluation(
         self,
@@ -619,8 +690,13 @@ class Evaluator(FormulaEvaluator):
 
     @property
     def allow_ha_lookups(self) -> bool:
-        """Get the current allow_ha_lookups setting."""
+        """Get the allow_ha_lookups setting."""
         return self._allow_ha_lookups
+
+    @property
+    def dependency_management_phase(self) -> Any:
+        """Get the dependency management phase."""
+        return self._dependency_management_phase
 
     def update_allow_ha_lookups(self, allow_ha_lookups: bool) -> None:
         """Update the allow_ha_lookups setting."""

@@ -1,0 +1,30 @@
+sensors:
+  # Base power sensor for cross-reference testing (unchanged)
+  test_power_source:
+    entity_id: sensor.test_panel_power
+    formula: state * 1.0
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+
+  # Main sensor with resolved self-references using state token
+  test_power_analyzer:
+    entity_id: sensor.test_panel_power
+    formula: state * 1.1
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+    attributes:
+      # Self-references resolved to use 'state' token (post-evaluation result)
+      daily_power:
+        formula: state * 24
+      weekly_power:
+        formula: state * 24 * 7
+      monthly_power:
+        formula: state * 24 * 30
+      power_efficiency:
+        formula: state / 1000 * 100
+      cost_per_hour:
+        formula: state * 0.25
+      cost_per_day:
+        formula: state * 0.25 * 24

@@ -289,6 +289,13 @@ class StorageManager:
         """Export sensor set to YAML format."""
         return self._yaml_handler.export_yaml(sensor_set_id)
 
+    async def async_export_yaml(self, sensor_set_id: str) -> str:
+        """Export sensor set to YAML format (async version)."""
+        # Run the YAML export in an executor to avoid blocking the event loop
+        # even though it's typically fast, this ensures we don't block on large datasets
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._yaml_handler.export_yaml, sensor_set_id)
+
     # Sensor Set Operations (delegated to SensorSetOpsHandler)
     async def async_create_sensor_set(
         self,

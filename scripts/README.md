@@ -4,9 +4,73 @@ This directory contains shared scripts that can be used across multiple projects
 
 ## Available Scripts
 
+### `validate_examples.sh`
+
+A validation script for YAML examples and test fixtures in the synthetic sensors project.
+
+**Usage:**
+
+```bash
+./scripts/validate_examples.sh [options]
+```
+
+**Options:**
+
+- `--examples`: Validate all YAML files in the examples directory
+- `--fixtures`: Validate test fixtures for expected sensors
+- `--all`: Validate everything (default behavior)
+- `--file FILE`: Validate a specific YAML file
+- `--verbose, -v`: Enable verbose output
+- `--help`: Show help message
+
+**Examples:**
+
+```bash
+# Validate everything (default)
+./scripts/validate_examples.sh
+
+# Validate only examples
+./scripts/validate_examples.sh --examples
+
+# Validate only test fixtures
+./scripts/validate_examples.sh --fixtures
+
+# Validate a specific file
+./scripts/validate_examples.sh --file examples/idiom_1_backing_entity.yaml
+
+# Verbose output
+./scripts/validate_examples.sh --verbose
+```
+
+**What it does:**
+
+1. **YAML Validation**: Uses the actual implementation's validation logic to check YAML files
+2. **Test Fixture Validation**: Ensures test fixtures contain expected sensors for tests
+3. **Enhanced Reporting**: Provides detailed error and warning messages with context
+4. **Poetry Integration**: Automatically uses Poetry environment if available
+
+**Coverage:**
+
+- `examples/*.yaml` - All example YAML files
+- Test fixtures with expected sensor validation
+- Individual file validation with detailed reporting
+
+**VS Code Integration:** Add this task to your `.vscode/tasks.json`:
+
+```json
+{
+  "label": "Validate examples",
+  "type": "shell",
+  "command": "./scripts/validate_examples.sh",
+  "args": ["--all"],
+  "group": "test",
+  "detail": "Validate YAML examples and test fixtures"
+}
+```
+
 ### `fix-markdown.sh`
 
-A comprehensive markdown formatting script that combines Prettier and markdownlint-cli2.
+A markdown formatting script that combines Prettier and markdownlint-cli2.
 
 **Usage:**
 

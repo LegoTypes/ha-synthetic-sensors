@@ -10,7 +10,7 @@ from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConf
 
 
 @pytest.fixture
-def mock_hass():
+def mock_hass(mock_hass, mock_entity_registry, mock_states):
     """Create a mock Home Assistant instance."""
     hass = MagicMock()
     hass.config = MagicMock()
@@ -19,13 +19,13 @@ def mock_hass():
     return hass
 
 
-def test_sensor_manager_config_default_domain():
+def test_sensor_manager_config_default_domain(mock_hass, mock_entity_registry, mock_states):
     """Test SensorManagerConfig uses default integration domain."""
     config = SensorManagerConfig()
     assert config.integration_domain == "synthetic_sensors"
 
 
-def test_sensor_manager_config_custom_domain():
+def test_sensor_manager_config_custom_domain(mock_hass, mock_entity_registry, mock_states):
     """Test SensorManagerConfig accepts custom integration domain."""
     custom_domain = "span_panel"
     config = SensorManagerConfig(integration_domain=custom_domain)
@@ -33,7 +33,7 @@ def test_sensor_manager_config_custom_domain():
 
 
 @pytest.mark.asyncio
-async def test_device_name_slugification_and_entity_id_generation(mock_hass):
+async def test_device_name_slugification_and_entity_id_generation(mock_hass, mock_entity_registry, mock_states):
     """Test that device names are properly slugified and used in entity ID generation."""
 
     test_cases = [
@@ -87,7 +87,7 @@ async def test_device_name_slugification_and_entity_id_generation(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_integration_domain_isolation(mock_hass):
+async def test_integration_domain_isolation(mock_hass, mock_entity_registry, mock_states):
     """Test that devices from different integration domains are properly isolated."""
 
     # Create mock devices in different domains
@@ -151,7 +151,7 @@ async def test_integration_domain_isolation(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_sensor_creation_with_device_prefix(mock_hass):
+async def test_end_to_end_sensor_creation_with_device_prefix(mock_hass, mock_entity_registry, mock_states):
     """Test end-to-end sensor creation with proper device prefix in entity ID."""
 
     # Mock device registry with a realistic SPAN device
@@ -225,7 +225,7 @@ async def test_end_to_end_sensor_creation_with_device_prefix(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_device_resolution_wrong_domain_fails(mock_hass):
+async def test_device_resolution_wrong_domain_fails(mock_hass, mock_entity_registry, mock_states):
     """Test that device resolution fails when using wrong integration domain."""
 
     # Define test integration domain
@@ -271,7 +271,7 @@ async def test_device_resolution_wrong_domain_fails(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_error_message_includes_integration_domain(mock_hass):
+async def test_error_message_includes_integration_domain(mock_hass, mock_entity_registry, mock_states):
     """Test that error messages include the integration domain for debugging."""
 
     test_integration_domain = "span_panel"
@@ -321,7 +321,7 @@ async def test_error_message_includes_integration_domain(mock_hass):
         assert "Device not found for identifier" in error_message
 
 
-def test_integration_domain_usage_in_real_scenario():
+def test_integration_domain_usage_in_real_scenario(mock_hass, mock_entity_registry, mock_states):
     """Test realistic usage pattern for integration developers."""
 
     # This simulates how SPAN Panel integration would use it

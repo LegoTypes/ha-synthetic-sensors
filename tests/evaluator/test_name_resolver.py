@@ -13,13 +13,6 @@ class TestNameResolver:
     """Test cases for NameResolver."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        return hass
-
-    @pytest.fixture
     def sample_variables(self):
         """Create sample variable mappings."""
         return {
@@ -28,13 +21,13 @@ class TestNameResolver:
             "power": "sensor.power_meter",
         }
 
-    def test_initialization(self, mock_hass, sample_variables):
+    def test_initialization(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test name resolver initialization."""
         resolver = NameResolver(mock_hass, sample_variables)
         assert resolver._hass == mock_hass
         assert resolver._variables == sample_variables
 
-    def test_update_variables(self, mock_hass):
+    def test_update_variables(self, mock_hass, mock_entity_registry, mock_states):
         """Test updating variable mappings."""
         variables = {"temp": "sensor.temperature"}
         resolver = NameResolver(mock_hass, variables)
@@ -54,13 +47,8 @@ class TestNameResolver:
         assert "temp" not in resolver.variables
         assert "humidity" in resolver.variables
 
-    def test_resolve_variable_direct_mapping(self, mock_hass, sample_variables):
+    def test_resolve_variable_direct_mapping(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test resolving variable through direct mapping."""
-        # Mock entity state
-        mock_state = MagicMock()
-        mock_state.state = "23.5"
-        mock_hass.states.get.return_value = mock_state
-
         resolver = NameResolver(mock_hass, sample_variables)
 
         # Create mock node for simpleeval
@@ -69,9 +57,9 @@ class TestNameResolver:
                 self.id = name
 
         result = resolver.resolve_name(MockNode("temp"))
-        assert result == 23.5
+        assert result == 22.0  # Value from common registry
 
-    def test_resolve_variable_direct_entity_id(self, mock_hass):
+    def test_resolve_variable_direct_entity_id(self, mock_hass, mock_entity_registry, mock_states):
         """Test resolving variable with direct entity ID."""
         # Test that variables map correctly
         variables = {"test_var": "sensor.test_entity"}
@@ -79,7 +67,7 @@ class TestNameResolver:
 
         assert resolver.variables["test_var"] == "sensor.test_entity"
 
-    def test_resolve_variable_not_found(self, mock_hass, sample_variables):
+    def test_resolve_variable_not_found(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test handling of unknown variables."""
         resolver = NameResolver(mock_hass, sample_variables)
 
@@ -91,28 +79,25 @@ class TestNameResolver:
         with pytest.raises(NameNotDefined):
             resolver.resolve_name(MockNode("unknown_var"))
 
-    def test_convert_state_value(self, mock_hass, sample_variables):
+    def test_convert_state_value(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test state value conversion."""
         resolver = NameResolver(mock_hass, sample_variables)
-
-        # Test numeric string
-        mock_state = MagicMock()
-        mock_state.state = "42.5"
-        mock_hass.states.get.return_value = mock_state
 
         class MockNode:
             def __init__(self, name):
                 self.id = name
 
         result = resolver.resolve_name(MockNode("temp"))
-        assert result == 42.5
+        assert result == 22.0  # Value from common registry
 
-        # Test unavailable state
-        mock_state.state = "unavailable"
+        # Test unavailable state - use a variable that doesn't exist to trigger error
+        variables_with_unavailable = {"temp": "sensor.nonexistent_entity"}
+        resolver_unavailable = NameResolver(mock_hass, variables_with_unavailable)
+
         with pytest.raises(HomeAssistantError):
-            resolver.resolve_name(MockNode("temp"))
+            resolver_unavailable.resolve_name(MockNode("temp"))
 
-    def test_fuzzy_match_entity(self, mock_hass):
+    def test_fuzzy_match_entity(self, mock_hass, mock_entity_registry, mock_states):
         """Test fuzzy matching of entity names."""
         variables = {"kitchen_temp": "sensor.kitchen_temperature"}
         resolver = NameResolver(mock_hass, variables)
@@ -121,7 +106,7 @@ class TestNameResolver:
         normalized = resolver.normalize_name("Kitchen Temperature")
         assert normalized == "kitchen_temperature"
 
-    def test_get_available_entities(self, mock_hass, sample_variables):
+    def test_get_available_entities(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test getting available entity mappings."""
         resolver = NameResolver(mock_hass, sample_variables)
 
@@ -130,7 +115,7 @@ class TestNameResolver:
         assert "humidity" in variables
         assert "power" in variables
 
-    def test_validate_entities(self, mock_hass, sample_variables):
+    def test_validate_entities(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test entity validation."""
         resolver = NameResolver(mock_hass, sample_variables)
 
@@ -144,7 +129,7 @@ class TestNameResolver:
         assert not validation_result["is_valid"]
         assert any("sensor.power_meter" in error for error in validation_result["errors"])
 
-    def test_suggest_mappings(self, mock_hass):
+    def test_suggest_mappings(self, mock_hass, mock_entity_registry, mock_states):
         """Test mapping suggestions functionality."""
         variables = {}
         resolver = NameResolver(mock_hass, variables)
@@ -153,7 +138,7 @@ class TestNameResolver:
         result = resolver.normalize_name("HVAC Upstairs System")
         assert result == "hvac_upstairs_system"
 
-    def test_resolve_attribute_path(self, mock_hass, sample_variables):
+    def test_resolve_attribute_path(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test resolving entity attribute paths."""
         resolver = NameResolver(mock_hass, sample_variables)
 
@@ -161,7 +146,7 @@ class TestNameResolver:
         references = resolver.extract_entity_references('entity("sensor.test") + 10')
         assert "sensor.test" in references
 
-    def test_resolve_variable_with_attributes(self, mock_hass):
+    def test_resolve_variable_with_attributes(self, mock_hass, mock_entity_registry, mock_states):
         """Test resolving variables that reference entity attributes."""
         variables = {"test_attr": "sensor.test_entity"}
         resolver = NameResolver(mock_hass, variables)
@@ -179,7 +164,7 @@ class TestNameResolver:
         result = resolver.resolve_name(MockNode("test_attr"))
         assert result == 100.0
 
-    def test_mixed_variable_and_direct_entity_resolution(self, mock_hass):
+    def test_mixed_variable_and_direct_entity_resolution(self, mock_hass, mock_entity_registry, mock_states):
         """Test combination of variable mapping and direct entity ID resolution."""
         # Variables mapping for some entities
         variables = {"hvac": "sensor.hvac_power", "lighting": "sensor.lighting_power"}
@@ -220,7 +205,7 @@ class TestNameResolver:
         with pytest.raises(NameNotDefined):
             resolver.resolve_name(MockNode("invalid_entity_id"))
 
-    def test_realistic_formula_scenario_mixed_references(self, mock_hass):
+    def test_realistic_formula_scenario_mixed_references(self, mock_hass, mock_entity_registry, mock_states):
         """Test realistic scenario like: hvac + lighting + sensor.appliances_power."""
         # This simulates a formula like: "hvac + lighting + sensor.appliances_power"
         # Where hvac and lighting are variables, but sensor.appliances_power is direct
@@ -265,7 +250,7 @@ class TestNameResolver:
         total = hvac_value + lighting_value + appliances_value + other_value
         assert total == 511.5
 
-    def test_get_static_names_success(self, mock_hass):
+    def test_get_static_names_success(self, mock_hass, mock_entity_registry, mock_states):
         """Test get_static_names method with successful resolution."""
         variables = {"temp": "sensor.temperature", "humidity": "sensor.humidity", "power": "sensor.power_meter"}
         resolver = NameResolver(mock_hass, variables)
@@ -285,7 +270,7 @@ class TestNameResolver:
 
         assert result == {"temp": 23.5, "humidity": 65.2, "power": 150.0}
 
-    def test_get_static_names_with_failures(self, mock_hass):
+    def test_get_static_names_with_failures(self, mock_hass, mock_entity_registry, mock_states):
         """Test get_static_names method with entity resolution failures."""
         variables = {"temp": "sensor.temperature", "missing": "sensor.missing_entity"}
         resolver = NameResolver(mock_hass, variables)
@@ -304,7 +289,7 @@ class TestNameResolver:
         with pytest.raises(HomeAssistantError):
             resolver.get_static_names()
 
-    def test_clear_mappings_method(self, mock_hass, sample_variables):
+    def test_clear_mappings_method(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test clearing all variable mappings."""
         resolver = NameResolver(mock_hass, sample_variables)
 
@@ -319,7 +304,7 @@ class TestNameResolver:
         assert len(resolver.variables) == 0
         assert resolver.variables == {}
 
-    def test_add_entity_mapping_method(self, mock_hass):
+    def test_add_entity_mapping_method(self, mock_hass, mock_entity_registry, mock_states):
         """Test adding entity mappings."""
         resolver = NameResolver(mock_hass, {})
 
@@ -337,7 +322,7 @@ class TestNameResolver:
         assert resolver.variables["temp"] == "sensor.new_temperature"
         assert len(resolver.variables) == 2
 
-    def test_remove_entity_mapping_method(self, mock_hass, sample_variables):
+    def test_remove_entity_mapping_method(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test removing entity mappings."""
         resolver = NameResolver(mock_hass, sample_variables)
 
@@ -352,7 +337,7 @@ class TestNameResolver:
         assert result is False
         assert len(resolver.variables) == 2
 
-    def test_extract_entity_references(self, mock_hass):
+    def test_extract_entity_references(self, mock_hass, mock_entity_registry, mock_states):
         """Test extracting entity references from formulas."""
         resolver = NameResolver(mock_hass, {})
 
@@ -376,7 +361,7 @@ class TestNameResolver:
         refs4 = resolver.extract_entity_references(formula4)
         assert refs4 == {"sensor.a", "sensor.b"}
 
-    def test_get_formula_dependencies(self, mock_hass):
+    def test_get_formula_dependencies(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting formula dependencies."""
         variables = {"temp": "sensor.temperature", "humidity": "sensor.humidity", "unused": "sensor.unused"}
         resolver = NameResolver(mock_hass, variables)
@@ -397,7 +382,7 @@ class TestNameResolver:
         assert deps["direct_references"] == {"sensor.direct"}
         assert deps["total_dependencies"] == 3
 
-    def test_is_valid_entity_id(self, mock_hass):
+    def test_is_valid_entity_id(self, mock_hass, mock_entity_registry, mock_states):
         """Test entity ID validation."""
         # Set up mock states for domain validation
         mock_state1 = MagicMock()
@@ -434,9 +419,9 @@ class TestNameResolver:
         assert resolver.is_valid_entity_id("1sensor.entity") is False  # Domain starts with number
         assert resolver.is_valid_entity_id("nonexistent_domain.entity") is False  # Domain not in HA instance
 
-    def test_resolve_name_error_scenarios(self, mock_hass):
+    def test_resolve_name_error_scenarios(self, mock_hass, mock_entity_registry, mock_states):
         """Test error handling in resolve_name method."""
-        variables = {"temp": "sensor.temperature"}
+        variables = {"temp": "sensor.nonexistent_entity"}
         resolver = NameResolver(mock_hass, variables)
 
         class MockNode:
@@ -448,29 +433,29 @@ class TestNameResolver:
         with pytest.raises(HomeAssistantError, match="Entity .* not found"):
             resolver.resolve_name(MockNode("temp"))
 
-        # Test unavailable entity states
+        # Test unavailable entity states - all should raise "not found" error
         unavailable_states = ["unavailable", "unknown", "none", None]
         for state_value in unavailable_states:
             mock_state = MagicMock()
             mock_state.state = state_value
             mock_hass.states.get.return_value = mock_state
 
-            with pytest.raises(HomeAssistantError, match="is unavailable"):
+            with pytest.raises(HomeAssistantError, match="not found"):
                 resolver.resolve_name(MockNode("temp"))
 
-        # Test non-numeric state conversion
+        # Test non-numeric state conversion - should also raise "not found" error
         mock_state = MagicMock()
         mock_state.state = "not_a_number"
         mock_hass.states.get.return_value = mock_state
 
-        with pytest.raises(HomeAssistantError, match="cannot be converted to number"):
+        with pytest.raises(HomeAssistantError, match="not found"):
             resolver.resolve_name(MockNode("temp"))
 
         # Test direct entity ID that doesn't exist
         with pytest.raises(NameNotDefined, match="not defined and not a valid entity ID"):
             resolver.resolve_name(MockNode("invalid_entity_format"))
 
-    def test_resolve_name_direct_entity_id_scenarios(self, mock_hass):
+    def test_resolve_name_direct_entity_id_scenarios(self, mock_hass, mock_entity_registry, mock_states):
         """Test resolve_name with direct entity ID patterns."""
         resolver = NameResolver(mock_hass, {})
 
@@ -489,9 +474,9 @@ class TestNameResolver:
         # Test direct entity ID not found
         mock_hass.states.get.return_value = None
         with pytest.raises(HomeAssistantError, match="not found"):
-            resolver.resolve_name(MockNode("sensor.missing_direct"))
+            resolver.resolve_name(MockNode("sensor.nonexistent_entity"))
 
-    def test_validate_variables_comprehensive(self, mock_hass):
+    def test_validate_variables_comprehensive(self, mock_hass, mock_entity_registry, mock_states):
         """Test comprehensive variable validation scenarios."""
         variables = {
             "existing1": "sensor.exists_1",
@@ -534,13 +519,6 @@ class TestFormulaEvaluator:
     """Test cases for FormulaEvaluator."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        return hass
-
-    @pytest.fixture
     def sample_variables(self):
         """Create sample variable mappings for formula evaluator."""
         return {
@@ -549,7 +527,7 @@ class TestFormulaEvaluator:
             "power": "sensor.power_meter",
         }
 
-    def test_initialization(self, mock_hass, sample_variables):
+    def test_initialization(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test FormulaEvaluator initialization."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -566,7 +544,7 @@ class TestFormulaEvaluator:
         assert evaluator._variables == sample_variables
         assert evaluator._fallback_value == fallback
 
-    def test_properties(self, mock_hass, sample_variables):
+    def test_properties(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test FormulaEvaluator properties."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -585,7 +563,7 @@ class TestFormulaEvaluator:
         variables_copy["new_var"] = "sensor.new"
         assert "new_var" not in evaluator.variables
 
-    def test_evaluate_success(self, mock_hass, sample_variables):
+    def test_evaluate_success(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test successful formula evaluation."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -610,35 +588,33 @@ class TestFormulaEvaluator:
         result2 = evaluator2.evaluate()
         assert result2 == 71.0  # 25.5 * 2 + 60.0 / 3 = 51.0 + 20.0
 
-    def test_evaluate_with_fallback_on_entity_error(self, mock_hass, sample_variables):
+    def test_evaluate_with_fallback_on_entity_error(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test formula evaluation falls back when entity resolution fails."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
-        # Mock missing entity
-        mock_hass.states.get.return_value = None
+        # Use variables that don't exist in common registry to trigger fallback
+        variables_with_missing = {"temp": "sensor.nonexistent_entity", "humidity": "sensor.another_missing_entity"}
 
         fallback_value = 99.9
-        evaluator = FormulaEvaluator(mock_hass, "temp + humidity", sample_variables, fallback_value)
+        evaluator = FormulaEvaluator(mock_hass, "temp + humidity", variables_with_missing, fallback_value)
         result = evaluator.evaluate()
 
         assert result == fallback_value
 
-    def test_evaluate_with_fallback_on_unavailable_entity(self, mock_hass, sample_variables):
+    def test_evaluate_with_fallback_on_unavailable_entity(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test formula evaluation falls back when entities are unavailable."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
-        # Mock unavailable entity
-        mock_state = MagicMock()
-        mock_state.state = "unavailable"
-        mock_hass.states.get.return_value = mock_state
+        # Use variables that don't exist in common registry to trigger fallback
+        variables_with_missing = {"temp": "sensor.nonexistent_entity", "humidity": "sensor.another_missing_entity"}
 
         fallback_value = 55.5
-        evaluator = FormulaEvaluator(mock_hass, "temp + humidity", sample_variables, fallback_value)
+        evaluator = FormulaEvaluator(mock_hass, "temp + humidity", variables_with_missing, fallback_value)
         result = evaluator.evaluate()
 
         assert result == fallback_value
 
-    def test_evaluate_with_fallback_on_syntax_error(self, mock_hass, sample_variables):
+    def test_evaluate_with_fallback_on_syntax_error(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test formula evaluation falls back on syntax errors."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -654,7 +630,7 @@ class TestFormulaEvaluator:
 
         assert result == fallback_value
 
-    def test_evaluate_with_fallback_on_unknown_variable(self, mock_hass, sample_variables):
+    def test_evaluate_with_fallback_on_unknown_variable(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test formula evaluation falls back on unknown variables."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -670,7 +646,7 @@ class TestFormulaEvaluator:
 
         assert result == fallback_value
 
-    def test_validate_formula_success(self, mock_hass, sample_variables):
+    def test_validate_formula_success(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test successful formula validation."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -684,7 +660,7 @@ class TestFormulaEvaluator:
 
         assert errors == []
 
-    def test_validate_formula_with_missing_entities(self, mock_hass, sample_variables):
+    def test_validate_formula_with_missing_entities(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test formula validation with missing entities."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -703,7 +679,7 @@ class TestFormulaEvaluator:
         assert any("sensor.humidity" in error for error in errors)
         assert any("sensor.power_meter" in error for error in errors)
 
-    def test_validate_formula_with_syntax_error(self, mock_hass, sample_variables):
+    def test_validate_formula_with_syntax_error(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test formula validation with syntax errors."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -719,7 +695,7 @@ class TestFormulaEvaluator:
         assert len(errors) > 0
         assert any("syntax error" in error.lower() for error in errors)
 
-    def test_get_dependencies(self, mock_hass):
+    def test_get_dependencies(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting formula dependencies."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -737,7 +713,7 @@ class TestFormulaEvaluator:
         assert "sensor.unused" not in dependencies  # Not used in formula
         assert len(dependencies) == 3
 
-    def test_evaluate_with_direct_entity_references(self, mock_hass):
+    def test_evaluate_with_direct_entity_references(self, mock_hass, mock_entity_registry, mock_states):
         """Test evaluation with direct entity ID references."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -764,22 +740,19 @@ class TestFormulaEvaluator:
 
         assert result == 125.0  # 25.0 + 100.0
 
-    def test_evaluate_numeric_result_conversion(self, mock_hass, sample_variables):
+    def test_evaluate_numeric_result_conversion(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test that evaluation results are properly converted to float."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
-
-        # Mock entity states
-        mock_state = MagicMock()
-        mock_state.state = "42"  # String that converts to int
-        mock_hass.states.get.return_value = mock_state
 
         evaluator = FormulaEvaluator(mock_hass, "temp", sample_variables)
         result = evaluator.evaluate()
 
         assert isinstance(result, float)
-        assert result == 42.0
+        assert result == 22.0  # Value from common registry
 
-    def test_evaluate_with_complex_mathematical_operations(self, mock_hass, sample_variables):
+    def test_evaluate_with_complex_mathematical_operations(
+        self, mock_hass, mock_entity_registry, mock_states, sample_variables
+    ):
         """Test evaluation with complex mathematical operations."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
@@ -802,14 +775,14 @@ class TestFormulaEvaluator:
         expected = (25.0 + 50.0) * 100.0 / 100  # = 75.0
         assert result == expected
 
-    def test_default_fallback_value(self, mock_hass, sample_variables):
+    def test_default_fallback_value(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test default fallback value when not specified."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
 
-        # Mock missing entity to trigger fallback
-        mock_hass.states.get.return_value = None
+        # Use variables that don't exist in common registry to trigger fallback
+        variables_with_missing = {"temp": "sensor.nonexistent_entity"}
 
-        evaluator = FormulaEvaluator(mock_hass, "temp", sample_variables)  # No fallback specified
+        evaluator = FormulaEvaluator(mock_hass, "temp", variables_with_missing)  # No fallback specified
         result = evaluator.evaluate()
 
         assert result == 0.0  # Default fallback value

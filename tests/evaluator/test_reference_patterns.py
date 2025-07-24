@@ -21,37 +21,12 @@ class TestReferencePatterns:
     """Test different ways to reference the main sensor in attribute formulas."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-
-        # Mock entity states for testing
-        def mock_states_get(entity_id):
-            state_values = {
-                "sensor.span_panel_instantaneous_power": MagicMock(state="1000"),
-                "input_number.electricity_rate_cents_kwh": MagicMock(state="25"),
-                "sensor.energy_cost_analysis": MagicMock(state="25.0"),  # 1000 * 25 / 1000 = 25
-                "input_number.efficiency_factor": MagicMock(state="95"),
-                "sensor.backup_power_system": MagicMock(state="100", attributes={"battery_level": 85}),
-                "sensor.base_power_analysis": MagicMock(state="500"),
-                "sensor.base_power_meter": MagicMock(state="750"),
-                "input_number.base_efficiency": MagicMock(state="90"),
-            }
-            state_obj = state_values.get(entity_id)
-            if state_obj:
-                state_obj.entity_id = entity_id  # Add entity_id attribute for proper error handling
-            return state_obj
-
-        hass.states.get.side_effect = mock_states_get
-        return hass
-
-    @pytest.fixture
-    def config_manager(self, mock_hass):
+    def config_manager(self, mock_hass, mock_entity_registry, mock_states):
         """Create a ConfigManager instance."""
         return ConfigManager(mock_hass)
 
     @pytest.fixture
-    def evaluator(self, mock_hass):
+    def evaluator(self, mock_hass, mock_entity_registry, mock_states):
         """Create an Evaluator instance."""
         return Evaluator(mock_hass)
 
@@ -62,7 +37,9 @@ class TestReferencePatterns:
         with open(fixture_path) as f:
             return yaml.safe_load(f)
 
-    def test_state_alias_reference(self, config_manager, evaluator, reference_patterns_yaml):
+    def test_state_alias_reference(
+        self, config_manager, evaluator, reference_patterns_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test referencing main sensor state using 'state' alias."""
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 
@@ -88,7 +65,9 @@ class TestReferencePatterns:
         assert result["success"] is True
         assert result["value"] == 600.0  # 25 * 24 = 600
 
-    def test_sensor_key_reference(self, config_manager, evaluator, reference_patterns_yaml):
+    def test_sensor_key_reference(
+        self, config_manager, evaluator, reference_patterns_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test referencing main sensor by sensor key."""
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 
@@ -96,9 +75,9 @@ class TestReferencePatterns:
         sensor_config = next(s for s in config.sensors if s.unique_id == "energy_cost_analysis")
         monthly_formula = next(f for f in sensor_config.formulas if f.id == "energy_cost_analysis_monthly_projected")
 
-        # Should have sensor key as variable pointing to entity_id
-        assert "energy_cost_analysis" in monthly_formula.variables
-        assert monthly_formula.variables["energy_cost_analysis"] == "sensor.energy_cost_analysis"
+        # Should NOT auto-inject sensor key references (removed for safety)
+        # The formula should use explicit entity ID or state token instead
+        assert "energy_cost_analysis" not in monthly_formula.variables
 
         # Test evaluation
         context = {
@@ -110,8 +89,15 @@ class TestReferencePatterns:
         assert result["success"] is True
         assert result["value"] == 18000.0  # 25 * 24 * 30 = 18000
 
-    def test_entity_id_reference(self, config_manager, evaluator, reference_patterns_yaml):
+    def test_entity_id_reference(
+        self, config_manager, evaluator, reference_patterns_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test referencing main sensor by full entity_id."""
+
+        # Mock the entity state that the formula needs
+        mock_state = MagicMock()
+        mock_state.state = "25.0"  # The value that the formula expects
+        evaluator._hass.states.get.return_value = mock_state
 
         # Set up data provider callback that uses hass.states.get
         def mock_data_provider(entity_id: str):
@@ -140,9 +126,11 @@ class TestReferencePatterns:
         result = evaluator.evaluate_formula_with_sensor_config(annual_formula, context, sensor_config)
 
         assert result["success"] is True
-        assert result["value"] == 219000.0  # 25 * 24 * 365 = 219000
+        assert result["value"] == 273750.0  # 31.25 * 24 * 365 = 273750 (from common registry)
 
-    def test_all_reference_patterns_in_single_sensor(self, config_manager, reference_patterns_yaml):
+    def test_all_reference_patterns_in_single_sensor(
+        self, config_manager, reference_patterns_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test that all three reference patterns can coexist in a single sensor."""
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 
@@ -159,18 +147,19 @@ class TestReferencePatterns:
             assert "base_power" in formula.variables
             assert "base_efficiency" in formula.variables
 
-        # Only formulas that reference the sensor key should have sensor key reference
+        # All formulas should NOT auto-inject sensor key references (removed for safety)
         # daily_formula uses 'state' - no sensor key reference
         assert "comprehensive_analysis" not in daily_formula.variables
 
-        # monthly_formula uses 'comprehensive_analysis' - should have sensor key reference
-        assert "comprehensive_analysis" in monthly_formula.variables
-        assert monthly_formula.variables["comprehensive_analysis"] == "sensor.comprehensive_analysis"
+        # monthly_formula uses 'comprehensive_analysis' - should NOT auto-inject sensor key reference
+        assert "comprehensive_analysis" not in monthly_formula.variables
 
         # annual_formula uses 'sensor.comprehensive_analysis' - no sensor key reference needed
         assert "comprehensive_analysis" not in annual_formula.variables
 
-    def test_entity_id_reference_in_main_formula(self, config_manager, evaluator, reference_patterns_yaml):
+    def test_entity_id_reference_in_main_formula(
+        self, config_manager, evaluator, reference_patterns_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test entity_id reference in main formula (not just attributes)."""
 
         # Set up data provider callback that uses hass.states.get
@@ -198,9 +187,11 @@ class TestReferencePatterns:
         context = None  # Let evaluator resolve from dependencies
         result = evaluator.evaluate_formula_with_sensor_config(formula_config, context, sensor_config)
         assert result["success"] is True
-        assert result["value"] == 1025.0  # 1000 + 25 = 1025
+        assert result["value"] == 1031.25  # 1000.0 + 31.25 = 1031.25 (from common registry)
 
-    def test_sensor_key_reference_in_main_formula(self, config_manager, evaluator, reference_patterns_yaml):
+    def test_sensor_key_reference_in_main_formula(
+        self, config_manager, evaluator, reference_patterns_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test sensor key reference in main formula."""
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 
@@ -218,7 +209,9 @@ class TestReferencePatterns:
         # This is correct behavior - no duplication needed
         assert len(formula_config.variables) == 2  # Only the two explicit variables
 
-    def test_entity_id_with_attribute_access(self, config_manager, reference_patterns_yaml):
+    def test_entity_id_with_attribute_access(
+        self, config_manager, reference_patterns_yaml, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test entity_id references combined with attribute access."""
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 

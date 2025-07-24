@@ -18,14 +18,7 @@ from ha_synthetic_sensors.evaluator import Evaluator
 class TestCacheContextValidation:
     """Validate cache behavior with variables and context."""
 
-    @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        return hass
-
-    def test_same_formula_different_variable_mappings(self, mock_hass):
+    def test_same_formula_different_variable_mappings(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache with same formula text but different variable->entity mappings."""
         evaluator = Evaluator(mock_hass)
 
@@ -57,7 +50,7 @@ class TestCacheContextValidation:
         assert result2["success"] is True
         assert result2["value"] == 400  # Should be 400 (300 + 100), NOT 300 from cache
 
-    def test_same_formula_same_variable_names_different_values(self, mock_hass):
+    def test_same_formula_same_variable_names_different_values(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache with same formula and variable names but different context values."""
         evaluator = Evaluator(mock_hass)
 
@@ -86,7 +79,7 @@ class TestCacheContextValidation:
         assert result2["success"] is True
         assert result2["value"] == 1275  # Should be 1275 (1500 * 0.85), not cached 900
 
-    def test_cache_key_includes_context_hash(self, mock_hass):
+    def test_cache_key_includes_context_hash(self, mock_hass, mock_entity_registry, mock_states):
         """Test that cache keys properly include context to avoid collisions."""
         evaluator = Evaluator(mock_hass)
 
@@ -115,7 +108,7 @@ class TestCacheContextValidation:
         assert results[2].get("cached", False) is False
         assert results[3].get("cached", False) is True  # Should be cached repeat of first
 
-    def test_no_context_vs_with_context_caching(self, mock_hass):
+    def test_no_context_vs_with_context_caching(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache behavior between formulas with and without context."""
         evaluator = Evaluator(mock_hass)
 
@@ -142,7 +135,7 @@ class TestCacheContextValidation:
         assert result3["value"] == 30
         # This should be cached if cache keys treat None and {} as equivalent
 
-    def test_formula_with_variables_vs_resolved_formula(self, mock_hass):
+    def test_formula_with_variables_vs_resolved_formula(self, mock_hass, mock_entity_registry, mock_states):
         """Test if cache distinguishes between formula with variables vs resolved formula."""
         evaluator = Evaluator(mock_hass)
 

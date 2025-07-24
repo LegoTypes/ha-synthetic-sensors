@@ -320,8 +320,10 @@ class SensorSet:
         """
         self._ensure_exists()
 
-        # Use handler to set global settings (includes validation)
+        # Get current sensors for validation
         current_sensors = self.list_sensors()
+
+        # Use handler to set global settings
         await self._global_settings.async_set_global_settings(global_settings, current_sensors)
 
         # Rebuild entity index to track new entity references
@@ -344,7 +346,10 @@ class SensorSet:
             updates: Dictionary of global setting updates to merge
         """
         self._ensure_exists()
+
+        # Get current sensors for validation
         current_sensors = self.list_sensors()
+
         await self._global_settings.async_update_global_settings(updates, current_sensors)
 
         # Rebuild entity index to track new entity references
@@ -451,15 +456,17 @@ class SensorSet:
         final_sensors = self._bulk_ops.build_final_sensor_list(modification, current_sensors)
         if modification.entity_id_changes:
             final_sensors = self._bulk_ops.apply_entity_id_changes_to_sensors(modification.entity_id_changes, final_sensors)
-        final_global_settings = self._global_settings.build_final_global_settings(modification.global_settings)
+        final_global_settings = (
+            modification.global_settings if modification.global_settings is not None else self.get_global_settings()
+        )
         self._entity_index_handler.rebuild_entity_index_for_modification(final_sensors, final_global_settings)
         _LOGGER.debug("Pre-updated entity index for storm protection in sensor set %s", self.sensor_set_id)
 
         # 3. Update global settings if specified (BEFORE entity ID changes to avoid conflicts)
         if modification.global_settings is not None:
-            # Cast to GlobalSettingsDict since it's compatible
+            # Cast to GlobalSettingsDict since it's compatible with the expected structure
             typed_global_settings: GlobalSettingsDict = modification.global_settings  # type: ignore[assignment]
-            await self._global_settings.update_global_settings_direct(typed_global_settings)
+            await self._global_settings.async_set_global_settings(typed_global_settings, list(current_sensors.values()))
             changes_summary["global_settings_updated"] = True
 
         # 4. Apply entity ID changes (but don't update HA registry yet - collect changes)
@@ -939,3 +946,7 @@ class SensorSet:
         """Rebuild the entity index from all sensors and global settings in this sensor set."""
         sensors = self.list_sensors()
         self._entity_index_handler.rebuild_entity_index(sensors)
+
+    async def async_rebuild_entity_index(self) -> None:
+        """Async wrapper for rebuilding the entity index."""
+        self.rebuild_entity_index()
