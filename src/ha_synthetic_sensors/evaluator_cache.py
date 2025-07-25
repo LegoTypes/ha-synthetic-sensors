@@ -158,3 +158,11 @@ class EvaluatorCache:
             return 0.0
 
         return (hits / total) * 100.0
+
+    def start_update_cycle(self) -> None:
+        """Start a new evaluation update cycle."""
+        self._cache.start_update_cycle()
+
+    def end_update_cycle(self) -> None:
+        """End current evaluation update cycle."""
+        self._cache.end_update_cycle()

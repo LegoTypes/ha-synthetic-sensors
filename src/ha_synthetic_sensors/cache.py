@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import logging
-from typing import TypedDict
+from typing import Any, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,9 +41,12 @@ class CacheStatistics(TypedDict):
 class CacheConfig:
     """Configuration for cache behavior."""
 
-    ttl_seconds: float = 30.0
+    # TTL is obsolete with cycle-scoped caching - update cycles define behavior
+    ttl_seconds: float = 30.0  # Kept for backward compatibility only
     max_entries: int = 1000
     enable_metrics: bool = True
+    # Cycle-scoped caching: cache disabled during updates, enabled for external consumers
+    use_cycle_scoped_cache: bool = True
 
 
 class FormulaCache:
@@ -64,6 +67,24 @@ class FormulaCache:
         self._misses = 0
         self._evictions = 0
 
+        # Cycle-scoped cache state
+        self._current_cycle_id = 0
+        self._cycle_cache: dict[str, Any] = {}
+        self._in_update_cycle = False
+
+    def start_update_cycle(self) -> None:
+        """Start a new update cycle, disabling cache for fresh evaluation."""
+        if self._config.use_cycle_scoped_cache:
+            self._current_cycle_id += 1
+            self._in_update_cycle = True
+            # Don't clear cache yet - may still be serving external requests
+
+    def end_update_cycle(self) -> None:
+        """End current update cycle, enable cache for external consumers."""
+        if self._config.use_cycle_scoped_cache:
+            self._in_update_cycle = False
+            # Now populate cache with fresh results for external use
+
     def get_result(
         self,
         formula: str,
@@ -82,6 +103,11 @@ class FormulaCache:
         Returns:
             Cached result if found and valid, None otherwise
         """
+        # During update cycles, bypass cache to ensure fresh evaluation
+        if self._config.use_cycle_scoped_cache and self._in_update_cycle:
+            self._misses += 1
+            return None
+
         cache_key = self._generate_cache_key(formula, context, formula_id, variables)
 
         if cache_key not in self._cache:
@@ -90,8 +116,8 @@ class FormulaCache:
 
         entry = self._cache[cache_key]
 
-        # Check if entry is expired
-        if self._is_entry_expired(entry):
+        # TTL expiration only applies when cycle-scoped caching is disabled
+        if not self._config.use_cycle_scoped_cache and self._is_entry_expired(entry):
             del self._cache[cache_key]
             self._misses += 1
             return None

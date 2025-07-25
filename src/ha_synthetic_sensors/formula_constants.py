@@ -13,6 +13,10 @@ from .ha_constants import HAConstantLoader
 # Create a module-level function to get constants lazily
 def __getattr__(name: str) -> Any:
     """Lazy loading of HA constants when accessed."""
+    # Validate input - empty strings are not valid attribute names
+    if not name:
+        raise AttributeError(f"Module '{__name__}' has no attribute '{name}'")
+
     try:
         return HAConstantLoader.get_constant(name)
     except ValueError as e:

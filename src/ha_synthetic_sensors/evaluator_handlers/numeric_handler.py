@@ -1,10 +1,9 @@
 """Numeric formula handler for processing mathematical formulas."""
 
 import logging
+from typing import Any
 
-from simpleeval import SimpleEval
-
-from ..math_functions import MathFunctions
+from ..formula_compilation_cache import FormulaCompilationCache
 from ..type_definitions import ContextValue
 from .base_handler import FormulaHandler
 
@@ -15,8 +14,8 @@ class NumericHandler(FormulaHandler):
     """Handler for numeric formulas in the compiler-like evaluation system."""
 
     def __init__(self) -> None:
-        """Initialize the numeric handler with math functions."""
-        self._math_functions = MathFunctions.get_builtin_functions()
+        """Initialize the numeric handler with formula compilation cache."""
+        self._compilation_cache = FormulaCompilationCache()
 
     def can_handle(self, formula: str) -> bool:
         """
@@ -31,11 +30,14 @@ class NumericHandler(FormulaHandler):
 
     def evaluate(self, formula: str, context: dict[str, ContextValue] | None = None) -> float:
         """
-        NUMERIC FORMULA HANDLER: Process mathematical formulas using SimpleEval.
+        NUMERIC FORMULA HANDLER: Process mathematical formulas using cached compiled expressions.
 
-        This method handles all numeric computations using the SimpleEval library,
-        which provides safe mathematical expression evaluation without the security
-        risks of Python's built-in eval().
+        This method uses a two-tier caching approach:
+        1. Formula Compilation Cache: Caches compiled SimpleEval instances to avoid re-parsing
+        2. Result Cache: Caches evaluation results (handled by evaluator layer)
+
+        This provides significant performance improvement by avoiding formula re-parsing
+        on every evaluation, while maintaining safety through SimpleEval.
 
         Supports:
         - Basic arithmetic: +, -, *, /, **, %
@@ -43,15 +45,13 @@ class NumericHandler(FormulaHandler):
         - Logical operations: and, or, not
         - Comparison operators: <, >, <=, >=, ==, !=
         - Conditional expressions: value if condition else alternative
-
-        This separation allows for clear distinction between numeric and string processing,
-        making the codebase more maintainable and extensible.
         """
         try:
-            evaluator = SimpleEval(functions=self._math_functions)
-            evaluator.names = context or {}
+            # Get compiled formula from cache (or compile if not cached)
+            compiled_formula = self._compilation_cache.get_compiled_formula(formula)
 
-            result = evaluator.eval(formula)
+            # Evaluate using the pre-compiled formula
+            result = compiled_formula.evaluate(context or {})
 
             # Validate numeric result
             if not isinstance(result, (int, float)):
@@ -61,3 +61,18 @@ class NumericHandler(FormulaHandler):
         except Exception as e:
             _LOGGER.warning("Numeric formula evaluation failed for '%s': %s", formula, e)
             raise
+
+    def clear_compiled_formulas(self) -> None:
+        """Clear all compiled formulas from cache.
+
+        This should be called when formulas change or during configuration reload.
+        """
+        self._compilation_cache.clear()
+
+    def get_compilation_cache_stats(self) -> dict[str, Any]:
+        """Get formula compilation cache statistics.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        return self._compilation_cache.get_statistics()

@@ -403,6 +403,40 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
         if state_str in FALSE_STATES:
             return 0.0
 
+        # Device-specific boolean states based on device class
+        device_class = state.attributes.get("device_class")
+        if device_class:
+            device_class = device_class.lower()
+
+            # Device-specific true states
+            device_true_states = {
+                "moisture": {"moist", "wet"},
+                "door": {"open"},
+                "window": {"open"},
+                "motion": {"motion", "detected"},
+                "presence": {"home", "detected"},
+                "lock": {"locked"},
+                "battery": {"low"},
+                "problem": {"problem"},
+            }
+
+            # Device-specific false states
+            device_false_states = {
+                "moisture": {"not_moist", "dry"},
+                "door": {"closed"},
+                "window": {"closed"},
+                "motion": {"clear", "no_motion"},
+                "presence": {"away", "not_home"},
+                "lock": {"unlocked"},
+                "battery": {"normal"},
+                "problem": {"ok", "normal"},
+            }
+
+            if device_class in device_true_states and state_str in device_true_states[device_class]:
+                return 1.0
+            if device_class in device_false_states and state_str in device_false_states[device_class]:
+                return 0.0
+
         return None  # Cannot convert
 
 

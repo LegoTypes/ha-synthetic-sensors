@@ -44,6 +44,7 @@ class StateResolver(VariableResolver):
         3. For attribute formulas: resolve to main sensor calculated value (from context)
         4. Validate backing entity mapping exists when expected
         """
+
         if not isinstance(variable_value, str) or variable_value != "state":
             return None
 

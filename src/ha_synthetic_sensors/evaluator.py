@@ -10,7 +10,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .cache import CacheConfig, FormulaCache
+from .cache import CacheConfig
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
 from .constants_formula import is_reserved_word
@@ -108,7 +108,6 @@ class Evaluator(FormulaEvaluator):
         self._hass = hass
 
         # Initialize components
-        self._cache = FormulaCache(cache_config)
         self._dependency_parser = DependencyParser(hass)
         self._collection_resolver = CollectionResolver(hass)
 
@@ -662,12 +661,49 @@ class Evaluator(FormulaEvaluator):
         """Clear cache for specific formula or all formulas."""
         self._cache_handler.clear_cache(formula_name)
 
+    def start_update_cycle(self) -> None:
+        """Start a new evaluation update cycle."""
+        self._cache_handler.start_update_cycle()
+
+    def end_update_cycle(self) -> None:
+        """End current evaluation update cycle."""
+        self._cache_handler.end_update_cycle()
+
     def get_cache_stats(self) -> CacheStats:
         """Get cache statistics."""
         cache_stats = self._cache_handler.get_cache_stats()
         # Add error counts from the error handler
         cache_stats["error_counts"] = self._error_handler.get_error_counts()
         return cache_stats
+
+    def clear_compiled_formulas(self) -> None:
+        """Clear all compiled formulas from the formula compilation cache.
+
+        This should be called when formulas change or during configuration reload
+        to ensure that formula modifications take effect.
+        """
+        # Clear compiled formulas in numeric handler
+        numeric_handler = self._handler_factory.get_handler("numeric")
+        if numeric_handler is not None and hasattr(numeric_handler, "clear_compiled_formulas"):
+            numeric_handler.clear_compiled_formulas()
+
+    def get_compilation_cache_stats(self) -> dict[str, Any]:
+        """Get formula compilation cache statistics.
+
+        Returns:
+            Dictionary with compilation cache statistics
+        """
+        numeric_handler = self._handler_factory.get_handler("numeric")
+        if numeric_handler is not None and hasattr(numeric_handler, "get_compilation_cache_stats"):
+            result: dict[str, Any] = numeric_handler.get_compilation_cache_stats()
+            return result
+        return {
+            "total_entries": 0,
+            "hits": 0,
+            "misses": 0,
+            "hit_rate": 0.0,
+            "max_entries": 0,
+        }
 
     # Configuration methods
     def get_circuit_breaker_config(self) -> CircuitBreakerConfig:

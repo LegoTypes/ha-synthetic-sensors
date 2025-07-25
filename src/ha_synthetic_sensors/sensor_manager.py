@@ -403,6 +403,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
     async def _async_update_sensor(self) -> None:
         """Update the sensor value and calculated attributes by evaluating formulas."""
+
         try:
             # Build variable context for the main formula
             main_context = self._build_variable_context(self._main_formula)
@@ -423,6 +424,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 )
 
             # Evaluate the main formula with variable context and sensor configuration
+
             main_result = self._evaluator.evaluate_formula_with_sensor_config(self._main_formula, main_context, self._config)
 
             # Handle the main result
@@ -1116,38 +1118,49 @@ class SensorManager:
 
     async def async_update_sensors(self, sensor_configs: list[SensorConfig] | None = None) -> None:
         """Enhanced evaluation loop with cross-sensor dependency management."""
-        if sensor_configs is None:
-            # Update all managed sensors with cross-sensor evaluation order
-            evaluation_order = self._get_cross_sensor_evaluation_order()
-            for sensor_name in evaluation_order:
-                if sensor_name in self._sensors_by_unique_id:
-                    try:
-                        sensor = self._sensors_by_unique_id[sensor_name]
-                        await sensor.async_update_sensor()
+        # Start new update cycle - clears cache for fresh data
+        self._evaluator.start_update_cycle()
 
-                        # Update cross-sensor registry immediately after evaluation
-                        if self._evaluator and hasattr(sensor, "native_value"):
-                            self._evaluator.update_sensor_value(sensor_name, sensor.native_value)
+        try:
+            if sensor_configs is None:
+                # Update all managed sensors with cross-sensor evaluation order
+                evaluation_order = self._get_cross_sensor_evaluation_order()
+                await self._update_sensors_in_order(evaluation_order)
+            else:
+                # Update specific sensors with cross-sensor evaluation order
+                evaluation_order = self._get_cross_sensor_evaluation_order_for_sensors(sensor_configs)
+                await self._update_sensors_in_order(evaluation_order)
+                self._logger.debug("Completed enhanced async sensor updates")
+        finally:
+            # End update cycle - ensures cache is cleared for next update
+            self._evaluator.end_update_cycle()
 
-                    except Exception as e:
-                        self._handle_cross_sensor_error(sensor_name, e)
-        else:
-            # Update specific sensors with cross-sensor evaluation order
-            evaluation_order = self._get_cross_sensor_evaluation_order_for_sensors(sensor_configs)
-            for sensor_name in evaluation_order:
-                if sensor_name in self._sensors_by_unique_id:
-                    try:
-                        sensor = self._sensors_by_unique_id[sensor_name]
-                        await sensor.async_update_sensor()
+    async def _update_sensors_in_order(self, evaluation_order: list[str]) -> None:
+        """Update sensors in the specified evaluation order.
 
-                        # Update cross-sensor registry immediately after evaluation
-                        if self._evaluator and hasattr(sensor, "native_value"):
-                            self._evaluator.update_sensor_value(sensor_name, sensor.native_value)
+        Args:
+            evaluation_order: List of sensor names in evaluation order
+        """
+        for sensor_name in evaluation_order:
+            if sensor_name not in self._sensors_by_unique_id:
+                continue
 
-                    except Exception as e:
-                        self._handle_cross_sensor_error(sensor_name, e)
+            try:
+                sensor = self._sensors_by_unique_id[sensor_name]
+                await sensor.async_update_sensor()
+                self._update_cross_sensor_registry(sensor_name, sensor)
+            except Exception as e:
+                self._handle_cross_sensor_error(sensor_name, e)
 
-        self._logger.debug("Completed enhanced async sensor updates")
+    def _update_cross_sensor_registry(self, sensor_name: str, sensor: DynamicSensor) -> None:
+        """Update cross-sensor registry with sensor value.
+
+        Args:
+            sensor_name: Name of the sensor
+            sensor: The sensor instance
+        """
+        if self._evaluator and hasattr(sensor, "native_value"):
+            self._evaluator.update_sensor_value(sensor_name, sensor.native_value)
 
     def _get_cross_sensor_evaluation_order(self) -> list[str]:
         """Get evaluation order for all sensors considering cross-sensor dependencies.
@@ -1508,6 +1521,7 @@ class SensorManager:
         backing_entities = set()
 
         for formula in sensor_config.formulas:
+            # Check explicit variables for backing entity references
             if formula.variables:
                 for _var_name, var_value in formula.variables.items():
                     # Check if this looks like an entity ID that would use integration data provider
@@ -1518,6 +1532,18 @@ class SensorManager:
                     ):
                         backing_entities.add(var_value)
                         _LOGGER.debug("Found backing entity %s for sensor %s", var_value, sensor_config.unique_id)
+
+            # Check for 'state' token that gets resolved to backing entities
+            if (
+                "state" in formula.formula
+                and self._sensor_to_backing_mapping
+                and sensor_config.unique_id in self._sensor_to_backing_mapping
+            ):
+                backing_entity_id = self._sensor_to_backing_mapping[sensor_config.unique_id]
+                backing_entities.add(backing_entity_id)
+                _LOGGER.debug(
+                    "Found backing entity %s for sensor %s via state token", backing_entity_id, sensor_config.unique_id
+                )
 
         return backing_entities
 
