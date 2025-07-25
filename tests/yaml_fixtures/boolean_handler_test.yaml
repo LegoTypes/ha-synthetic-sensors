@@ -1,0 +1,125 @@
+version: '1.0'
+# Test YAML for boolean_handler module - testing boolean state conversion functionality
+# This YAML contains sensors that reference external binary sensor entities to test boolean state conversion
+# Tests different HA boolean state formats through external entity references
+
+sensors:
+  # Basic boolean state tests - testing individual binary sensor references
+  motion_test:
+    name: Motion Test
+    formula: motion_sensor
+    variables:
+      motion_sensor: binary_sensor.living_room_motion
+    metadata:
+      unit_of_measurement: boolean
+      device_class: motion
+      state_class: measurement
+
+  door_test:
+    name: Door Test
+    formula: door_sensor
+    variables:
+      door_sensor: binary_sensor.front_door
+    metadata:
+      unit_of_measurement: boolean
+      device_class: door
+      state_class: measurement
+
+  lock_test:
+    name: Lock Test
+    formula: lock_sensor
+    variables:
+      lock_sensor: binary_sensor.front_door_lock
+    metadata:
+      unit_of_measurement: boolean
+      device_class: lock
+      state_class: measurement
+
+  presence_test:
+    name: Presence Test
+    formula: presence_sensor
+    variables:
+      presence_sensor: binary_sensor.home_presence
+    metadata:
+      unit_of_measurement: boolean
+      device_class: presence
+      state_class: measurement
+
+  moisture_test:
+    name: Moisture Test
+    formula: moisture_sensor
+    variables:
+      moisture_sensor: binary_sensor.basement_moisture
+    metadata:
+      unit_of_measurement: "%"
+      device_class: moisture
+      state_class: measurement
+
+  # Boolean operation tests - testing boolean logic with multiple sensors
+  basic_boolean_addition:
+    name: Basic Boolean Addition
+    formula: "binary_sensor.living_room_motion + binary_sensor.front_door"
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
+
+  boolean_multiplication:
+    name: Boolean Multiplication Test
+    formula: "binary_sensor.living_room_motion * 10 + binary_sensor.front_door_lock * 5"
+    metadata:
+      unit_of_measurement: points
+      state_class: measurement
+
+  presence_logic:
+    name: Presence Logic Test
+    formula: "binary_sensor.home_presence * 100"
+    metadata:
+      unit_of_measurement: status
+      state_class: measurement
+
+  # Boolean comparison tests
+  motion_comparison:
+    name: Motion Comparison
+    formula: "binary_sensor.living_room_motion == 1"
+    metadata:
+      unit_of_measurement: boolean
+      device_class: motion
+      state_class: measurement
+
+  door_lock_and:
+    name: Door Lock AND Test
+    formula: "binary_sensor.front_door and binary_sensor.front_door_lock"
+    metadata:
+      unit_of_measurement: boolean
+      state_class: measurement
+
+  presence_or:
+    name: Presence OR Test
+    formula: "binary_sensor.home_presence or binary_sensor.basement_moisture"
+    metadata:
+      unit_of_measurement: boolean
+      state_class: measurement
+
+  # Complex boolean expressions
+  security_check:
+    name: Security Check
+    formula: "not (binary_sensor.front_door) and binary_sensor.front_door_lock"
+    metadata:
+      unit_of_measurement: boolean
+      device_class: lock
+      state_class: measurement
+
+  activity_score:
+    name: Activity Score
+    formula: "(binary_sensor.living_room_motion * 2) + (binary_sensor.home_presence * 3)"
+    metadata:
+      unit_of_measurement: points
+      state_class: measurement
+
+  # Boolean state counting tests
+  active_sensors_count:
+    name: Active Sensors Count
+    formula: "binary_sensor.living_room_motion + binary_sensor.front_door + binary_sensor.home_presence"
+    metadata:
+      unit_of_measurement: sensors
+      state_class: measurement

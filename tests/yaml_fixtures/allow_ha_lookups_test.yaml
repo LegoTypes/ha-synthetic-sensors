@@ -1,0 +1,35 @@
+version: "1.0"
+
+sensors:
+  virtual_sensor:
+    name: "Virtual Sensor"
+    entity_id: sensor.virtual_test
+    formula: "state"
+    # The 'state' special token automatically references the backing entity
+    # No variables needed - the backing entity is registered by the integration
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  ha_sensor:
+    name: "HA Sensor"
+    entity_id: sensor.ha_test
+    formula: "state"
+    # The 'state' special token automatically references the backing entity
+    # No variables needed - the backing entity is registered by the integration
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  mixed_sensor:
+    name: "Mixed Sensor"
+    entity_id: sensor.mixed_test
+    formula: "state"
+    # The 'state' special token automatically references the backing entity
+    # No variables needed - the backing entity is registered by the integration
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

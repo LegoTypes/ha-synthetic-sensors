@@ -1,0 +1,22 @@
+version: '1.0'
+# Test YAML for utils module - testing denormalize_entity_id functionality
+# This YAML contains sensors that reference each other to test entity ID resolution
+sensors:
+  # Base sensor that provides the power meter value
+  power_meter:
+    name: Power Meter
+    formula: "1000"  # Literal value for testing
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  # Test sensor that references the power_meter sensor
+  # This tests the denormalize_entity_id functionality when processing entity references
+  test_denormalize_sensor:
+    name: Test Denormalize Sensor
+    formula: sensor.power_meter * 2  # References the power_meter sensor above
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

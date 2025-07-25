@@ -112,6 +112,15 @@ class MockHomeAssistant:
         self.data = {}  # Add data attribute for Store support
         self.bus = Mock()  # Add bus attribute for event handling
 
+        # Add missing attributes that tests expect
+        self.hass = self  # Self-reference for compatibility
+        self.loop_thread_id = None  # Required by some HA components
+
+        # Add frame helper and other HA core attributes
+        self.helpers = Mock()
+        self.helpers.frame = Mock()
+        self.helpers.frame._get_integration_logger = Mock(return_value=Mock())
+
         # Mock entity registry - will be set properly by the mock_hass fixture
         self.entity_registry = Mock()
 
@@ -131,6 +140,22 @@ class MockHomeAssistant:
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, func, *args)
+
+    async def async_block_till_done(self):
+        """Mock async_block_till_done method."""
+        # Just wait a minimal amount to simulate blocking
+        import asyncio
+
+        await asyncio.sleep(0.001)
+
+    def get_sensor_set_metadata(self, sensor_set_id: str):
+        """Mock get_sensor_set_metadata method for SensorSet compatibility."""
+        return {
+            "name": f"Test Sensor Set {sensor_set_id}",
+            "device_identifier": "test_device",
+            "created_at": "2024-01-01T00:00:00Z",
+            "modified_at": "2024-01-01T00:00:00Z",
+        }
 
 
 class MockConfigEntryError(Exception):
@@ -197,6 +222,14 @@ class HomeAssistantMockFinder:
             if fullname == "homeassistant.components.sensor":
                 # Create a mock module with real enums but mock SensorEntity
                 mock_module = MagicMock()
+
+                # Prevent pytest plugin interference
+                def mock_getattr_sensor(name):
+                    if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
+                        raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
+                    return MagicMock()
+
+                mock_module.__getattr__ = mock_getattr_sensor
                 mock_module.SensorDeviceClass = REAL_SENSOR_DEVICE_CLASS
                 mock_module.SensorStateClass = REAL_SENSOR_STATE_CLASS
                 mock_module.SensorEntity = MockSensorEntity
@@ -215,6 +248,14 @@ class HomeAssistantMockFinder:
             if fullname == "homeassistant.components.binary_sensor":
                 # Create a mock module with real enums
                 mock_module = MagicMock()
+
+                # Prevent pytest plugin interference
+                def mock_getattr_binary(name):
+                    if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
+                        raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
+                    return MagicMock()
+
+                mock_module.__getattr__ = mock_getattr_binary
                 mock_module.BinarySensorDeviceClass = REAL_BINARY_SENSOR_DEVICE_CLASS
 
                 # Install the mock in sys.modules
@@ -243,6 +284,14 @@ class HomeAssistantMockFinder:
 
             # Create a comprehensive mock for any HA module
             mock_module = MagicMock()
+
+            # Prevent pytest plugin interference by configuring mock to raise AttributeError for pytest-related attributes
+            def mock_getattr(name):
+                if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
+                    raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
+                return MagicMock()
+
+            mock_module.__getattr__ = mock_getattr
 
             # Add specific mocks for known classes/functions
             if fullname == "homeassistant.core":
@@ -1071,6 +1120,76 @@ def sample_sensor_configs() -> dict[str, dict[str, Any]]:
 
 
 @pytest.fixture
+def mock_config_manager(mock_hass):
+    """Create a mock config manager for service layer testing."""
+    from unittest.mock import MagicMock, AsyncMock
+
+    config_manager = MagicMock()
+    config_manager.async_load_config = AsyncMock()
+    config_manager.async_save_config = AsyncMock()
+    config_manager.async_reload_config = AsyncMock()
+    config_manager.validate_configuration = MagicMock(return_value=[])
+    config_manager.get_variables = MagicMock(return_value={})
+    config_manager.get_sensors = MagicMock(return_value=[])
+    config_manager.get_sensor_by_name = MagicMock(return_value=None)
+    config_manager.add_sensor = MagicMock()
+    config_manager.update_sensor = MagicMock()
+    config_manager.add_variable = MagicMock()
+    config_manager.remove_variable = MagicMock()
+    return config_manager
+
+
+@pytest.fixture
+def mock_sensor_manager(mock_hass):
+    """Create a mock sensor manager for service layer testing."""
+    from unittest.mock import MagicMock, AsyncMock
+
+    sensor_manager = MagicMock()
+    sensor_manager.async_update_sensors = AsyncMock()
+    sensor_manager.add_sensor = AsyncMock()
+    sensor_manager.update_sensor = AsyncMock()
+    sensor_manager.get_sensor_by_entity_id = MagicMock(return_value=None)
+    sensor_manager.get_all_sensor_entities = MagicMock(return_value=[])
+    return sensor_manager
+
+
+@pytest.fixture
+def mock_name_resolver():
+    """Create a mock name resolver for service layer testing."""
+    from unittest.mock import MagicMock
+
+    name_resolver = MagicMock()
+    name_resolver.clear_mappings = MagicMock()
+    name_resolver.add_entity_mapping = MagicMock()
+    return name_resolver
+
+
+@pytest.fixture
+def mock_evaluator():
+    """Create a mock evaluator for service layer testing."""
+    from unittest.mock import MagicMock
+
+    evaluator = MagicMock()
+    evaluator.clear_cache = MagicMock()
+    evaluator.evaluate_formula = MagicMock(return_value={"success": True, "value": 42.0})
+    return evaluator
+
+
+@pytest.fixture
+def service_layer(mock_hass, mock_config_manager, mock_sensor_manager, mock_name_resolver, mock_evaluator):
+    """Create a service layer instance with mocked dependencies."""
+    from ha_synthetic_sensors.service_layer import ServiceLayer
+
+    return ServiceLayer(
+        mock_hass,
+        mock_config_manager,
+        mock_sensor_manager,
+        mock_name_resolver,
+        mock_evaluator,
+    )
+
+
+@pytest.fixture
 def apply_entity_mappings(request, mock_entity_registry):
     """Apply entity mappings for the current test if available."""
     test_name = request.node.name
@@ -1108,3 +1227,7 @@ def apply_entity_mappings(request, mock_entity_registry):
     yield
 
     # Cleanup could be added here if needed
+
+
+# Note: hybrid_test fixtures removed due to missing hybrid_test_base module
+# Tests should use manual setup with mock_hass, mock_entity_registry, and other fixtures

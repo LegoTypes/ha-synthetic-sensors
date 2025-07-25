@@ -1,36 +1,25 @@
-version: '1.0'
+version: "1.0"
+
 sensors:
-  test_entity_lifecycle:
-    name: Entity Lifecycle Test
-    description: Test sensor for entity lifecycle management
-    formula: temp + humidity
-    variables:
-      temp: sensor.temperature
-      humidity: sensor.humidity
-    enabled: true
+  # Sensor using virtual backing entity (state token)
+  state_preservation_sensor:
+    name: "State Preservation Sensor"
+    entity_id: "sensor.state_preservation_sensor"
+    formula: state * 1.25  # Uses virtual backing entity through 'state' token
     metadata:
-      unit_of_measurement: index
-      state_class: measurement
-  test_dynamic_creation:
-    name: Dynamic Creation Test
-    description: Test sensor for dynamic entity creation
-    formula: power * status
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  # Sensor using mock HA entity (through variables)
+  mock_ha_sensor:
+    name: "Mock HA Sensor"
+    entity_id: "sensor.mock_ha_sensor"
+    formula: base_value + offset
     variables:
-      power: sensor.power_meter
-      status: sensor.status_indicator
-    enabled: true
+      base_value: "sensor.base_reading"  # References mock HA entity
+      offset: 10
     metadata:
-      unit_of_measurement: W
-      device_class: power
-      state_class: measurement
-  test_configuration_reload:
-    name: Configuration Reload Test
-    description: Test sensor for configuration reload functionality
-    formula: load + efficiency
-    variables:
-      load: sensor.system_load
-      efficiency: sensor.efficiency_rating
-    enabled: true
-    metadata:
-      unit_of_measurement: '%'
-      state_class: measurement
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+      state_class: "measurement"

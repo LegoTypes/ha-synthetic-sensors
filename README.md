@@ -70,7 +70,7 @@ The package provides a public API:
 - **FormulaConfig/SensorConfig** - Configuration classes for sensors and formulas
 - **DataProviderResult** - Type definition for data provider callbacks
 
-## YAML Configuration Examples
+## YAML Configuration Introduction
 
 **Required YAML Structure:** All YAML configuration files must start with a version declaration.
 
@@ -167,6 +167,28 @@ sensors:
       icon: "mdi:currency-usd"
       attribution: "Calculated from SPAN Panel data"
 ```
+
+## Variables and Configuration
+
+Variables serve as aliases for entity IDs, collection patterns, or numeric literals, making formulas more readable and
+maintainable.
+
+### Variable Purpose and Scope
+
+A variable serves as a short alias for an entity ID, collection pattern, or numeric literal that it references.
+
+Variables can be:
+
+- **Entity IDs**: `"sensor.power_meter"` - References Home Assistant entities
+- **Numeric Literals**: `42`, `3.14`, `-5.0` - Direct numeric values for constants
+- **Collection Patterns**: `"device_class:temperature"` - Dynamic entity aggregation
+
+**Variable Scope**: Variables can be defined at both the sensor level and attribute level:
+
+- **Sensor-level variables**: Defined in the main sensor's `variables` section and available to all formulas
+- **Attribute-level variables**: Defined in an attribute's `variables` section and available only to that attribute
+- **Variable inheritance**: Attributes inherit all sensor-level variables and can add their own
+- **Variable precedence**: Attribute-level variables with the same name override sensor-level variables for that attribute
 
 ### Literal Attribute Values
 
@@ -608,22 +630,6 @@ sensors:
         metadata:
           unit_of_measurement: "¢"
           suggested_display_precision: 2
-      low_battery_count:
-        formula: "count(battery_devices.battery_level<20)" # Uses attribute-level variable
-        variables:
-          battery_devices: "device_class:battery" # Attribute-specific variable
-        metadata:
-          unit_of_measurement: "devices"
-          icon: "mdi:battery-alert"
-      temperature_difference:
-        formula: "outdoor_temp - indoor_temp" # Uses only attribute-level variables
-        variables:
-          outdoor_temp: "sensor.outdoor_temperature"
-          indoor_temp: "sensor.indoor_temperature"
-        metadata:
-          unit_of_measurement: "°C"
-          device_class: "temperature"
-          suggested_display_precision: 1
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -861,62 +867,109 @@ sensors:
 For detailed formula examples and programming patterns, see the
 [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
 
-## Variables and Configuration
+## Python Operators in Formulas
 
-Numeric literals can be used directly in variable definitions for constants, conversion factors, and thresholds. Literals can
-also be used as attribute values without requiring formulas. Literals can also be used as attribute values without requiring
-formulas.
+The formula engine supports Python logical operators, conditionals, and membership testing for sophisticated sensor
+calculations. For comprehensive examples and advanced patterns, see
+[Formula Operators Guide](docs/formulas_with_operators.md).
+
+### Conditional Expressions (Ternary Operator)
+
+Use Python's conditional syntax for dynamic calculations based on conditions:
 
 ```yaml
 sensors:
-  temperature_converter:
-    name: "Temperature Converter"
-    formula: "(temp_f - freezing_f) * conversion_factor / celsius_factor"
+  # Power direction detection (1=importing, -1=exporting, 0=balanced)
+  power_flow:
+    name: "Power Flow Direction"
+    formula: "1 if grid_power > 100 else -1 if grid_power < -100 else 0"
     variables:
-      temp_f: "sensor.outdoor_temperature_f"
-      freezing_f: 32 # Literal: Fahrenheit freezing point
-      conversion_factor: 5 # Literal: F to C numerator
-      celsius_factor: 9 # Literal: F to C denominator
+      grid_power: "sensor.grid_power"
     metadata:
-      unit_of_measurement: "°C"
-      device_class: "temperature"
-      suggested_display_precision: 1
+      unit_of_measurement: "direction"
+      icon: "mdi:transmission-tower"
 
-  power_efficiency:
-    name: "Power Efficiency"
-    formula: "actual_power / rated_power * percentage"
+  # Dynamic energy pricing
+  current_rate:
+    name: "Current Energy Rate"
+    formula: "peak_rate if is_peak_hour else off_peak_rate"
     variables:
-      actual_power: "sensor.current_power"
-      rated_power: 1000 # Literal: rated power in watts
-      percentage: 100 # Literal: convert to percentage
+      peak_rate: "input_number.peak_electricity_rate"
+      off_peak_rate: "input_number.off_peak_electricity_rate"
+      is_peak_hour: "binary_sensor.peak_hours"
     metadata:
-      unit_of_measurement: "%"
-      suggested_display_precision: 1
-
-  cost_calculator:
-    name: "Energy Cost"
-    formula: "energy_kwh * rate_per_kwh * (1 + tax_rate)"
-    variables:
-      energy_kwh: "sensor.energy_usage"
-      rate_per_kwh: 0.12 # Literal: cost per kWh
-      tax_rate: 0.085 # Literal: tax percentage
-    metadata:
-      unit_of_measurement: "$"
+      unit_of_measurement: "¢/kWh"
       device_class: "monetary"
-      suggested_display_precision: 2
 ```
 
-**Supported literal types:**
+### Logical Operators with Power Systems
 
-- **Integers**: `42`, `-10`, `0`
-- **Floats**: `3.14159`, `-2.5`, `0.001`
-- **Scientific notation**: `1.23e-4`, `2.5e6`
-- **Strings**: `"test_string"`, `"Hello World"`, `""` (empty string)
-- **Booleans**: `True`, `False`
+Combine conditions using `and`, `or`, and `not` for energy management:
+
+```yaml
+sensors:
+  # Optimal battery charging conditions
+  should_charge_battery:
+    name: "Battery Charging Recommended"
+    formula: "solar_available and battery_low and not peak_hours"
+    variables:
+      solar_available: "binary_sensor.solar_producing"
+      battery_low: "binary_sensor.battery_below_threshold"
+      peak_hours: "binary_sensor.peak_electricity_hours"
+    metadata:
+      device_class: "power"
+
+  # Load balancing decision
+  high_demand_alert:
+    name: "High Demand Alert"
+    formula: "total_load > 8000 or (battery_low and grid_expensive)"
+    variables:
+      total_load: "sensor.total_house_load"
+      battery_low: "binary_sensor.battery_needs_charging"
+      grid_expensive: "binary_sensor.high_electricity_rates"
+    metadata:
+      icon: "mdi:alert"
+```
+
+### Membership Testing with 'in' Operator
+
+Test values against lists or ranges for energy monitoring:
+
+```yaml
+sensors:
+  # Check if current power is in normal operating range (1=normal, 0=abnormal)
+  power_status:
+    name: "Power Status"
+    formula: "1 if current_power in normal_range else 0"
+    variables:
+      current_power: "sensor.main_panel_power"
+      normal_range: [1000, 1500, 2000, 2500, 3000] # Acceptable power levels
+    metadata:
+      unit_of_measurement: "binary"
+      icon: "mdi:gauge"
+
+  # Voltage quality assessment (1=good, 0=poor)
+  voltage_quality:
+    name: "Voltage Quality"
+    formula: "1 if voltage in [230, 240, 250] else 0"
+    variables:
+      voltage: "sensor.main_voltage"
+    metadata:
+      unit_of_measurement: "binary"
+      icon: "mdi:sine-wave"
+```
+
+**Key Python Operators Available:**
+
+- **Conditional**: `value_if_true if condition else value_if_false`
+- **Logical**: `and`, `or`, `not`
+- **Comparison**: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- **Membership**: `in`, `not in`
+- **Boolean values**: `True`, `False`
 
 **Boolean State Conversion:**
 
-Home Assistant's typical boolean states are automatically converted to numeric values for use in formulas:
+Home Assistant's boolean states are automatically converted to numeric values for use in formulas:
 
 ```yaml
 sensors:
@@ -932,23 +985,10 @@ sensors:
       icon: "mdi:chart-line"
 ```
 
-**Supported boolean states (→ 1.0):**
+**Boolean State Types:**
 
-- Basic: `on`, `true`, `yes`, `1`
-- Sensors: `open`, `opened`, `motion`, `detected`, `wet`, `heat`, `locked`
-- Presence: `home`, `present`
-- Activity: `active`, `running`, `charging`, `connected`, `online`
-- Security: `armed_home`, `armed_away`, `armed_night`
-
-**Supported boolean states (→ 0.0):**
-
-- Basic: `off`, `false`, `no`, `0`
-- Sensors: `closed`, `clear`, `no_motion`, `dry`, `cold`, `unlocked`
-- Presence: `away`, `not_home`, `absent`
-- Activity: `inactive`, `idle`, `stopped`, `not_charging`, `disconnected`, `offline`
-- Security: `disarmed`, `disabled`
-
-Device class-specific states are also supported (e.g., `normal`/`low` for battery sensors).
+- `True` states: `on`, `true`, `yes`, `open`, `motion`, `armed_*`, `home`, `active`, `connected` → `1.0`
+- `False` states: `off`, `false`, `no`, `closed`, `clear`, `disarmed`, `away`, `inactive`, `disconnected` → `0.0`
 
 **Available Mathematical Functions:**
 

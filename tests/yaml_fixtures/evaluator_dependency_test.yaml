@@ -1,0 +1,104 @@
+version: '1.0'
+# Test YAML for evaluator_dependency module - testing dependency extraction and validation
+# This YAML contains various sensor configurations to test dependency management functionality
+sensors:
+  # Base sensors that provide values for dependency testing
+  test_sensor_a:
+    name: Test Sensor A
+    formula: "sensor_a_value"
+    variables:
+      sensor_a_value: 100  # Literal value for testing
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  test_sensor_b:
+    name: Test Sensor B
+    formula: "sensor_b_value"
+    variables:
+      sensor_b_value: 200  # Literal value for testing
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  base_power_meter:
+    name: Base Power Meter
+    formula: "base_power_value"
+    variables:
+      base_power_value: 500  # Literal value for testing
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  primary_sensor:
+    name: Primary Sensor
+    formula: "primary_value"
+    variables:
+      primary_value: 750  # Literal value for testing
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  secondary_sensor:
+    name: Secondary Sensor
+    formula: "secondary_value"
+    variables:
+      secondary_value: 250  # Literal value for testing
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  home_assistant_sensor:
+    name: Home Assistant Sensor
+    formula: "ha_sensor_value"
+    variables:
+      ha_sensor_value: 300  # Literal value for testing
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  # Test sensors for dependency extraction
+  basic_dependency_test:
+    name: Basic Dependency Test
+    formula: "sensor.test_sensor_a + sensor.test_sensor_b"  # References two base sensors
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  collection_dependency_test:
+    name: Collection Dependency Test
+    formula: "sum('device_class:power') + count('device_class:temperature')"  # Tests collection pattern dependencies
+    metadata:
+      unit_of_measurement: mixed
+      state_class: measurement
+
+  mixed_dependency_test:
+    name: Mixed Dependency Test
+    formula: "sensor.base_power_meter + sum('device_class:energy')"  # Tests mixed entity and collection dependencies
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  complex_dependency_test:
+    name: Complex Dependency Test
+    formula: "(sensor.primary_sensor * 1.5) + (sensor.secondary_sensor * 0.8) + sum('device_class:power')"  # Tests complex dependency patterns
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  data_provider_test:
+    name: Data Provider Test
+    formula: "span.meter_001 + sensor.home_assistant_sensor"  # Tests integration vs HA entity dependencies
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

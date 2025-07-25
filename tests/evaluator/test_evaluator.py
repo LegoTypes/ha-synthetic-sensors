@@ -21,7 +21,7 @@ class TestEvaluator:
         """Test evaluator initialization."""
         evaluator = Evaluator(mock_hass)
         assert evaluator._hass == mock_hass
-        assert evaluator._cache is not None
+        assert evaluator._cache_handler is not None
         assert evaluator._dependency_parser is not None
         assert evaluator._handler_factory is not None
         assert evaluator._variable_resolution_phase is not None

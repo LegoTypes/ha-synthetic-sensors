@@ -1,44 +1,57 @@
 version: "1.0"
 
 sensors:
+  # Temperature converter example from README
   temperature_converter:
     name: "Temperature Converter"
     formula: "(temp_f - freezing_f) * conversion_factor / celsius_factor"
     variables:
       temp_f: "sensor.outdoor_temperature_f"
-      freezing_f: 32                     # Literal: Fahrenheit freezing point
-      conversion_factor: 5               # Literal: F to C numerator
-      celsius_factor: 9                  # Literal: F to C denominator
+      freezing_f: 32 # Literal: Fahrenheit freezing point
+      conversion_factor: 5 # Literal: F to C numerator
+      celsius_factor: 9 # Literal: F to C denominator
     metadata:
       unit_of_measurement: "°C"
+      device_class: "temperature"
+      suggested_display_precision: 1
 
-  power_efficiency:
-    name: "Power Efficiency"
-    formula: "actual_power / rated_power * percentage"
+  # Device activity score example from README
+  device_activity_score:
+    name: "Device Activity Score"
+    formula: "motion_sensor * 10 + door_sensor * 5 + switch_state * 2"
     variables:
-      actual_power: "sensor.current_power"
-      rated_power: 1000                  # Literal: rated power in watts
-      percentage: 100                    # Literal: convert to percentage
+      motion_sensor: "binary_sensor.living_room_motion" # "motion" → 1.0, "clear" → 0.0
+      door_sensor: "binary_sensor.front_door" # "open" → 1.0, "closed" → 0.0
+      switch_state: "switch.living_room_light" # "on" → 1.0, "off" → 0.0
     metadata:
-      unit_of_measurement: "%"
+      unit_of_measurement: "points"
+      icon: "mdi:chart-line"
 
-  cost_calculator:
-    name: "Energy Cost"
-    formula: "energy_kwh * rate_per_kwh * (1 + tax_rate)"
+  # Literal attribute values example from README
+  device_info_sensor:
+    name: "Device Information"
+    formula: "current_power * efficiency_factor"
     variables:
-      energy_kwh: "sensor.energy_usage"
-      rate_per_kwh: 0.12                 # Literal: cost per kWh
-      tax_rate: 0.085                    # Literal: tax percentage
+      current_power: "sensor.power_meter"
+      efficiency_factor: 0.95
+    attributes:
+      # Literal values - no formula required
+      voltage: 240
+      manufacturer: "TestCorp"
+      model: "PowerMeter Pro"
+      serial_number: "PM-2024-001"
+      max_capacity: 5000
+      installation_date: "2024-01-15"
+      warranty_years: 5
+      is_active: True
+      firmware_version: "2.1.0"
+      # Mixed literal and calculated attributes
+      calculated_power:
+        formula: "state * 1.1"
+        metadata:
+          unit_of_measurement: "W"
+          suggested_display_precision: 0
     metadata:
-      unit_of_measurement: "$"
-
-  mixed_calculations:
-    name: "Mixed Calculations"
-    formula: "base_value * multiplier + offset - discount"
-    variables:
-      base_value: "sensor.base_measurement"
-      multiplier: 2.5                    # Literal: float multiplier
-      offset: 10                         # Literal: integer offset
-      discount: -5.0                     # Literal: negative float
-    metadata:
-      unit_of_measurement: "units"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

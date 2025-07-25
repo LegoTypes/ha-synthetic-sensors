@@ -631,6 +631,8 @@ sensors:
 
 ```yaml
 # Original YAML (BEFORE HA registration):
+Warning: sensor.outdoor_temperature is NOT registered as backing entity - but this is OK because allow_ha_lookups=True
+
 sensors:
   base_power_sensor:                  # Sensor A - Original sensor key
     entity_id: sensor.base_power      # Optional original entity_id hint

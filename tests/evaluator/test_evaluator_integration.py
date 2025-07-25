@@ -41,7 +41,7 @@ class TestEvaluatorInitialization:
         assert evaluator._hass == mock_hass
         assert evaluator._dependency_handler is not None
         assert evaluator._cache_handler is not None
-        assert hasattr(evaluator, "_cache")
+        assert hasattr(evaluator, "_cache_handler")
         assert hasattr(evaluator, "_dependency_parser")
 
     def test_evaluator_with_custom_configs(self, mock_hass, mock_entity_registry, mock_states):

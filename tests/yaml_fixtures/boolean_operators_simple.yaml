@@ -1,0 +1,54 @@
+version: "1.0"
+
+sensors:
+  # Test word-based operators (Python syntax)
+  test_word_or:
+    name: "Word OR Test"
+    formula: "door_open or window_open"
+    variables:
+      door_open: "binary_sensor.door_open"
+      window_open: "binary_sensor.window_open"
+    metadata:
+      unit_of_measurement: "boolean"
+
+  test_word_and:
+    name: "Word AND Test"
+    formula: "alarm_set and not window_open"
+    variables:
+      alarm_set: "binary_sensor.alarm_set"
+      window_open: "binary_sensor.window_open"
+    metadata:
+      unit_of_measurement: "boolean"
+
+  # Test mixed boolean and comparison
+  test_mixed_logic:
+    name: "Mixed Logic Test"
+    formula: "(temp > 75) and alarm_set"
+    variables:
+      temp: "sensor.temperature"
+      alarm_set: "binary_sensor.alarm_set"
+    metadata:
+      unit_of_measurement: "boolean"
+
+  # Test complex boolean with multiple conditions
+  test_complex_boolean:
+    name: "Complex Boolean Test"
+    formula: "(door_open or window_open) and alarm_set and not (temp > 80)"
+    variables:
+      door_open: "binary_sensor.door_open"
+      window_open: "binary_sensor.window_open"
+      alarm_set: "binary_sensor.alarm_set"
+      temp: "sensor.temperature"
+    metadata:
+      unit_of_measurement: "boolean"
+
+  # Test precedence with parentheses
+  test_precedence:
+    name: "Boolean Precedence Test"
+    formula: "door_open and (window_open or alarm_set)"
+    variables:
+      door_open: "binary_sensor.door_open"
+      window_open: "binary_sensor.window_open"
+      alarm_set: "binary_sensor.alarm_set"
+    metadata:
+      unit_of_measurement: "boolean"

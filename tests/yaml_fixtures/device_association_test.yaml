@@ -1,0 +1,60 @@
+version: "1.0"
+
+sensors:
+  test_sensor_with_device:
+    name: "Test Sensor"
+    formula: "10 + 5"
+    device_identifier: "test_device_001"
+    device_name: "Test Device"
+    device_manufacturer: "Test Manufacturer"
+    device_model: "Test Model v1"
+    device_sw_version: "1.0.0"
+    suggested_area: "Test Area"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  test_sensor_with_existing_device:
+    name: "Existing Device Sensor"
+    formula: "20 + 10"
+    device_identifier: "existing_device_001"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  test_sensor_without_device:
+    name: "No Device Sensor"
+    formula: "30 + 15"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  test_sensor_with_explicit_entity_id:
+    name: "Explicit Entity ID Sensor"
+    entity_id: "sensor.custom_entity_id"
+    formula: "40 + 20"
+    device_identifier: "test_device_002"
+    device_name: "Test Device 2"
+    device_manufacturer: "Test Manufacturer 2"
+    device_model: "Test Model v2"
+    device_sw_version: "2.0.0"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  test_sensor_without_entity_id:
+    name: "Auto Entity ID Sensor"
+    formula: "50 + 25"
+    device_identifier: "test_device_003"
+    device_name: "Auto Device"
+    device_manufacturer: "Auto Manufacturer"
+    device_model: "Auto Model"
+    device_sw_version: "3.0.0"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

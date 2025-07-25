@@ -1,0 +1,43 @@
+version: '1.0'
+
+sensors:
+  test_current_power:
+    name: Current Power
+    entity_id: sensor.current_power
+    formula: state
+    attributes:
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 2
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+
+  test_power_with_processing:
+    name: Processed Power
+    entity_id: sensor.raw_power
+    # Main formula: 'state' refers to backing entity (sensor.raw_power)
+    formula: state * 1.1  # Example: 10% adjustment factor
+    attributes:
+      # Attribute formula: 'state' refers to the main sensor's result (processed value)
+      amperage:
+        formula: state / 240  # Uses processed power value, not raw backing entity
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 2
+      efficiency:
+        formula: state / (state / 1.1) * 100  # Calculates efficiency using processed value
+        metadata:
+          unit_of_measurement: "%"
+          device_class: power_factor
+          suggested_display_precision: 1
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
