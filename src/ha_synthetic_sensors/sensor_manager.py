@@ -275,21 +275,39 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             return None
 
         context: dict[str, Any] = {}
-        for var_name, entity_id in formula_config.variables.items():
-            # If HA lookups are allowed or no data provider callback is available,
-            # try to get values from HA state registry
-            state = self._hass.states.get(entity_id)
-            if state is not None:
+        for var_name, var_value in formula_config.variables.items():
+            # Check if this is a numeric literal (not a string entity ID)
+            if isinstance(var_value, (int, float)):
+                context[var_name] = var_value
+                continue
+
+            # Check if this is a string that doesn't look like an entity ID
+            if isinstance(var_value, str) and "." not in var_value:
+                # Try to convert to numeric if possible
                 try:
-                    # Try to get numeric value
-                    numeric_value = float(state.state)
+                    numeric_value = float(var_value)
                     context[var_name] = numeric_value
-                except (ValueError, TypeError):
-                    # Fall back to string value for non-numeric states
-                    context[var_name] = state.state
-            else:
-                # Entity not found - this will cause appropriate evaluation failure
-                context[var_name] = None
+                except ValueError:
+                    # Keep as string if not numeric
+                    context[var_name] = var_value
+                continue
+
+            # Handle entity references (strings with dots)
+            if isinstance(var_value, str) and "." in var_value:
+                # If HA lookups are allowed or no data provider callback is available,
+                # try to get values from HA state registry
+                state = self._hass.states.get(var_value)
+                if state is not None:
+                    try:
+                        # Try to get numeric value
+                        numeric_value = float(state.state)
+                        context[var_name] = numeric_value
+                    except (ValueError, TypeError):
+                        # Fall back to string value for non-numeric states
+                        context[var_name] = state.state
+                else:
+                    # Entity not found - this will cause appropriate evaluation failure
+                    context[var_name] = None
 
         return context if context else None
 
