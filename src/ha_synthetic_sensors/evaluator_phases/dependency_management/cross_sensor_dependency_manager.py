@@ -5,6 +5,8 @@ import re
 from typing import Any
 
 from ...config_models import SensorConfig
+from ...dependency_parser import DependencyParser
+from ...exceptions import CircularDependencyError
 from .base_manager import DependencyManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,22 +76,29 @@ class CrossSensorDependencyManager(DependencyManager):
         for sensor in sensors:
             sensor_deps: set[str] = set()
 
-            # Analyze each formula in the sensor
+            # Analyze each formula in the sensor, passing current sensor for auto self-exclusion
             for formula in sensor.formulas:
-                formula_deps = self._extract_cross_sensor_dependencies_from_formula(formula.formula, sensor_registry)
+                formula_deps = self._extract_cross_sensor_dependencies_from_formula(
+                    formula.formula, sensor_registry, current_sensor=sensor
+                )
                 sensor_deps.update(formula_deps)
+                _LOGGER.debug("Sensor '%s' formula '%s' dependencies: %s", sensor.unique_id, formula.formula, formula_deps)
 
             dependencies[sensor.unique_id] = sensor_deps
+            _LOGGER.debug("Sensor '%s' total dependencies: %s", sensor.unique_id, sensor_deps)
 
         _LOGGER.debug("Cross-sensor dependency analysis: %s", dependencies)
         return dependencies
 
-    def _extract_cross_sensor_dependencies_from_formula(self, formula: str, sensor_registry: dict[str, Any]) -> set[str]:
+    def _extract_cross_sensor_dependencies_from_formula(
+        self, formula: str, sensor_registry: dict[str, Any], current_sensor: Any = None
+    ) -> set[str]:
         """Extract cross-sensor dependencies from a formula.
 
         Args:
             formula: The formula to analyze
             sensor_registry: Current sensor registry
+            current_sensor: The sensor that owns this formula (for auto self-exclusion)
 
         Returns:
             Set of sensor names that this formula depends on
@@ -102,11 +111,95 @@ class CrossSensorDependencyManager(DependencyManager):
         # Get all registered sensor names
         registered_sensors = self._sensor_registry_phase.get_registered_sensors()
 
-        # Simple token-based analysis - look for sensor names in the formula
-        # This is a basic implementation; a more sophisticated parser could be used
+        # 1. Handle collection functions with auto self-exclusion
+        collection_deps = self._extract_collection_function_dependencies(formula, sensor_registry, current_sensor)
+        dependencies.update(collection_deps)
+
+        # 2. Handle direct cross-sensor references (existing logic)
         for sensor_name in registered_sensors:
             if sensor_name in formula and self._is_valid_cross_sensor_reference(formula, sensor_name):
                 dependencies.add(sensor_name)
+
+        return dependencies
+
+    def _extract_collection_function_dependencies(
+        self, formula: str, sensor_registry: dict[str, Any], current_sensor: Any = None
+    ) -> set[str]:
+        """Extract dependencies from collection functions, applying auto self-exclusion.
+
+        This method detects collection functions like sum('device_class:power') and determines
+        which sensors they would include, automatically excluding the current sensor if it
+        would be included in the collection to prevent circular dependencies.
+
+        Args:
+            formula: The formula to analyze
+            sensor_registry: Current sensor registry
+            current_sensor: The sensor that owns this formula (for auto self-exclusion)
+
+        Returns:
+            Set of sensor names that collection functions depend on (excluding self)
+        """
+        dependencies: set[str] = set()
+
+        try:
+            # Use the dependency parser to extract dynamic queries (collection functions)
+            parser = DependencyParser()
+            dynamic_queries = parser.extract_dynamic_queries(formula)
+
+            if not dynamic_queries:
+                return dependencies
+
+            # For each collection function, determine what sensors it would include
+            for query in dynamic_queries:
+                collection_sensors = self._resolve_collection_dependencies(query, sensor_registry)
+
+                # AUTO SELF-EXCLUSION: Remove current sensor if it would be included
+                if current_sensor and hasattr(current_sensor, "unique_id") and current_sensor.unique_id in collection_sensors:
+                    collection_sensors.discard(current_sensor.unique_id)
+                    _LOGGER.debug(
+                        "Auto-excluded sensor '%s' from collection function dependencies to prevent circular dependency",
+                        current_sensor.unique_id,
+                    )
+
+                dependencies.update(collection_sensors)
+
+        except Exception as e:
+            _LOGGER.warning("Error analyzing collection functions in formula '%s': %s", formula, e)
+
+        return dependencies
+
+    def _resolve_collection_dependencies(self, query: Any, sensor_registry: dict[str, Any]) -> set[str]:
+        """Resolve which sensors a collection function would depend on.
+
+        This performs a static analysis of what sensors would be included in a collection
+        function, applying the same filtering logic as the runtime collection resolver
+        but without needing actual entity registry data.
+
+        Args:
+            query: Dynamic query object from dependency parser
+            sensor_registry: Current sensor registry
+
+        Returns:
+            Set of sensor names the collection would depend on
+        """
+        dependencies: set[str] = set()
+
+        # Handle device_class pattern specifically (most common case)
+        if query.query_type == "device_class":
+            # Find all sensors in registry with matching device_class
+            target_device_class = query.pattern.lower()
+
+            for sensor_name, sensor_data in sensor_registry.items():
+                if isinstance(sensor_data, dict):
+                    # Extract device_class from sensor metadata
+                    metadata = sensor_data.get("metadata", {})
+                    if isinstance(metadata, dict):
+                        sensor_device_class = metadata.get("device_class", "").lower()
+                        if sensor_device_class == target_device_class:
+                            dependencies.add(sensor_name)
+
+        # Add support for other collection patterns as needed (regex, area, etc.)
+        # For now, focus on device_class which is the most common cause of circular deps
 
         return dependencies
 
@@ -149,38 +242,35 @@ class CrossSensorDependencyManager(DependencyManager):
         for sensor_deps in deps.values():
             all_sensors.update(sensor_deps)
 
-        # Initialize result and in-degree count
+        # Initialize result and out-degree count for evaluation order
         result: list[str] = []
-        in_degree = dict.fromkeys(all_sensors, 0)
+        out_degree = {sensor: len(deps.get(sensor, set())) for sensor in all_sensors}
 
-        # Calculate in-degrees
-        for _sensor, sensor_deps in deps.items():
-            for dep in sensor_deps:
-                if dep in in_degree:
-                    in_degree[dep] += 1
+        _LOGGER.debug("Dependency graph: %s", deps)
+        _LOGGER.debug("Out-degree calculation: %s", out_degree)
 
-        # Find sensors with no dependencies (in-degree = 0)
-        queue = [sensor for sensor, degree in in_degree.items() if degree == 0]
+        # Find sensors with no outgoing dependencies (don't depend on others) - these can be evaluated first
+        queue = [sensor for sensor, degree in out_degree.items() if degree == 0]
+        _LOGGER.debug("Initial queue (sensors with no outgoing dependencies): %s", queue)
 
-        # Process queue
+        # Process queue - remove dependencies from remaining sensors
+        processed = set()
         while queue:
             current = queue.pop(0)
             result.append(current)
+            processed.add(current)
 
-            # Reduce in-degree for all sensors that depend on current
-            for sensor, sensor_deps in deps.items():
-                if current in sensor_deps:
-                    in_degree[sensor] -= 1
-                    if in_degree[sensor] == 0:
+            # For each remaining sensor, check if its dependencies are now satisfied
+            for sensor in all_sensors:
+                if sensor not in processed and sensor not in queue:
+                    remaining_deps = deps.get(sensor, set()) - processed
+                    if len(remaining_deps) == 0:
                         queue.append(sensor)
 
         # Check for circular dependencies
         if len(result) != len(all_sensors):
             remaining = [sensor for sensor in all_sensors if sensor not in result]
-            _LOGGER.warning("Circular dependency detected. Sensors not in evaluation order: %s", remaining)
-
-            # Add remaining sensors at the end (they have circular dependencies)
-            result.extend(remaining)
+            raise CircularDependencyError(remaining)
 
         _LOGGER.debug("Cross-sensor evaluation order: %s", result)
         return result
@@ -228,7 +318,7 @@ class CrossSensorDependencyManager(DependencyManager):
                 circular_refs.append(sensor)
 
         if circular_refs:
-            _LOGGER.warning("Cross-sensor circular references detected: %s", circular_refs)
+            raise CircularDependencyError(circular_refs)
 
         return circular_refs
 

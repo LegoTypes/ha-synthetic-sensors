@@ -5,7 +5,7 @@ from typing import Any
 
 from ...constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
 from ...data_validation import validate_data_provider_result
-from ...exceptions import DataValidationError
+from ...exceptions import DataValidationError, FormulaEvaluationError
 from .base_resolver import VariableResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,8 +87,9 @@ class SelfReferenceResolver(VariableResolver):
             # In attribute context, use the state value which should be the main sensor's calculated result
             if state_value is not None and isinstance(state_value, (int, float)):
                 return state_value
-            _LOGGER.warning("Self-reference resolver: in attribute context but state value is invalid: %s", state_value)
-            return None
+            raise FormulaEvaluationError(
+                f"Self-reference resolver: in attribute context but state value is invalid: {state_value}"
+            )
 
         # Default: resolve to backing entity value (main formula context)
         _LOGGER.debug("Self-reference resolver: detected main formula context, resolving to backing entity")
@@ -158,8 +159,7 @@ class SelfReferenceResolver(VariableResolver):
                 )
                 return None
             except Exception as e:
-                _LOGGER.warning("Error resolving calculated result for sensor '%s': %s", sensor_key, e)
-                return None
+                raise FormulaEvaluationError(f"Error resolving calculated result for sensor '{sensor_key}': {e}") from e
         else:
             _LOGGER.debug(
                 "Self-reference resolver: no sensor registry available to resolve calculated result for '%s'", sensor_key

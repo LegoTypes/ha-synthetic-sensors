@@ -1,0 +1,56 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  # Base sensor with simple dependencies
+  base_power:
+    name: "Base Power"
+    formula: "sensor.panel_power * 1.0"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Sensor with cross-sensor dependency
+  derived_power:
+    name: "Derived Power"
+    formula: "base_power * 0.85"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Sensor with multiple dependencies
+  complex_calc:
+    name: "Complex Calculation"
+    formula: "base_power + derived_power + sensor.external_power"
+    variables:
+      external_power: "sensor.external_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Sensor with collection function dependencies - tests auto self-exclusion
+  total_power:
+    name: "Total Power"
+    formula: "sum('device_class:power') + base_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Sensor with attribute dependencies
+  power_analysis:
+    name: "Power Analysis"
+    formula: "base_power * 1.1"
+    attributes:
+      efficiency: "base_power / total_power if total_power > 0 else 0"
+    metadata:
+      device_class: "power"
+      unit_of_measurement: "W"
+
+  # Test negation syntax - sum all power sensors except specific ones
+  filtered_power:
+    formula: "sum('device_class:power', !'power_analysis')"
+    metadata:
+      device_class: "energy"  # Different device class to avoid self-inclusion
+      unit_of_measurement: "W"

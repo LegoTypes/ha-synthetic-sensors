@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...exceptions import MissingDependencyError
 from ...type_definitions import ContextValue, DataProviderCallback
 from ...utils_config import resolve_config_variables
 from ...variable_resolver import (
@@ -120,7 +121,8 @@ class ContextBuildingPhase:
             if exists and resolved_value is not None:
                 self._add_entity_to_context(eval_context, entity_id, resolved_value, "entity_dependency")
             else:
-                _LOGGER.warning("Failed to resolve entity dependency: %s", entity_id)
+                # Defensive coding: This should have been caught in Phase 1, but raise exception as backup
+                raise MissingDependencyError(f"Failed to resolve entity dependency: {entity_id}")
 
     def _add_entity_to_context(
         self, eval_context: dict[str, ContextValue], entity_id: str, value: ContextValue, source: str

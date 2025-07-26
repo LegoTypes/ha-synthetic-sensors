@@ -135,11 +135,12 @@ class FormulaPreprocessor:
 
         return entity_pattern.sub(replace_entity_ref, formula)
 
-    def _resolve_collection_functions(self, formula: str) -> str:
+    def _resolve_collection_functions(self, formula: str, exclude_entity_ids: set[str] | None = None) -> str:
         """Resolve collection functions in the formula.
 
         Args:
             formula: Formula string to process
+            exclude_entity_ids: Optional set of entity IDs to exclude from collection results
 
         Returns:
             Formula with collection functions resolved
@@ -154,7 +155,7 @@ class FormulaPreprocessor:
             resolved_formula = formula
 
             for query in dynamic_queries:
-                resolved_formula = self._resolve_single_collection_query(resolved_formula, query)
+                resolved_formula = self._resolve_single_collection_query(resolved_formula, query, exclude_entity_ids)
 
             return resolved_formula
 
@@ -162,19 +163,22 @@ class FormulaPreprocessor:
             _LOGGER.error("Error resolving collection functions in formula '%s': %s", formula, e)
             return formula  # Return original formula if resolution fails
 
-    def _resolve_single_collection_query(self, formula: str, query: DynamicQuery) -> str:
+    def _resolve_single_collection_query(
+        self, formula: str, query: DynamicQuery, exclude_entity_ids: set[str] | None = None
+    ) -> str:
         """Resolve a single collection query and replace it in the formula.
 
         Args:
             formula: Formula string
             query: Collection query object
+            exclude_entity_ids: Optional set of entity IDs to exclude from collection results
 
         Returns:
             Formula with query replaced by result
         """
         try:
             # Resolve the collection
-            result = self._collection_resolver.resolve_collection(query)
+            result = self._collection_resolver.resolve_collection(query, exclude_entity_ids)
             if result is None:
                 return self._replace_with_default_value(formula, query, "No entities found")
 

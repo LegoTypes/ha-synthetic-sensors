@@ -6,7 +6,7 @@ import re
 from typing import Any, Optional
 
 from ...config_models import FormulaConfig, SensorConfig
-from ...exceptions import CircularDependencyError
+from ...exceptions import CircularDependencyError, FormulaEvaluationError
 from ...shared_constants import get_reserved_words
 
 _LOGGER = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ class GenericDependencyManager:
                         context["state"] = main_sensor_value
                         _LOGGER.debug("Main sensor value: %s", main_sensor_value)
                     else:
-                        _LOGGER.warning("Failed to evaluate main sensor")
+                        raise FormulaEvaluationError(f"Failed to evaluate main sensor for {sensor_config.unique_id}")
 
                 elif node.node_type == "attribute":
                     # Attribute evaluation
@@ -202,7 +202,7 @@ class GenericDependencyManager:
                         context[attr_name] = result
                         _LOGGER.debug("Added attribute '%s' = %s to context", attr_name, result)
                     else:
-                        _LOGGER.warning("Failed to evaluate attribute '%s'", node_id)
+                        raise FormulaEvaluationError(f"Failed to evaluate attribute '{node_id}' for {sensor_config.unique_id}")
 
         return context
 

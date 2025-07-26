@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 from ha_synthetic_sensors.sensor_manager import SensorManager
 from ha_synthetic_sensors.name_resolver import NameResolver
+from ha_synthetic_sensors.exceptions import SyntheticSensorsConfigError
 
 
 class TestSensorToBackingMappingValidation:
@@ -159,15 +160,21 @@ class TestDataProviderEntitiesValidation:
         # Verify the entities were stored
         assert sensor_manager._registered_entities == valid_entities
 
-    def test_empty_entity_ids_is_allowed(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
-        """Test that empty entity IDs set is allowed (just logs a warning)."""
+    def test_empty_entity_ids_raises_error_virtual_only(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
+        """Test that empty entity IDs set raises error in virtual-only mode."""
         empty_entities = set()
 
-        # Should not raise any exception
-        sensor_manager.register_data_provider_entities(empty_entities)
+        # Should raise configuration error in virtual-only mode (default allow_ha_lookups=False)
+        with pytest.raises(SyntheticSensorsConfigError, match="No backing entities provided in virtual-only mode"):
+            sensor_manager.register_data_provider_entities(empty_entities)
 
-        # Verify the entities were stored
-        assert sensor_manager._registered_entities == empty_entities
+    def test_empty_entity_ids_raises_error_ha_mode(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
+        """Test that empty entity IDs set raises error even with HA lookups enabled."""
+        empty_entities = set()
+
+        # Should raise configuration error even with HA lookups (explicit empty set is wrong)
+        with pytest.raises(SyntheticSensorsConfigError, match="Empty backing entity set provided explicitly"):
+            sensor_manager.register_data_provider_entities(empty_entities, allow_ha_lookups=True)
 
     def test_none_entity_id_raises_error(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that None entity ID raises ValueError."""

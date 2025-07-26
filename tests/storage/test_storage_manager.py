@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 import pytest
 
 from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
-from ha_synthetic_sensors.exceptions import SyntheticSensorsError
+from ha_synthetic_sensors.exceptions import SensorUpdateError, SyntheticSensorsError
 from ha_synthetic_sensors.storage_manager import StorageManager
 
 
@@ -406,7 +406,7 @@ class TestStorageManager:
             assert sensor_set_data["updated_at"] != original_updated_at
 
     async def test_update_sensor_not_found(self, storage_manager: StorageManager) -> None:
-        """Test updating a non-existent sensor."""
+        """Test updating a non-existent sensor raises SensorUpdateError."""
         with patch.object(storage_manager._store, "async_load", return_value=None):
             await storage_manager.async_load()
 
@@ -417,8 +417,11 @@ class TestStorageManager:
                 formulas=[],
             )
 
-            success = await storage_manager.async_update_sensor(non_existent_config)
-            assert not success
+            with pytest.raises(SensorUpdateError) as exc_info:
+                await storage_manager.async_update_sensor(non_existent_config)
+
+            assert "non_existent_sensor" in str(exc_info.value)
+            assert "not found for update" in str(exc_info.value)
 
     async def test_delete_sensor_set(self, storage_manager: StorageManager, sample_sensor_config: SensorConfig) -> None:
         """Test deleting a sensor set and all associated sensors."""
@@ -592,13 +595,16 @@ class TestStorageManager:
             assert storage_manager._data["sensor_sets"][sensor_set_id]["sensor_count"] == 0
 
     async def test_delete_sensor_not_found(self, storage_manager: StorageManager) -> None:
-        """Test deleting a non-existent sensor."""
+        """Test deleting a non-existent sensor raises SensorUpdateError."""
         with patch.object(storage_manager._store, "async_load", return_value=None):
             await storage_manager.async_load()
 
             # Try to delete non-existent sensor
-            result = await storage_manager.async_delete_sensor("non_existent_sensor")
-            assert result is False
+            with pytest.raises(SensorUpdateError) as exc_info:
+                await storage_manager.async_delete_sensor("non_existent_sensor")
+
+            assert "non_existent_sensor" in str(exc_info.value)
+            assert "not found for deletion" in str(exc_info.value)
 
     async def test_update_sensor_with_global_settings(self, storage_manager: StorageManager) -> None:
         """Test updating sensor when global settings are present."""

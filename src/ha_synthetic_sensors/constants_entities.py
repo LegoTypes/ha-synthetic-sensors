@@ -5,6 +5,7 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .exceptions import IntegrationSetupError
 from .ha_constants import get_ha_constant
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,8 +76,7 @@ def _get_domains_from_registry(hass: HomeAssistant) -> set[str]:
         registry = er.async_get(hass)
         return {entity.domain for entity in registry.entities.values()}
     except Exception as e:
-        _LOGGER.warning("Failed to get domains from registry: %s", e)
-        return set()
+        raise IntegrationSetupError(f"Failed to get domains from registry: {e}") from e
 
 
 def _get_ha_domain_constant(domain_name: str) -> str:
@@ -185,8 +185,7 @@ def _get_numeric_entity_types(hass: HomeAssistant) -> set[str]:
 
         return numeric_types
     except Exception as e:
-        _LOGGER.warning("Failed to get numeric entity types: %s", e)
-        return set()
+        raise IntegrationSetupError(f"Failed to get numeric entity types: {e}") from e
 
 
 def _get_boolean_entity_types(hass: HomeAssistant) -> set[str]:
@@ -208,8 +207,7 @@ def _get_boolean_entity_types(hass: HomeAssistant) -> set[str]:
 
         return boolean_types
     except Exception as e:
-        _LOGGER.warning("Failed to get boolean entity types: %s", e)
-        return set()
+        raise IntegrationSetupError(f"Failed to get boolean entity types: {e}") from e
 
 
 def _get_string_entity_types(hass: HomeAssistant) -> set[str]:
@@ -231,8 +229,7 @@ def _get_string_entity_types(hass: HomeAssistant) -> set[str]:
 
         return string_types
     except Exception as e:
-        _LOGGER.warning("Failed to get string entity types: %s", e)
-        return set()
+        raise IntegrationSetupError(f"Failed to get string entity types: {e}") from e
 
 
 def _get_valid_entity_types(hass: HomeAssistant) -> set[str]:
@@ -248,8 +245,7 @@ def _get_valid_entity_types(hass: HomeAssistant) -> set[str]:
         registry = er.async_get(hass)
         return {entity.domain for entity in registry.entities.values()}
     except Exception as e:
-        _LOGGER.warning("Failed to get valid entity types: %s", e)
-        return set()
+        raise IntegrationSetupError(f"Failed to get valid entity types: {e}") from e
 
 
 def _get_cache_key(hass: HomeAssistant | None = None) -> str:

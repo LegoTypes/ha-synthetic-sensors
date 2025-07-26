@@ -32,6 +32,7 @@ class DynamicQuery:
     query_type: str  # 'regex', 'label', 'device_class', 'area', 'attribute', 'state'
     pattern: str  # The actual query pattern
     function: str  # The aggregation function (sum, avg, count, etc.)
+    exclusions: list[str] = field(default_factory=list)  # Patterns to exclude from results
 
 
 @dataclass
@@ -46,12 +47,14 @@ class ParsedDependencies:
 class DependencyParser:
     """Enhanced parser for extracting dependencies from synthetic sensor formulas."""
 
-    # Pattern for aggregation functions with query syntax
+    # Pattern for aggregation functions with query syntax and optional exclusions
     AGGREGATION_PATTERN = re.compile(
         r"\b(sum|avg|count|min|max|std|var)\s*\(\s*"
         r"(?:"
-        r'(?P<query_quoted>["\'])(?P<query_content_quoted>[^"\']+)(?P=query_quoted)|'  # Quoted queries
-        r"(?P<query_content_unquoted>[^)]+)"  # Unquoted queries
+        r'(?P<query_quoted>["\'])(?P<query_content_quoted>[^"\']+)(?P=query_quoted)'  # Quoted main query
+        r'(?:\s*,\s*(?P<exclusions>(?:!\s*["\'][^"\']+["\'](?:\s*,\s*)?)+))?|'  # Optional exclusions with !
+        r"(?P<query_content_unquoted>[^),]+)"  # Unquoted main query
+        r"(?:\s*,\s*(?P<exclusions_unquoted>(?:!\s*[^,)]+(?:\s*,\s*)?)+))?"  # Optional exclusions for unquoted
         r")\s*\)",
         re.IGNORECASE,
     )
@@ -451,6 +454,10 @@ class DependencyParser:
             # Get the query content (either quoted or unquoted)
             query_content = match.group("query_content_quoted") or match.group("query_content_unquoted")
 
+            # Get exclusions (either quoted or unquoted)
+            exclusions_raw = match.group("exclusions") or match.group("exclusions_unquoted")
+            exclusions = self._parse_exclusions(exclusions_raw) if exclusions_raw else []
+
             if query_content:
                 query_content = query_content.strip()
 
@@ -466,11 +473,36 @@ class DependencyParser:
                                 query_type=query_type,
                                 pattern=normalized_pattern,
                                 function=function_name,
+                                exclusions=exclusions,
                             )
                         )
-                        break
+                        break  # Only match the first pattern type
 
         return queries
+
+    def _parse_exclusions(self, exclusions_raw: str) -> list[str]:
+        """Parse exclusion patterns from the raw exclusions string.
+
+        Args:
+            exclusions_raw: Raw exclusions string like "!'area:kitchen', !'sensor1'"
+
+        Returns:
+            List of exclusion patterns without the ! prefix
+        """
+        exclusions: list[str] = []
+        if not exclusions_raw:
+            return exclusions
+
+        # Pattern to match individual exclusions: !'pattern' or !pattern
+        exclusion_pattern = re.compile(r"!\s*(?:[\"']([^\"']+)[\"']|([^,)]+))")
+
+        for match in exclusion_pattern.finditer(exclusions_raw):
+            # Get either quoted or unquoted exclusion
+            exclusion = (match.group(1) or match.group(2)).strip()
+            if exclusion:
+                exclusions.append(exclusion)
+
+        return exclusions
 
     def extract_variable_references(self, formula: str, variables: dict[str, str]) -> set[str]:
         """Extract variable names referenced in the formula.

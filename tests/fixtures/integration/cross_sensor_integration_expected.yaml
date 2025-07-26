@@ -2,7 +2,7 @@ sensors:
   # Base power sensor with resolved self-references using state token
   roundtrip_base_power_sensor:
     entity_id: sensor.roundtrip_base_power_sensor_2     # HA-assigned entity_id (collision resolved)
-    formula: state * 1.0
+    formula: state * 1.0              # Self-reference → 'state'
     variables:
       my_ref: state               # Self-reference → 'state'
       scale_factor: 0.95          # Non-reference unchanged
@@ -20,13 +20,13 @@ sensors:
         metadata:
           unit_of_measurement: W
       efficiency_calc:
-        formula: state * state    # Self-reference in variable → 'state'
+        formula: state * my_ref    # Self-reference in variable → 'state'
         metadata:
           unit_of_measurement: W
 
   # Second sensor with resolved cross-sensor references and entity ID collision
   roundtrip_efficiency_calc:
-    entity_id: sensor.roundtrip_efficiency_calc_3     # HA-assigned entity_id (collision resolved)
+    entity_id: sensor.roundtrip_efficiency_calc_2     # HA-assigned entity_id (collision resolved)
     formula: sensor.roundtrip_base_power_sensor_2 * 0.85 # Cross-sensor reference → entity ID
     variables:
       other_power: sensor.roundtrip_base_power_sensor_2  # Cross-sensor reference → entity ID
@@ -41,7 +41,7 @@ sensors:
         metadata:
           unit_of_measurement: ratio
       combined_power:
-        formula: state + sensor.roundtrip_base_power_sensor_2  # Cross-sensor reference → entity ID
+        formula: state + other_power  # Cross-sensor reference in variable → entity ID
         metadata:
           unit_of_measurement: W
       # Self-references resolved to state token

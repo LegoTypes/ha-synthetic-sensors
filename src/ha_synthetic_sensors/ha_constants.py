@@ -9,6 +9,8 @@ import importlib
 import logging
 from typing import Any
 
+from .exceptions import IntegrationSetupError
+
 _LOGGER = logging.getLogger(__name__)
 
 # Cache for loaded constants to avoid repeated imports
@@ -136,7 +138,7 @@ def get_ha_constant(constant_name: str, module_path: str | None = None) -> Any:
 try:
     HAConstantLoader.preload_common_constants()
 except Exception as e:
-    _LOGGER.warning("Failed to preload some HA constants: %s", e)
+    raise IntegrationSetupError(f"Failed to preload some HA constants: {e}") from e
 
 # Export the main interface
 __all__ = [

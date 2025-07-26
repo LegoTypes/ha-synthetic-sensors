@@ -228,15 +228,13 @@ class TestEvaluator:
         evaluator._dependency_handler.check_dependencies = mock_check_dependencies
 
         # First two evaluations should attempt and fail with fatal errors
-        result1 = evaluator.evaluate_formula(config)
-        assert result1["success"] is False
-        assert "error" in result1
-        assert "Missing dependencies" in result1["error"]
+        with pytest.raises(MissingDependencyError) as exc_info1:
+            evaluator.evaluate_formula(config)
+        assert "Missing dependencies" in str(exc_info1.value)
 
-        result2 = evaluator.evaluate_formula(config)
-        assert result2["success"] is False
-        assert "error" in result2
-        assert "Missing dependencies" in result2["error"]
+        with pytest.raises(MissingDependencyError) as exc_info2:
+            evaluator.evaluate_formula(config)
+        assert "Missing dependencies" in str(exc_info2.value)
 
         # Third evaluation should be skipped due to circuit breaker
         result3 = evaluator.evaluate_formula(config)

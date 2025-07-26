@@ -18,7 +18,7 @@ from .config_manager import ConfigManager
 from .config_models import FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
 from .entity_index import EntityIndex
-from .exceptions import SyntheticSensorsError
+from .exceptions import SensorUpdateError, SyntheticSensorsError
 from .sensor_set_bulk_ops import SensorSetBulkOps
 from .sensor_set_entity_index import SensorSetEntityIndex
 from .sensor_set_entity_utils import apply_entity_id_changes_to_sensors_util, update_formula_variables_for_entity_changes
@@ -653,8 +653,7 @@ class SensorSet:
         data = self.storage_manager.data
 
         if sensor_config.unique_id not in data["sensors"]:
-            _LOGGER.warning("Sensor %s not found for direct update", sensor_config.unique_id)
-            return
+            raise SensorUpdateError(sensor_config.unique_id, f"Sensor {sensor_config.unique_id} not found for direct update")
 
         stored_sensor = data["sensors"][sensor_config.unique_id]
         sensor_set_id = stored_sensor.get("sensor_set_id")
@@ -675,8 +674,7 @@ class SensorSet:
         data = self.storage_manager.data
 
         if unique_id not in data["sensors"]:
-            _LOGGER.warning("Sensor %s not found for direct removal", unique_id)
-            return
+            raise SensorUpdateError(unique_id, f"Sensor {unique_id} not found for direct removal")
 
         # Get sensor set ID for cleanup
         stored_sensor = data["sensors"][unique_id]

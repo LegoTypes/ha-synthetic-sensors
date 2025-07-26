@@ -557,6 +557,17 @@ def mock_entity_registry():
         # Hierarchical dependencies test entities
         "sensor.circuit_1_power": {"domain": "sensor", "device_class": "power"},
         "sensor.circuit_2_power": {"domain": "sensor", "device_class": "power"},
+        # Collision-causing entities for cross-sensor integration test
+        "sensor.roundtrip_base_power_sensor": {
+            "domain": "sensor",
+            "device_class": "power",
+            "unique_id": "a_collision_causing_sensor",
+        },
+        "sensor.roundtrip_efficiency_calc": {
+            "domain": "sensor",
+            "device_class": "power",
+            "unique_id": "another_collision_causing_sensor",
+        },
         "sensor.circuit_3_power": {"domain": "sensor", "device_class": "power"},
         "sensor.circuit_4_power": {"domain": "sensor", "device_class": "power"},
         "sensor.hvac_total_hvac_total": {"domain": "sensor", "device_class": "power"},

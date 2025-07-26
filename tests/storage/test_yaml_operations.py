@@ -444,10 +444,11 @@ class TestConfigManagerExtended:
             assert len(config.sensors) == 0
 
     def test_load_from_yaml_empty_content(self, config_manager):
-        """Test loading from empty YAML content."""
-        config = config_manager.load_from_yaml("")
-        assert isinstance(config, Config)
-        assert len(config.sensors) == 0
+        """Test loading from empty YAML content raises ConfigEntryError."""
+        with pytest.raises(ConfigEntryError) as exc_info:
+            config_manager.load_from_yaml("")
+
+        assert "Empty YAML content" in str(exc_info.value)
 
     def test_load_from_yaml_none_content(self, config_manager):
         """Test loading from None YAML content."""

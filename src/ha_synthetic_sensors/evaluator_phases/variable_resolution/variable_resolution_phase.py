@@ -257,11 +257,19 @@ class VariableResolutionPhase:
             return formula
 
         try:
+            # Prepare exclusion set for automatic self-exclusion
+            exclude_entity_ids = None
+            if sensor_config and sensor_config.unique_id:
+                # Convert sensor unique_id to entity_id format for exclusion
+                current_entity_id = f"sensor.{sensor_config.unique_id}"
+                exclude_entity_ids = {current_entity_id}
+                _LOGGER.debug("Auto-excluding current sensor %s from collection functions", current_entity_id)
+
             # Use the formula preprocessor to resolve collection functions
             resolve_func = self.resolve_collection_functions
             if resolve_func and callable(resolve_func):
                 # pylint: disable=not-callable
-                resolved_formula = resolve_func(formula)
+                resolved_formula = resolve_func(formula, exclude_entity_ids)
                 _LOGGER.debug("Collection function resolution: '%s' -> '%s'", formula, resolved_formula)
                 return str(resolved_formula)
             return formula

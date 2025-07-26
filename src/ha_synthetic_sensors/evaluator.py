@@ -250,7 +250,8 @@ class Evaluator(FormulaEvaluator):
         except BackingEntityResolutionError as e:
             return self._handle_backing_entity_error(e, formula_name)
         except (DataValidationError, MissingDependencyError, SensorMappingError, CircularDependencyError):
-            # Let these specialized exceptions propagate - they should be raised, not converted to error results
+            # Increment error count for circuit breaker tracking, then let these fatal exceptions propagate
+            self._error_handler.increment_error_count(formula_name)
             raise
         except Exception as err:
             return self._error_handler.handle_evaluation_error(err, formula_name)
@@ -344,7 +345,7 @@ class Evaluator(FormulaEvaluator):
         if "Formula evaluation failed due to None values" in str(error):
             _LOGGER.warning("Formula '%s': %s", formula_name, str(error))
             self._error_handler.increment_error_count(formula_name)
-            return EvaluatorResults.create_success_result_with_state("unknown", value="unknown")
+            return EvaluatorResults.create_success_result_with_state("unavailable", value="unavailable")
         # Re-raise other ValueError exceptions
         raise error
 
@@ -527,60 +528,31 @@ class Evaluator(FormulaEvaluator):
         # This architecture separates numeric computation from string processing,
         # allowing for future expansion of string manipulation capabilities
 
-        try:
-            # Use handler factory to route formula to appropriate handler
-            handler = self._handler_factory.get_handler_for_formula(resolved_formula)
-            if handler:
-                result = handler.evaluate(resolved_formula, eval_context)
+        # Use handler factory to route formula to appropriate handler
+        handler = self._handler_factory.get_handler_for_formula(resolved_formula)
+        if handler:
+            result = handler.evaluate(resolved_formula, eval_context)
+        else:
+            # Fallback to numeric handler if no specific handler found
+            numeric_handler = self._handler_factory.get_handler("numeric")
+            if numeric_handler:
+                result = numeric_handler.evaluate(resolved_formula, eval_context)
             else:
-                # Fallback to numeric handler if no specific handler found
-                numeric_handler = self._handler_factory.get_handler("numeric")
-                if numeric_handler:
-                    result = numeric_handler.evaluate(resolved_formula, eval_context)
-                else:
-                    raise ValueError("No handler available for formula evaluation")
+                raise ValueError("No handler available for formula evaluation")
 
-            # Validate result type based on formula context
-            is_main_formula = sensor_config and config.id == sensor_config.unique_id
-            if is_main_formula and not isinstance(result, (int, float)):
-                raise ValueError(f"Main formula result must be numeric, got {type(result).__name__}: {result}")
+        # Validate result type based on formula context
+        is_main_formula = sensor_config and config.id == sensor_config.unique_id
+        if is_main_formula and not isinstance(result, (int, float)):
+            raise ValueError(f"Main formula result must be numeric, got {type(result).__name__}: {result}")
 
-            # Cache the result (cache handler supports multiple types for future expansion)
-            if isinstance(result, (int, float)):
-                self._cache_handler.cache_result(config, context, cache_key_id, float(result))
+        # Cache the result (cache handler supports multiple types for future expansion)
+        if isinstance(result, (int, float)):
+            self._cache_handler.cache_result(config, context, cache_key_id, float(result))
 
-            # Ensure proper type annotation for return
-            final_result: float | str | bool = float(result) if isinstance(result, (int, float)) else result
+        # Ensure proper type annotation for return
+        final_result: float | str | bool = float(result) if isinstance(result, (int, float)) else result
 
-            return final_result
-
-        except (TypeError, ValueError) as e:
-            # Handle errors caused by None values or invalid operations
-            error_msg = str(e)
-            if "None" in error_msg or "unsupported operand" in error_msg:
-                # Check if any values in the context are None or "None"
-                none_values = [k for k, v in eval_context.items() if v is None or v == "None"]
-                if none_values:
-                    _LOGGER.warning(
-                        "Formula evaluation failed due to None values: %s. Context variables with None: %s", e, none_values
-                    )
-                    # For main formulas, this should be a fatal error
-                    if sensor_config and config.id == sensor_config.unique_id:
-                        raise ValueError(
-                            f"Main formula evaluation failed: variables {none_values} could not be resolved"
-                        ) from e
-                    # For attribute formulas, return a failure result
-                    return "unknown"
-
-                # Check if the resolved formula contains "None" strings
-                if "None" in resolved_formula:
-                    _LOGGER.warning("Formula contains unresolved variables: %s", resolved_formula)
-                    if sensor_config and config.id == sensor_config.unique_id:
-                        raise ValueError(f"Main formula contains unresolved variables: {resolved_formula}") from e
-                    return "unknown"
-
-            # Re-raise other errors
-            raise
+        return final_result
 
     def _build_evaluation_context(
         self,

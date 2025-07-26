@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .config_models import FormulaConfig, SensorConfig
-from .exceptions import SyntheticSensorsError
+from .exceptions import SensorUpdateError, SyntheticSensorsError
 
 if TYPE_CHECKING:
     from .storage_manager import StorageManager
@@ -217,8 +217,7 @@ class SensorOpsHandler:
         data = self.storage_manager.data
 
         if sensor_config.unique_id not in data["sensors"]:
-            _LOGGER.warning("Sensor not found for update: %s", sensor_config.unique_id)
-            return False
+            raise SensorUpdateError(sensor_config.unique_id, f"Sensor not found for update: {sensor_config.unique_id}")
 
         stored_sensor = data["sensors"][sensor_config.unique_id]
         sensor_set_id = stored_sensor["sensor_set_id"]
@@ -254,8 +253,7 @@ class SensorOpsHandler:
         data = self.storage_manager.data
 
         if unique_id not in data["sensors"]:
-            _LOGGER.warning("Sensor not found for deletion: %s", unique_id)
-            return False
+            raise SensorUpdateError(unique_id, f"Sensor not found for deletion: {unique_id}")
 
         stored_sensor = data["sensors"][unique_id]
         sensor_set_id = stored_sensor.get("sensor_set_id")

@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...exceptions import MissingDependencyError
 from ...type_definitions import ContextValue
 from .manager_factory import DependencyManagerFactory
 
@@ -166,8 +167,7 @@ class DependencyManagementPhase:
     def _handle_missing_dependencies(self, missing_deps: set[str], formula_name: str) -> Any:
         """Handle missing dependencies (fatal error)."""
         error_msg = f"Missing dependencies: {', '.join(sorted(missing_deps))}"
-        _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
-        return self._create_error_result(error_msg, "unavailable", missing_dependencies=list(missing_deps))
+        raise MissingDependencyError(f"Formula '{formula_name}': {error_msg}")
 
     def _get_backing_entity_id(self, sensor_unique_id: str) -> str | None:
         """Get the backing entity ID for a sensor from the evaluator's mapping."""

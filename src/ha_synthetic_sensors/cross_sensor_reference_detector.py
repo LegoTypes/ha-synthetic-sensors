@@ -163,7 +163,8 @@ class CrossSensorReferenceDetector:
         """Extract sensor key references from a formula string.
 
         This method uses tokenization to identify sensor key references while avoiding
-        partial word matches and false positives.
+        partial word matches and false positives. It excludes identifiers that are
+        inside collection function calls.
 
         Args:
             formula: Formula string to scan
@@ -181,9 +182,12 @@ class CrossSensorReferenceDetector:
         if not formula or not sensor_keys:
             return set()
 
-        # Tokenize the formula to identify potential sensor references
+        # First, remove collection function calls to avoid false positives
+        formula_without_collections = self._remove_collection_functions(formula)
+
+        # Tokenize the cleaned formula to identify potential sensor references
         # Use word boundaries to avoid partial matches
-        tokens = self._tokenize_formula(formula)
+        tokens = self._tokenize_formula(formula_without_collections)
 
         # Find tokens that match sensor keys
         references = set()
@@ -192,6 +196,21 @@ class CrossSensorReferenceDetector:
                 references.add(token)
 
         return references
+
+    def _remove_collection_functions(self, formula: str) -> str:
+        """Remove collection function calls from formula to avoid false positives.
+
+        Args:
+            formula: Original formula string
+
+        Returns:
+            Formula with collection function calls replaced by placeholders
+        """
+        # Pattern for aggregation functions with all their parameters
+        collection_pattern = re.compile(r"\b(sum|avg|count|min|max|std|var)\s*\([^)]+\)", re.IGNORECASE)
+
+        # Replace collection functions with placeholders to avoid parsing their contents
+        return collection_pattern.sub("COLLECTION_FUNC", formula)
 
     def _tokenize_formula(self, formula: str) -> set[str]:
         """Tokenize formula to extract potential variable/sensor references.

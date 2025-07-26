@@ -589,27 +589,47 @@ class TestFormulaEvaluator:
         assert result2 == 71.0  # 25.5 * 2 + 60.0 / 3 = 51.0 + 20.0
 
     def test_evaluate_with_fallback_on_entity_error(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
-        """Test formula evaluation falls back when entity resolution fails."""
+        """Test formula evaluation raises fatal error when entities are missing."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
+        from ha_synthetic_sensors.exceptions import MissingDependencyError
 
-        # Use variables that don't exist in common registry to trigger fallback
+        # Use variables that don't exist in common registry - this should be a fatal error
         variables_with_missing = {"temp": "sensor.nonexistent_entity", "humidity": "sensor.another_missing_entity"}
 
         fallback_value = 99.9
         evaluator = FormulaEvaluator(mock_hass, "temp + humidity", variables_with_missing, fallback_value)
-        result = evaluator.evaluate()
 
-        assert result == fallback_value
+        # Missing entities should raise MissingDependencyError (fatal error)
+        with pytest.raises(MissingDependencyError) as exc_info:
+            evaluator.evaluate()
+
+        assert "sensor.nonexistent_entity" in str(exc_info.value)
 
     def test_evaluate_with_fallback_on_unavailable_entity(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
-        """Test formula evaluation falls back when entities are unavailable."""
+        """Test formula evaluation falls back when entities have unavailable state."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
+        from unittest.mock import MagicMock
 
-        # Use variables that don't exist in common registry to trigger fallback
-        variables_with_missing = {"temp": "sensor.nonexistent_entity", "humidity": "sensor.another_missing_entity"}
+        # Use existing entities that return "unavailable" state (non-fatal)
+        variables_with_unavailable = {"temp": "sensor.temperature", "humidity": "sensor.humidity"}
+
+        # Mock the entities to return "unavailable" state
+        mock_temp_state = MagicMock()
+        mock_temp_state.state = "unavailable"
+        mock_humidity_state = MagicMock()
+        mock_humidity_state.state = "unavailable"
+
+        def mock_states_get(entity_id):
+            if entity_id == "sensor.temperature":
+                return mock_temp_state
+            elif entity_id == "sensor.humidity":
+                return mock_humidity_state
+            return None
+
+        mock_hass.states.get.side_effect = mock_states_get
 
         fallback_value = 55.5
-        evaluator = FormulaEvaluator(mock_hass, "temp + humidity", variables_with_missing, fallback_value)
+        evaluator = FormulaEvaluator(mock_hass, "temp + humidity", variables_with_unavailable, fallback_value)
         result = evaluator.evaluate()
 
         assert result == fallback_value
@@ -631,20 +651,24 @@ class TestFormulaEvaluator:
         assert result == fallback_value
 
     def test_evaluate_with_fallback_on_unknown_variable(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
-        """Test formula evaluation falls back on unknown variables."""
+        """Test formula evaluation raises fatal error for unknown variables."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
+        from ha_synthetic_sensors.exceptions import MissingDependencyError
 
         # Mock valid entity states
         mock_state = MagicMock()
         mock_state.state = "42.0"
         mock_hass.states.get.return_value = mock_state
 
-        # Formula with unknown variable
+        # Formula with unknown variable - this should be a fatal error
         fallback_value = 88.8
         evaluator = FormulaEvaluator(mock_hass, "temp + unknown_var", sample_variables, fallback_value)
-        result = evaluator.evaluate()
 
-        assert result == fallback_value
+        # Unknown variables should raise MissingDependencyError (fatal error)
+        with pytest.raises(MissingDependencyError) as exc_info:
+            evaluator.evaluate()
+
+        assert "unknown_var" in str(exc_info.value)
 
     def test_validate_formula_success(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
         """Test successful formula validation."""
@@ -776,13 +800,17 @@ class TestFormulaEvaluator:
         assert result == expected
 
     def test_default_fallback_value(self, mock_hass, mock_entity_registry, mock_states, sample_variables):
-        """Test default fallback value when not specified."""
+        """Test that missing entities raise fatal error even with default fallback."""
         from ha_synthetic_sensors.name_resolver import FormulaEvaluator
+        from ha_synthetic_sensors.exceptions import MissingDependencyError
 
-        # Use variables that don't exist in common registry to trigger fallback
+        # Use variables that don't exist in common registry - this should be fatal
         variables_with_missing = {"temp": "sensor.nonexistent_entity"}
 
         evaluator = FormulaEvaluator(mock_hass, "temp", variables_with_missing)  # No fallback specified
-        result = evaluator.evaluate()
 
-        assert result == 0.0  # Default fallback value
+        # Missing entities should raise MissingDependencyError (fatal error)
+        with pytest.raises(MissingDependencyError) as exc_info:
+            evaluator.evaluate()
+
+        assert "sensor.nonexistent_entity" in str(exc_info.value)

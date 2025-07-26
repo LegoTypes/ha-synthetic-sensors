@@ -143,10 +143,10 @@ class StorageManager:
                         sensors=_default_sensors(),
                         sensor_sets=_default_sensor_sets(),
                     )
-                    _LOGGER.info("Initialized empty synthetic sensor storage")
+                    _LOGGER.debug("Initialized empty synthetic sensor storage")
                 else:
                     self._data = stored_data
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         "Loaded synthetic sensor storage: %d sensors, %d sensor sets",
                         len(stored_data.get("sensors", {})),
                         len(stored_data.get("sensor_sets", {})),
@@ -528,7 +528,7 @@ class StorageManager:
         )
         await self.async_save()
         self._sensor_set_cache.clear()
-        _LOGGER.info("Cleared all synthetic sensor storage data")
+        _LOGGER.debug("Cleared all synthetic sensor storage data")
 
     def get_storage_stats(self) -> dict[str, Any]:
         """Get storage statistics."""

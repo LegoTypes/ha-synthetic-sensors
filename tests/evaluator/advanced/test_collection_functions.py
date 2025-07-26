@@ -41,14 +41,14 @@ class TestCollectionFunctionParsing:
 
     def test_extract_dynamic_queries_label(self):
         """Test extraction of label-based dynamic queries."""
-        formula = 'count("label:critical,important")'
+        formula = 'count("label:critical|important")'
         parsed = self.parser.parse_formula_dependencies(formula, {})
 
         assert len(parsed.dynamic_queries) == 1
         query = parsed.dynamic_queries[0]
         assert query.function == "count"
         assert query.query_type == "label"
-        assert query.pattern == "critical,important"
+        assert query.pattern == "critical|important"
 
     def test_extract_dynamic_queries_area(self):
         """Test extraction of area-based dynamic queries."""

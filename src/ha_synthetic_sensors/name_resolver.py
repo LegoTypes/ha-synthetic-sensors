@@ -16,6 +16,7 @@ from simpleeval import NameNotDefined, simple_eval
 
 from .constants_formula import is_ha_state_value, is_ha_unknown_equivalent
 from .device_classes import is_valid_ha_domain
+from .exceptions import MissingDependencyError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -129,11 +130,6 @@ class NameResolver:
             entity_id = variable_name
             self._logger.debug("Using direct entity ID reference: %s", variable_name)
         else:
-            self._logger.warning(
-                "Variable '%s' not in variables / not a valid entity. variables: %s",
-                variable_name,
-                list(self._variables.keys()),
-            )
             raise NameNotDefined(
                 variable_name,
                 f"Variable '{variable_name}' not defined and not a valid entity ID",
@@ -152,12 +148,6 @@ class NameResolver:
 
         # Handle unavailable/unknown states
         if entity_state.state is None or is_ha_state_value(entity_state.state) or is_ha_unknown_equivalent(entity_state.state):
-            self._logger.warning(
-                "Entity '%s' (variable '%s') is unavailable: %s",
-                entity_id,
-                variable_name,
-                entity_state.state,
-            )
             raise HomeAssistantError(f"Entity '{entity_id}' for variable '{variable_name}' is unavailable")
 
         # Convert state to numeric value
@@ -533,13 +523,17 @@ class FormulaEvaluator:
             self._logger.error("simpleeval library not installed: %s", exc)
             return self._fallback_value
 
-        except (NameNotDefined, HomeAssistantError) as exc:
-            self._logger.warning(
-                "Formula evaluation failed: '%s' - %s, using fallback value %s",
-                self._formula,
-                exc,
-                self._fallback_value,
-            )
+        except NameNotDefined as exc:
+            # Variable not defined - this is a fatal error
+            raise MissingDependencyError(f"Formula evaluation failed: '{self._formula}' - {exc}") from exc
+
+        except HomeAssistantError as exc:
+            # Check if this is a missing entity (fatal) vs unavailable entity (non-fatal)
+            if "not found" in str(exc):
+                # Entity doesn't exist - this is a fatal error
+                raise MissingDependencyError(f"Formula evaluation failed: '{self._formula}' - {exc}") from exc
+            # Entity exists but is unavailable - use fallback (can't do math with "unavailable")
+            self._logger.error("Formula evaluation failed: '%s' - %s, using fallback", self._formula, exc)
             return self._fallback_value
 
         except Exception as exc:  # pylint: disable=broad-except

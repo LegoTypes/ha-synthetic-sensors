@@ -54,13 +54,13 @@ class TestDependencyParser:
 
     def test_extract_dynamic_queries_sum_label(self, parser):
         """Test extraction of tag query patterns."""
-        formula = "avg(label:heating,cooling) * factor"
+        formula = "avg(label:heating|cooling) * factor"
 
         queries = parser.extract_dynamic_queries(formula)
 
         assert len(queries) == 1
         assert queries[0].query_type == "label"
-        assert queries[0].pattern == "heating,cooling"
+        assert queries[0].pattern == "heating|cooling"
         assert queries[0].function == "avg"
 
     def test_extract_dynamic_queries_device_class(self, parser):

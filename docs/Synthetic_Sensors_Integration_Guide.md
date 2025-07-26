@@ -3,6 +3,112 @@
 This guide demonstrates how to integrate the `ha-synthetic-sensors` library into your Home Assistant custom integration for
 creating dynamic, formula-based sensors.
 
+## Overview: How Synthetic Sensors Work
+
+Synthetic sensors are **wrapper sensors** that extend other sensors with formula-based calculations. They provide a new state
+value by applying mathematical formulas to to other entities, allowing you to:
+
+- **Extend sensor capabilities** with calculated attributes
+- **Transform sensor values** using mathematical formulations
+- **Combine multiple sensors** into derived metrics
+- **Add computed states** without modifying original sensors
+- **Add computed attributes** that evaluate base on the main sensor state or other entities
+
+### Data Sources for Synthetic Sensors
+
+Synthetic sensors calculate their state using formulas that reference other sensor data. **The formula determines the
+synthetic sensor's final state value** - there is no requirement for a single "backing entity." Instead, synthetic sensors
+can:
+
+- **Use a dedicated state backing entity** (referenced via `state` token) as the primary data source
+- **Combine multiple existing sensors or attriubutes** using their entity IDs in formulas
+- **Perform pure calculations** across any combination of sensor references
+
+The data sources for the evaluated formulas can be:
+
+**A) Virtual Backing Entity (Integration-Managed)**
+
+- Custom data structure in your integration's memory
+- Not registered in HA's entity registry
+- Updated by your integration's coordinator
+- Referenced via `state` token in formulas when sensor has a dedicated backing entity
+
+**B) Native HA Entity References (Integration-Provided)**
+
+- Real HA sensors created by your integration
+- Registered in HA's entity registry
+- Referenced by entity ID in synthetic sensor formulas
+- Enables extending or combining your integration's existing sensors
+
+**C) External HA Entity References (Cross-Integration)**
+
+- Sensors from other integrations or manual configuration
+- Referenced by entity ID in synthetic sensor formulas
+- Automatically tracked via HA state change events
+- Enables cross-integration calculations and combinations
+
+### Process Flow for Each Pattern
+
+#### Pattern A: Virtual Entity Extension (Device Integrations)
+
+```text
+Your Integration Data → Virtual Backing Entity → Synthetic Sensor Extension
+        ↓                        ↓                           ↓
+   Device API Data        coordinator.register()     Formula calculates new state
+   coordinator.update()   virtual_entity.value      from virtual entity value
+   notify_changes()       (not in HA registry)      (appears in HA as sensor)
+```
+
+**Steps:**
+
+1. **Set up virtual backing entities** in your coordinator's memory
+2. **Register entities** with synthetic sensor package via mapping
+3. **Update virtual values** when your device data changes
+4. **Notify changes** to trigger selective synthetic sensor updates
+5. **Synthetic sensors calculate** new states from virtual entity values
+
+#### Pattern B: Native HA Entity Extension (Integration Sensors)
+
+```text
+Your Integration → Native HA Sensor → Synthetic Sensor Extension
+        ↓                ↓                      ↓
+   Create real sensor   HA entity lifecycle    Formula extends existing
+   via async_add_entities   state updates      sensor with new calculations
+```
+
+**Steps:**
+
+1. **Create native HA sensors** via `async_add_entities`
+2. **Set up synthetic sensors** to reference native sensor entity IDs
+3. **Update native sensors** through normal HA mechanisms
+4. **Synthetic sensors automatically update** via HA state change tracking
+5. **Extended sensors provide** calculated values based on native sensor states
+
+#### Pattern C: External HA Entity Extension (Cross-Integration)
+
+```text
+Other Integration → HA Entity → Synthetic Sensor Extension
+        ↓              ↓              ↓
+   External sensor    HA state      Formula combines/transforms
+   updates normally   changes       external entity values
+```
+
+**Steps:**
+
+1. **Identify external HA entities** you want to extend or combine
+2. **Reference entity IDs** directly in synthetic sensor YAML variables
+3. **Set up synthetic sensors** with `allow_ha_lookups=True`
+4. **External entities update** independently via their own integrations
+5. **Synthetic sensors automatically recalculate** when referenced entities change
+
+### Sythetic Benefits
+
+- **No modification** of original sensors or integrations required
+- **Dynamic formulas** can be updated without code changes (via YAML)
+- **Selective updates** - only affected sensors recalculate when dependencies change
+- **Clean architecture** - separates data provision from sensor presentation
+- **Cross-integration** capabilities for combining data from multiple sources
+
 ## Quick Start - Recommended Pattern
 
 For most integrations, use this simplified pattern with **one function call**:
@@ -162,7 +268,31 @@ sensor_to_backing_mapping = {
 # Invalid - Empty strings
 {"": "sensor.backing_entity"}
 {"sensor_key": ""}
+async def setup_with_yaml_import(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    yaml_content: str
+) -> StorageManager:
+    """Set up sensor set by importing YAML content."""
 
+    storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
+    await storage_manager.async_load()
+
+    device_identifier = "your_device_id"
+    sensor_set_id = f"{device_identifier}_sensors"
+
+    # Create sensor set first
+    await storage_manager.async_create_sensor_set(
+        sensor_set_id=sensor_set_id,
+        device_identifier=device_identifier,
+        name="My Device Sensors",
+    )
+
+    # Import YAML content
+    sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+    await sensor_set.async_import_yaml(yaml_content)
+
+    return storage_manager
 # Invalid - Whitespace-only strings
 {"   ": "sensor.backing_entity"}
 {"sensor_key": "   "}
@@ -189,84 +319,134 @@ backing_entity_ids = {
 }
 ```
 
-**Examples that will raise `ValueError`:**
+**Examples that will raise `SyntheticSensorsConfigError`:**
 
 ```python
-# Invalid - None values
+# Invalid - Direct registration with empty set in virtual-only mode
+register_data_provider_entities(set(), allow_ha_lookups=False)
+
+# Invalid - Direct registration with empty set (even with HA lookups)
+register_data_provider_entities(set(), allow_ha_lookups=True)
+
+# Invalid - None values in entity set
 {None, "sensor.backing_entity"}
 
-# Invalid - Empty strings
+# Invalid - Empty strings in entity set
 {"", "sensor.backing_entity"}
 
-# Invalid - Whitespace-only strings
+# Invalid - Whitespace-only strings in entity set
 {"   ", "sensor.backing_entity"}
 
-# Invalid - Wrong types
+# Invalid - Wrong types in entity set
 {123, "sensor.backing_entity"}
 ```
 
+**Valid usage patterns:**
+
+```python
+# Valid - Populated entity set
+backing_entity_ids = {"sensor.virtual_power", "sensor.virtual_energy"}
+register_data_provider_entities(backing_entity_ids, allow_ha_lookups=False)
+
+# Valid - HA-only mode (no direct registration needed)
+# Use convenience methods with sensor_to_backing_mapping=None and allow_ha_lookups=True
+
+# Valid - Empty mapping in convenience method with HA lookups
+sensor_to_backing_mapping = {}  # Empty dict is allowed in convenience methods
+async_setup_synthetic_sensors(..., sensor_to_backing_mapping=sensor_to_backing_mapping, allow_ha_lookups=True)
+```
+
+### API Design Logic
+
+The library distinguishes between **convenience methods** and **direct API calls** to provide appropriate validation:
+
+#### Convenience Methods (Lenient)
+
+```python
+# Empty mapping in convenience methods = HA-only mode (when allow_ha_lookups=True)
+async_setup_synthetic_sensors(
+    sensor_to_backing_mapping={},  # Empty dict is OK
+    allow_ha_lookups=True,  # Will use HA entities only
+)
+
+# No mapping in convenience methods = valid for pure calculation sensors
+async_setup_synthetic_sensors(
+    sensor_to_backing_mapping=None,  # No mapping is OK
+    allow_ha_lookups=False,  # Sensors cannot use 'state' token
+)
+
+```
+
+#### Direct API Calls (Strict)
+
+```python
+# Explicit empty set is always an error - indicates confusion about intent
+sensor_manager.register_data_provider_entities(set())  # ERROR: Empty set is explicit mistake
+
+
+# Use None or omit parameter for HA-only mode instead
+
+# (Don't call register_data_provider_entities at all for HA-only mode)
+```
+
+#### Validation Context
+
+- **`allow_ha_lookups=False`**: Virtual entities required, empty/None backing entities is error
+- **`allow_ha_lookups=True`**: HA fallback allowed, but explicit empty set still error (use None instead)
+
 ### Error Handling
 
-When validation fails, the library raises a `ValueError` with detailed information about all invalid entries:
+When validation fails, the library raises a `SyntheticSensorsConfigError` with detailed information about the issue:
 
 ```python
 try:
     sensor_manager = await async_setup_synthetic_sensors(
         # ... other parameters ...
         sensor_to_backing_mapping=invalid_mapping,
+        allow_ha_lookups=False,
     )
-except ValueError as e:
-    # Error message will list all invalid entries
-    print(f"Validation failed: {e}")
-    # Example: "Invalid sensor-to-backing mapping entries: None sensor key,
-    # Invalid backing entity ID for sensor key sensor_key_2: None"
+except SyntheticSensorsConfigError as e:
+    # Error message will explain the validation issue
+    print(f"Configuration error: {e}")
+    # Example: "Empty sensor-to-backing mapping in virtual-only mode (allow_ha_lookups=False)"
+
+try:
+    sensor_manager.register_data_provider_entities(set(), allow_ha_lookups=False)
+except SyntheticSensorsConfigError as e:
+    print(f"Direct API error: {e}")
+    # Example: "No backing entities provided in virtual-only mode (allow_ha_lookups=False).
+    # Either provide backing entities or enable HA lookups."
 ```
 
 ## Real-Time Update Patterns
 
-### Pattern 1: Virtual Backing Entities (Recommended)
+The update pattern depends on your backing entity source:
 
-This pattern provides the best performance with in-memory synthetic sensor backing store and real-time updates:
+### Virtual Backing Entities (Custom Data Provider)
+
+When your integration provides its own data via virtual backing entities:
 
 ```python
-# In your sensor.py platform
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    # Set up native sensors
-    native_entities = create_native_sensors(coordinator)
-    async_add_entities(native_entities)
-
-    # Set up synthetic sensor configuration
-    storage_manager = await setup_synthetic_configuration(hass, config_entry, coordinator)
-
-    # Create change notifier callback - this enables real-time updates
-    def change_notifier_callback(changed_entity_ids: set[str]) -> None:
-        """Handle change notifications for selective sensor updates."""
-        # This will be called by your integration when backing entity values change
-        # The sensor_manager will automatically update only affected sensors
-        pass
-
-    # Register synthetic sensors with interface
-    sensor_manager = await async_setup_synthetic_sensors(
-        hass=hass,
-        config_entry=config_entry,
-        async_add_entities=async_add_entities,
-        storage_manager=storage_manager,
-        device_identifier=coordinator.device_id,
-        data_provider_callback=create_data_provider_callback(coordinator),
-        change_notifier=change_notifier_callback,  # Enable real-time updates
-        allow_ha_lookups=False,
-    )
-
-    # Store sensor_manager reference for your integration to use
-    hass.data[DOMAIN][config_entry.entry_id]["sensor_manager"] = sensor_manager
+# Pattern 1 setup - Virtual backing entities with change notification
+sensor_manager = await async_setup_synthetic_sensors(
+    hass=hass,
+    config_entry=config_entry,
+    async_add_entities=async_add_entities,
+    storage_manager=storage_manager,
+    device_identifier=coordinator.device_id,
+    data_provider_callback=create_data_provider_callback(coordinator),
+    change_notifier=change_notifier_callback,  # Enable real-time selective updates
+    sensor_to_backing_mapping=sensor_to_backing_mapping,  # Register your virtual entities
+    allow_ha_lookups=False,  # Virtual entities only
+)
 ```
 
-### Pattern 2: Traditional HA Entity Updates
+### HA Entity Backing (Cross-Integration References)
 
-For integrations using real HA entities as backing entities:
+When your YAML references existing HA entities from other integrations:
 
 ```python
-# Traditional pattern - no change notifier needed
+# Pattern 2 setup - HA entity references with automatic tracking
 sensor_manager = await async_setup_synthetic_sensors(
     hass=hass,
     config_entry=config_entry,
@@ -275,7 +455,27 @@ sensor_manager = await async_setup_synthetic_sensors(
     device_identifier=coordinator.device_id,
     # No data_provider_callback - uses HA entity state lookups
     # No change_notifier - automatic via async_track_state_change_event
+    # No sensor_to_backing_mapping - entities resolved from YAML variable references
     allow_ha_lookups=True,  # Use real HA entities
+)
+```
+
+### Hybrid Backing (Mixed Virtual and HA Entities)
+
+When your YAML uses both virtual entities and existing HA entities:
+
+```python
+# Pattern 3 setup - Hybrid virtual and HA entity backing
+sensor_manager = await async_setup_synthetic_sensors(
+    hass=hass,
+    config_entry=config_entry,
+    async_add_entities=async_add_entities,
+    storage_manager=storage_manager,
+    device_identifier=coordinator.device_id,
+    data_provider_callback=create_data_provider_callback(coordinator),  # For virtual entities
+    change_notifier=change_notifier_callback,  # For virtual entity updates
+    sensor_to_backing_mapping=virtual_backing_mapping,  # Only virtual entities registered
+    allow_ha_lookups=True,  # Allow fallback to HA entity lookups
 )
 ```
 
@@ -352,19 +552,86 @@ updates**:
 4. **Synthetic sensors package updates only affected sensors** using `async_update_sensors_for_entities()`
 5. **Real-time updates with optimal performance**
 
-## Recommended Architecture: Enhanced Virtual Backing Entities
+## YAML-Based Sensor Set Patterns
 
-The cleanest approach uses **YAML templates** with **virtual backing entities** and **change notification**:
+When working with YAML-based sensor definitions, choose the appropriate pattern based on your backing entity needs:
+
+### Pattern 1: Custom Virtual Backing Entities (Recommended for Device Integrations)
+
+**Use when:** Your integration provides its own data and needs virtual backing entities that don't exist in HA.
+
+**Benefits:**
 
 - **Clean separation** between templates and data
 - **Type-safe helpers** for all ID generation
 - **Real-time selective updates** via change notification
 - **Optimal performance** - only update what changed
 - **Virtual entities** don't pollute HA's entity registry
+- **Custom data provider** controls all backing entity values
 
-### Complete Implementation Example
+**Backing Entity Registration Required:** Yes - you must register virtual backing entities with your coordinator.
 
-Here's how to implement this pattern using a real-world example from the SPAN Panel integration:
+```python
+# Register virtual backing entities with your coordinator
+for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
+    api_key = get_api_key_for_sensor(sensor_unique_id)
+    synthetic_coord.register_backing_entity(backing_entity_id, api_key)
+```
+
+### Pattern 2: Reference Existing HA Entities (For Cross-Integration Formulas)
+
+**Use when:** Your YAML references existing HA entities from other integrations or manual entities.
+
+**Benefits:**
+
+- **Simple setup** - no backing entity registration needed
+- **Automatic HA state tracking** via `async_track_state_change_event`
+- **Cross-integration formulas** can reference any HA entity
+- **Mixed mode support** - can combine with virtual entities
+
+**Backing Entity Registration Required:** No - HA entities are automatically resolved.
+
+```python
+# YAML can directly reference existing HA entities
+sensors:
+  combined_power:
+    formula: "sensor.solar_power + sensor.battery_power + state"
+    # sensor.solar_power and sensor.battery_power are existing HA entities
+    # 'state' references this sensor's backing entity (if any)
+```
+
+### Pattern 3: Hybrid Approach (Mixed Virtual and HA Entities)
+
+**Use when:** You need both custom virtual entities AND references to existing HA entities.
+
+**Benefits:**
+
+- **Maximum flexibility** - combine custom data with HA entities
+- **Selective registration** - only register virtual entities you provide
+- **Fallback support** - missing virtual entities can fall back to HA lookups
+
+**Backing Entity Registration Required:** Partial - only for virtual entities you provide.
+
+```python
+# Register only your virtual backing entities
+for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
+    if is_virtual_entity(backing_entity_id):  # Your logic to identify virtual entities
+        api_key = get_api_key_for_sensor(sensor_unique_id)
+        synthetic_coord.register_backing_entity(backing_entity_id, api_key)
+# HA entities are automatically resolved via allow_ha_lookups=True
+```
+
+## Pattern Selection Guide
+
+| Integration Type    | Backing Entity Source | Pattern   | `allow_ha_lookups` | Registration Required  |
+| ------------------- | --------------------- | --------- | ------------------ | ---------------------- |
+| Device Integration  | Custom device data    | Pattern 1 | `False`            | Yes - Virtual entities |
+| Cross-Integration   | Existing HA entities  | Pattern 2 | `True`             | No                     |
+| Utility Integration | Mix of both           | Pattern 3 | `True`             | Partial - Virtual only |
+
+### Complete Implementation Example - Pattern 1 (Custom Virtual Backing)
+
+Here's how to implement Pattern 1 using a real-world example from the SPAN Panel integration:
 
 #### 1. Helper Functions for ID Generation
 
@@ -427,44 +694,76 @@ global_settings:
 sensors: {}
 ```
 
-**Important: Understanding Backing Entity References**
+**Important: Understanding YAML Entity References and Backing Entities**
 
-The templates use the `state` special token to reference backing entities:
+The backing entity resolution depends on your pattern choice and how entities are referenced in YAML:
 
-1. **Sensor-to-Backing Mapping**: The integration provides a mapping from sensor keys to backing entity IDs (e.g.,
-   `{"span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_power": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power"}`)
-2. **State Token Resolution**: When the formula uses `state`, the package looks up the sensor key in the mapping to find the
-   backing entity ID
-3. **Data Provider Callback**: The backing entity ID is passed to the integration's data provider callback to get the current
-   value
+#### Pattern 1: Virtual Backing with `state` Token + Mapping
 
-So when you see:
+For custom virtual backing entities, use the `state` special token with sensor-to-backing mapping:
 
 ```yaml
-formula: "state"
+# In your YAML template
+formula: "state" # References the backing entity for this sensor
 ```
 
-This means:
+**Resolution Process:**
 
-- `state` is a special token that references the backing entity for this sensor
-- The package uses the sensor key to look up the backing entity ID in the mapping
-- The backing entity ID is passed to your data provider callback to get the current value
+1. **Sensor-to-Backing Mapping**: Integration provides mapping from sensor keys to virtual backing entity IDs
+2. **State Token Resolution**: When formula uses `state`, package looks up sensor key to find backing entity ID
+3. **Data Provider Callback**: Virtual backing entity ID is passed to your data provider callback
 
 **Example Mapping:**
 
 ```python
 sensor_to_backing_mapping = {
-    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_power": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power",
-    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_energy_consumed": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_consumed",
-    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_energy_produced": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_produced"
+    "span_power_sensor": "sensor.span_virtual_backing_power",
+    "span_energy_sensor": "sensor.span_virtual_backing_energy",
 }
+# Virtual entities registered with your coordinator, not HA
 ```
 
-**Key Points:**
+#### Pattern 2: Direct HA Entity References in YAML
 
-- **Key**: Sensor key (from YAML sensor configuration)
-- **Value**: Backing entity ID (the actual entity that provides data)
-- **Resolution**: Package maps sensor key → backing entity ID → data provider callback
+For existing HA entities, reference them directly in YAML variables:
+
+```yaml
+# In your YAML configuration
+sensors:
+  combined_power:
+    formula: "solar_power + battery_power"
+    variables:
+      solar_power: "sensor.solar_inverter_power" # Real HA entity
+      battery_power: "sensor.battery_system_power" # Real HA entity
+```
+
+**Resolution Process:**
+
+1. **Direct Entity References**: YAML variables contain actual HA entity IDs
+2. **Automatic HA Lookup**: Package resolves entities via HA state lookups
+3. **No Registration Required**: HA entities are automatically tracked
+
+#### Pattern 3: Hybrid - Mixed References
+
+Combine both approaches in the same YAML:
+
+```yaml
+sensors:
+  total_power:
+    formula: "state + external_solar" # state = virtual, external_solar = HA entity
+    variables:
+      external_solar: "sensor.neighbor_solar_power" # Real HA entity
+# 'state' resolved via sensor_to_backing_mapping to virtual entity
+# 'external_solar' resolved directly to HA entity
+```
+
+**Key Distinctions:**
+
+| Reference Type     | YAML Syntax                           | Registration Required | Data Source        |
+| ------------------ | ------------------------------------- | --------------------- | ------------------ |
+| Virtual Backing    | `state` token                         | Yes - via mapping     | Your data provider |
+| HA Entity Variable | `variable_name: "sensor.real_entity"` | No                    | HA state lookups   |
+| Global HA Variable | From global_settings variables        | No                    | HA state lookups   |
 
 ### Attribute Formulas and the 'state' Variable
 

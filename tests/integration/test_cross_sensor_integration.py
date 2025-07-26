@@ -57,15 +57,8 @@ class TestCrossSensorIntegration:
 
             await storage_manager.async_create_sensor_set(sensor_set_id)
 
-            print(f"📋 Loading test YAML from fixture...")
-            print(f"📋 Test YAML content:\n{test_yaml_content}")
-
             # Import YAML with cross-sensor references - this should trigger resolution
             result = await storage_manager.async_from_yaml(yaml_content=test_yaml_content, sensor_set_id=sensor_set_id)
-
-            print(f"📊 Import result: {result}")
-            print(f"📝 Sensors imported: {result['sensors_imported']}")
-            print(f"📝 Sensor unique IDs: {result['sensor_unique_ids']}")
 
             # Verify import succeeded
             assert result["sensors_imported"] == 2, f"Expected 2 sensors, got {result['sensors_imported']}"
@@ -87,25 +80,16 @@ class TestCrossSensorIntegration:
             assert base_power_sensor is not None, "roundtrip_base_power_sensor should exist"
             assert efficiency_calc_sensor is not None, "roundtrip_efficiency_calc sensor should exist"
 
-            # Verify entity ID assignment
-            print(f"📋 Base power sensor entity_id: {base_power_sensor.entity_id}")
-            print(f"📋 Efficiency calc sensor entity_id: {efficiency_calc_sensor.entity_id}")
-
             # Both sensors should have entity IDs assigned (may or may not have collision suffixes in test)
             assert base_power_sensor.entity_id is not None, "Base power sensor should have entity_id assigned"
             assert efficiency_calc_sensor.entity_id is not None, "Efficiency calc sensor should have entity_id assigned"
 
-            # In a real environment with collision, they would be different, but in test they may be the same
-            # The important thing is that cross-sensor references are resolved correctly
-
             # Verify cross-sensor reference resolution in efficiency_calc sensor
             efficiency_formula = efficiency_calc_sensor.formulas[0].formula
-            print(f"📋 Efficiency calc formula: {efficiency_formula}")
 
-            # The formula should reference the base power sensor (either by entity ID or sensor key)
-            # In the current implementation, it may still use the sensor key
-            assert "roundtrip_base_power_sensor" in efficiency_formula, (
-                f"Efficiency calc formula should reference base power sensor: {efficiency_formula}"
+            # The formula should reference the base power sensor by entity ID
+            assert base_power_sensor.entity_id in efficiency_formula, (
+                f"Efficiency calc formula should reference base power sensor by entity ID: {efficiency_formula}"
             )
 
             # Verify self-reference resolution using state token
@@ -116,24 +100,19 @@ class TestCrossSensorIntegration:
             daily_power_attr = base_power_attributes.get("daily_power")
             assert daily_power_attr is not None, "daily_power attribute should exist"
             assert "state" in daily_power_attr, f"daily_power should use 'state' token: {daily_power_attr}"
-            assert "base_power_sensor" not in daily_power_attr, f"daily_power should not use sensor key: {daily_power_attr}"
+            assert "roundtrip_base_power_sensor" not in daily_power_attr, (
+                f"daily_power should not use sensor key: {daily_power_attr}"
+            )
 
             # Verify variable resolution
             base_power_variables = base_power_sensor.formulas[0].variables
-            print(f"📋 Base power sensor variables: {base_power_variables}")
 
             # Self-reference in variable should be resolved to 'state'
             my_ref_value = base_power_variables.get("my_ref")
-            # TODO: This should be resolved to 'state' according to design guide, but currently isn't
-            # The current implementation doesn't resolve self-references in variables
-            print(f"⚠️  Self-reference variable 'my_ref' is '{my_ref_value}' - should be 'state' according to design guide")
-            # For now, just verify it exists
-            assert my_ref_value is not None, "Self-reference variable should exist"
+            assert my_ref_value == "state", f"Self-reference variable should be 'state': {my_ref_value}"
 
             # Export the processed YAML and verify round-trip
-            print(f"📋 Exporting processed YAML...")
             exported_yaml = await storage_manager.async_export_yaml(sensor_set_id)
-            print(f"📋 Exported YAML:\n{exported_yaml}")
 
             # Parse exported YAML and verify it matches expected structure
             import yaml
@@ -154,10 +133,19 @@ class TestCrossSensorIntegration:
                 f"Exported entity_id should match HA-assigned value: {base_power_exported['entity_id']} vs {base_power_sensor.entity_id}"
             )
 
+            # Main formula should use 'state' token for self-reference
+            assert base_power_exported["formula"] == "state * 1.0", (
+                f"Main formula should use 'state' token: {base_power_exported['formula']}"
+            )
+
             # Variables should have self-references resolved to 'state'
             assert base_power_exported["variables"]["my_ref"] == "state", (
                 f"Self-reference variable should be 'state': {base_power_exported['variables']['my_ref']}"
             )
+
+            # Attributes should use 'state' token for self-references
+            daily_power_formula = base_power_exported["attributes"]["daily_power"]["formula"]
+            assert daily_power_formula == "state * 24", f"Daily power attribute should use 'state' token: {daily_power_formula}"
 
             # Verify efficiency_calc sensor structure
             efficiency_exported = exported_data["sensors"]["roundtrip_efficiency_calc"]
@@ -168,15 +156,27 @@ class TestCrossSensorIntegration:
                 f"Exported entity_id should match HA-assigned value: {efficiency_exported['entity_id']} vs {efficiency_calc_sensor.entity_id}"
             )
 
-            # Formula should reference base power sensor (either by entity ID or sensor key)
-            assert "roundtrip_base_power_sensor" in efficiency_exported["formula"], (
-                f"Formula should reference base power sensor: {efficiency_exported['formula']}"
+            # Formula should reference base power sensor by entity ID
+            assert base_power_sensor.entity_id in efficiency_exported["formula"], (
+                f"Formula should reference base power sensor by entity ID: {efficiency_exported['formula']}"
             )
 
-            print("✅ Cross-sensor reference round-trip test completed successfully!")
-            print("✅ Entity ID collision resolution working correctly!")
-            print("✅ Self-references properly resolved to 'state' token!")
-            print("✅ Cross-sensor references properly resolved to entity IDs!")
+            # Variables should reference base power sensor by entity ID
+            assert efficiency_exported["variables"]["other_power"] == base_power_sensor.entity_id, (
+                f"Cross-sensor variable should reference entity ID: {efficiency_exported['variables']['other_power']}"
+            )
+
+            # Attributes should reference base power sensor by entity ID
+            power_ratio_formula = efficiency_exported["attributes"]["power_ratio"]["formula"]
+            assert base_power_sensor.entity_id in power_ratio_formula, (
+                f"Power ratio attribute should reference base power sensor by entity ID: {power_ratio_formula}"
+            )
+
+            # Self-references in attributes should use 'state' token
+            daily_efficiency_formula = efficiency_exported["attributes"]["daily_efficiency"]["formula"]
+            assert daily_efficiency_formula == "state * 24", (
+                f"Daily efficiency attribute should use 'state' token: {daily_efficiency_formula}"
+            )
 
             # Cleanup: Delete the sensor set
             if storage_manager.sensor_set_exists(sensor_set_id):

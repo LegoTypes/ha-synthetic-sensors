@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from ...exceptions import CircularDependencyError
 from .base_manager import DependencyManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class CircularReferenceDetector(DependencyManager):
         circular_refs = self._detect_circular_references(dependencies, sensor_name, sensor_registry)
 
         if circular_refs:
-            _LOGGER.warning("Circular reference detector: found circular references: %s", circular_refs)
+            raise CircularDependencyError(list(circular_refs))
 
         return circular_refs
 

@@ -12,6 +12,7 @@ import yaml
 
 from .config_models import Config, FormulaConfig, SensorConfig
 from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, ConfigDict
+from .exceptions import SchemaValidationError
 from .formula_utils import add_optional_formula_fields
 from .schema_validator import validate_yaml_config
 
@@ -59,8 +60,7 @@ class YAMLConfigParser:
                 yaml_data = trim_yaml_keys(yaml_data_raw)
 
             if not yaml_data:
-                self._logger.warning("Empty configuration file")
-                return {}
+                raise SchemaValidationError("Empty configuration file")
 
             return cast(ConfigDict, yaml_data)
 
@@ -91,8 +91,7 @@ class YAMLConfigParser:
                 yaml_data = trim_yaml_keys(yaml_data_raw)
 
             if not yaml_data:
-                self._logger.warning("Empty configuration file")
-                return {}
+                raise SchemaValidationError("Empty configuration file")
 
             return cast(ConfigDict, yaml_data)
 
@@ -121,8 +120,7 @@ class YAMLConfigParser:
             yaml_data = trim_yaml_keys(yaml_data_raw)
 
             if not yaml_data:
-                self._logger.warning("Empty YAML content")
-                return {}
+                raise SchemaValidationError("Empty YAML content")
 
             return cast(ConfigDict, yaml_data)
 

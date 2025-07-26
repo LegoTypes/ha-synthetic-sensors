@@ -1,18 +1,24 @@
-"""Condition parser for collection resolver.
-
-This module handles parsing and evaluation of state and attribute conditions
-used in collection patterns.
-"""
+"""Condition parsing and evaluation for collection patterns."""
 
 import logging
 import re
-from typing import Any
+from typing import Any, Callable, Protocol
 
 from simpleeval import SimpleEval
 
 from .exceptions import DataValidationError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class ComparisonHandler(Protocol):
+    """Protocol for comparison handlers."""
+
+    def can_handle(self, actual_val: Any, expected_val: Any, op: str) -> bool:
+        """Check if this handler can handle the given types and operator."""
+
+    def compare(self, actual_val: Any, expected_val: Any, op: str) -> bool:
+        """Perform the comparison and return result."""
 
 
 class ConditionParser:
@@ -210,26 +216,80 @@ class ConditionParser:
         Returns:
             True if comparison is true
         """
-        # Handle equality operators
+        # Handle equality operators (work with any type)
         if op in ("==", "!="):
             return bool(actual_val == expected_val) if op == "==" else bool(actual_val != expected_val)
 
-        # For numeric comparisons, ensure both values are numeric
-        if not (isinstance(actual_val, (int, float)) and isinstance(expected_val, (int, float))):
-            _LOGGER.warning("Non-numeric comparison attempted: %s %s %s", actual_val, op, expected_val)
-            return False
+        # Try to find a comparison handler that can handle these types and operator
+        handler = ConditionParser._get_comparison_handler(actual_val, expected_val, op)
+        if handler:
+            result = handler.compare(actual_val, expected_val, op)
+            return bool(result)
 
-        # Define comparison operations
-        comparison_ops: dict[str, Any] = {
-            "<=": lambda a, e: a <= e,
-            ">=": lambda a, e: a >= e,
-            "<": lambda a, e: a < e,
-            ">": lambda a, e: a > e,
-        }
-
-        # Execute comparison if operator is supported
-        if op in comparison_ops:
-            return bool(comparison_ops[op](actual_val, expected_val))
-
-        _LOGGER.warning("Unknown comparison operator: %s", op)
+        # No handler found - log warning and return False
+        _LOGGER.warning(
+            "No comparison handler found for types %s and %s with operator %s: %s %s %s",
+            type(actual_val).__name__,
+            type(expected_val).__name__,
+            op,
+            actual_val,
+            op,
+            expected_val,
+        )
         return False
+
+    @staticmethod
+    def _get_comparison_handler(actual_val: Any, expected_val: Any, op: str) -> ComparisonHandler | None:
+        """Get the appropriate comparison handler for the given types and operator.
+
+        Args:
+            actual_val: Actual value
+            expected_val: Expected value
+            op: Comparison operator
+
+        Returns:
+            Comparison handler or None if no handler can handle this combination
+        """
+        # Get all registered comparison handlers
+        handlers = ConditionParser._get_comparison_handlers()
+
+        # Find the first handler that can handle this combination
+        for handler in handlers:
+            if handler.can_handle(actual_val, expected_val, op):
+                return handler
+
+        return None
+
+    @staticmethod
+    def _get_comparison_handlers() -> list[ComparisonHandler]:
+        """Get all registered comparison handlers.
+
+        Returns:
+            List of comparison handlers
+        """
+        # For now, return the built-in handlers
+        # In the future, this could be extended to support plugin handlers
+        return [
+            ConditionParser._NumericComparisonHandler(),
+            # Future: ConditionParser._StringComparisonHandler(),
+            # Future: ConditionParser._BooleanComparisonHandler(),
+        ]
+
+    class _NumericComparisonHandler:
+        """Handler for numeric comparisons."""
+
+        def can_handle(self, actual_val: Any, expected_val: Any, op: str) -> bool:
+            """Check if this handler can handle the given types and operator."""
+            return (
+                isinstance(actual_val, (int, float)) and isinstance(expected_val, (int, float)) and op in ("<=", ">=", "<", ">")
+            )
+
+        def compare(self, actual_val: float, expected_val: float, op: str) -> bool:
+            """Perform numeric comparison."""
+            operators: dict[str, Callable[[], bool]] = {
+                "<=": lambda: actual_val <= expected_val,
+                ">=": lambda: actual_val >= expected_val,
+                "<": lambda: actual_val < expected_val,
+                ">": lambda: actual_val > expected_val,
+            }
+            return operators.get(op, lambda: False)()

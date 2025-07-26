@@ -8,6 +8,7 @@ import logging
 from typing import Any, Callable
 
 from .config_models import FormulaConfig
+from .exceptions import MissingDependencyError
 from .type_definitions import ContextValue
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ def resolve_config_variables(
                 eval_context[var_name] = resolved_value
                 _LOGGER.debug("Added config variable %s=%s", var_name, resolved_value)
             else:
-                _LOGGER.warning("Config variable '%s' in formula '%s' resolved to None", var_name, config.name or config.id)
+                raise MissingDependencyError(
+                    f"Config variable '{var_name}' in formula '{config.name or config.id}' resolved to None"
+                )
         except Exception as err:
-            _LOGGER.warning("Error resolving config variable %s: %s", var_name, err)
+            raise MissingDependencyError(f"Error resolving config variable '{var_name}': {err}") from err

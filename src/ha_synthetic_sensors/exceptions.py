@@ -42,6 +42,15 @@ class FormulaSyntaxError(FormulaEvaluationError):
         super().__init__(f"Formula syntax error in '{formula}': {details}")
 
 
+class ConditionParsingError(FormulaEvaluationError):
+    """Condition parsing or evaluation error."""
+
+    def __init__(self, condition: str, details: str):
+        self.condition = condition
+        self.details = details
+        super().__init__(f"Condition parsing error in '{condition}': {details}")
+
+
 class DependencyError(FormulaEvaluationError):
     """Base class for dependency-related errors."""
 
@@ -293,6 +302,7 @@ def is_fatal_error(error: Exception) -> bool:
     # Permanent/fatal errors
     fatal_types = (
         FormulaSyntaxError,
+        ConditionParsingError,
         MissingDependencyError,
         BackingEntityResolutionError,
         SensorMappingError,

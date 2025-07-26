@@ -1,7 +1,7 @@
 """Tests for __init__.py functions with low coverage."""
 
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -57,7 +57,7 @@ class TestInitFunctions:
         mock_config_entry.entry_id = "test_entry"
         mock_config_entry.data = {}
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = Mock()
 
         # Mock storage manager
         mock_storage_manager = MagicMock()
@@ -114,7 +114,7 @@ class TestInitFunctions:
         mock_config_entry.entry_id = "test_entry"
         mock_config_entry.data = {}
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = Mock()
 
         # Mock storage manager
         mock_storage_manager = MagicMock()
@@ -171,7 +171,7 @@ class TestInitFunctions:
         mock_config_entry.entry_id = "test_entry"
         mock_config_entry.data = {}
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = Mock()
 
         # Mock storage manager
         mock_storage_manager = MagicMock()
@@ -227,7 +227,7 @@ class TestInitFunctions:
         mock_config_entry.entry_id = "test_entry"
         mock_config_entry.data = {}
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = Mock()
 
         # Mock storage manager
         mock_storage_manager = MagicMock()
@@ -288,7 +288,7 @@ class TestInitFunctions:
         mock_config_entry.entry_id = "test_entry"
         mock_config_entry.data = {}
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = Mock()
 
         # Mock storage manager
         mock_storage_manager = MagicMock()

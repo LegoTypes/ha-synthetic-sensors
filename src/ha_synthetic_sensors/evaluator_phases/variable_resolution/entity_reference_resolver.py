@@ -78,12 +78,8 @@ class EntityReferenceResolver(VariableResolver):
         if not (self._dependency_handler and hasattr(self._dependency_handler, "get_entity_state")):
             return None
 
-        try:
-            value = self._dependency_handler.get_entity_state(variable_value)
-            if value is not None:
-                _LOGGER.debug("Entity reference resolver: resolved '%s' to %s via direct lookup", variable_value, value)
-                return value
-        except Exception as e:
-            _LOGGER.warning("Error resolving entity reference '%s' via direct lookup: %s", variable_value, e)
-
+        value = self._dependency_handler.get_entity_state(variable_value)
+        if value is not None:
+            _LOGGER.debug("Entity reference resolver: resolved '%s' to %s via direct lookup", variable_value, value)
+            return value
         return None

@@ -84,23 +84,82 @@ class CollectionResolver:
         # Note: The centralized domain cache is managed by constants_entities
         # and will be invalidated by the registry listener when needed
 
-    def resolve_collection(self, query: DynamicQuery) -> list[str]:
-        """Resolve a dynamic query to a list of matching entity IDs.
+    def resolve_collection(self, query: DynamicQuery, exclude_entity_ids: set[str] | None = None) -> list[str]:
+        """Resolve a collection query to a list of entity IDs.
 
         Args:
-            query: Dynamic query specification
+            query: Dynamic query object containing pattern and exclusions
+            exclude_entity_ids: Additional entity IDs to exclude (for auto self-exclusion)
 
         Returns:
-            List of entity IDs that match the query criteria
+            List of entity IDs that match the query criteria (after exclusions)
         """
-        _LOGGER.debug("Resolving collection query: %s:%s", query.query_type, query.pattern)
+        _LOGGER.debug("Resolving collection query: %s:%s (function: %s)", query.query_type, query.pattern, query.function)
 
-        # First, resolve any entity references within the pattern
+        # Resolve the main pattern first
         resolved_pattern = self._resolve_entity_references_in_pattern(query.pattern)
         _LOGGER.debug("Pattern after entity resolution: %s", resolved_pattern)
 
         # Use dispatch pattern to reduce complexity
-        return self._dispatch_query_resolution(query.query_type, resolved_pattern)
+        results = self._dispatch_query_resolution(query.query_type, resolved_pattern)
+
+        # Process exclusions from the query
+        query_exclusions = set()
+        if query.exclusions:
+            for exclusion_pattern in query.exclusions:
+                excluded_entities = self._resolve_exclusion_pattern(exclusion_pattern)
+                query_exclusions.update(excluded_entities)
+                _LOGGER.debug("Exclusion pattern '%s' resolved to: %s", exclusion_pattern, excluded_entities)
+
+        # Combine all exclusions
+        all_exclusions = set()
+        if exclude_entity_ids:
+            all_exclusions.update(exclude_entity_ids)
+        if query_exclusions:
+            all_exclusions.update(query_exclusions)
+
+        # Apply exclusions if specified, but only for entities that are actually in the results
+        if all_exclusions:
+            # Only exclude entities that are actually in the results
+            entities_to_exclude = all_exclusions & set(results)
+            if entities_to_exclude:
+                results = [entity_id for entity_id in results if entity_id not in entities_to_exclude]
+                _LOGGER.debug("Excluded %d entities from collection: %s", len(entities_to_exclude), entities_to_exclude)
+
+        return results
+
+    def _resolve_exclusion_pattern(self, exclusion_pattern: str) -> set[str]:
+        """Resolve an exclusion pattern to a set of entity IDs.
+
+        Args:
+            exclusion_pattern: Pattern like 'area:kitchen' or 'sensor.specific_sensor'
+
+        Returns:
+            Set of entity IDs that match the exclusion pattern
+        """
+        # Check if it's a direct entity ID
+        if "." in exclusion_pattern and ":" not in exclusion_pattern:
+            # Direct entity ID reference
+            return {exclusion_pattern}
+
+        # Check if it's a query pattern (type:value)
+        for query_type, pattern_regex in {
+            "device_class": re.compile(r"^device_class:\s*(.+)$"),
+            "area": re.compile(r"^area:\s*(.+)$"),
+            "label": re.compile(r"^label:\s*(.+)$"),
+            "attribute": re.compile(r"^attribute:\s*(.+)$"),
+            "state": re.compile(r"^state:\s*(.+)$"),
+            "regex": re.compile(r"^regex:\s*(.+)$"),
+        }.items():
+            match = pattern_regex.match(exclusion_pattern)
+            if match:
+                resolved_pattern = self._resolve_entity_references_in_pattern(match.group(1).strip())
+                excluded_entities = self._dispatch_query_resolution(query_type, resolved_pattern)
+                return set(excluded_entities)
+
+        # If no pattern matches, treat as direct entity reference
+        _LOGGER.warning("Could not parse exclusion pattern '%s', treating as entity ID", exclusion_pattern)
+        return {exclusion_pattern}
 
     def _dispatch_query_resolution(self, query_type: str, resolved_pattern: str) -> list[str]:
         """Dispatch query resolution to appropriate handler.
@@ -842,8 +901,7 @@ class CollectionResolver:
 
         # Parse pattern to extract query type and value
         if ":" not in pattern:
-            _LOGGER.warning("Invalid collection pattern format: '%s'. Expected 'type:value'", pattern)
-            return set()
+            raise InvalidCollectionPatternError(pattern, "Invalid collection pattern format. Expected 'type:value'")
 
         query_type, query_pattern = pattern.split(":", 1)
         query_type = query_type.strip()
@@ -854,5 +912,4 @@ class CollectionResolver:
             entities = self._dispatch_query_resolution(query_type, query_pattern)
             return set(entities)
         except Exception as e:
-            _LOGGER.warning("Error resolving collection pattern '%s': %s", pattern, e)
-            return set()
+            raise InvalidCollectionPatternError(pattern, f"Error resolving collection pattern: {e}") from e

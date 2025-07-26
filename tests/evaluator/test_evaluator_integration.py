@@ -12,6 +12,7 @@ import pytest
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.evaluator_config import CircuitBreakerConfig, RetryConfig
+from ha_synthetic_sensors.exceptions import MissingDependencyError
 
 
 @pytest.fixture
@@ -178,11 +179,10 @@ class TestEvaluationWorkflow:
                 with patch.object(evaluator._dependency_handler, "check_dependencies") as mock_check_deps:
                     mock_check_deps.return_value = ({"missing_sensor"}, set(), set())  # Missing dependency
 
-                    result = evaluator.evaluate_formula(sample_formula_config)
+                    with pytest.raises(MissingDependencyError) as exc_info:
+                        evaluator.evaluate_formula(sample_formula_config)
 
-                    assert result["success"] is False
-                    assert result["state"] == "unavailable"
-                    assert "missing_sensor" in result.get("error", "")
+                    assert "missing_sensor" in str(exc_info.value)
 
     def test_evaluation_workflow_unavailable_dependencies(
         self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states
@@ -226,11 +226,10 @@ class TestEvaluationWorkflow:
                     # sensor.direct_entity is missing (not defined as variable or existing entity)
                     mock_check_deps.return_value = ({"sensor.direct_entity"}, set(), set())
 
-                    result = evaluator.evaluate_formula(formula_config)
+                    with pytest.raises(MissingDependencyError) as exc_info:
+                        evaluator.evaluate_formula(formula_config)
 
-                    assert result["success"] is False
-                    assert result["state"] == "unavailable"
-                    assert "sensor.direct_entity" in result.get("error", "")
+                    assert "sensor.direct_entity" in str(exc_info.value)
 
     def test_evaluation_workflow_global_literal_reference(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test evaluation workflow where A references a global literal value."""

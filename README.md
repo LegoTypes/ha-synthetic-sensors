@@ -19,6 +19,112 @@
 A Python package for creating formula-based synthetic sensors in Home Assistant integrations using YAML configuration and
 mathematical expressions.
 
+## Overview: How Synthetic Sensors Work
+
+Synthetic sensors are **wrapper sensors** that extend other sensors with formula-based calculations. They provide a new state
+value by applying mathematical formulas to other entities, allowing you to:
+
+- **Extend sensor capabilities** with calculated attributes
+- **Transform sensor values** using mathematical formulations
+- **Combine multiple sensors** into derived metrics
+- **Add computed states** without modifying original sensors
+- **Add computed attributes** that evaluate based on the main sensor state or other entities
+
+### Data Sources for Synthetic Sensors
+
+Synthetic sensors calculate their state using formulas that reference other sensor data. **The formula determines the
+synthetic sensor's final state value** - there is no requirement for a single "backing entity." Instead, synthetic sensors
+can:
+
+- **Use a dedicated state backing entity** (referenced via `state` token) as the primary data source
+- **Combine multiple existing sensors or attributes** using their entity IDs in formulas
+- **Perform pure calculations** across any combination of sensor references
+
+The data sources for the evaluated formulas can be:
+
+**A) Virtual Backing Entity (Integration-Managed)**
+
+- Custom data structure in your integration's memory
+- Not registered in HA's entity registry
+- Updated by your integration's coordinator
+- Referenced via `state` token in formulas when sensor has a dedicated backing entity
+
+**B) Native HA Entity References (Integration-Provided)**
+
+- Real HA sensors created by your integration
+- Registered in HA's entity registry
+- Referenced by entity ID in synthetic sensor formulas
+- Enables extending or combining your integration's existing sensors
+
+**C) External HA Entity References (Cross-Integration)**
+
+- Sensors from other integrations or manual configuration
+- Referenced by entity ID in synthetic sensor formulas
+- Automatically tracked via HA state change events
+- Enables cross-integration calculations and combinations
+
+### Process Flow for Each Pattern
+
+#### Pattern A: Virtual Entity Extension (Device Integrations)
+
+```text
+Your Integration Data → Virtual Backing Entity → Synthetic Sensor Extension
+        ↓                        ↓                           ↓
+   Device API Data        coordinator.register()     Formula calculates new state
+   coordinator.update()   virtual_entity.value      from virtual entity value
+   notify_changes()       (not in HA registry)      (appears in HA as sensor)
+```
+
+**Steps:**
+
+1. **Set up virtual backing entities** in your coordinator's memory
+2. **Register entities** with synthetic sensor package via mapping
+3. **Update virtual values** when your device data changes
+4. **Notify changes** to trigger selective synthetic sensor updates
+5. **Synthetic sensors calculate** new states from virtual entity values
+
+#### Pattern B: Native HA Entity Extension (Integration Sensors)
+
+```text
+Your Integration → Native HA Sensor → Synthetic Sensor Extension
+        ↓                ↓                      ↓
+   Create real sensor   HA entity lifecycle    Formula extends existing
+   via async_add_entities   state updates      sensor with new calculations
+```
+
+**Steps:**
+
+1. **Create native HA sensors** via `async_add_entities`
+2. **Set up synthetic sensors** to reference native sensor entity IDs
+3. **Update native sensors** through normal HA mechanisms
+4. **Synthetic sensors automatically update** via HA state change tracking
+5. **Extended sensors provide** calculated values based on native sensor states
+
+#### Pattern C: External HA Entity Extension (Cross-Integration)
+
+```text
+Other Integration → HA Entity → Synthetic Sensor Extension
+        ↓              ↓              ↓
+   External sensor    HA state      Formula combines/transforms
+   updates normally   changes       external entity values
+```
+
+**Steps:**
+
+1. **Identify external HA entities** you want to extend or combine
+2. **Reference entity IDs** directly in synthetic sensor YAML variables
+3. **Set up synthetic sensors** with `allow_ha_lookups=True`
+4. **External entities update** independently via their own integrations
+5. **Synthetic sensors automatically recalculate** when referenced entities change
+
+### Synthetic Benefits
+
+- **No modification** of original sensors or integrations required
+- **Dynamic formulas** can be updated without code changes (via YAML)
+- **Selective updates** - only affected sensors recalculate when dependencies change
+- **Clean architecture** - separates data provision from sensor presentation
+- **Cross-integration** capabilities for combining data from multiple sources
+
 ## What it does
 
 - **Creates formula-based sensors** from mathematical expressions
@@ -673,7 +779,7 @@ sensors:
 
 ### Collection Functions (Entity Aggregation)
 
-Sum, average, or count entities dynamically using collection patterns with OR logic support:
+Sum, average, or count entities dynamically using collection patterns with OR logic and exclusion support:
 
 ```yaml
 sensors:
@@ -688,6 +794,24 @@ sensors:
       device_class: "power"
       state_class: "measurement"
 
+  # Collection with exclusions - exclude specific sensors
+  power_without_kitchen:
+    name: "Power Without Kitchen"
+    formula: sum("device_class:power", !"kitchen_oven", !"kitchen_fridge")
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  # Collection with pattern exclusions - exclude entire areas
+  main_floor_power:
+    name: "Main Floor Power"
+    formula: sum("device_class:power", !"area:basement", !"area:garage")
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
   # OR patterns for multiple conditions
   security_monitoring:
     name: "Security Device Count"
@@ -695,14 +819,6 @@ sensors:
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:security"
-
-  main_floor_power:
-    name: "Main Floor Power"
-    formula: sum("area:living_room|area:kitchen|area:dining_room")
-    metadata:
-      unit_of_measurement: "W"
-      device_class: "power"
-      state_class: "measurement"
 
   # Enhanced syntax examples
   active_devices:
@@ -712,37 +828,14 @@ sensors:
       unit_of_measurement: "devices"
       icon: "mdi:check-circle"
 
-  non_diagnostic_sensors:
-    name: "Non-Diagnostic Sensors"
-    formula: count("device_class:!diagnostic|area:!basement")
+  # Complex collection with mixed exclusions
+  filtered_power_analysis:
+    name: "Filtered Power Analysis"
+    formula: avg("device_class:power", !"high_power_device", !"area:utility_room")
     metadata:
-      unit_of_measurement: "sensors"
-      icon: "mdi:sensor"
-
-  battery_health:
-    name: "Battery Health Check"
-    formula: count("battery_level<20|device_class:!battery")
-    metadata:
-      unit_of_measurement: "devices"
-      icon: "mdi:battery-alert"
-
-  # Attribute filtering with collection variables
-  low_battery_devices:
-    name: "Low Battery Devices"
-    formula: count("battery_devices.battery_level<20")
-    variables:
-      battery_devices: "device_class:battery"
-    metadata:
-      unit_of_measurement: "count"
-      icon: "mdi:battery-alert"
-
-  # Complex mixed patterns
-  comprehensive_analysis:
-    name: "Comprehensive Analysis"
-    formula: 'sum("device_class:power|device_class:energy") + count("area:upstairs|area:downstairs")'
-    metadata:
-      unit_of_measurement: "mixed"
-      icon: "mdi:chart-line"
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
 ```
 
 **Available Functions:** `sum()`, `avg()`/`mean()`, `count()`, `min()`/`max()`, `std()`/`var()`
@@ -755,6 +848,42 @@ sensors:
 - `"label:critical|important"` - Entities with specified label (pipe-separated OR logic)
 - `"attribute:battery_level<50"` - Entities with attribute conditions
 - `"state:>100|on"` - Entities with state conditions (supports OR with `|`)
+
+**Exclusion Syntax:**
+
+Collection functions support excluding entities using the `!` prefix:
+
+- `sum("device_class:power", !"specific_sensor")` - Exclude specific sensor by entity ID
+- `avg("area:kitchen", !"kitchen_oven", !"kitchen_fridge")` - Exclude multiple specific sensors
+- `count("device_class:power", !"area:basement")` - Exclude all sensors in basement area
+- `max("label:critical", !"device_class:diagnostic")` - Exclude all diagnostic device class sensors
+
+**Automatic Self-Exclusion:**
+
+Collection functions automatically exclude the sensor that contains them to prevent circular dependencies:
+
+```yaml
+sensors:
+  total_power:
+    name: "Total Power"
+    formula: sum("device_class:power") # Automatically excludes total_power itself
+    metadata:
+      device_class: "power" # Would normally be included, but gets auto-excluded
+      unit_of_measurement: "W"
+      state_class: "measurement"
+
+  filtered_power:
+    name: "Filtered Power"
+    formula: sum("device_class:power", !"kitchen_oven") # Auto-excludes itself + manual exclusion
+    metadata:
+      device_class: "power"
+      unit_of_measurement: "W"
+      state_class: "measurement"
+```
+
+- **No configuration needed**: Self-exclusion happens automatically
+- **Combines with manual exclusions**: Works alongside explicit `!` exclusions
+- **Prevents circular dependencies**: Eliminates infinite loops in collection functions
 
 **Sensor State Token:**
 
