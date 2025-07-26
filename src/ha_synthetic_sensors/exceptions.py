@@ -276,6 +276,21 @@ class SchemaValidationError(SyntheticSensorsConfigError):
             super().__init__(f"Schema validation failed: {details}")
 
 
+# Comparison Handler Exceptions
+
+
+class ComparisonHandlerError(SyntheticSensorsError):
+    """Base exception for comparison handler failures."""
+
+
+class UnsupportedComparisonError(ComparisonHandlerError):
+    """Raised when no handler supports the requested comparison."""
+
+
+class InvalidOperatorError(ComparisonHandlerError):
+    """Raised when an operator is not valid for the given types."""
+
+
 # Utility functions for exception handling
 def is_retriable_error(error: Exception) -> bool:
     """Determine if an error is retriable (temporary condition).

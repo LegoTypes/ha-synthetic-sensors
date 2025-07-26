@@ -165,6 +165,7 @@ disable = [
     "import-error",                   # aiofiles import issue in pre-commit environment
     "relative-beyond-top-level",      # Relative imports in nested packages are acceptable
     "no-name-in-module",              # Home Assistant constants import issues
+
 ]
 
 [tool.pylint.master]

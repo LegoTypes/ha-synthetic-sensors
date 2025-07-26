@@ -409,7 +409,8 @@ async def test_your_feature(
 5. **Test both update mechanisms** - Exercise both selective and general updates
 6. **Write tests without warnings** - Properly configured tests should not generate warnings
 7. **Clean up after tests** - Delete sensor sets to avoid test pollution
-8. **Use Mock(), not AsyncMock() for async_add_entities** - Home Assistant's AddEntitiesCallback is synchronous, not a coroutine
+8. **Use Mock(), not AsyncMock() for async_add_entities** - Home Assistant's AddEntitiesCallback is synchronous, not a
+   coroutine
 
 This guide provides the foundation for writing robust integration tests that properly exercise the synthetic sensors public
 API while avoiding common pitfalls.
