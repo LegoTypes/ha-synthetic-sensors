@@ -4,6 +4,7 @@ Integration tests for metadata functionality.
 Tests the complete metadata flow from YAML import through sensor creation.
 """
 
+from pathlib import Path
 from unittest.mock import Mock
 
 from ha_synthetic_sensors.config_models import FormulaConfig, SensorConfig
@@ -196,21 +197,9 @@ class TestMetadataIntegration:
         """Test that metadata is properly handled in YAML import/export."""
         # For now, test that the ConfigManager can parse the basic structure
         # The full metadata parsing will be implemented when ConfigManager is updated
-        yaml_content = """
-version: "1.0"
-
-global_settings:
-  device_identifier: "test_device"
-  variables:
-    base_power: "sensor.test_power"
-
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: "base_power * 2"
-    variables:
-      multiplier: 2
-"""
+        # Load YAML content from fixture
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_metadata_integration_basic.yaml"
+        yaml_content = yaml_fixture_path.read_text()
 
         # Test that ConfigManager can parse this YAML
         from ha_synthetic_sensors.config_manager import ConfigManager

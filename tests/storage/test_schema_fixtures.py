@@ -45,6 +45,11 @@ class TestSchemaFixtures:
             "integration_test_complex_sensors.yaml",
             "integration_test_yaml_setup.yaml",
             "integration_test_valid_comprehensive.yaml",
+            # Exclude unit test fixtures (these are tested in their respective unit tests)
+            "unit_test_yaml_config_parser_missing_sensors.yaml",
+            "unit_test_yaml_config_parser_missing_formula.yaml",
+            "unit_test_yaml_config_parser_sensors_not_dict.yaml",
+            "unit_test_yaml_config_parser_sensor_not_dict.yaml",
         }
         yaml_files = [f for f in yaml_files if f.name not in excluded_files]
 

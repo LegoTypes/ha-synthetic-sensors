@@ -1,6 +1,7 @@
 """Tests for literal attribute values in synthetic sensors."""
 
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock
 import yaml as yaml_lib
 
@@ -61,19 +62,9 @@ class TestLiteralAttributes:
         """Test that ConfigManager correctly parses literal attributes."""
         config_manager = ConfigManager(mock_hass)
 
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: "power * 2"
-    variables:
-      power: "sensor.test_power"
-    attributes:
-      voltage: 240
-      manufacturer: "TestCorp"
-      is_enabled: true
-"""
+        # Load YAML content from fixture
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_literal_attributes_basic.yaml"
+        yaml_content = yaml_fixture_path.read_text()
 
         config = config_manager.load_from_yaml(yaml_content)
         assert config is not None

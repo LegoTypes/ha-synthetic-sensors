@@ -283,16 +283,9 @@ class TestConfigManagerExtended:
 
     def test_load_config_with_schema_warnings(self, config_manager):
         """Test loading config with schema validation warnings."""
-        yaml_content = """
-        version: "1.0"
-        sensors:
-          test_sensor:
-            name: "Test Sensor"
-            formula: "A + B"
-            variables:
-              A: "sensor.test_a"
-              B: "sensor.test_b"
-        """
+        # Load YAML content from fixture
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_yaml_operations_schema_warnings.yaml"
+        yaml_content = yaml_fixture_path.read_text()
 
         with (
             patch("builtins.open", mock_open(read_data=yaml_content)),

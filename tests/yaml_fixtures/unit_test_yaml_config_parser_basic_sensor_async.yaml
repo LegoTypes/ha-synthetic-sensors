@@ -1,0 +1,8 @@
+# YAML fixture for test_yaml_config_parser_unit.py
+# Used by: test_async_load_yaml_file_success, test_async_load_yaml_file_invalid_syntax
+# Test cases covered:
+# - Basic sensor with formula (successful async YAML loading)
+# - Async YAML file loading with different formula value
+sensors:
+  test_sensor:
+    formula: "2 + 2"

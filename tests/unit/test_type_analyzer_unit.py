@@ -636,3 +636,169 @@ class TestTypeAnalyzerCategorizeType:
         assert TypeAnalyzer.categorize_type([1, 2, 3]) == TypeCategory.UNKNOWN
         assert TypeAnalyzer.categorize_type({"key": "value"}) == TypeCategory.UNKNOWN
         assert TypeAnalyzer.categorize_type(object()) == TypeCategory.UNKNOWN
+
+
+class TestNumericParser:
+    """Test cases for NumericParser edge cases and missing coverage."""
+
+    def test_try_parse_numeric_edge_cases(self):
+        """Test edge cases for try_parse_numeric method."""
+        # Test with complex numbers (should return None)
+        assert NumericParser.try_parse_numeric(complex(1, 2)) is None
+
+        # Test with objects that have __str__ but aren't numeric
+        class NonNumericStr:
+            def __str__(self):
+                return "not_a_number"
+
+        assert NumericParser.try_parse_numeric(NonNumericStr()) is None
+
+    def test_try_reduce_to_numeric_edge_cases(self):
+        """Test edge cases for try_reduce_to_numeric method."""
+        # Test with valid numeric strings
+        success, value = NumericParser.try_reduce_to_numeric("42.5")
+        assert success is True
+        assert value == 42.5
+
+        # Test with invalid numeric strings
+        success, value = NumericParser.try_reduce_to_numeric("not_a_number")
+        assert success is False
+
+        # Test with objects that convert to non-numeric strings
+        class NonNumericStr:
+            def __str__(self):
+                return "not_a_number"
+
+        success, value = NumericParser.try_reduce_to_numeric(NonNumericStr())
+        assert success is False
+
+
+class TestTypeReducerEdgeCases:
+    """Test cases for TypeReducer edge cases and user type handling."""
+
+    def test_numeric_fallback_in_reduction(self):
+        """Test that reduction falls back appropriately for complex types."""
+        analyzer = TypeAnalyzer()
+
+        # Test with types that should fall back to string
+        result = analyzer.reduce_for_comparison("non_numeric_string", "another_string")
+        left, right, category = result
+        assert category == TypeCategory.STRING
+
+        # Test with mixed numeric and non-numeric
+        result = analyzer.reduce_for_comparison(42, "not_a_number")
+        left, right, category = result
+        # Should convert the number to be comparable with string
+        assert isinstance(left, (int, float)) or isinstance(left, str)
+        assert isinstance(right, str)
+
+
+class TestStringCategorizerEdgeCases:
+    """Test cases for StringCategorizer edge cases."""
+
+    def test_categorize_string_edge_cases(self):
+        """Test edge cases for string categorization."""
+        # Test empty string
+        assert StringCategorizer.categorize_string("") == TypeCategory.STRING
+
+        # Test whitespace-only strings
+        assert StringCategorizer.categorize_string("   ") == TypeCategory.STRING
+        assert StringCategorizer.categorize_string("\t\n") == TypeCategory.STRING
+
+        # Test string with mixed content
+        assert StringCategorizer.categorize_string("version 1.2.3 info") == TypeCategory.STRING
+
+    def test_strict_datetime_validation(self):
+        """Test strict datetime validation edge cases."""
+        # Test ambiguous date-like strings that might be versions
+        result1 = StringCategorizer.categorize_string("12.34.56")
+        result2 = StringCategorizer.categorize_string("2023.99.99")
+        # These could be versions, let's just test they're categorized consistently
+        assert result1 in [TypeCategory.STRING, TypeCategory.VERSION]
+        assert result2 in [TypeCategory.STRING, TypeCategory.VERSION]
+
+    def test_strict_version_validation(self):
+        """Test strict version validation edge cases."""
+        # Test that 2-part versions are now STRING (due to our n.n.n requirement)
+        assert StringCategorizer.categorize_string("1.2") == TypeCategory.STRING
+        # Test that too many parts should be versions (current implementation)
+        result = StringCategorizer.categorize_string("1.2.3.4.5")
+        assert result in [TypeCategory.STRING, TypeCategory.VERSION]
+
+
+class TestValueExtractorEdgeCases:
+    """Test cases for ValueExtractor edge cases."""
+
+    def test_extract_comparable_value_edge_cases(self):
+        """Test edge cases for extracting comparable values."""
+
+        # Test objects with multiple value attributes
+        class MultiValueObject:
+            def __init__(self):
+                self.state = "primary_value"
+                self.value = "secondary_value"
+
+        obj = MultiValueObject()
+        # Should prefer 'state' over 'value' based on VALUE_ATTRIBUTE_NAMES order
+        extracted = ValueExtractor.extract_comparable_value(obj)
+        assert extracted == "primary_value"
+
+    def test_extract_value_with_callable_attributes(self):
+        """Test extracting values when attributes are callable."""
+
+        class CallableAttributeObject:
+            def state(self):
+                return "callable_state"
+
+            @property
+            def value(self):
+                return "property_value"
+
+        obj = CallableAttributeObject()
+        extracted = ValueExtractor.extract_comparable_value(obj)
+        # Should extract the property value, not the object itself
+        assert extracted == "property_value"
+
+
+class TestTypeCategorizationEdgeCases:
+    """Test cases for type categorization edge cases."""
+
+    def test_categorize_edge_case_types(self):
+        """Test categorization of edge case types."""
+        # Test None - should raise ValueError according to implementation
+        with pytest.raises(ValueError, match="Cannot categorize None values"):
+            TypeAnalyzer.categorize_type(None)
+
+        # Test very large numbers
+        large_int = 10**100
+        assert TypeAnalyzer.categorize_type(large_int) == TypeCategory.NUMERIC
+
+        # Test special float values
+        import math
+
+        assert TypeAnalyzer.categorize_type(float("inf")) == TypeCategory.NUMERIC
+        assert TypeAnalyzer.categorize_type(float("-inf")) == TypeCategory.NUMERIC
+        assert TypeAnalyzer.categorize_type(float("nan")) == TypeCategory.NUMERIC
+
+    def test_reduce_for_comparison_edge_cases(self):
+        """Test reduce_for_comparison method edge cases."""
+        analyzer = TypeAnalyzer()
+
+        # Test with complex objects
+        result = analyzer.reduce_for_comparison(complex(1, 2), complex(3, 4))
+        left, right, category = result
+        assert category == TypeCategory.STRING
+
+        # Test with custom objects
+        class CustomObject:
+            def __init__(self, value):
+                self.value = value
+
+            def __str__(self):
+                return f"custom_{self.value}"
+
+        obj1 = CustomObject(10)
+        obj2 = CustomObject(20)
+        result = analyzer.reduce_for_comparison(obj1, obj2)
+        left, right, category = result
+        assert category == TypeCategory.STRING

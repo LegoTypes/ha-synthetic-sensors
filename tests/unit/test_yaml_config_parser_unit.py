@@ -12,6 +12,20 @@ from ha_synthetic_sensors.exceptions import SchemaValidationError
 from ha_synthetic_sensors.config_models import Config, SensorConfig, FormulaConfig
 
 
+def load_yaml_fixture_content(fixture_name: str) -> str:
+    """Load YAML content from unit test fixtures."""
+    # Check if it's an invalid fixture first
+    if fixture_name.startswith("unit_test_") and ("invalid" in fixture_name or "list_root" in fixture_name):
+        fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "invalid" / f"{fixture_name}.yaml"
+    else:
+        fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / f"{fixture_name}.yaml"
+
+    if not fixture_path.exists():
+        raise FileNotFoundError(f"YAML fixture not found: {fixture_path}")
+
+    return fixture_path.read_text()
+
+
 class TestYAMLConfigParser:
     """Test cases for YAMLConfigParser class."""
 
@@ -22,12 +36,8 @@ class TestYAMLConfigParser:
 
     def test_load_yaml_file_success(self, parser, tmp_path):
         """Test successful YAML file loading."""
-        # Create test YAML file
-        yaml_content = """
-        sensors:
-          test_sensor:
-            formula: "1 + 1"
-        """
+        # Load YAML content from fixture
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_basic_sensor")
         yaml_file = tmp_path / "test.yaml"
         yaml_file.write_text(yaml_content)
 
@@ -45,12 +55,8 @@ class TestYAMLConfigParser:
 
     def test_load_yaml_file_invalid_syntax(self, parser, tmp_path):
         """Test loading YAML with syntax errors."""
-        yaml_content = """
-        sensors:
-          test_sensor:
-            formula: "1 + 1"
-        invalid: [unclosed bracket
-        """
+        # Load invalid YAML content from fixture
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_invalid_syntax")
         yaml_file = tmp_path / "invalid.yaml"
         yaml_file.write_text(yaml_content)
 
@@ -65,11 +71,8 @@ class TestYAMLConfigParser:
     @pytest.mark.asyncio
     async def test_async_load_yaml_file_success(self, parser, tmp_path):
         """Test successful async YAML file loading."""
-        yaml_content = """
-        sensors:
-          test_sensor:
-            formula: "2 + 2"
-        """
+        # Load YAML content from fixture
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_basic_sensor_async")
         yaml_file = tmp_path / "test_async.yaml"
         yaml_file.write_text(yaml_content)
 
@@ -89,12 +92,8 @@ class TestYAMLConfigParser:
     @pytest.mark.asyncio
     async def test_async_load_yaml_file_invalid_syntax(self, parser, tmp_path):
         """Test async loading YAML with syntax errors."""
-        yaml_content = """
-        sensors:
-          test_sensor:
-            formula: "1 + 1"
-        invalid: [unclosed bracket
-        """
+        # Load invalid YAML content from fixture
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_invalid_syntax")
         yaml_file = tmp_path / "invalid_async.yaml"
         yaml_file.write_text(yaml_content)
 
@@ -109,11 +108,8 @@ class TestYAMLConfigParser:
 
     def test_validate_raw_yaml_structure_success(self, parser):
         """Test successful YAML structure validation."""
-        yaml_content = """
-        sensors:
-          test_sensor:
-            formula: "1 + 1"
-        """
+        # Load YAML content from fixture
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_basic_sensor")
         # Should not raise any exception
         parser.validate_raw_yaml_structure(yaml_content)
 
@@ -124,58 +120,48 @@ class TestYAMLConfigParser:
 
     def test_validate_raw_yaml_structure_not_dict(self, parser):
         """Test validation when YAML root is not a dictionary."""
-        yaml_content = "- item1\n- item2"
+        # Load invalid YAML content from fixture (list root)
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_list_root")
 
         with pytest.raises(ValueError, match="YAML root must be a dictionary"):
             parser.validate_raw_yaml_structure(yaml_content)
 
     def test_validate_raw_yaml_structure_missing_sensors(self, parser):
         """Test validation when 'sensors' key is missing."""
-        yaml_content = """
-        other_key: value
-        """
+        # Load YAML content from fixture with missing sensors key
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_missing_sensors")
 
         with pytest.raises(ValueError, match="Missing required top-level keys"):
             parser.validate_raw_yaml_structure(yaml_content)
 
     def test_validate_raw_yaml_structure_sensors_not_dict(self, parser):
         """Test validation when 'sensors' is not a dictionary."""
-        yaml_content = """
-        sensors: "not a dict"
-        """
+        # Load YAML content from fixture where sensors is not a dict
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_sensors_not_dict")
 
         with pytest.raises(ValueError, match="'sensors' must be a dictionary"):
             parser.validate_raw_yaml_structure(yaml_content)
 
     def test_validate_raw_yaml_structure_sensor_not_dict(self, parser):
         """Test validation when individual sensor is not a dictionary."""
-        yaml_content = """
-        sensors:
-          test_sensor: "not a dict"
-        """
+        # Load YAML content from fixture where individual sensor is not a dict
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_sensor_not_dict")
 
         with pytest.raises(ValueError, match="Sensor 'test_sensor' must be a dictionary"):
             parser.validate_raw_yaml_structure(yaml_content)
 
     def test_validate_raw_yaml_structure_missing_formula(self, parser):
         """Test validation when sensor is missing 'formula' field."""
-        yaml_content = """
-        sensors:
-          test_sensor:
-            name: "Test Sensor"
-        """
+        # Load YAML content from fixture where sensor is missing formula field
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_missing_formula")
 
         with pytest.raises(ValueError, match="Sensor 'test_sensor' missing required 'formula' field"):
             parser.validate_raw_yaml_structure(yaml_content)
 
     def test_validate_raw_yaml_structure_yaml_error(self, parser):
         """Test validation with YAML syntax error."""
-        yaml_content = """
-        sensors:
-          test_sensor:
-            formula: "1 + 1"
-        invalid: [unclosed bracket
-        """
+        # Load invalid YAML content from fixture with syntax error
+        yaml_content = load_yaml_fixture_content("unit_test_yaml_config_parser_invalid_syntax")
 
         with pytest.raises(ValueError, match="YAML validation error"):
             parser.validate_raw_yaml_structure(yaml_content)

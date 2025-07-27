@@ -1,0 +1,7 @@
+# YAML fixture for test_yaml_config_parser_unit.py
+# Used by: test_validate_raw_yaml_structure_sensor_not_dict
+# Test cases covered:
+# - Individual sensor configuration is not a dictionary (should be string)
+# - Type validation error for individual sensor configuration
+sensors:
+  test_sensor: "not a dict"
