@@ -8,9 +8,9 @@ regardless of definition order.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from .config_models import Config, SensorConfig
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector

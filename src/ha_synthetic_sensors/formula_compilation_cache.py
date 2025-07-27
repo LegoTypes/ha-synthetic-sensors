@@ -40,7 +40,7 @@ class CompiledFormula:
         self.evaluator.names = context or {}
         # Use the pre-parsed AST for fast evaluation
         result = self.evaluator.eval(self.formula, previously_parsed=self.parsed_ast)
-        if isinstance(result, (int, float)):
+        if isinstance(result, int | float):
             return float(result)
         raise ValueError(f"Expected numeric result, got {type(result).__name__}")
 

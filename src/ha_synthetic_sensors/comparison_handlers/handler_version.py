@@ -124,23 +124,24 @@ class VersionComparisonHandler(BaseComparisonHandler):
     def _parse_version(self, version: str) -> tuple[int, ...]:
         """Parse version string into comparable tuple.
 
-        Requires proper version format: x.y.z or vx.y.z (at least 2 dots)
+        Requires proper version format: x.y.z or vx.y.z (exactly 3 parts)
         """
         # Remove 'v' prefix if present
         clean_version = version.lower().lstrip("v")
 
-        # Check for proper version format: must have at least one dot (x.y minimum)
-        if "." not in clean_version:
-            raise ValueError(f"Invalid version string: {version} (requires x.y.z format with dots)")
+        # Validate it follows version pattern (exactly 3 numbers separated by dots)
+        if not re.match(r"^\d+\.\d+\.\d+([.-].*)?$", clean_version):
+            raise ValueError(f"Invalid version string: {version} (must be x.y.z format with exactly 3 parts)")
 
-        # Validate it follows version pattern (numbers separated by dots)
-        if not re.match(r"^\d+(\.\d+)+([.-].*)?$", clean_version):
-            raise ValueError(f"Invalid version string: {version} (must be numbers separated by dots)")
+        # Extract numeric parts separated by dots (take first 3 parts before any pre-release info)
+        base_version = clean_version.split("-")[0].split("+")[0]  # Remove pre-release/build info
+        parts = base_version.split(".")
 
-        # Extract numeric parts separated by dots
-        parts = clean_version.split(".")[0:3]  # Take first 3 parts only
+        if len(parts) != 3:
+            raise ValueError(f"Invalid version string: {version} (must have exactly 3 parts: x.y.z)")
+
         try:
             # Each part should be a valid integer
-            return tuple(int(part) for part in parts if part.isdigit())
+            return tuple(int(part) for part in parts)
         except ValueError as exc:
             raise ValueError(f"Invalid version string: {version}") from exc

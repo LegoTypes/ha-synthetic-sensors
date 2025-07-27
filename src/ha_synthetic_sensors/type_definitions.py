@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, NotRequired, TypedDict
+from collections.abc import Callable
+from typing import Any, NotRequired, TypedDict
 
 # Import Home Assistant types to stay aligned with their type system
 from homeassistant.core import State

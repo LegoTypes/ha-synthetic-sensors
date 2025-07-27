@@ -283,7 +283,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         context: dict[str, Any] = {}
         for var_name, var_value in formula_config.variables.items():
             # Check if this is a numeric literal (not a string entity ID)
-            if isinstance(var_value, (int, float)):
+            if isinstance(var_value, int | float):
                 context[var_name] = var_value
                 continue
 
@@ -1328,7 +1328,7 @@ class SensorManager:
             sensor_name: Name of the sensor that encountered an error
             error: The error that occurred
         """
-        if isinstance(error, (MissingDependencyError, CrossSensorResolutionError, DependencyValidationError)):
+        if isinstance(error, MissingDependencyError | CrossSensorResolutionError | DependencyValidationError):
             self._logger.error("Cross-sensor resolution error for sensor '%s': %s", sensor_name, error)
         else:
             self._logger.error("Unexpected error during cross-sensor resolution for sensor '%s': %s", sensor_name, error)

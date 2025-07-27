@@ -356,7 +356,7 @@ class Evaluator(FormulaEvaluator):
 
     def _create_success_result(self, result: float | str | bool) -> EvaluationResult:
         """Create appropriate success result based on result type."""
-        if isinstance(result, (int, float)):
+        if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))
         # For string/boolean results, use the generic success result
         return EvaluatorResults.create_success_result_with_state("ok", value=result)
@@ -471,14 +471,14 @@ class Evaluator(FormulaEvaluator):
             self._error_handler.handle_successful_evaluation(formula_name)
 
             # Convert result to proper EvaluationResult
-            if isinstance(result, (int, float)):
+            if isinstance(result, int | float):
                 return EvaluatorResults.create_success_result(float(result))
             return EvaluatorResults.create_success_result_with_state("ok", value=result)
 
         except Exception as e:
             _LOGGER.error("Error in dependency-aware evaluation for formula '%s': %s", config.formula, e)
             # Re-raise MissingDependencyError and other fatal errors
-            if isinstance(e, (MissingDependencyError, DataValidationError, SensorMappingError)):
+            if isinstance(e, MissingDependencyError | DataValidationError | SensorMappingError):
                 raise
             # Fall back to normal evaluation for other errors
             return self._fallback_to_normal_evaluation(config, context, sensor_config)
@@ -508,7 +508,7 @@ class Evaluator(FormulaEvaluator):
         result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
 
         # Convert result to proper EvaluationResult
-        if isinstance(result, (int, float)):
+        if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))
         return EvaluatorResults.create_success_result_with_state("ok", value=result)
 
@@ -542,15 +542,15 @@ class Evaluator(FormulaEvaluator):
 
         # Validate result type based on formula context
         is_main_formula = sensor_config and config.id == sensor_config.unique_id
-        if is_main_formula and not isinstance(result, (int, float)):
+        if is_main_formula and not isinstance(result, int | float):
             raise ValueError(f"Main formula result must be numeric, got {type(result).__name__}: {result}")
 
         # Cache the result (cache handler supports multiple types for future expansion)
-        if isinstance(result, (int, float)):
+        if isinstance(result, int | float):
             self._cache_handler.cache_result(config, context, cache_key_id, float(result))
 
         # Ensure proper type annotation for return
-        final_result: float | str | bool = float(result) if isinstance(result, (int, float)) else result
+        final_result: float | str | bool = float(result) if isinstance(result, int | float) else result
 
         return final_result
 

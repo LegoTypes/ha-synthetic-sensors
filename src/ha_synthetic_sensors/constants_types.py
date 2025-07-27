@@ -2,7 +2,6 @@
 
 from datetime import date, datetime, time
 from enum import Enum
-from typing import Union
 
 
 class TypeCategory(Enum):
@@ -18,8 +17,8 @@ class TypeCategory(Enum):
 
 
 # Type aliases for cleaner signatures
-BuiltinValueType = Union[int, float, str, bool, datetime, date, time, tuple[int, ...]]
-MetadataDict = dict[str, Union[str, int, float, bool, None]]
+BuiltinValueType = int | float | str | bool | datetime | date | time | tuple[int, ...]
+MetadataDict = dict[str, str | int | float | bool | None]
 
 # Builtin type classes for isinstance checks
 BUILTIN_VALUE_TYPES = (int, float, str, bool, datetime, date, time)

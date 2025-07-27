@@ -1,7 +1,8 @@
 """Factory for creating and managing variable resolvers."""
 
+from collections.abc import Callable
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from ...type_definitions import DataProviderResult
 from .attribute_reference_resolver import AttributeReferenceResolver

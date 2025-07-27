@@ -1,7 +1,8 @@
 """State resolver for handling standalone state token references."""
 
+from collections.abc import Callable
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import BackingEntityResolutionError

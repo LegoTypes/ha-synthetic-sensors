@@ -3,7 +3,7 @@
 from enum import Enum
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
@@ -132,7 +132,7 @@ class GenericDependencyManager:
         return self._evaluation_order.copy()
 
     def build_evaluation_context(
-        self, sensor_config: SensorConfig, evaluator: Any, base_context: Optional[dict[str, Any]] = None
+        self, sensor_config: SensorConfig, evaluator: Any, base_context: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
         Build evaluation context by evaluating formulas in dependency order.

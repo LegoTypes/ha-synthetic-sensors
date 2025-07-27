@@ -11,9 +11,9 @@ Key Features:
 - Prepares for Phase 3 formula reference resolution
 """
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 import logging
-from typing import Any, Callable, Optional
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 
@@ -58,11 +58,11 @@ class CrossSensorReferenceManager:
 
         # Phase 3: Formula reference resolver
         self._formula_resolver = FormulaReferenceResolver()
-        self._original_config: Optional[Config] = None
-        self._resolved_config: Optional[Config] = None
+        self._original_config: Config | None = None
+        self._resolved_config: Config | None = None
 
     def initialize_from_config(
-        self, cross_sensor_references: dict[str, set[str]], original_config: Optional[Config] = None
+        self, cross_sensor_references: dict[str, set[str]], original_config: Config | None = None
     ) -> None:
         """Initialize with cross-sensor references from Phase 1 detection.
 
@@ -187,7 +187,7 @@ class CrossSensorReferenceManager:
         """
         self._completion_callbacks.append(callback)
 
-    def get_entity_id_for_sensor_key(self, sensor_key: str) -> Optional[str]:
+    def get_entity_id_for_sensor_key(self, sensor_key: str) -> str | None:
         """Get the actual entity ID for a sensor key.
 
         Args:
@@ -198,7 +198,7 @@ class CrossSensorReferenceManager:
         """
         return self._sensor_key_to_entity_id.get(sensor_key)
 
-    def get_sensor_key_for_entity_id(self, entity_id: str) -> Optional[str]:
+    def get_sensor_key_for_entity_id(self, entity_id: str) -> str | None:
         """Get the sensor key for an actual entity ID.
 
         Args:
@@ -263,7 +263,7 @@ class CrossSensorReferenceManager:
         """
         return self._cross_sensor_references.copy()
 
-    def get_resolved_config(self) -> Optional[Config]:
+    def get_resolved_config(self) -> Config | None:
         """Get the resolved config from Phase 3.
 
         Returns:

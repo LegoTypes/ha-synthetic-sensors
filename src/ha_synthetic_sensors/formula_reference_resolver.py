@@ -14,7 +14,7 @@ Key Features:
 
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 from .config_models import Config, FormulaConfig, SensorConfig
 from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, MATH_FUNCTIONS, PYTHON_KEYWORDS, STATE_KEYWORDS
@@ -129,7 +129,7 @@ class ReferenceReplacer:
         formula: str,
         patterns: list[ReferencePattern],
         entity_mappings: dict[str, str],
-        current_sensor_key: Optional[str] = None,
+        current_sensor_key: str | None = None,
         is_attribute_formula: bool = False,
     ) -> tuple[str, dict[str, str]]:
         """Replace detected reference patterns with resolved entity IDs.
@@ -313,7 +313,7 @@ class FormulaReferenceResolver:
 
         return resolved_formula
 
-    def _is_self_reference(self, var_value: str, current_sensor_key: Optional[str], entity_mappings: dict[str, str]) -> bool:
+    def _is_self_reference(self, var_value: str, current_sensor_key: str | None, entity_mappings: dict[str, str]) -> bool:
         """Check if a variable value is a self-reference."""
         if not current_sensor_key:
             return False
@@ -330,7 +330,7 @@ class FormulaReferenceResolver:
         return var_value in entity_mappings and entity_mappings[var_value] == entity_mappings.get(current_sensor_key)
 
     def _resolve_references_in_variables(
-        self, variables: dict[str, str | int | float], entity_mappings: dict[str, str], current_sensor_key: Optional[str] = None
+        self, variables: dict[str, str | int | float], entity_mappings: dict[str, str], current_sensor_key: str | None = None
     ) -> dict[str, str | int | float]:
         """Resolve sensor key references in variables.
 
@@ -378,7 +378,7 @@ class FormulaReferenceResolver:
         return resolved_variables
 
     def _resolve_references_in_dependencies(
-        self, dependencies: set[str], entity_mappings: dict[str, str], current_sensor_key: Optional[str] = None
+        self, dependencies: set[str], entity_mappings: dict[str, str], current_sensor_key: str | None = None
     ) -> set[str]:
         """Resolve sensor key references in dependencies.
 
@@ -424,7 +424,7 @@ class FormulaReferenceResolver:
         self,
         attributes: dict[str, Any],
         entity_mappings: dict[str, str],
-        current_sensor_key: Optional[str] = None,
+        current_sensor_key: str | None = None,
         is_attribute_formula: bool = False,
     ) -> dict[str, Any]:
         """Resolve sensor key references in attributes.
@@ -497,7 +497,7 @@ class FormulaReferenceResolver:
         self,
         formula: str,
         entity_mappings: dict[str, str],
-        current_sensor_key: Optional[str] = None,
+        current_sensor_key: str | None = None,
         is_attribute_formula: bool = False,
     ) -> str:
         """Resolve cross-sensor references in a formula string.

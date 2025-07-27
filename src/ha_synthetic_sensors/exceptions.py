@@ -345,8 +345,5 @@ def should_trigger_not_ready(error: Exception) -> bool:
     """Determine if error should trigger ConfigEntryNotReady."""
     return isinstance(
         error,
-        (
-            SyntheticSensorsNotReadyError,
-            IntegrationNotInitializedError,
-        ),
+        SyntheticSensorsNotReadyError | IntegrationNotInitializedError,
     )

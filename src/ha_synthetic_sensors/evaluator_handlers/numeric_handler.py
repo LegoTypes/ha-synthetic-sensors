@@ -54,7 +54,7 @@ class NumericHandler(FormulaHandler):
             result = compiled_formula.evaluate(context or {})
 
             # Validate numeric result
-            if not isinstance(result, (int, float)):
+            if not isinstance(result, int | float):
                 raise ValueError(f"Numeric formula result must be numeric, got {type(result).__name__}: {result}")
 
             return float(result)

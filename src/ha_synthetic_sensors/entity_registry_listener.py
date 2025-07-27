@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er

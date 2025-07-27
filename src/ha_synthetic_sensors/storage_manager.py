@@ -11,10 +11,11 @@ Phase 1 Implementation: Basic storage infrastructure for fresh installations.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 import logging
-from typing import TYPE_CHECKING, Any, Callable, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store

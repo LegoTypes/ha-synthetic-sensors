@@ -371,7 +371,7 @@ class CollectionResolver:
             return entity_labels
 
         # Handle test fixtures where labels are already strings
-        if isinstance(entity_entry.labels, (list, tuple)):
+        if isinstance(entity_entry.labels, list | tuple):
             entity_labels = {label.lower() for label in entity_entry.labels if isinstance(label, str)}
         # Handle real HA where labels are label IDs that need resolution
         elif label_registry and hasattr(entity_entry.labels, "__iter__") and not callable(entity_entry.labels):

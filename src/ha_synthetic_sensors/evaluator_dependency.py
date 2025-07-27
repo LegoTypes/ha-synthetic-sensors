@@ -266,7 +266,7 @@ class EvaluatorDependency:
         # Add context variables
         if context:
             for key, value in context.items():
-                if isinstance(value, (str, int, float, bool)):
+                if isinstance(value, str | int | float | bool):
                     context_dict[key] = value
 
         # Add config variables
@@ -362,7 +362,7 @@ class EvaluatorDependency:
             return
 
         # Allow numeric values, strings, and booleans (including "unknown", "unavailable" strings)
-        if not isinstance(value, (int, float, str, bool)):
+        if not isinstance(value, int | float | str | bool):
             raise DataValidationError(f"Data provider returned unsupported type {type(value)} for {entity_id} - fatal error")
 
     def _check_home_assistant_entity(self, entity_id: str, collection_pattern_entities: set[str]) -> str:

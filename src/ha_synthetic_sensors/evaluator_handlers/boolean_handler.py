@@ -60,7 +60,7 @@ class BooleanHandler(FormulaHandler):
             # Convert result to boolean
             if isinstance(result, bool):
                 return result
-            if isinstance(result, (int, float)):
+            if isinstance(result, int | float):
                 return bool(result)
             raise ValueError(f"Boolean formula result must be boolean, got {type(result).__name__}: {result}")
 

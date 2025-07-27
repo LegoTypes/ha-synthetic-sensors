@@ -68,7 +68,7 @@ class BooleanComparisonHandler(BaseComparisonHandler):
             lower_val = value.lower().strip()
             return lower_val in self.TRUE_STATES or lower_val in self.FALSE_STATES
         # Numeric values can be converted to boolean (0=False, non-zero=True)
-        return isinstance(value, (int, float))
+        return isinstance(value, int | float)
 
     def _to_boolean(self, value: OperandType) -> bool:
         """Convert value to boolean."""
@@ -80,7 +80,7 @@ class BooleanComparisonHandler(BaseComparisonHandler):
                 return True
             if lower_val in self.FALSE_STATES:
                 return False
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             # Convert numeric values: 0 = False, non-zero = True
             return bool(value)
         raise ValueError(f"Cannot convert {value} to boolean")

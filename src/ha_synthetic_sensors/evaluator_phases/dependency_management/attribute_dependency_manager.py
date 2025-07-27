@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import CircularDependencyError
@@ -80,7 +80,7 @@ class AttributeDependencyManager:
         return self._evaluation_order.copy()
 
     def build_evaluation_context(
-        self, sensor_config: SensorConfig, main_sensor_value: Any, evaluator: Any, base_context: Optional[dict[str, Any]] = None
+        self, sensor_config: SensorConfig, main_sensor_value: Any, evaluator: Any, base_context: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
         Build evaluation context by evaluating attributes in dependency order.

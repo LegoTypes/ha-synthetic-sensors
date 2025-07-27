@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, time
 import re
-from typing import Optional, Protocol, Union, cast, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from .constants_types import BUILTIN_VALUE_TYPES, VALUE_ATTRIBUTE_NAMES, BuiltinValueType, MetadataDict, TypeCategory
 
@@ -22,7 +22,7 @@ class AttributeProvider(Protocol):
     """Protocol for objects with attributes (like HA entities)."""
 
     @property
-    def attributes(self) -> dict[str, Union[str, int, float, bool, None]]:
+    def attributes(self) -> dict[str, str | int | float | bool | None]:
         """Get attributes dictionary."""
 
 
@@ -89,13 +89,13 @@ class UserTypeResolver(Protocol):
 # === Type Definitions ===
 
 # Union type for operands - simplified to avoid redundancy
-OperandType = Union[
-    BuiltinValueType,  # Built-in types (int, float, str, bool, datetime, etc.)
-    UserType,  # User-defined types that implement the protocol
-    MetadataProvider,  # Objects that provide metadata via method
-    AttributeProvider,  # Objects with attributes (HA entities)
-    MetadataAttributeProvider,  # Objects with __metadata__
-]
+OperandType = (
+    BuiltinValueType
+    | UserType  # User-defined types that implement the protocol
+    | MetadataProvider  # Objects that provide metadata via method
+    | AttributeProvider  # Objects with attributes (HA entities)
+    | MetadataAttributeProvider  # Objects with __metadata__
+)
 
 # Type for reduced pairs
 ReducedPairType = tuple[BuiltinValueType, BuiltinValueType, TypeCategory]
@@ -169,7 +169,7 @@ class ValueExtractor:
     """Handles value extraction from complex objects."""
 
     @staticmethod
-    def extract_comparable_value(obj: OperandType) -> Union[BuiltinValueType, None]:
+    def extract_comparable_value(obj: OperandType) -> BuiltinValueType | None:
         """Extract a comparable value from an object."""
         # Handle None
         if obj is None:
@@ -194,9 +194,9 @@ class NumericParser:
     """Handles numeric parsing and conversion."""
 
     @staticmethod
-    def try_parse_numeric(value: OperandType) -> Optional[Union[int, float]]:
+    def try_parse_numeric(value: OperandType) -> int | float | None:
         """Try to parse a value as numeric."""
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return value
         if isinstance(value, str):
             # Remove common non-numeric suffixes/prefixes
@@ -221,7 +221,7 @@ class NumericParser:
             Tuple of (success: bool, numeric_value: float)
         """
         # Already numeric
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return True, float(value)
 
         # Boolean to numeric (formula-friendly: True=1.0, False=0.0)
@@ -248,7 +248,7 @@ class DateTimeParser:
     """Handles datetime parsing and conversion."""
 
     @staticmethod
-    def parse_datetime(value: OperandType) -> Optional[datetime]:
+    def parse_datetime(value: OperandType) -> datetime | None:
         """Try to parse a value as datetime."""
         if isinstance(value, datetime):
             return value
@@ -365,7 +365,7 @@ class StringCategorizer:
     @staticmethod
     def _is_version_string(value: str) -> bool:
         """Check if string represents a semantic version (permissive)."""
-        return bool(re.match(r"^v?\d+\.\d+(?:\.\d+)?", value))
+        return bool(re.match(r"^v?\d+\.\d+\.\d+", value))
 
     @staticmethod
     def _is_strict_version_string(value: str) -> bool:
@@ -392,11 +392,11 @@ class UserTypeManager:
         """Register a user-defined type resolver."""
         self.metadata_resolver.register_user_type_resolver(type_name, resolver)
 
-    def get_reducer(self, type_name: str) -> Optional[UserTypeReducer]:
+    def get_reducer(self, type_name: str) -> UserTypeReducer | None:
         """Get reducer for a type name."""
         return self._user_type_reducers.get(type_name)
 
-    def identify_user_type(self, value: OperandType) -> Optional[UserTypeIdentification]:
+    def identify_user_type(self, value: OperandType) -> UserTypeIdentification | None:
         """Identify user type from metadata."""
         return self.metadata_resolver.identify_type_from_metadata(value)
 
@@ -411,7 +411,7 @@ class MetadataTypeResolver:
         """Register a user-defined type resolver."""
         self._user_type_resolvers[type_name] = resolver
 
-    def identify_type_from_metadata(self, value: OperandType) -> Optional[UserTypeIdentification]:
+    def identify_type_from_metadata(self, value: OperandType) -> UserTypeIdentification | None:
         """Identify user-defined type from metadata."""
         metadata = MetadataExtractor.extract_all_metadata(value)
 
@@ -439,7 +439,7 @@ class MetadataTypeResolver:
 class TypeReducer:
     """Reduces values to the most appropriate type for formula-based evaluation."""
 
-    def __init__(self, user_type_manager: Optional[UserTypeManager] = None) -> None:
+    def __init__(self, user_type_manager: UserTypeManager | None = None) -> None:
         self.user_type_manager = user_type_manager or UserTypeManager()
 
     def register_user_type_reducer(self, type_name: str, reducer: UserTypeReducer) -> None:
@@ -461,7 +461,7 @@ class TypeReducer:
 
         # Check built-in types
         extracted = ValueExtractor.extract_comparable_value(value)
-        if isinstance(extracted, (int, float, bool)):
+        if isinstance(extracted, int | float | bool):
             return True
         if isinstance(extracted, str):
             return NumericParser.try_parse_numeric(extracted) is not None
@@ -496,8 +496,8 @@ class TypeReducer:
         self,
         left: OperandType,
         right: OperandType,
-        left_user_type: Optional[UserTypeIdentification],
-        right_user_type: Optional[UserTypeIdentification],
+        left_user_type: UserTypeIdentification | None,
+        right_user_type: UserTypeIdentification | None,
     ) -> ReducedPairType:
         """Handle reduction when user types are involved."""
         # Both are user types
@@ -579,9 +579,9 @@ class TypeReducer:
         """Classify a built-in type."""
         if isinstance(value, bool):
             return TypeCategory.BOOLEAN
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return TypeCategory.NUMERIC
-        if isinstance(value, (datetime, date, time)):
+        if isinstance(value, datetime | date | time):
             return TypeCategory.DATETIME
         return TypeCategory.STRING
 
@@ -629,10 +629,10 @@ class TypeAnalyzer:
         # Check bool before int (bool is subclass of int in Python)
         if isinstance(value, bool):
             return TypeCategory.BOOLEAN
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return TypeCategory.NUMERIC
         if isinstance(value, str):
             return StringCategorizer.categorize_string(value)
-        if isinstance(value, (datetime, date, time)):
+        if isinstance(value, datetime | date | time):
             return TypeCategory.DATETIME
         return TypeCategory.UNKNOWN

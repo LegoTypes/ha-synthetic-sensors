@@ -85,7 +85,7 @@ class SelfReferenceResolver(VariableResolver):
                 "Self-reference resolver: detected attribute context based on attribute indicators: %s", attribute_indicators
             )
             # In attribute context, use the state value which should be the main sensor's calculated result
-            if state_value is not None and isinstance(state_value, (int, float)):
+            if state_value is not None and isinstance(state_value, int | float):
                 return state_value
             raise FormulaEvaluationError(
                 f"Self-reference resolver: in attribute context but state value is invalid: {state_value}"

@@ -75,14 +75,14 @@ class ContextResolutionStrategy(VariableResolutionStrategy):
 
         # Ensure the context value is numeric for mathematical operations
         value = self._context[variable_name]
-        return isinstance(value, (int, float))
+        return isinstance(value, int | float)
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
         """Resolve variable from context."""
         if variable_name in self._context:
             value = self._context[variable_name]
             # Validate that the value is numeric
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return value, True, "context"
             raise MissingDependencyError(
                 f"Context variable '{variable_name}' has non-numeric value '{value}' - "
@@ -480,7 +480,7 @@ class VariableResolver:
         results: dict[str, tuple[Any, bool, str]] = {}
         for var_name, var_value in variables.items():
             # Handle numeric literals directly without entity resolution
-            if isinstance(var_value, (int, float)):
+            if isinstance(var_value, int | float):
                 results[var_name] = (var_value, True, "literal")
             else:
                 # Handle entity ID resolution (string or None)

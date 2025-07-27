@@ -1,9 +1,10 @@
 """Variable resolution phase for synthetic sensor formulas."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 import re
-from typing import Any, Callable
+from typing import Any
 
 from ha_synthetic_sensors.config_models import FormulaConfig, SensorConfig
 from ha_synthetic_sensors.constants_formula import is_ha_state_value, is_reserved_word, normalize_ha_state_value

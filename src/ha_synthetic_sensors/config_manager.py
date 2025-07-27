@@ -371,7 +371,7 @@ class ConfigManager:
             if isinstance(attr_config, dict) and "formula" in attr_config:
                 # Extract formula string from AttributeConfigDict
                 attributes[attr_name] = attr_config["formula"]
-            elif isinstance(attr_config, (str, int, float)):
+            elif isinstance(attr_config, str | int | float):
                 # Handle literal values (str, int, float) - these are compatible with AttributeValue
                 attributes[attr_name] = attr_config
             else:
@@ -406,7 +406,7 @@ class ConfigManager:
             FormulaConfig: Parsed attribute formula configuration
         """
         # Handle literal values (new feature)
-        if isinstance(attr_config, (int, float, str)):
+        if isinstance(attr_config, int | float | str):
             # Create a formula that just returns the literal value
             return FormulaConfig(
                 id=f"{sensor_key}_{attr_name}",

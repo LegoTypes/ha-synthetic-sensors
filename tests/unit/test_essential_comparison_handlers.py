@@ -44,19 +44,20 @@ class TestTypeAnalyzer:
 
     def test_categorize_version_strings(self):
         """Test version string categorization."""
-        # Semantic versions
+        # Semantic versions (must be n.n.n format)
         assert TypeAnalyzer.categorize_type("1.0.0") == TypeCategory.VERSION
         assert TypeAnalyzer.categorize_type("v2.1.3") == TypeCategory.VERSION
         assert TypeAnalyzer.categorize_type("10.15.2-beta") == TypeCategory.VERSION
-        assert TypeAnalyzer.categorize_type("1.2") == TypeCategory.VERSION
+        # Two-part versions are not valid versions, should be STRING
+        assert TypeAnalyzer.categorize_type("1.2") == TypeCategory.STRING
 
     def test_categorize_conflict_resolution(self):
         """Test handling of ambiguous strings."""
-        # 2024.01.01 matches version pattern but not strict datetime, so becomes VERSION
+        # 2024.01.01 is a valid 3-part version
         assert TypeAnalyzer.categorize_type("2024.01.01") == TypeCategory.VERSION
-        # Not valid datetime, becomes version
-        assert TypeAnalyzer.categorize_type("2023.12") == TypeCategory.VERSION
-        # Clear version format
+        # 2023.12 is not valid version (only 2 parts), becomes string
+        assert TypeAnalyzer.categorize_type("2023.12") == TypeCategory.STRING
+        # Clear version format (3 parts)
         assert TypeAnalyzer.categorize_type("1.2.3") == TypeCategory.VERSION
 
     def test_categorize_none_values(self):
@@ -121,7 +122,7 @@ class TestSeparateComparisonHandlers:
 
         # Cross-type version/string comparisons
         assert self.version_handler.can_handle("2.1.0", "1.0.0", ">=")
-        assert self.version_handler.can_handle("v1.0", "2.0.0", "<=")
+        assert self.version_handler.can_handle("v1.0.0", "2.0.0", "<=")
 
     def test_can_handle_string_comparisons(self):
         """Test string comparison capability detection."""
@@ -216,7 +217,7 @@ class TestSeparateComparisonHandlers:
 
         # Version prefixes
         assert self.version_handler.compare("v2.1.0", "v1.0.0", ">") is True
-        assert self.version_handler.compare("v1.0", "2.0.0", "<") is True
+        assert self.version_handler.compare("v1.0.0", "2.0.0", "<") is True
 
         # Complex versions
         assert self.version_handler.compare("2.1.3", "2.1.2", ">") is True
@@ -255,8 +256,8 @@ class TestSeparateComparisonHandlers:
         # Version with 'v' prefix
         assert self.version_handler.compare("v1.2.3", "1.2.2", ">") is True
 
-        # Two-part version
-        assert self.version_handler.compare("2.1", "2.0", ">") is True
+        # Three-part versions (required format)
+        assert self.version_handler.compare("2.1.0", "2.0.0", ">") is True
 
         # Version with pre-release info
         assert self.version_handler.compare("2.0.0-beta", "1.9.9", ">") is True

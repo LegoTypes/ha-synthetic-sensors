@@ -4,8 +4,9 @@ This module provides shared utilities for handling configuration variables
 and other configuration-related operations to eliminate code duplication.
 """
 
+from collections.abc import Callable
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from .config_models import FormulaConfig
 from .exceptions import MissingDependencyError
