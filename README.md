@@ -794,6 +794,14 @@ sensors:
       device_class: "power"
       state_class: "measurement"
 
+  # Collection with attribute comparisons - filter by thresholds
+  high_power_devices:
+    name: "High Power Devices"
+    formula: count("attribute:power_rating>=1000")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:flash"
+
   # Collection with exclusions - exclude specific sensors
   power_without_kitchen:
     name: "Power Without Kitchen"
@@ -820,6 +828,22 @@ sensors:
       unit_of_measurement: "devices"
       icon: "mdi:security"
 
+  # Enhanced syntax examples with string containment
+  room_devices:
+    name: "Living Room Devices"
+    formula: count("attribute:name in 'Living'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:sofa"
+
+  # Version-based filtering
+  updated_firmware:
+    name: "Updated Firmware Devices"
+    formula: count("attribute:firmware_version>='2.1.0'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:update"
+
   # Enhanced syntax examples
   active_devices:
     name: "Active Devices"
@@ -840,14 +864,25 @@ sensors:
 
 **Available Functions:** `sum()`, `avg()`/`mean()`, `count()`, `min()`/`max()`, `std()`/`var()`
 
+**Comparison Capabilities:**
+
+- **Numeric**: Standard comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`) for integers and floats
+- **String**: Equality (`==`, `!=`) and containment (`in`, `not in`) operations
+- **DateTime**: Full comparisons with ISO datetime strings and datetime objects
+- **Version**: Semantic version comparisons (e.g., `"2.1.0" > "1.5.3"`)
+- **Type-safe**: Explicit errors for unsupported type combinations
+
 **Collection Patterns:**
 
 - `"device_class:power"` - Entities with specific device class
 - `"regex:pattern_variable"` - Entities matching regex pattern from variable (variable must reference an `input_text` entity)
 - `"area:kitchen"` - Entities in specific area
 - `"label:critical|important"` - Entities with specified label (pipe-separated OR logic)
-- `"attribute:battery_level<50"` - Entities with attribute conditions
-- `"state:>100|on"` - Entities with state conditions (supports OR with `|`)
+- `"attribute:battery_level>=50"` - Entities with attribute conditions (supports `==`, `!=`, `<`, `<=`, `>`, `>=`)
+- `"state:>=100|on"` - Entities with state conditions (supports all comparison operators and OR with `|`)
+- `"attribute:name in 'Living'"` - String containment matching (supports `in`, `not in`)
+- `"attribute:firmware_version>='2.1.0'"` - Semantic version comparisons
+- `"attribute:last_seen>='2024-01-01'"` - Datetime comparisons (ISO format)
 
 **Exclusion Syntax:**
 
@@ -909,8 +944,9 @@ remember the the main sensor state is evaluated first before attributes are calc
 
 **Attribute Patterns:**
 
-- **Explicit operators**: `"battery_level>50|status==active"`
-- **Shorthand with colon**: `"battery_level>50|status:active|mode:!inactive"`
+- **Explicit operators**: `"battery_level>=50|status==active|firmware_version>='2.1.0'"`
+- **Shorthand with colon**: `"battery_level>=50|status:active|mode:!inactive"`
+- **String containment**: `"name in 'Living'|manufacturer not in 'Corp'"`
 - **Negation**: `"device_class:!humidity|battery_level:!<20"`
 
 **Simple Patterns (device_class, area, label):**
@@ -921,13 +957,16 @@ remember the the main sensor state is evaluated first before attributes are calc
 
 **Syntax Reference:**
 
-| Pattern Type     | Explicit Syntax                             | Shorthand Syntax                    | Negation Syntax              |
-| ---------------- | ------------------------------------------- | ----------------------------------- | ---------------------------- |
-| **State**        | `"state:==on\|!=off\|>50"`                  | `"state:on\|!off\|>50"`             | `"state:!off\|!inactive"`    |
-| **Attribute**    | `"battery_level>50\|status==active"`        | `"battery_level>50\|status:active"` | `"battery_level:!<20"`       |
-| **Device Class** | `"device_class:power\|device_class:energy"` | `"device_class:power\|energy"`      | `"device_class:!diagnostic"` |
-| **Area**         | `"area:kitchen\|area:living_room"`          | `"area:kitchen\|living_room"`       | `"area:!basement"`           |
-| **Label**        | `"label:critical\|label:important"`         | `"label:critical\|important"`       | `"label:!deprecated"`        |
+| Pattern Type     | Explicit Syntax                                  | Shorthand Syntax                     | Negation Syntax              |
+| ---------------- | ------------------------------------------------ | ------------------------------------ | ---------------------------- |
+| **State**        | `"state:==on\|!=off\|>=50"`                      | `"state:on\|!off\|>=50"`             | `"state:!off\|!inactive"`    |
+| **Attribute**    | `"battery_level>=50\|status==active"`            | `"battery_level>=50\|status:active"` | `"battery_level:!<20"`       |
+| **String**       | `"name in 'Living'\|manufacturer not in 'Test'"` | `"name:Living\|manufacturer:!Test"`  | `"name:!'Kitchen'"`          |
+| **Version**      | `"firmware_version>='2.1.0'\|app_version<'3.0'"` | `"firmware_version:>=2.1.0"`         | `"version:!<1.0"`            |
+| **DateTime**     | `"last_seen>='2024-01-01T00:00:00Z'"`            | `"last_seen:>=2024-01-01"`           | `"updated_at:!<yesterday"`   |
+| **Device Class** | `"device_class:power\|device_class:energy"`      | `"device_class:power\|energy"`       | `"device_class:!diagnostic"` |
+| **Area**         | `"area:kitchen\|area:living_room"`               | `"area:kitchen\|living_room"`        | `"area:!basement"`           |
+| **Label**        | `"label:critical\|label:important"`              | `"label:critical\|important"`        | `"label:!deprecated"`        |
 
 **Key Features:**
 
@@ -998,8 +1037,8 @@ For detailed formula examples and programming patterns, see the
 
 ## Python Operators in Formulas
 
-The formula engine supports Python logical operators, conditionals, and membership testing for sophisticated sensor
-calculations. For comprehensive examples and advanced patterns, see
+The formula engine supports Python logical operators, conditionals, comparison operators, and membership testing for
+sophisticated sensor calculations. For comprehensive examples and advanced patterns, see
 [Formula Operators Guide](docs/formulas_with_operators.md).
 
 ### Conditional Expressions (Ternary Operator)
@@ -1092,8 +1131,8 @@ sensors:
 
 - **Conditional**: `value_if_true if condition else value_if_false`
 - **Logical**: `and`, `or`, `not`
-- **Comparison**: `==`, `!=`, `<`, `>`, `<=`, `>=`
-- **Membership**: `in`, `not in`
+- **Comparison**: `==`, `!=`, `<`, `>`, `<=`, `>=` (supports numeric, datetime, version, and string types)
+- **Membership**: `in`, `not in` (for string containment)
 - **Boolean values**: `True`, `False`
 
 **Boolean State Conversion:**

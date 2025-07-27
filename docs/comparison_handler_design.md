@@ -385,42 +385,6 @@ The system uses a specific order of precedence for type detection:
 
 The testing strategy validates every combination of types and operators to ensure deterministic behavior:
 
-#### 1. Type Detection Test Matrix
-
-Tests for:
-
-- Basic type detection for all categories
-- Conflict resolution for ambiguous strings
-- Edge cases and error conditions
-- Performance characteristics
-
-#### 2. Handler Selection Test Matrix
-
-Tests for:
-
-- All valid same-type combinations (5 types × 6 operators = 30 tests)
-- All valid mixed-type combinations (4 valid conversions × 6 operators = 24 tests)
-- All forbidden combinations (16 forbidden pairs × 6 operators = 96 tests)
-- Invalid operators for each type (5 types × 8 invalid operators = 40 tests)
-
-#### 3. Handler Interface Validation
-
-Tests for:
-
-- Handler registration system and custom handler addition
-- `can_handle` method consistency with type analysis
-- Error message quality and debugging information
-- Integration with ConditionParser and collection patterns
-
-#### 4. Performance and Edge Case Testing
-
-Tests for:
-
-- Type detection performance (10,000 values in <1 second)
-- Pattern conflict edge cases and resolution
-- Error propagation and context preservation
-- Memory usage and handler instance management
-
 ### Unit Tests for Each Handler
 
 Each handler requires comprehensive unit tests covering:

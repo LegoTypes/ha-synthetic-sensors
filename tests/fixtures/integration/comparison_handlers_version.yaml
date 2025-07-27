@@ -1,0 +1,82 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_version_comparisons"
+  variables:
+    min_firmware: "2.1.0"
+    target_version: "3.0.0"
+    legacy_cutoff: "1.5.0"
+
+sensors:
+  # Test version greater than or equal comparison
+  compatible_firmware:
+    name: "Compatible Firmware"
+    formula: count("attribute:firmware_version>=min_firmware")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:chip"
+
+  # Test version less than comparison
+  legacy_devices:
+    name: "Legacy Devices"
+    formula: count("attribute:software_version<legacy_cutoff")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:archive"
+
+  # Test version greater than comparison with state
+  updated_devices:
+    name: "Updated Devices"
+    formula: count("state:>min_firmware")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:update"
+
+  # Test version less than or equal
+  stable_versions:
+    name: "Stable Versions"
+    formula: count("attribute:release_version<=target_version")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:shield-check"
+
+  # Test version comparison with v prefix
+  prefixed_versions:
+    name: "Prefixed Versions"
+    formula: count("attribute:version_tag>=prefixed_min")
+    variables:
+      prefixed_min: "v2.1.0"  # Use different variable name to avoid conflict
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:tag"
+
+  # Test complex version filtering
+  upgrade_candidates:
+    name: "Upgrade Candidates"
+    formula: "count('attribute:current_version<target_version') - count('attribute:min_supported_version>target_version')"
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:arrow-up-bold"
+
+  # Test version in main formula with conditional
+  version_status:
+    name: "Version Status"
+    formula: "min_firmware >= target_version ? 'modern' : 'legacy'"
+    metadata:
+      icon: "mdi:information"
+
+  # Test multiple version conditions with OR logic
+  maintenance_needed:
+    name: "Maintenance Needed"
+    formula: count("attribute:firmware_version<legacy_cutoff|attribute:driver_version<=min_firmware")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:wrench"
+
+  # Test version with different formats
+  mixed_version_formats:
+    name: "Mixed Version Formats"
+    formula: count("attribute:semantic_version>=min_firmware")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:format-list-numbered"

@@ -76,14 +76,16 @@ class TestSeparateComparisonHandlers:
 
     def setup_method(self):
         """Set up test fixtures."""
-        from ha_synthetic_sensors.condition_parser import (
+        from ha_synthetic_sensors.comparison_handlers import (
             NumericComparisonHandler,
             DateTimeComparisonHandler,
+            StringComparisonHandler,
             VersionComparisonHandler,
         )
 
         self.numeric_handler = NumericComparisonHandler()
         self.datetime_handler = DateTimeComparisonHandler()
+        self.string_handler = StringComparisonHandler()
         self.version_handler = VersionComparisonHandler()
 
     def test_can_handle_numeric_comparisons(self):
@@ -94,9 +96,9 @@ class TestSeparateComparisonHandlers:
         assert self.numeric_handler.can_handle(100, 50, ">=")
         assert self.numeric_handler.can_handle(1, 1, "<")
 
-        # Should not handle equality (handled by dispatch)
-        assert not self.numeric_handler.can_handle(5, 10, "==")
-        assert not self.numeric_handler.can_handle(5, 10, "!=")
+        # Should now handle equality (part of type-specific handlers)
+        assert self.numeric_handler.can_handle(5, 10, "==")
+        assert self.numeric_handler.can_handle(5, 10, "!=")
 
     def test_can_handle_datetime_comparisons(self):
         """Test datetime comparison capability detection."""
@@ -120,6 +122,22 @@ class TestSeparateComparisonHandlers:
         # Cross-type version/string comparisons
         assert self.version_handler.can_handle("2.1.0", "1.0.0", ">=")
         assert self.version_handler.can_handle("v1.0", "2.0.0", "<=")
+
+    def test_can_handle_string_comparisons(self):
+        """Test string comparison capability detection."""
+        # Should handle string equality and containment operators
+        assert self.string_handler.can_handle("hello", "world", "==")
+        assert self.string_handler.can_handle("hello", "world", "!=")
+        assert self.string_handler.can_handle("Living", "Living Room", "in")
+        assert self.string_handler.can_handle("Kitchen", "Living Room", "not in")
+
+        # Should not handle ordering operators
+        assert not self.string_handler.can_handle("hello", "world", ">")
+        assert not self.string_handler.can_handle("hello", "world", "<=")
+
+        # Should not handle non-string types
+        assert not self.string_handler.can_handle(5, 10, "==")
+        assert not self.string_handler.can_handle(datetime(2024, 1, 1), "test", "==")
 
     def test_can_handle_unsupported_combinations(self):
         """Test that unsupported type combinations are rejected."""
@@ -169,6 +187,25 @@ class TestSeparateComparisonHandlers:
         # Mixed datetime/string comparisons
         assert self.datetime_handler.compare(dt1, "2024-01-01T09:00:00", ">") is True
         assert self.datetime_handler.compare("2024-01-01T11:00:00", dt1, ">") is True
+
+    def test_compare_string_operations(self):
+        """Test string comparison operations."""
+        # String equality operations
+        assert self.string_handler.compare("hello", "hello", "==") is True
+        assert self.string_handler.compare("hello", "world", "==") is False
+        assert self.string_handler.compare("hello", "world", "!=") is True
+        assert self.string_handler.compare("hello", "hello", "!=") is False
+
+        # String containment operations
+        assert self.string_handler.compare("Living", "Living Room Light", "in") is True
+        assert self.string_handler.compare("Kitchen", "Living Room Light", "in") is False
+        assert self.string_handler.compare("Kitchen", "Living Room Light", "not in") is True
+        assert self.string_handler.compare("Living", "Living Room Light", "not in") is False
+
+        # Edge cases
+        assert self.string_handler.compare("", "any string", "in") is True  # Empty string is in any string
+        assert self.string_handler.compare("exact", "exact", "in") is True  # String contains itself
+        assert self.string_handler.compare("case", "CaseInsensitive", "in") is False  # Case sensitive
 
     def test_compare_version_operations(self):
         """Test version comparison operations."""

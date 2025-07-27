@@ -1,0 +1,64 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_datetime_comparisons"
+  variables:
+    current_time: "sensor.current_timestamp"
+    cutoff_date: "2024-01-01T00:00:00Z"
+    recent_threshold: "2024-06-01T12:00:00+00:00"
+
+sensors:
+  # Test datetime string greater than comparison
+  recent_devices:
+    name: "Recent Devices"
+    formula: count("attribute:last_seen>=cutoff_date")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:clock-check"
+
+  # Test datetime string less than comparison
+  old_devices:
+    name: "Old Devices"
+    formula: count("attribute:last_updated<cutoff_date")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:clock-alert"
+
+  # Test datetime comparison with timezone
+  active_recent:
+    name: "Active Recent"
+    formula: count("state:>=recent_threshold")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:calendar-check"
+
+  # Test datetime less than or equal
+  vintage_devices:
+    name: "Vintage Devices"
+    formula: count("attribute:manufacture_date<=cutoff_date")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:calendar-clock"
+
+  # Test complex datetime filtering
+  maintenance_due:
+    name: "Maintenance Due"
+    formula: "count('attribute:last_maintenance<cutoff_date') + count('attribute:next_service<=recent_threshold')"
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:wrench-clock"
+
+  # Test datetime in main formula with conditional
+  time_based_mode:
+    name: "Time Based Mode"
+    formula: "current_time >= recent_threshold ? 'recent' : 'legacy'"
+    metadata:
+      icon: "mdi:timeline-clock"
+
+  # Test multiple datetime conditions with OR logic
+  service_candidates:
+    name: "Service Candidates"
+    formula: count("attribute:last_maintenance<cutoff_date|attribute:warranty_expires<=recent_threshold")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:calendar-alert"

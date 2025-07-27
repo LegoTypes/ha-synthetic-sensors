@@ -132,35 +132,44 @@ class TestCollectionResolverCoverage:
         with pytest.raises(DataValidationError):
             resolver._parse_state_condition(">>100")
 
-    def test_convert_value_string_complex_types(self, mock_hass, mock_entity_registry, mock_states) -> None:
-        """Test _convert_value_string with complex value types."""
+    def test_clean_value_string_behavior(self, mock_hass, mock_entity_registry, mock_states) -> None:
+        """Test _clean_value_string behavior (quote removal and whitespace)."""
         from ha_synthetic_sensors.condition_parser import ConditionParser
 
-        # Test boolean conversion
-        result = ConditionParser._convert_value_string("true")
-        assert result is True
+        # Test quote removal
+        result = ConditionParser._clean_value_string('"quoted"')
+        assert result == "quoted"
 
-        result = ConditionParser._convert_value_string("false")
-        assert result is False
+        result = ConditionParser._clean_value_string("'single'")
+        assert result == "single"
 
-        # Test integer conversion
-        result = ConditionParser._convert_value_string("42")
-        assert result == 42
+        # Test whitespace trimming
+        result = ConditionParser._clean_value_string("  spaced  ")
+        assert result == "spaced"
 
-        # Test float conversion
-        result = ConditionParser._convert_value_string("3.14")
-        assert result == 3.14
+        # Test combined quote removal and trimming
+        result = ConditionParser._clean_value_string('  "quoted"  ')
+        assert result == "quoted"
 
-        # Test string (unchanged)
-        result = ConditionParser._convert_value_string("hello")
+        # Test no change for simple strings
+        result = ConditionParser._clean_value_string("hello")
         assert result == "hello"
 
-    def test_convert_value_string_scientific_notation(self, mock_hass, mock_entity_registry, mock_states) -> None:
-        """Test _convert_value_string with scientific notation."""
+    def test_condition_parser_with_comparison_factory(self, mock_hass, mock_entity_registry, mock_states) -> None:
+        """Test that ConditionParser delegates type handling to comparison factory."""
         from ha_synthetic_sensors.condition_parser import ConditionParser
 
-        result = ConditionParser._convert_value_string("1.23e-4")
-        assert result == 1.23e-4
+        # Test that the factory handles type conversions correctly
+        # Boolean comparisons
+        assert ConditionParser.compare_values(True, "==", "true") is True
+        assert ConditionParser.compare_values(False, "==", "false") is True
+
+        # Numeric comparisons
+        assert ConditionParser.compare_values(42, "==", "42") is True
+        assert ConditionParser.compare_values(3.14, ">=", "3.0") is True
+
+        # Scientific notation
+        assert ConditionParser.compare_values(1.23e-4, "==", "0.000123") is True
 
     def test_get_entity_area_id_device_fallback(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _get_entity_area_id with device fallback."""

@@ -1,0 +1,82 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_comparison_errors"
+  variables:
+    test_string: "hello"
+    test_number: 42
+    test_boolean: True
+
+sensors:
+  # Test unsupported cross-type comparisons (should cause errors)
+  invalid_string_numeric:
+    name: "Invalid String Numeric"
+    formula: count("attribute:name>test_number")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:alert"
+
+  # Test unsupported boolean ordering (should cause errors)
+  invalid_boolean_ordering:
+    name: "Invalid Boolean Ordering"
+    formula: count("attribute:enabled<test_boolean")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:alert"
+
+  # Test malformed datetime comparisons
+  invalid_datetime:
+    name: "Invalid DateTime"
+    formula: count("attribute:invalid_date>=test_string")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:alert"
+
+  # Test malformed version comparisons
+  invalid_version:
+    name: "Invalid Version"
+    formula: count("attribute:bad_version>=test_string")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:alert"
+
+  # Test comparison with None/null values
+  null_comparison:
+    name: "Null Comparison"
+    formula: count("attribute:null_attribute>test_number")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:alert"
+
+  # Test valid cross-type scenarios that should work
+  valid_datetime_string:
+    name: "Valid DateTime String"
+    formula: count("attribute:last_seen>='2024-01-01T00:00:00Z'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:check"
+
+  # Test valid version string comparisons
+  valid_version_string:
+    name: "Valid Version String"
+    formula: count("attribute:version>='2.1.0'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:check"
+
+  # Test error handling in complex formulas
+  complex_error_handling:
+    name: "Complex Error Handling"
+    formula: "count('attribute:valid_power>=100') + 0"  # Should work even if invalid patterns exist
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:calculator"
+
+  # Test graceful degradation
+  mixed_valid_invalid:
+    name: "Mixed Valid Invalid"
+    formula: sum("attribute:power_rating>=50")  # Valid numeric comparison
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

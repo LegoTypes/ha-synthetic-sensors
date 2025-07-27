@@ -1,0 +1,88 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_string_containment"
+  variables:
+    living_filter: "Living"
+    kitchen_filter: "Kitchen"
+    error_pattern: "error"
+
+sensors:
+  # Test 'in' operator for substring matching
+  living_room_devices:
+    name: "Living Room Devices"
+    formula: count("attribute:name in living_filter")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:sofa"
+
+  # Test 'not in' operator for exclusion
+  non_kitchen_devices:
+    name: "Non Kitchen Devices"
+    formula: count("attribute:name not in kitchen_filter")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:home-outline"
+
+  # Test state containment with 'in'
+  active_status_devices:
+    name: "Active Status Devices"
+    formula: count("state in 'active'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:check-circle"
+
+  # Test state exclusion with 'not in'
+  non_error_devices:
+    name: "Non Error Devices"
+    formula: count("state not in error_pattern")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:shield-check"
+
+  # Test attribute value containment
+  branded_devices:
+    name: "Branded Devices"
+    formula: count("attribute:manufacturer in 'Corp'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:factory"
+
+  # Test complex containment combinations
+  filtered_device_count:
+    name: "Filtered Device Count"
+    formula: "count('attribute:name in living_filter') + count('state not in error_pattern')"
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:counter"
+
+  # Test case-sensitive containment
+  exact_status_match:
+    name: "Exact Status Match"
+    formula: count("attribute:status in 'Active'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:magnify"
+
+  # Test empty string behavior
+  all_devices_with_names:
+    name: "All Devices With Names"
+    formula: count("attribute:name not in ''")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:format-text"
+
+  # Test multiple containment patterns with OR logic
+  multi_room_devices:
+    name: "Multi Room Devices"
+    formula: count("attribute:name in 'Living'|attribute:name in 'Bedroom'")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:home-variant"
+
+  # Test containment in main formula with conditional
+  room_categorizer:
+    name: "Room Categorizer"
+    formula: 'living_filter in "Living Room" ? "main_area" : "other_area"'
+    metadata:
+      icon: "mdi:home-map-marker"

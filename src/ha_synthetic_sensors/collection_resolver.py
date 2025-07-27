@@ -656,7 +656,10 @@ class CollectionResolver:
         Returns:
             Tuple of (attribute_name, operator, expected_value) or None if invalid
         """
-        return ConditionParser.parse_attribute_condition(condition)
+        parsed_condition = ConditionParser.parse_attribute_condition(condition)
+        if parsed_condition is None:
+            return None
+        return parsed_condition["attribute"], parsed_condition["operator"], parsed_condition["value"]
 
     def _entity_matches_attribute_condition(
         self,
@@ -775,7 +778,8 @@ class CollectionResolver:
         Raises:
             DataValidationError: If condition format is invalid
         """
-        return ConditionParser.parse_state_condition(condition)
+        parsed_condition = ConditionParser.parse_state_condition(condition)
+        return parsed_condition["operator"], parsed_condition["value"]
 
     def _entity_matches_state_condition(self, entity_id: str, op: str, expected_value: bool | float | int | str) -> bool:
         """Check if an entity matches a state condition.

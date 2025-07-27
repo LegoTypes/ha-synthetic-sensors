@@ -1,0 +1,89 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_equality_comparisons"
+  variables:
+    target_state: "on"
+    target_mode: "auto"
+    excluded_brand: "unknown"
+    target_numeric: 100
+
+sensors:
+  # Test equality with strings
+  active_devices:
+    name: "Active Devices"
+    formula: count("state:==target_state")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:power"
+
+  # Test inequality with strings
+  non_auto_devices:
+    name: "Non Auto Devices"
+    formula: count("attribute:mode!=target_mode")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:cog"
+
+  # Test equality with numeric values
+  exact_power_devices:
+    name: "Exact Power Devices"
+    formula: count("attribute:power_rating==target_numeric")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:flash"
+
+  # Test inequality with numeric values
+  variable_power_devices:
+    name: "Variable Power Devices"
+    formula: count("state:!=target_numeric")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:gauge"
+
+  # Test equality with boolean values
+  enabled_devices:
+    name: "Enabled Devices"
+    formula: count("attribute:enabled==True")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:check-circle"
+
+  # Test inequality with boolean values
+  disabled_devices:
+    name: "Disabled Devices"
+    formula: count("attribute:active!=True")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:close-circle"
+
+  # Test equality in main formula
+  state_matcher:
+    name: "State Matcher"
+    formula: "target_state == 'on' ? 'active_mode' : 'standby_mode'"
+    metadata:
+      icon: "mdi:state-machine"
+
+  # Test complex equality combinations
+  filtered_devices:
+    name: "Filtered Devices"
+    formula: "count('state:==on') - count('attribute:brand==excluded_brand')"
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:filter"
+
+  # Test mixed equality and inequality
+  mixed_filter:
+    name: "Mixed Filter"
+    formula: count("state:==target_state|attribute:status!=error")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:check-network"
+
+  # Test equality with null/None handling
+  configured_devices:
+    name: "Configured Devices"
+    formula: count("attribute:configuration!=None")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:cog-outline"

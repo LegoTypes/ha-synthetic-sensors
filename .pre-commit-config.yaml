@@ -48,7 +48,7 @@ repos:
           - types-jsonschema
           - homeassistant-stubs
         args: ['--config-file=pyproject.toml']
-        exclude: '^tests/.*|docs/.*|scripts/.*|\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|docs/.*|scripts/.*|examples/.*|\..*_cache/.*|dist/.*|venv/.*'
 
   # Pylint for additional code quality checks
   - repo: https://github.com/PyCQA/pylint
@@ -63,7 +63,7 @@ repos:
           - typing-extensions
           - homeassistant-stubs
         args: ['--rcfile=pyproject.toml']
-        exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|docs/.*|examples/.*|test_.*\.py$|.*_test\.py$|\..*_cache/.*|dist/.*|venv/.*'
 
   # Markdownlint for markdown files
   - repo: https://github.com/DavidAnson/markdownlint-cli2
