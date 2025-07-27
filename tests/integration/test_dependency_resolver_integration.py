@@ -42,6 +42,17 @@ class TestDependencyResolverIntegration:
         """Create a mock async_add_entities callback."""
         return Mock()
 
+    @pytest.fixture
+    def mock_device_registry(self):
+        """Create a mock device registry."""
+        mock_registry = Mock()
+        mock_registry.devices = Mock()
+        mock_device_entry = Mock()
+        mock_device_entry.name = "Test Device"
+        mock_device_entry.identifiers = {("ha_synthetic_sensors", "test_device_123")}
+        mock_registry.async_get_device.return_value = mock_device_entry
+        return mock_registry
+
     def create_data_provider_callback(self, backing_data: dict[str, any]) -> DataProviderCallback:
         """Create a data provider callback for testing with virtual backing entities."""
 
@@ -644,6 +655,218 @@ sensors:
 
             except Exception as e:
                 pytest.fail(f"Valid dependencies should not raise exception, but got: {e}")
+
+            # Clean up
+            await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_circular_reference_detection(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+    ):
+        """Test detection and handling of circular references between sensors."""
+        # Set up storage manager with proper mocking
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            # Create sensor set and load circular dependency YAML
+            sensor_set_id = "circular_deps_test"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="Circular Dependencies Test"
+            )
+
+            yaml_fixture_path = "tests/fixtures/integration/circular_reference_detection.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
+
+            # Import should succeed - circular detection happens during evaluation
+            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            assert result["sensors_imported"] == 3
+
+            # Set up sensor manager - this should detect circular references during setup
+            from ha_synthetic_sensors.exceptions import CircularDependencyError
+
+            with pytest.raises(CircularDependencyError, match="Circular dependency detected"):
+                sensor_manager = await async_setup_synthetic_sensors(
+                    hass=mock_hass,
+                    config_entry=mock_config_entry,
+                    async_add_entities=mock_async_add_entities,
+                    storage_manager=storage_manager,
+                    device_identifier="test_device_123",
+                    allow_ha_lookups=True,  # Allow HA entity lookups for cross-references
+                )
+
+            # Clean up
+            await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_complex_cross_sensor_dependencies(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+    ):
+        """Test resolution of complex multi-level dependency chains."""
+        # Set up virtual backing entity data
+        backing_data = {"sensor.virtual_base": 1000.0}
+
+        # Set up mock HA states for external entities
+        mock_states["sensor.auxiliary_system"] = type("MockState", (), {"state": "200.0", "attributes": {}})()
+        mock_states["sensor.grid_connection"] = type("MockState", (), {"state": "300.0", "attributes": {}})()
+
+        data_provider = self.create_data_provider_callback(backing_data)
+
+        # Set up storage manager with proper mocking
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            # Create sensor set and load complex dependency YAML
+            sensor_set_id = "complex_deps_test"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="Complex Dependencies Test"
+            )
+
+            yaml_fixture_path = "tests/fixtures/integration/complex_cross_sensor_dependencies.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
+
+            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            assert result["sensors_imported"] == 5
+
+            # Create sensor-to-backing mapping for virtual entity
+            sensor_to_backing_mapping = {"base_power": "sensor.virtual_base"}
+
+            def change_notifier_callback(changed_entity_ids: set[str]) -> None:
+                pass
+
+            # Set up sensor manager with hybrid data sources
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_123",
+                data_provider_callback=data_provider,
+                change_notifier=change_notifier_callback,
+                sensor_to_backing_mapping=sensor_to_backing_mapping,
+                allow_ha_lookups=True,  # Allow HA entity lookups for external references
+            )
+
+            assert sensor_manager is not None
+            assert mock_async_add_entities.called
+
+            # Test dependency resolution through evaluation
+            await sensor_manager.async_update_sensors_for_entities({"sensor.virtual_base"})
+            await sensor_manager.async_update_sensors()
+
+            # Verify all sensors in the dependency chain were created
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 5
+
+            # Clean up
+            await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_dependency_extraction_edge_cases(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+    ):
+        """Test edge cases in dependency extraction including attributes and collections."""
+        # Set up virtual backing entity data
+        backing_data = {"sensor.virtual_main": 500.0}
+
+        # Set up mock HA states with attributes for dependency extraction
+        mock_states["sensor.battery_device"] = type("MockState", (), {"state": "85.0", "attributes": {"battery_level": 75.0}})()
+        mock_states["sensor.power_meter_a"] = type("MockState", (), {"state": "1000.0", "attributes": {"power": 1000.0}})()
+        mock_states["sensor.current_meter_b"] = type("MockState", (), {"state": "5.0", "attributes": {"current": 5.0}})()
+        mock_states["sensor.voltage_meter_c"] = type("MockState", (), {"state": "240.0", "attributes": {"voltage": 240.0}})()
+        mock_states["sensor.primary_power"] = type("MockState", (), {"state": "1200.0", "attributes": {}})()
+        mock_states["sensor.backup_power"] = type("MockState", (), {"state": "800.0", "attributes": {}})()
+        mock_states["binary_sensor.primary_available"] = type("MockState", (), {"state": "on", "attributes": {}})()
+
+        # Mock entity registry for collection pattern testing
+        mock_entity_registry._entities.update(
+            {
+                "sensor.temp_1": Mock(device_class="temperature"),
+                "sensor.temp_2": Mock(device_class="temperature"),
+                "sensor.power_1": Mock(device_class="power"),
+                "sensor.excluded_power_meter": Mock(device_class="power"),
+            }
+        )
+
+        data_provider = self.create_data_provider_callback(backing_data)
+
+        # Set up storage manager with proper mocking
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            # Create sensor set and load edge cases YAML
+            sensor_set_id = "edge_cases_test"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="Dependency Edge Cases Test"
+            )
+
+            yaml_fixture_path = "tests/fixtures/integration/dependency_extraction_edge_cases.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
+
+            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            assert result["sensors_imported"] == 4
+
+            # Create sensor-to-backing mapping for virtual entity
+            sensor_to_backing_mapping = {"mixed_dependencies": "sensor.virtual_main"}
+
+            def change_notifier_callback(changed_entity_ids: set[str]) -> None:
+                pass
+
+            # Set up sensor manager with complex dependency patterns
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_123",
+                data_provider_callback=data_provider,
+                change_notifier=change_notifier_callback,
+                sensor_to_backing_mapping=sensor_to_backing_mapping,
+                allow_ha_lookups=True,  # Enable HA lookups for complex dependencies
+            )
+
+            assert sensor_manager is not None
+            assert mock_async_add_entities.called
+
+            # Test dependency extraction through evaluation
+            await sensor_manager.async_update_sensors_for_entities({"sensor.virtual_main"})
+            await sensor_manager.async_update_sensors()
+
+            # Verify sensors with edge case dependencies were created
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 4
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)

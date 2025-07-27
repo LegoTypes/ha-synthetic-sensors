@@ -285,7 +285,7 @@ class VariableResolutionPhase:
     ) -> None:
         """Resolve config variables using the resolver factory."""
 
-        def resolver_callback(var_name: str, var_value: Any, context: dict[str, ContextValue], sensor_cfg: Any) -> Any:
+        def resolver_callback(var_name: str, var_value: Any, context: dict[str, ContextValue], _sensor_cfg: Any) -> Any:
             return self._resolver_factory.resolve_variable(var_name, var_value, context)
 
         resolve_config_variables(eval_context, config, resolver_callback, sensor_config)

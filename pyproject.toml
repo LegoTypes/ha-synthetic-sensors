@@ -30,6 +30,7 @@ ruff = "^0.12.2"
 mypy = "^1.15.0"
 radon = "*"
 pylint = "*"
+vulture = "^2.12"
 types-PyYAML = "^6.0.0"
 types-jsonschema = "^4.0.0"
 types-aiofiles = "^24.1.0.20250606"
@@ -174,3 +175,18 @@ disable = [
 ignore-paths = [
     "scripts",
 ]
+
+[tool.vulture]
+exclude = [
+    "tests/",
+    "scripts/",
+    "examples/",
+    "docs/",
+    "*.pyc",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+]
+min_confidence = 80

@@ -1,0 +1,48 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  type_analysis_sensor:
+    name: "Type Analysis Sensor"
+    formula: "numeric_var + boolean_var + string_numeric_var"
+    variables:
+      numeric_var: 42.5
+      boolean_var: "binary_sensor.test_switch"  # Will convert to 1.0 or 0.0
+      string_numeric_var: "sensor.numeric_string"  # Entity with numeric string state
+    attributes:
+      type_conversion_test:
+        formula: "boolean_var * 100 + (numeric_var if boolean_var else 0)"
+        metadata:
+          unit_of_measurement: "calculated"
+          suggested_display_precision: 1
+      string_operations:
+        formula: "len(str(numeric_var)) + len(str(boolean_var))"
+        metadata:
+          unit_of_measurement: "chars"
+    metadata:
+      unit_of_measurement: "mixed"
+      icon: "mdi:code-braces"
+
+  complex_type_resolution:
+    name: "Complex Type Resolution"
+    formula: "float_val + int_val + negative_val"
+    variables:
+      float_val: 3.14159
+      int_val: 42
+      negative_val: -25.0
+    attributes:
+      precision_test:
+        formula: "round(float_val, 2) + abs(negative_val)"
+        metadata:
+          unit_of_measurement: "calculated"
+          suggested_display_precision: 2
+      comparison_test:
+        formula: "1 if float_val > int_val else 0"
+        metadata:
+          unit_of_measurement: "boolean"
+    metadata:
+      unit_of_measurement: "numeric"
+      device_class: "power"
+      state_class: "measurement"

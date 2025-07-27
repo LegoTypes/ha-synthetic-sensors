@@ -1,0 +1,136 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+  variables:
+    global_base_rate: 0.15
+    global_multiplier: "sensor.global_multiplier_entity"
+  metadata:
+    attribution: "Advanced Variable Resolution Test"
+
+sensors:
+  complex_nested_resolution:
+    name: "Complex Nested Resolution"
+    formula: "state * nested_calc + cross_ref_value"
+    variables:
+      nested_calc: "base_rate * (multiplier + adjustment)"
+      base_rate: "global_base_rate"
+      multiplier: "sensor.dynamic_multiplier"
+      adjustment: 1.25
+      cross_ref_value: "sensor.state_token_self_reference.computed_state_value"
+    attributes:
+      deep_nested_calculation:
+        formula: "state * nested_var + (local_multiplier * global_base_rate)"
+        variables:
+          nested_var: "sensor.deep_nested_source"
+          local_multiplier: 2.5
+        metadata:
+          unit_of_measurement: "calculated"
+      recursive_state_reference:
+        formula: "state + state.deep_nested_calculation + external_ref"
+        variables:
+          external_ref: "sensor.external_reference.some_attribute"
+        metadata:
+          unit_of_measurement: "recursive"
+    metadata:
+      unit_of_measurement: "complex"
+      device_class: "power"
+      state_class: "measurement"
+
+  state_token_context_variations:
+    name: "State Token Context Variations"
+    formula: "state + baseline"
+    variables:
+      baseline: 100.0
+    attributes:
+      state_in_attribute_context:
+        formula: "state * 2 + offset"
+        variables:
+          offset: 50
+        metadata:
+          unit_of_measurement: "offset_calc"
+      state_attribute_access:
+        formula: "state.state_in_attribute_context + state.another_attribute"
+        variables:
+          another_attribute: "sensor.external_for_state_access"
+        metadata:
+          unit_of_measurement: "state_attr"
+      nested_state_operations:
+        formula: "(state + state.state_in_attribute_context) * state_multiplier"
+        variables:
+          state_multiplier: "sensor.state_multiplier_source"
+        metadata:
+          unit_of_measurement: "nested_state"
+    metadata:
+      unit_of_measurement: "tokens"
+      icon: "mdi:state-machine"
+
+  variable_scope_conflicts:
+    name: "Variable Scope Conflicts"
+    formula: "sensor_level_var * shared_name + unique_var"
+    variables:
+      sensor_level_var: "sensor.sensor_level_source"
+      shared_name: 3.0
+      unique_var: 42
+    attributes:
+      conflict_resolution_test:
+        formula: "sensor_level_var + shared_name * attribute_unique"
+        variables:
+          attribute_unique: "sensor.attribute_unique_source"
+          # shared_name inherited from sensor level
+        metadata:
+          unit_of_measurement: "conflict_test"
+      override_attempt:
+        formula: "original_value + overridden_value"
+        variables:
+          original_value: "sensor.original_source"
+          overridden_value: "sensor.override_source"
+        metadata:
+          unit_of_measurement: "override_test"
+    metadata:
+      unit_of_measurement: "scope"
+      device_class: "energy"
+
+  mixed_variable_types_resolution:
+    name: "Mixed Variable Types Resolution"
+    formula: "numeric_literal + entity_reference + collection_result"
+    variables:
+      numeric_literal: 123.45
+      entity_reference: "sensor.mixed_entity_source"
+      collection_result: "sum(device_class:temperature)"
+    attributes:
+      complex_mixed_calculation:
+        formula: "boolean_conv + string_numeric + negative_literal"
+        variables:
+          boolean_conv: "binary_sensor.test_boolean_conversion"
+          string_numeric: "sensor.string_numeric_source"
+          negative_literal: -789.01
+        metadata:
+          unit_of_measurement: "mixed_calc"
+      collection_with_variables:
+        formula: "avg(pattern_var) + min(another_pattern)"
+        variables:
+          pattern_var: "device_class:power"
+          another_pattern: "area:kitchen"
+        metadata:
+          unit_of_measurement: "collection_vars"
+    metadata:
+      unit_of_measurement: "mixed"
+      state_class: "measurement"
+
+  circular_reference_edge_case:
+    name: "Circular Reference Edge Case"
+    formula: "safe_reference + indirect_value"
+    variables:
+      safe_reference: "sensor.safe_external_entity"
+      indirect_value: "sensor.indirect_reference_source"
+    attributes:
+      potential_circular_attr:
+        formula: "state * safe_multiplier"
+        variables:
+          safe_multiplier: 1.5
+        metadata:
+          unit_of_measurement: "safe_circular"
+    metadata:
+      unit_of_measurement: "edge_case"
+      device_class: "power"

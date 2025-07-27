@@ -1,0 +1,34 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  " power_sensor_with_whitespace ":
+    name: "Power Sensor with Whitespace"
+    formula: "sensor.backing_power"
+    metadata:
+      " unit_of_measurement ": "W"
+      " device_class ": "power"
+    attributes:
+      " efficiency_ratio ":
+        formula: "state / sensor.backing_voltage * 100"
+        " unit_of_measurement ": "%"
+        " friendly_name ": "Efficiency Ratio"
+      " cost_per_hour ":
+        formula: "state * 0.15 / 1000"
+        " unit_of_measurement ": "$"
+
+  " energy_sensor_with_whitespace ":
+    name: "Energy Sensor with Whitespace"
+    formula: "sensor.backing_energy"
+    metadata:
+      " unit_of_measurement ": "kWh"
+      " device_class ": "energy"
+    attributes:
+      " daily_consumption ":
+        formula: "state * 24"
+        " unit_of_measurement ": "kWh"
+      " monthly_projection ":
+        formula: "daily_consumption * 30"
+        " unit_of_measurement ": "kWh"

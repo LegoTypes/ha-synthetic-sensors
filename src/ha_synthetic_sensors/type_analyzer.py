@@ -57,7 +57,7 @@ class UserTypeReducer(Protocol):
         """Try to reduce user type to numeric for formula evaluation."""
 
     def reduce_same_type_pair(
-        self, left: UserType, right: UserType, left_metadata: MetadataDict, right_metadata: MetadataDict
+        self, left: UserType, right: UserType, _left_metadata: MetadataDict, _right_metadata: MetadataDict
     ) -> "ReducedPairType":
         """Reduce two values of the same user type to built-in types."""
 
@@ -65,8 +65,8 @@ class UserTypeReducer(Protocol):
         self,
         user_value: UserType,
         builtin_value: BuiltinValueType,
-        user_metadata: MetadataDict,
-        builtin_type: TypeCategory,
+        _user_metadata: MetadataDict,
+        _builtin_type: TypeCategory,
         reverse: bool = False,
     ) -> "ReducedPairType":
         """Reduce user type with built-in type to built-in types."""

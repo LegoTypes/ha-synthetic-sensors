@@ -1,0 +1,15 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "source_value * 2"
+    variables:
+      source_value: "sensor.backing_entity"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

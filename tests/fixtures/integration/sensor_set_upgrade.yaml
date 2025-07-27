@@ -1,0 +1,25 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  new_sensor:
+    name: "New Sensor"
+    formula: "value * 2 + 10"
+    variables:
+      value: "sensor.new_backing_entity"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  upgraded_sensor:
+    name: "Upgraded Sensor"
+    formula: "base + increment"
+    variables:
+      base: "sensor.upgrade_base"
+      increment: "sensor.upgrade_increment"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"

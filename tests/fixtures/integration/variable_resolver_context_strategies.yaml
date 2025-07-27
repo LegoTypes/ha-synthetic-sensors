@@ -1,0 +1,157 @@
+version: "1.0"
+
+# This fixture targets variable_resolver.py gaps (55% coverage)
+# Focuses on context resolution strategies, variable precedence, and integration scenarios
+
+global_settings:
+  device_identifier: "variable_resolver_device"
+  resolution_strategy: "integration_priority"
+
+sensors:
+  context_resolution_strategies:
+    name: "Context Resolution Strategies Test"
+    formula: "context_var + integration_var + fallback_var"
+    variables:
+      context_var: "sensor.context_dependent_source"
+      integration_var: "sensor.integration_priority_source"
+      fallback_var: 50.0
+    attributes:
+      context_strategy_test:
+        formula: "primary_context + secondary_context + tertiary_context"
+        variables:
+          primary_context: "sensor.primary_context_source"
+          secondary_context: "sensor.secondary_context_source"
+          tertiary_context: "sensor.tertiary_context_source"
+        metadata:
+          unit_of_measurement: "context_strategy"
+      integration_resolution_test:
+        formula: "integration_priority + local_override + global_fallback"
+        variables:
+          integration_priority: "sensor.integration_source"
+          local_override: "sensor.local_override_source"
+          global_fallback: "sensor.global_fallback_source"
+        metadata:
+          unit_of_measurement: "integration_resolution"
+      variable_precedence_test:
+        formula: "highest_precedence + medium_precedence + lowest_precedence"
+        variables:
+          highest_precedence: "sensor.highest_priority_source"
+          medium_precedence: "sensor.medium_priority_source"
+          lowest_precedence: "sensor.lowest_priority_source"
+        metadata:
+          unit_of_measurement: "precedence"
+    metadata:
+      unit_of_measurement: "context_strategies"
+      device_class: "power"
+      state_class: "measurement"
+
+  variable_resolution_chains:
+    name: "Variable Resolution Chains"
+    formula: "chain_start + chain_middle + chain_end"
+    variables:
+      chain_start: "sensor.resolution_chain_start"
+      chain_middle: "sensor.resolution_chain_middle"
+      chain_end: "sensor.resolution_chain_end"
+    attributes:
+      dependency_chain_resolution:
+        formula: "depends_on_a + depends_on_b + depends_on_c"
+        variables:
+          depends_on_a: "sensor.dependency_a"
+          depends_on_b: "sensor.dependency_b"
+          depends_on_c: "sensor.dependency_c"
+        metadata:
+          unit_of_measurement: "dependency_chain"
+      circular_dependency_handling:
+        formula: "circular_a + circular_b + safe_fallback"
+        variables:
+          circular_a: "sensor.circular_dependency_a"
+          circular_b: "sensor.circular_dependency_b"
+          safe_fallback: 75.0
+        metadata:
+          unit_of_measurement: "circular_handling"
+      complex_dependency_graph:
+        formula: "root_node + branch_a + branch_b + leaf_nodes"
+        variables:
+          root_node: "sensor.dependency_root"
+          branch_a: "sensor.dependency_branch_a"
+          branch_b: "sensor.dependency_branch_b"
+          leaf_nodes: "sensor.dependency_leaves"
+        metadata:
+          unit_of_measurement: "complex_dependency"
+    metadata:
+      unit_of_measurement: "resolution_chains"
+      icon: "mdi:link-variant"
+
+  variable_type_resolution:
+    name: "Variable Type Resolution"
+    formula: "numeric_resolution + string_resolution + boolean_resolution"
+    variables:
+      numeric_resolution: 100.0
+      string_resolution: "test_string_value"
+      boolean_resolution: true
+    attributes:
+      mixed_type_handling:
+        formula: "numeric_var + converted_string + boolean_factor"
+        variables:
+          numeric_var: 150.0
+          converted_string: "123.45"
+          boolean_factor: false
+        metadata:
+          unit_of_measurement: "mixed_types"
+      type_conversion_strategies:
+        formula: "auto_convert + explicit_convert + fallback_convert"
+        variables:
+          auto_convert: "sensor.auto_convertible_source"
+          explicit_convert: "sensor.explicit_conversion_source"
+          fallback_convert: "sensor.fallback_conversion_source"
+        metadata:
+          unit_of_measurement: "type_conversion"
+      nullable_variable_handling:
+        formula: "nullable_var + non_nullable_var + default_value"
+        variables:
+          nullable_var: "sensor.nullable_source"
+          non_nullable_var: "sensor.non_nullable_source"
+          default_value: 25.0
+        metadata:
+          unit_of_measurement: "nullable_handling"
+    metadata:
+      unit_of_measurement: "type_resolution"
+      device_class: "energy"
+
+  resolver_factory_integration:
+    name: "Resolver Factory Integration"
+    formula: "factory_created + factory_managed + factory_cached"
+    variables:
+      factory_created: "sensor.factory_created_resolver"
+      factory_managed: "sensor.factory_managed_source"
+      factory_cached: "sensor.factory_cached_source"
+    attributes:
+      factory_resolver_selection:
+        formula: "selected_resolver + fallback_resolver + default_resolver"
+        variables:
+          selected_resolver: "sensor.selected_resolver_source"
+          fallback_resolver: "sensor.fallback_resolver_source"
+          default_resolver: "sensor.default_resolver_source"
+        metadata:
+          unit_of_measurement: "factory_selection"
+      resolver_lifecycle_test:
+        formula: "created + initialized + active + cleanup"
+        variables:
+          created: "sensor.resolver_created"
+          initialized: "sensor.resolver_initialized"
+          active: "sensor.resolver_active"
+          cleanup: "sensor.resolver_cleanup"
+        metadata:
+          unit_of_measurement: "lifecycle"
+      resolver_error_handling:
+        formula: "resolver_success + resolver_error + error_recovery"
+        variables:
+          resolver_success: "sensor.resolver_success_case"
+          resolver_error: "sensor.resolver_error_case"
+          error_recovery: "sensor.resolver_recovery_case"
+        metadata:
+          unit_of_measurement: "error_handling"
+    metadata:
+      unit_of_measurement: "factory_integration"
+      icon: "mdi:factory"
+      state_class: "total"

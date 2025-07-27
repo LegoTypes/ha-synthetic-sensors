@@ -1,0 +1,43 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  valid_attributes_sensor:
+    name: "Valid Attributes Sensor"
+    formula: "sensor.backing_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+    attributes:
+      efficiency:
+        formula: "state / sensor.backing_voltage * 100"
+        unit_of_measurement: "%"
+        friendly_name: "Efficiency Ratio"
+        icon: "mdi:percent"
+      cost_per_hour:
+        formula: "state * 0.15 / 1000"
+        unit_of_measurement: "$"
+        friendly_name: "Cost per Hour"
+
+  invalid_attributes_sensor:
+    name: "Invalid Attributes Sensor"
+    formula: "sensor.backing_energy"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+    attributes:
+      # These should be rejected during validation
+      device_class:
+        formula: "state * 2"
+        unit_of_measurement: "kWh"
+      entity_category:
+        formula: "state / 1000"
+        unit_of_measurement: "MWh"
+      entity_registry_enabled_default:
+        formula: "state > 100"
+      entity_registry_visible_default:
+        formula: "state < 50"
+      assumed_state:
+        formula: "state == 0"

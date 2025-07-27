@@ -1,0 +1,54 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  power_analyzer:
+    name: "Power Analysis Sensor"
+    formula: "sensor.backing_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+    attributes:
+      efficiency_ratio:
+        formula: "state / sensor.backing_voltage / sensor.backing_current * 100"
+        unit_of_measurement: "%"
+      power_factor:
+        formula: "state / (sensor.backing_voltage * sensor.backing_current)"
+        unit_of_measurement: ""
+      daily_consumption:
+        formula: "state * 24 / 1000"
+        unit_of_measurement: "kWh"
+      cost_estimate:
+        formula: "daily_consumption * 0.15"
+        unit_of_measurement: "$"
+      peak_demand:
+        formula: "max(state, sensor.historical_peak)"
+        unit_of_measurement: "W"
+      load_percentage:
+        formula: "state / sensor.circuit_capacity * 100"
+        unit_of_measurement: "%"
+
+  energy_monitor:
+    name: "Energy Monitor"
+    formula: "sensor.backing_energy"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+    attributes:
+      monthly_projection:
+        formula: "state * 30"
+        unit_of_measurement: "kWh"
+      annual_projection:
+        formula: "monthly_projection * 12"
+        unit_of_measurement: "kWh"
+      cost_per_month:
+        formula: "monthly_projection * 0.15"
+        unit_of_measurement: "$"
+      efficiency_score:
+        formula: "state / sensor.backing_power * 100"
+        unit_of_measurement: "%"
+      carbon_footprint:
+        formula: "state * 0.5"
+        unit_of_measurement: "kg CO2"

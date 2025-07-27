@@ -1,0 +1,106 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  state_token_self_reference:
+    name: "State Token Self Reference"
+    formula: "state + increment_value"
+    variables:
+      increment_value: 25.5
+    attributes:
+      computed_state_value:
+        formula: "state * factor"
+        variables:
+          factor: 1.1
+        metadata:
+          unit_of_measurement: "computed"
+      state_plus_self:
+        formula: "state + state.computed_state_value"
+        metadata:
+          unit_of_measurement: "self_ref"
+      complex_state_chain:
+        formula: "state.computed_state_value + state.state_plus_self + external_boost"
+        variables:
+          external_boost: "sensor.external_boost_value"
+        metadata:
+          unit_of_measurement: "chain"
+    metadata:
+      unit_of_measurement: "base"
+      device_class: "power"
+      state_class: "measurement"
+
+  state_attribute_access_complex:
+    name: "State Attribute Access Complex"
+    formula: "base_value * efficiency"
+    variables:
+      base_value: "sensor.base_power_source"
+      efficiency: 0.92
+    attributes:
+      efficiency_calculation:
+        formula: "state / theoretical_max"
+        variables:
+          theoretical_max: "sensor.theoretical_maximum"
+        metadata:
+          unit_of_measurement: "efficiency"
+      cascading_state_access:
+        formula: "state.efficiency_calculation * 100 + state"
+        metadata:
+          unit_of_measurement: "percentage"
+      deep_state_nesting:
+        formula: "state + state.efficiency_calculation + state.cascading_state_access"
+        metadata:
+          unit_of_measurement: "deep_nested"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  variable_resolution_errors:
+    name: "Variable Resolution Errors"
+    formula: "safe_value + fallback_value"
+    variables:
+      safe_value: "sensor.reliable_source"
+      fallback_value: 100.0
+    attributes:
+      error_handling_test:
+        formula: "state + error_prone_var"
+        variables:
+          error_prone_var: "sensor.potentially_missing_entity"
+        metadata:
+          unit_of_measurement: "error_test"
+      missing_reference_handling:
+        formula: "state * safety_factor"
+        variables:
+          safety_factor: 0.95
+        metadata:
+          unit_of_measurement: "safe_calc"
+    metadata:
+      unit_of_measurement: "error_handling"
+      device_class: "power"
+
+  nested_formula_variables:
+    name: "Nested Formula Variables"
+    formula: "primary_calc + secondary_calc"
+    variables:
+      primary_calc: "base_A * (multiplier_A + offset_A)"
+      secondary_calc: "base_B * multiplier_B + offset_B"
+      base_A: "sensor.base_source_a"
+      multiplier_A: 1.5
+      offset_A: 10.0
+      base_B: "sensor.base_source_b"
+      multiplier_B: "sensor.dynamic_multiplier_b"
+      offset_B: 5.0
+    attributes:
+      formula_in_formula:
+        formula: "nested_expression + state"
+        variables:
+          nested_expression: "var_a * (var_b + var_c)"
+          var_a: "sensor.variable_a_source"
+          var_b: 2.0
+          var_c: "sensor.variable_c_source"
+        metadata:
+          unit_of_measurement: "nested_formula"
+    metadata:
+      unit_of_measurement: "nested"
+      state_class: "measurement"

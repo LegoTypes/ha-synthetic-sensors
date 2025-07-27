@@ -65,8 +65,8 @@ def _register_backing_entities_and_mappings(
             raise SyntheticSensorsConfigError(
                 "Empty backing entity set provided explicitly. Use None for HA-only mode, or provide actual backing entities."
             )
-    # Register explicit backing entities if provided via mapping and non-empty
-    elif sensor_to_backing_mapping:
+    # Register explicit backing entities if provided via mapping
+    elif sensor_to_backing_mapping is not None:
         logger.info("Registering sensor-to-backing mapping with sensor manager...")
         # Extract backing entity IDs from the mapping
         backing_entity_ids = set(sensor_to_backing_mapping.values())

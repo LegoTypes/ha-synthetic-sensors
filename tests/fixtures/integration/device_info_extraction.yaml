@@ -1,0 +1,16 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  device_sensor:
+    name: "Device Test Sensor"
+    formula: "base_power * efficiency"
+    variables:
+      base_power: "sensor.base_power"
+      efficiency: 0.95
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

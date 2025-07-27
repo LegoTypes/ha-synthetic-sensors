@@ -1,0 +1,23 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  device_power:
+    name: "Device Power"
+    formula: "state * 1"
+    variables:
+      state: "sensor.device_backing_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  device_status:
+    name: "Device Status"
+    formula: "if(state > 100, 'active', 'idle')"
+    variables:
+      state: "sensor.device_backing_power"
+    metadata:
+      device_class: "enum"

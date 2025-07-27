@@ -1,0 +1,144 @@
+version: "1.0"
+
+# This fixture targets entity_attribute_resolver.py gaps (38% coverage)
+# Focuses on complex attribute chains, missing entities, and error recovery
+
+global_settings:
+  device_identifier: "attr_resolution_device"
+
+sensors:
+  deep_nested_attribute_chains:
+    name: "Deep Nested Attribute Chains"
+    formula: "health.status.level + performance.metrics.efficiency.score"
+    variables:
+      health: "sensor.system_health_monitor"
+      performance: "sensor.performance_analytics"
+    attributes:
+      multi_level_chain:
+        formula: "device.hardware.cpu.temperature + device.hardware.memory.usage"
+        variables:
+          device: "sensor.device_monitor_complex"
+        metadata:
+          unit_of_measurement: "multi_chain"
+      cross_entity_attributes:
+        formula: "sensor_a.config.threshold + sensor_b.status.current_value"
+        variables:
+          sensor_a: "sensor.configuration_source"
+          sensor_b: "sensor.status_provider"
+        metadata:
+          unit_of_measurement: "cross_attr"
+      deeply_nested_computation:
+        formula: "source.data.measurements.values.average + source.data.measurements.values.peak"
+        variables:
+          source: "sensor.data_source_nested"
+        metadata:
+          unit_of_measurement: "deep_computation"
+    metadata:
+      unit_of_measurement: "nested_attrs"
+      device_class: "power"
+
+  missing_entity_attribute_handling:
+    name: "Missing Entity Attribute Handling"
+    formula: "reliable.value + missing_entity.nonexistent_attr + fallback"
+    variables:
+      reliable: "sensor.reliable_entity"
+      missing_entity: "sensor.does_not_exist"
+      fallback: 100.0
+    attributes:
+      graceful_attribute_degradation:
+        formula: "working.attr + broken.missing_attr + safe_value"
+        variables:
+          working: "sensor.working_entity"
+          broken: "sensor.broken_entity"
+          safe_value: 50.0
+        metadata:
+          unit_of_measurement: "degraded"
+      optional_deep_attributes:
+        formula: "optional.deep.nested.value + backup_calculation"
+        variables:
+          optional: "sensor.optional_complex_entity"
+          backup_calculation: 25.0
+        metadata:
+          unit_of_measurement: "optional_deep"
+      error_recovery_chain:
+        formula: "primary.attr + secondary.attr + tertiary.attr + emergency_value"
+        variables:
+          primary: "sensor.primary_source"
+          secondary: "sensor.secondary_source"
+          tertiary: "sensor.tertiary_source"
+          emergency_value: 75.0
+        metadata:
+          unit_of_measurement: "recovery_chain"
+    metadata:
+      unit_of_measurement: "missing_handling"
+      icon: "mdi:alert-circle"
+
+  attribute_resolution_edge_cases:
+    name: "Attribute Resolution Edge Cases"
+    formula: "complex_attr_handling + type_conversion_test + context_resolution"
+    variables:
+      complex_attr_handling: "sensor.complex_attribute_entity"
+      type_conversion_test: "sensor.type_conversion_source"
+      context_resolution: "sensor.context_dependent_entity"
+    attributes:
+      attribute_type_conversion:
+        formula: "numeric_attr.value + string_attr.length + boolean_attr.state"
+        variables:
+          numeric_attr: "sensor.numeric_attribute_entity"
+          string_attr: "sensor.string_attribute_entity"
+          boolean_attr: "sensor.boolean_attribute_entity"
+        metadata:
+          unit_of_measurement: "type_conversion"
+      context_dependent_attributes:
+        formula: "context.current.environment.setting + context.user.preference.value"
+        variables:
+          context: "sensor.context_sensitive_entity"
+        metadata:
+          unit_of_measurement: "context_dependent"
+      metadata_attribute_access:
+        formula: "entity.metadata.device_class + entity.metadata.unit_scale"
+        variables:
+          entity: "sensor.metadata_rich_entity"
+        metadata:
+          unit_of_measurement: "metadata_access"
+      dynamic_attribute_resolution:
+        formula: "dynamic.computed_field + dynamic.runtime_calculation"
+        variables:
+          dynamic: "sensor.dynamic_attributes"
+        metadata:
+          unit_of_measurement: "dynamic_resolution"
+    metadata:
+      unit_of_measurement: "edge_cases"
+      device_class: "energy"
+      state_class: "measurement"
+
+  value_extraction_complex_objects:
+    name: "Value Extraction from Complex Objects"
+    formula: "object_value_extraction + builtin_type_fallback"
+    variables:
+      object_value_extraction: "sensor.complex_object_entity"
+      builtin_type_fallback: "sensor.builtin_fallback_entity"
+    attributes:
+      extractable_value_test:
+        formula: "extractable.state + extractable.value + extractable.native_value"
+        variables:
+          extractable: "sensor.value_extractable_entity"
+        metadata:
+          unit_of_measurement: "extractable"
+      fallback_to_builtin:
+        formula: "fallback_entity.fallback_value + direct_value"
+        variables:
+          fallback_entity: "sensor.fallback_test_entity"
+          direct_value: 42.0
+        metadata:
+          unit_of_measurement: "fallback"
+      none_value_handling:
+        formula: "potentially_none.value + safe_default"
+        variables:
+          potentially_none: "sensor.potentially_none_entity"
+          safe_default: 10.0
+        metadata:
+          unit_of_measurement: "none_handling"
+    metadata:
+      unit_of_measurement: "value_extraction"
+      icon: "mdi:database"

@@ -157,35 +157,6 @@ class FormulaCache:
             "formula_hash": formula_hash,
         }
 
-    def set_result(
-        self,
-        formula: str,
-        context: dict[str, str | float | int | bool] | None,
-        result: FormulaResult,
-        formula_id: str | None = None,
-        variables: dict[str, str | int | float | None] | None = None,
-    ) -> None:
-        """Store evaluation result in cache (alias for store_result with different parameter order).
-
-        Args:
-            formula: Formula string
-            context: Evaluation context
-            result: Evaluation result
-            formula_id: Optional formula identifier
-            variables: Formula variables
-        """
-        self.store_result(formula, result, context, formula_id, variables)
-
-    def store_dependencies(self, formula: str, dependencies: set[str]) -> None:
-        """Store formula dependencies in cache.
-
-        Args:
-            formula: Formula string
-            dependencies: Set of dependency names
-        """
-        formula_hash = self._hash_formula(formula)
-        self._dependency_cache[formula_hash] = dependencies.copy()
-
     def get_dependencies(self, formula: str) -> set[str] | None:
         """Get cached dependencies for formula.
 

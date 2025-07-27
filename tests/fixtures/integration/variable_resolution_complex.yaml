@@ -1,0 +1,68 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+  variables:
+    global_multiplier: 2.5
+    global_base: "sensor.global_base_power"
+  metadata:
+    attribution: "Variable Resolution Test"
+
+sensors:
+  variable_inheritance_sensor:
+    name: "Variable Inheritance Sensor"
+    formula: "global_base * global_multiplier + local_adjustment"
+    variables:
+      local_adjustment: 100
+    attributes:
+      inherited_calc:
+        formula: "global_base * attribute_multiplier"
+        variables:
+          attribute_multiplier: 3.0
+        metadata:
+          unit_of_measurement: "W"
+          suggested_display_precision: 1
+      override_test:
+        formula: "local_multiplier * override_value"
+        variables:
+          local_multiplier: 5.0  # Different name to avoid conflict
+          override_value: 50
+        metadata:
+          unit_of_measurement: "W"
+          suggested_display_precision: 0
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  self_reference_sensor:
+    name: "Self Reference Sensor"
+    formula: "state + increment"
+    variables:
+      increment: 25
+    attributes:
+      state_based:
+        formula: "state * 2"
+        metadata:
+          unit_of_measurement: "W"
+      nested_state_ref:
+        formula: "state + state_based + adjustment"
+        variables:
+          adjustment: 10
+        metadata:
+          unit_of_measurement: "W"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  entity_attribute_access:
+    name: "Entity Attribute Access"
+    formula: "device_a.battery_level + device_b.current * device_c.voltage"
+    variables:
+      device_a: "sensor.battery_device"
+      device_b: "sensor.current_meter"
+      device_c: "sensor.voltage_meter"
+    metadata:
+      unit_of_measurement: "mixed"
+      icon: "mdi:calculator"

@@ -1,0 +1,57 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  base_power:
+    name: "Base Power"
+    formula: "state"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  adjusted_power:
+    name: "Adjusted Power"
+    formula: "base_power * efficiency"
+    variables:
+      base_power: "sensor.base_power"
+      efficiency: 0.95
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  peak_power:
+    name: "Peak Power"
+    formula: "adjusted_power * peak_factor"
+    variables:
+      adjusted_power: "sensor.adjusted_power"
+      peak_factor: 1.2
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  total_system_power:
+    name: "Total System Power"
+    formula: "peak_power + auxiliary_power + grid_power"
+    variables:
+      peak_power: "sensor.peak_power"
+      auxiliary_power: "sensor.auxiliary_system"
+      grid_power: "sensor.grid_connection"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  efficiency_ratio:
+    name: "System Efficiency Ratio"
+    formula: "total_system_power / theoretical_max * 100"
+    variables:
+      total_system_power: "sensor.total_system_power"
+      theoretical_max: 5000
+    metadata:
+      unit_of_measurement: "%"
+      suggested_display_precision: 1
