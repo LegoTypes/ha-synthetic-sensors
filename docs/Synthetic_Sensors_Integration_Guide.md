@@ -13,6 +13,7 @@ value by applying mathematical formulas to to other entities, allowing you to:
 - **Combine multiple sensors** into derived metrics
 - **Add computed states** without modifying original sensors
 - **Add computed attributes** that evaluate base on the main sensor state or other entities
+- **Use custom comparison logic** for domain-specific data types (energy, versions, IP addresses, etc.)
 
 ### Data Sources for Synthetic Sensors
 
@@ -122,6 +123,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     native_entities = create_native_sensors(coordinator)
     async_add_entities(native_entities)
 
+    # Register custom comparison handlers (optional)
+    from ha_synthetic_sensors.comparison_handlers import register_user_comparison_handler
+    energy_handler = EnergyComparisonHandler()  # Your custom handler
+    register_user_comparison_handler(energy_handler)
+
     # Then add synthetic sensors with one call
     sensor_manager = await async_setup_synthetic_sensors(
         hass=hass,
@@ -135,7 +141,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     )
 ```
 
-This approach handles everything automatically using storage-based configuration.
+This approach handles everything automatically using storage-based configuration and supports custom comparison logic for
+domain-specific data types.
 
 ## Data Provider Interface with Real-Time Updates
 
@@ -159,6 +166,38 @@ DataProviderCallback = Callable[[str], DataProviderResult]
 
 # Change notifier receives set of changed backing entity IDs
 DataProviderChangeNotifier = Callable[[set[str]], None]
+```
+
+## User-Defined Comparison Handlers
+
+The synthetic sensors library includes an **extensible comparison handler architecture** that allows users to define custom
+comparison logic for specialized data types. This enables advanced pattern matching in collection functions and condition
+evaluation.
+
+For comprehensive documentation on creating and using custom comparison handlers, see the dedicated guide:
+
+**[User-Defined Comparison Handlers](User_Defined_Comparison_Handlers.md)**
+
+This guide covers:
+
+- **Handler Architecture**: Understanding the extensible comparison system
+- **Creating Custom Handlers**: Step-by-step implementation guide
+- **Priority System**: Handler selection and precedence rules
+- **Advanced Examples**: IP address, version string, and energy handlers
+- **Best Practices**: Design patterns and testing strategies
+- **Integration**: Using handlers with collection functions and patterns
+
+**Quick Start:**
+
+```python
+from ha_synthetic_sensors.comparison_handlers import register_user_comparison_handler
+
+# Register your custom handler
+energy_handler = EnergyComparisonHandler()
+register_user_comparison_handler(energy_handler)
+
+# Use in collection patterns
+formula: count("attribute:power_consumption>=1kW")  # Uses energy handler
 ```
 
 ## Interface Functions Overview
@@ -191,7 +230,7 @@ async def async_setup_synthetic_sensors_with_entities(
     storage_manager: StorageManager,
     device_identifier: str,
     data_provider_callback: DataProviderCallback | None = None,
-    change_notifier: DataProviderChangeNotifier | None = None,  # NEW
+    change_notifier: DataProviderChangeNotifier | None = None,
     backing_entity_ids: set[str] | None = None,
     allow_ha_lookups: bool = False,
 ) -> SensorManager
@@ -595,7 +634,7 @@ for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
 # YAML can directly reference existing HA entities
 sensors:
   combined_power:
-    formula: "sensor.solar_power + sensor.battery_power + state"
+    formula: "solar_power + battery_power"
     # sensor.solar_power and sensor.battery_power are existing HA entities
     # 'state' references this sensor's backing entity (if any)
 ```

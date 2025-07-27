@@ -301,13 +301,13 @@ await hybrid_test.trigger_sensor_updates()
 
 - **Tests should use** `async_set_backing_entity_state()` for realistic behavior
 
-### Why Modern Tests Don't Need Cache Clearing
+### Why Tests Don't Need Cache Clearing
 
 - **Proper update flow**: `async_update_sensors_for_entities()` handles cache cycles
 - **Context changes**: New backing entity values create new cache keys
 - **Realistic simulation**: Mirrors real integration behavior
 
-- **Performance benefits**: Compilation cache improves test execution speed
+- **Performance**: Compilation cache improves test execution speed
 
 ## Troubleshooting Cache Issues
 

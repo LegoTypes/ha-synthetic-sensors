@@ -690,16 +690,7 @@ class CollectionResolver:
             if actual_value is None:
                 return False
 
-            # Convert actual value to comparable type
-            if isinstance(expected_value, bool):
-                actual_value = bool(actual_value)
-            elif isinstance(expected_value, (int, float)):
-                try:
-                    actual_value = float(actual_value)
-                except (ValueError, TypeError):
-                    return False
-
-            # Perform comparison
+            # Delegate to comparison handlers (supports user types and built-in types)
             return self._compare_values(actual_value, op, expected_value)
 
         except Exception as e:
@@ -798,42 +789,23 @@ class CollectionResolver:
             if not state:
                 return False
 
-            actual_value = self._process_state_value(state.state, expected_value)
-            if actual_value is None:
-                return False
-
-            return self._compare_values(actual_value, op, expected_value)
+            # Delegate to comparison handlers (supports user types and built-in types)
+            return self._compare_values(state.state, op, expected_value)
 
         except Exception as e:
             _LOGGER.warning("Error checking state condition for %s: %s", entity_id, e)
             return False
 
-    def _process_state_value(self, state_value: str, expected_value: bool | float | int | str) -> bool | float | str | None:
-        """Process state value for comparison.
-
-        Args:
-            state_value: Raw state value
-            expected_value: Expected value type
-
-        Returns:
-            Processed value or None if conversion failed
-        """
-        if isinstance(expected_value, bool):
-            return state_value.lower() in ("on", "true", "yes", "1")
-        if isinstance(expected_value, (int, float)):
-            try:
-                return float(state_value)
-            except (ValueError, TypeError):
-                return None
-        return state_value
-
-    def _compare_values(self, actual: bool | float | str, op: str, expected: bool | float | int | str) -> bool:
+    def _compare_values(self, actual: Any, op: str, expected: Any) -> bool:
         """Compare two values using the specified operator.
 
+        Delegates to the comparison handler system which supports built-in types
+        (numeric, string, boolean, datetime, version) and user-defined types.
+
         Args:
-            actual: Actual value
+            actual: Actual value (any supported type)
             op: Comparison operator
-            expected: Expected value
+            expected: Expected value (any supported type)
 
         Returns:
             True if comparison is true
