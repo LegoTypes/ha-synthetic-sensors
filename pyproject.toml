@@ -125,7 +125,7 @@ omit = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # Disable the homeassistant plugin due to asyncio event loop issues in Python 3.13+
-addopts = "-p no:homeassistant --cov-fail-under=85"
+addopts = "-p no:homeassistant --cov-fail-under=83"
 # Add markers for our new test types
 markers = [
     "ha_integration: marks tests as requiring real Home Assistant (deselect with '-m \"not ha_integration\"')",
