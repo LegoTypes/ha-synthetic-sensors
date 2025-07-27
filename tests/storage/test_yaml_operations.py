@@ -303,13 +303,13 @@ class TestConfigManagerExtended:
 
     def test_load_config_with_schema_errors(self, config_manager):
         """Test loading config with schema validation errors."""
-        yaml_content = """
-        version: "1.0"
-        sensors:
-          test_sensor:
-            name: "Test Sensor"
-            # Missing formula
-        """
+        from pathlib import Path
+
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "invalid" / "unit_test_yaml_operations_missing_formula.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         with (
             patch("builtins.open", mock_open(read_data=yaml_content)),
@@ -327,16 +327,11 @@ class TestConfigManagerExtended:
 
     def test_load_config_success(self, config_manager):
         """Test successful config loading."""
-        yaml_content = """
-        version: "1.0"
-        sensors:
-          test_sensor:
-            name: "Test Sensor"
-            formula: "A + B"
-            variables:
-              A: "sensor.test_a"
-              B: "sensor.test_b"
-        """
+        from pathlib import Path
+
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_yaml_operations_config_success.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         with (
             patch("builtins.open", mock_open(read_data=yaml_content)),
@@ -451,13 +446,13 @@ class TestConfigManagerExtended:
 
     def test_load_from_yaml_with_validation_errors(self, config_manager):
         """Test loading from YAML with validation errors."""
-        yaml_content = """
-        version: "1.0"
-        sensors:
-          test_sensor:
-            name: "Test Sensor"
-            # Missing formula
-        """
+        from pathlib import Path
+
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "invalid" / "unit_test_yaml_operations_missing_formula.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         # This should fail during schema validation now
         with pytest.raises(ConfigEntryError, match="must have 'formula' field"):
@@ -591,16 +586,11 @@ class TestConfigManagerExtended:
 
     def test_validate_config_file_valid_yaml(self, config_manager):
         """Test validating config file with valid YAML."""
-        yaml_content = """
-        version: "1.0"
-        sensors:
-          test_sensor:
-            name: "Test Sensor"
-            formula: "A + B"
-            variables:
-              A: "sensor.test_a"
-              B: "sensor.test_b"
-        """
+        from pathlib import Path
+
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_yaml_operations_validate_success.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         with (
             patch("builtins.open", mock_open(read_data=yaml_content)),
@@ -706,20 +696,13 @@ class TestConfigValidation:
 
     def test_yaml_validation_rejects_duplicate_unique_ids(self, mock_hass, mock_entity_registry, mock_states):
         """Test that YAML with duplicate unique_ids is rejected during validation."""
-        yaml_content = """
-sensors:
-  duplicate_sensor:
-    entity_id: sensor.span_panel_instantaneous_power
-    formula: state * 2
-    metadata:
-      unit_of_measurement: W
+        from pathlib import Path
 
-  duplicate_sensor:  # Same unique_id, should be rejected
-    entity_id: sensor.circuit_a_power
-    formula: state * 3
-    metadata:
-      unit_of_measurement: W
-"""
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "invalid" / "unit_test_yaml_operations_duplicate_ids.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         from ha_synthetic_sensors.config_manager import ConfigManager
         from ha_synthetic_sensors.exceptions import DataValidationError
 
@@ -823,13 +806,11 @@ class TestAutoInjectEntityVariables:
     def test_auto_inject_simple_entities(self, mock_hass, mock_entity_registry, mock_states):
         """Test auto-injection of simple entity variables."""
         manager = ConfigManager(mock_hass)
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: sensor.temperature + sensor.humidity
-"""
+        from pathlib import Path
+
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_yaml_operations_auto_inject_simple.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = manager.load_from_yaml(yaml_content)
 
         # Check that the config was loaded successfully
@@ -839,15 +820,13 @@ sensors:
     def test_auto_inject_with_existing_variables(self, mock_hass, mock_entity_registry, mock_states):
         """Test auto-injection with existing variables."""
         manager = ConfigManager(mock_hass)
-        yaml_content = """
-version: "1.0"
-variables:
-  temp: sensor.temperature
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: temp + sensor.humidity
-"""
+        from pathlib import Path
+
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_yaml_operations_auto_inject_existing.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = manager.load_from_yaml(yaml_content)
 
         # Check that the config was loaded successfully
@@ -857,13 +836,13 @@ sensors:
     def test_auto_inject_dot_notation_filtering(self, mock_hass, mock_entity_registry, mock_states):
         """Test that only dot notation entities are auto-injected."""
         manager = ConfigManager(mock_hass)
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: sensor.temperature + variable_name + 42
-"""
+        from pathlib import Path
+
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_yaml_operations_auto_inject_filtering.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = manager.load_from_yaml(yaml_content)
 
         # Check that the config was loaded successfully
@@ -1052,18 +1031,11 @@ class TestYamlWhitespaceTrimming:
 
     def test_config_manager_trims_whitespace_on_load(self, config_manager):
         """Test that ConfigManager trims whitespace when loading YAML."""
-        yaml_content = """
-version: "1.0"
-sensors:
-  "test_sensor ":
-    name: "Test Sensor"
-    formula: "1 + 1"
-  " another_sensor":
-    name: "Another Sensor"
-    formula: "2 * 2"
-global_settings:
-  " device_identifier ": "test_device"
-"""
+        from pathlib import Path
+
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_yaml_operations_whitespace_trim.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         config = config_manager.load_from_yaml(yaml_content)
 

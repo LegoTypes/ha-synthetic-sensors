@@ -135,16 +135,16 @@ class TestCollectionNegationIntegration:
         sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
         sensor_by_id = {sensor.unique_id: sensor for sensor in sensors}
 
-        # Test 1: Verify power_without_oven excludes kitchen_oven
+        # Test 1: Verify power_without_oven excludes kitchen_oven (with HA-assigned entity ID)
         power_without_oven = sensor_by_id["power_without_oven"]
-        assert "!'kitchen_oven'" in power_without_oven.formulas[0].formula
+        assert "!'sensor.kitchen_oven'" in power_without_oven.formulas[0].formula
         # Expected: 100 + 150 + 200 + 800 = 1250 (excludes kitchen_oven's 2000)
 
-        # Test 2: Verify power_without_kitchen excludes both kitchen sensors
+        # Test 2: Verify power_without_kitchen excludes both kitchen sensors (with HA-assigned entity IDs)
         power_without_kitchen = sensor_by_id["power_without_kitchen"]
         formula = power_without_kitchen.formulas[0].formula
-        assert "!'kitchen_fridge'" in formula
-        assert "!'kitchen_oven'" in formula
+        assert "!'sensor.kitchen_fridge'" in formula
+        assert "!'sensor.kitchen_oven'" in formula
         # Expected: 100 + 150 + 800 = 1050 (excludes kitchen_fridge's 200 and kitchen_oven's 2000)
 
         # Test 3: Verify area-based exclusion
@@ -152,21 +152,21 @@ class TestCollectionNegationIntegration:
         assert "!'area:living_room'" in power_without_living_room.formulas[0].formula
         # Expected: 200 + 2000 + 800 = 3000 (excludes living_room_light's 100 and living_room_tv's 150)
 
-        # Test 4: Verify mixed exclusions
+        # Test 4: Verify mixed exclusions (with HA-assigned entity IDs)
         selective_power = sensor_by_id["selective_power"]
         formula = selective_power.formulas[0].formula
-        assert "!'bedroom_heater'" in formula
-        assert "!'area:kitchen'" in formula
+        assert "!'sensor.bedroom_heater'" in formula
+        assert "!'area:kitchen'" in formula  # Area references remain unchanged
         # Expected: 100 + 150 = 250 (excludes bedroom_heater's 800, kitchen_fridge's 200, kitchen_oven's 2000)
 
-        # Test 5: Verify auto self-exclusion works with explicit negation
+        # Test 5: Verify auto self-exclusion works with explicit negation (with HA-assigned entity ID)
         total_power = sensor_by_id["total_power"]
-        assert "!'garage_charger'" in total_power.formulas[0].formula
+        assert "!'sensor.garage_charger'" in total_power.formulas[0].formula
         # Expected: 100 + 150 + 200 + 2000 + 800 = 3250 (excludes garage_charger's 7000, auto-excludes itself)
 
-        # Test 6: Verify area-based collection with specific negation
+        # Test 6: Verify area-based collection with specific negation (with HA-assigned entity ID)
         living_room_without_tv = sensor_by_id["living_room_without_tv"]
-        assert "!'living_room_tv'" in living_room_without_tv.formulas[0].formula
+        assert "!'sensor.living_room_tv'" in living_room_without_tv.formulas[0].formula
         # Expected: 100 (excludes living_room_tv's 150)
 
     async def test_negation_parsing_validation(self, mock_hass):

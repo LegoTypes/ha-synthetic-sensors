@@ -353,21 +353,12 @@ class TestCollectionUserTypes:
                 sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="Test Energy Sensors"
             )
 
-            # Create YAML with energy collection patterns
-            yaml_content = """
-version: "1.0"
+            # Load YAML with energy collection patterns from fixture
+            from pathlib import Path
 
-global_settings:
-  device_identifier: "test_device_123"
-
-sensors:
-  high_power_devices:
-    name: "High Power Devices"
-    formula: count("attribute:power_consumption>=1kW")
-    metadata:
-      unit_of_measurement: "count"
-      device_class: "energy"
-"""
+            yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "integration_test_collection_user_types.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
 
             # Import YAML
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)

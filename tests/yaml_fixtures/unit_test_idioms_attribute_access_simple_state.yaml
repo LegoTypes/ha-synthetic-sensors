@@ -1,0 +1,19 @@
+# YAML fixture for test_idiom_3_attribute_access.py idioms tests
+# Used by: test_simple_state_token_works
+# Test cases covered:
+# - Basic state token access functionality
+# - Simple formula with state token
+# - Basic sensor metadata configuration
+
+version: "1.0"
+
+sensors:
+  simple_power:
+    name: "Simple Power"
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Basic state token access
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash

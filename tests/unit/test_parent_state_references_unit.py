@@ -95,33 +95,13 @@ sensors:
 
     def test_multiple_attributes_reference_parent(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test multiple attributes referencing parent sensor state."""
-        yaml_content = """
-sensors:
-  multi_attribute_parent:
-    entity_id: sensor.span_panel_instantaneous_power
-    formula: state * 5  # Main result = 5000 (assuming 1000W backing entity)
-    attributes:
-      # Multiple attributes referencing parent state
-      doubled:
-        formula: multi_attribute_parent * 2  # Should be 5000 * 2 = 10000
-        metadata:
-          unit_of_measurement: W
-          friendly_name: "Doubled"
-      tripled:
-        formula: multi_attribute_parent * 3  # Should be 5000 * 3 = 15000
-        metadata:
-          unit_of_measurement: W
-          friendly_name: "Tripled"
-      halved:
-        formula: multi_attribute_parent / 2  # Should be 5000 / 2 = 2500
-        metadata:
-          unit_of_measurement: W
-          friendly_name: "Halved"
-    metadata:
-      unit_of_measurement: W
-      device_class: power
-      friendly_name: "Multi Attribute Parent"
-"""
+        from pathlib import Path
+
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_idioms_parent_state_multiple_attributes.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         config = config_manager.load_from_yaml(yaml_content)
         sensor = config.sensors[0]

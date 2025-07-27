@@ -56,34 +56,12 @@ class TestPublicAPIIntegration:
     @pytest.mark.asyncio
     async def test_yaml_based_integration_public_api(self, mock_hass, mock_config_entry, mock_add_entities):
         """Test YAML-based integration using public API only."""
-        # Create test YAML content
-        yaml_content = """
-version: "1.0"
-global_settings:
-  device_identifier: "device_123"
+        # Load YAML content from fixture
+        from pathlib import Path
 
-sensors:
-  test_power:
-    name: "Test Power"
-    entity_id: "sensor.test_power"
-    formula: "power_value"
-    variables:
-      power_value: "test_integration_backing.device_123_power"
-    attributes:
-      # Literal attribute for voltage
-      voltage: 240
-      # Calculated amperage from power and voltage
-      amperage:
-        formula: "state / voltage"
-        metadata:
-          unit_of_measurement: "A"
-          device_class: "current"
-          suggested_display_precision: 2
-    metadata:
-      unit_of_measurement: "W"
-      device_class: "power"
-      state_class: "measurement"
-"""
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "integration_test_yaml_based_public_api.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         # Mock file system to provide YAML content
         with (
@@ -221,30 +199,11 @@ sensors:
         self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_add_entities
     ):
         """Test integration with real YAML containing tabs literal that was causing issues."""
-        yaml_content = """
-version: "1.0"
-sensors:
-  span_abc123_circuit_1_power:
-    name: "Kitchen Lights Power"
-    entity_id: "sensor.kitchen_lights_power"
-    formula: "source_value"
-    variables:
-      source_value: "sensor.span_abc123_circuit_1_power"
-    attributes:
-      tabs: "tabs [3]"
-      voltage: 120
-      amperage:
-        formula: "source_value / 120"
-        metadata:
-          unit_of_measurement: "A"
-          device_class: "current"
-          suggested_display_precision: 2
-    metadata:
-      unit_of_measurement: "W"
-      device_class: "power"
-      state_class: "measurement"
-      suggested_display_precision: 2
-"""
+        from pathlib import Path
+
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "integration_test_tabs_literal.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         # Mock file system to provide YAML content
         with (

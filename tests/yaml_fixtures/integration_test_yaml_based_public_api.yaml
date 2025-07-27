@@ -1,0 +1,33 @@
+# YAML fixture for test_integration.py integration tests
+# Used by: test_yaml_based_integration_public_api
+# Test cases covered:
+# - YAML-based integration using public API only
+# - Global settings with device identifier
+# - Sensors with attributes (literal and calculated)
+# - Full sensor configuration with metadata
+
+version: "1.0"
+global_settings:
+  device_identifier: "device_123"
+
+sensors:
+  test_power:
+    name: "Test Power"
+    entity_id: "sensor.test_power"
+    formula: "power_value"
+    variables:
+      power_value: "test_integration_backing.device_123_power"
+    attributes:
+      # Literal attribute for voltage
+      voltage: 240
+      # Calculated amperage from power and voltage
+      amperage:
+        formula: "state / voltage"
+        metadata:
+          unit_of_measurement: "A"
+          device_class: "current"
+          suggested_display_precision: 2
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

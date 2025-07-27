@@ -1,0 +1,24 @@
+# YAML fixture for test_cross_sensor_collision_handling.py integration tests
+# Used by: test_duplicate_sensor_collision_handling
+# Test cases covered:
+# - Duplicate sensor unique_id collision handling
+# - Reference resolution to collision-renamed entities
+# - Multiple references to collision-handled entities
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  duplicate_sensor:
+    entity_id: sensor.circuit_a_power
+    formula: state * 3
+    metadata:
+      unit_of_measurement: W
+
+  reference_sensor:
+    entity_id: sensor.kitchen_temperature
+    formula: duplicate_sensor + 100  # Should resolve to collision-handled entity
+    metadata:
+      unit_of_measurement: W

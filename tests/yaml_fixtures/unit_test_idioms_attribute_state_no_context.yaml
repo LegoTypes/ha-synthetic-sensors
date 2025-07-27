@@ -1,0 +1,24 @@
+# YAML fixture for test_idiom_4_attribute_state.py idioms tests
+# Used by: test_attribute_state_without_context
+# Test cases covered:
+# - Attribute formula failure without proper context
+# - State token usage in attributes
+# - Error handling for invalid state references
+
+version: "1.0"
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 2
+    attributes:
+      test_attr:
+        formula: state * 3  # Should fail without context
+        metadata:
+          unit_of_measurement: W
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash

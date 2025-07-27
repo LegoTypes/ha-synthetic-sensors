@@ -1,0 +1,11 @@
+# YAML fixture for test_yaml_operations.py
+# Used by: test_auto_inject_simple_entities
+# Test cases covered:
+# - Auto-injection of entity variables from formulas
+# - Simple entity references in formulas
+
+version: "1.0"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: sensor.temperature + sensor.humidity

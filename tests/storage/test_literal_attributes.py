@@ -99,23 +99,13 @@ class TestLiteralAttributes:
 
         # Create sensor set with literal attributes
         sensor_set_id = "test_literal_attributes"
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: "power * 2"
-    variables:
-      power: "sensor.test_power"
-    attributes:
-      voltage: 240
-      manufacturer: "TestCorp"
-      is_enabled: true
-      calculated:
-        formula: "voltage * current"
-        variables:
-          current: "sensor.test_current"
-"""
+
+        # Load YAML content from fixture
+        from pathlib import Path
+
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_literal_attributes_storage.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         # Test the YAML handler directly instead of going through storage manager
         from ha_synthetic_sensors.config_manager import ConfigManager

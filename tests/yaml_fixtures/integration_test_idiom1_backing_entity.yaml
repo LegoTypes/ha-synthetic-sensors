@@ -1,0 +1,30 @@
+# YAML fixture for test_idiom_1_backing_entity_integration.py
+# Used by: test_backing_entity_integration_public_api
+# Test cases covered:
+# - Backing entity state resolution via 'state' token
+# - Virtual entity integration with data provider
+# - Sensor configuration with entity_id mapping
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  power_analyzer:
+    name: "Power Analyzer"
+    entity_id: "sensor.span_panel_instantaneous_power"
+    formula: "state * 1.1"  # Uses backing entity via 'state' token
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  power_doubled:
+    name: "Power Doubled"
+    formula: "state * 2"
+    variables:
+      state: "sensor.span_panel_instantaneous_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

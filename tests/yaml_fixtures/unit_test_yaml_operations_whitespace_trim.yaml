@@ -1,0 +1,16 @@
+# YAML fixture for test_yaml_operations.py
+# Used by: test_config_manager_trims_whitespace_on_load
+# Test cases covered:
+# - Whitespace trimming in sensor keys
+# - Whitespace trimming in global settings
+
+version: "1.0"
+sensors:
+  "test_sensor ":
+    name: "Test Sensor"
+    formula: "1 + 1"
+  " another_sensor":
+    name: "Another Sensor"
+    formula: "2 * 2"
+global_settings:
+  device_identifier: "test_device"

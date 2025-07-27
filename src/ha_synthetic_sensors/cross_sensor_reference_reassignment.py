@@ -103,11 +103,55 @@ class CrossSensorReferenceReassignment:
 
         self._logger.info("Executing cross-sensor reference reassignment with %d entity mappings", len(entity_mappings))
 
+        # Create enhanced entity mappings that include original entity ID -> final entity ID mappings
+        # This is critical for handling cross-sensor references to collision-handled entities
+        enhanced_entity_mappings = self._create_enhanced_entity_mappings(config, entity_mappings)
+
         # Use existing formula resolver for the actual reassignment
-        resolved_config = self._resolver.resolve_all_references_in_config(config, entity_mappings)
+        resolved_config = self._resolver.resolve_all_references_in_config(config, enhanced_entity_mappings)
 
         self._logger.info("Cross-sensor reference reassignment complete")
         return resolved_config
+
+    def _create_enhanced_entity_mappings(self, config: Config, entity_mappings: dict[str, str]) -> dict[str, str]:
+        """Create enhanced entity mappings that include both sensor keys and entity ID mappings.
+
+        This method creates additional mappings for original entity IDs to their final entity IDs,
+        which is essential for cross-sensor reference resolution when entity IDs have been
+        collision-handled.
+
+        Args:
+            config: Original configuration (before entity registration)
+            entity_mappings: Sensor key -> final entity ID mappings from entity registry
+
+        Returns:
+            Enhanced mappings that include both sensor key and entity ID mappings
+        """
+        enhanced_mappings = entity_mappings.copy()
+
+        # For each sensor, create comprehensive mappings for cross-sensor references
+        for sensor_config in config.sensors:
+            sensor_key = sensor_config.unique_id
+            original_entity_id = sensor_config.entity_id
+            final_entity_id = entity_mappings.get(sensor_key)
+
+            if final_entity_id:
+                # Map sensor unique_id to final entity_id (for cross-sensor variables like "sensor.base_sensor_cache")
+                if sensor_key.startswith("sensor."):
+                    # If unique_id looks like an entity_id, map it directly
+                    enhanced_mappings[sensor_key] = final_entity_id
+                else:
+                    # Map constructed entity_id from unique_id
+                    constructed_entity_id = f"sensor.{sensor_key}"
+                    enhanced_mappings[constructed_entity_id] = final_entity_id
+
+                # If sensor had an original entity_id and it differs from the final entity_id,
+                # add mapping for cross-sensor references to find the updated entity_id
+                if original_entity_id and original_entity_id != final_entity_id:
+                    enhanced_mappings[original_entity_id] = final_entity_id
+
+        self._logger.debug("Enhanced entity mappings: %s", enhanced_mappings)
+        return enhanced_mappings
 
     def validate_reassignment_integrity(
         self, original_config: Config, resolved_config: Config, entity_mappings: dict[str, str]
@@ -165,22 +209,22 @@ class BulkYamlReassignment(CrossSensorReferenceReassignment):
         Returns:
             Configuration with all cross-sensor references resolved
         """
-        # Step 1: Detect what needs reassignment
-        reassignment_plan = self.create_reassignment_plan(config)
-
-        if not reassignment_plan:
-            self._logger.debug("No reassignment needed for bulk YAML")
-            return config
-
-        # Step 2: Collect actual entity IDs for all sensors
-        # This callback will typically register sensors with HA and capture entity IDs
+        # Step 1: Always collect actual entity IDs for all sensors
+        # This is critical for collision handling - we need to register with HA
+        # even if no cross-sensor references are detected, because collisions
+        # can cause entity_id changes that require reference updates
         entity_mappings = await collect_entity_ids_callback(config)
 
-        # Step 3: Execute reassignment
-        resolved_config = await self.execute_reassignment(config, entity_mappings)
+        # Step 2: Execute reassignment if we have entity mappings
+        # This handles both collision-induced changes and cross-sensor references
+        if entity_mappings:
+            resolved_config = await self.execute_reassignment(config, entity_mappings)
+        else:
+            self._logger.debug("No entity mappings returned from callback")
+            resolved_config = config
 
-        # Step 4: Validate integrity
-        if not self.validate_reassignment_integrity(config, resolved_config, entity_mappings):
+        # Step 3: Validate integrity
+        if entity_mappings and not self.validate_reassignment_integrity(config, resolved_config, entity_mappings):
             raise ValueError("Cross-sensor reference reassignment failed integrity validation")
 
         return resolved_config

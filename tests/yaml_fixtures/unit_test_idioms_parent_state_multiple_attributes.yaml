@@ -1,0 +1,28 @@
+# YAML fixture for test_parent_state_references.py idioms tests
+# Used by: test_multiple_attributes_reference_parent
+# Test cases covered:
+# - Multiple attributes referencing parent sensor state
+# - Parent state calculations with different multipliers
+# - Attribute metadata configuration
+
+sensors:
+  multi_attribute_parent:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 5  # Main result = 5000 (assuming 1000W backing entity)
+    attributes:
+      # Multiple attributes referencing parent state
+      doubled:
+        formula: multi_attribute_parent * 2  # Should be 5000 * 2 = 10000
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Doubled"
+      tripled:
+        formula: multi_attribute_parent * 3  # Should be 5000 * 3 = 15000
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Tripled"
+      halved:
+        formula: multi_attribute_parent / 2  # Should be 5000 / 2 = 2500
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Halved"

@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from .config_models import Config, FormulaConfig, SensorConfig
+from .config_types import GlobalSettingsDict
 from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, MATH_FUNCTIONS, PYTHON_KEYWORDS, STATE_KEYWORDS
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,20 +58,33 @@ class ReferencePatternDetector:
         # First, detect entity ID references (e.g., sensor.my_sensor)
         for match in self.entity_id_pattern.finditer(formula):
             entity_id = match.group(1)
-            # Extract sensor key from entity ID (part after the dot)
-            if "." in entity_id:
-                _, sensor_key = entity_id.split(".", 1)
-                # Only consider this if we have a mapping for the sensor key
-                if sensor_key in entity_mappings:
-                    patterns.append(
-                        ReferencePattern(
-                            pattern_type="entity_id",
-                            original_text=entity_id,
-                            start_pos=match.start(),
-                            end_pos=match.end(),
-                            sensor_key=sensor_key,
-                        )
+
+            # Check if we have a direct mapping for the full entity_id
+            if entity_id in entity_mappings:
+                patterns.append(
+                    ReferencePattern(
+                        pattern_type="entity_id",
+                        original_text=entity_id,
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        sensor_key=entity_id,  # Use the full entity_id as the sensor_key for mapping lookup
                     )
+                )
+            else:
+                # Fall back to extracting sensor key from entity ID (part after the dot)
+                if "." in entity_id:
+                    _, sensor_key = entity_id.split(".", 1)
+                    # Only consider this if we have a mapping for the sensor key
+                    if sensor_key in entity_mappings:
+                        patterns.append(
+                            ReferencePattern(
+                                pattern_type="entity_id",
+                                original_text=entity_id,
+                                start_pos=match.start(),
+                                end_pos=match.end(),
+                                sensor_key=sensor_key,
+                            )
+                        )
 
         # Then, detect standalone sensor key references (e.g., my_sensor)
         # But exclude ones that are part of entity IDs we already found
@@ -209,7 +223,7 @@ class FormulaReferenceResolver:
         # Create a copy of the config to avoid modifying the original
         resolved_config = Config(
             version=config.version,
-            global_settings=config.global_settings.copy(),
+            global_settings=self._resolve_references_in_global_settings(config.global_settings, entity_mappings),
             cross_sensor_references=config.cross_sensor_references.copy(),
         )
 
@@ -220,6 +234,43 @@ class FormulaReferenceResolver:
 
         self._logger.info("Cross-sensor reference resolution complete")
         return resolved_config
+
+    def _resolve_references_in_global_settings(
+        self, global_settings: GlobalSettingsDict, entity_mappings: dict[str, str]
+    ) -> GlobalSettingsDict:
+        """Resolve cross-sensor references in global settings.
+
+        Args:
+            global_settings: Global settings dict with potentially unresolved references
+            entity_mappings: Dict mapping sensor_key -> actual_entity_id
+
+        Returns:
+            Updated global settings with resolved references
+        """
+        if not global_settings or not entity_mappings:
+            return global_settings.copy() if global_settings else GlobalSettingsDict()
+
+        resolved_global_settings = global_settings.copy()
+
+        # Process global variables if they exist
+        if "variables" in resolved_global_settings:
+            resolved_variables: dict[str, str | int | float] = {}
+
+            for var_name, var_value in resolved_global_settings["variables"].items():
+                if isinstance(var_value, str) and var_value in entity_mappings:
+                    # This global variable references a sensor that has been collision-handled
+                    resolved_value: str = entity_mappings[var_value]
+                    self._logger.info(
+                        "Resolved global variable '%s': %s -> %s (collision handling)", var_name, var_value, resolved_value
+                    )
+                    resolved_variables[var_name] = resolved_value
+                else:
+                    # Keep original value (str, int, or float)
+                    resolved_variables[var_name] = var_value
+
+            resolved_global_settings["variables"] = resolved_variables
+
+        return resolved_global_settings
 
     def _resolve_references_in_sensor(self, sensor: SensorConfig, entity_mappings: dict[str, str]) -> SensorConfig:
         """Resolve cross-sensor references in a single sensor.

@@ -117,15 +117,15 @@ class TestSchemaValidation:
         assert result["valid"] is True
 
     def test_invalid_entity_id_format(self):
-        """Test validation catches invalid entity ID formats."""
+        """Test validation catches invalid variable value formats."""
         config_data = {
             "version": "1.0",
             "sensors": {
                 "test_sensor": {
                     "formula": "temp",
                     "variables": {
-                        # Missing domain.entity format
-                        "temp": "invalid_entity_id",
+                        # Invalid sensor key (starts with number)
+                        "temp": "123invalid_sensor_key",
                     },
                 }
             },
@@ -133,6 +133,76 @@ class TestSchemaValidation:
 
         result = validate_yaml_config(config_data)
         assert result["valid"] is False
+
+    def test_invalid_sensor_key_references(self):
+        """Test validation catches invalid sensor key references."""
+        config_data = {
+            "version": "1.0",
+            "global_settings": {
+                "variables": {
+                    "global_ref": "nonexistent_sensor"  # Should fail - sensor doesn't exist
+                }
+            },
+            "sensors": {
+                "real_sensor": {
+                    "formula": "global_ref + temp",
+                    "variables": {
+                        "temp": "another_nonexistent_sensor"  # Should fail - sensor doesn't exist
+                    },
+                    "attributes": {
+                        "test_attr": {
+                            "formula": "attr_var",
+                            "variables": {
+                                "attr_var": "yet_another_nonexistent_sensor"  # Should fail - sensor doesn't exist
+                            },
+                        }
+                    },
+                }
+            },
+        }
+
+        result = validate_yaml_config(config_data)
+        assert result["valid"] is False
+
+        # Should have 3 errors - one for each invalid reference
+        error_messages = [error.message for error in result["errors"]]
+        assert len(error_messages) == 3
+        assert "nonexistent_sensor" in error_messages[0]
+        assert "another_nonexistent_sensor" in error_messages[1]
+        assert "yet_another_nonexistent_sensor" in error_messages[2]
+
+    def test_valid_sensor_key_references(self):
+        """Test validation passes with valid sensor key references."""
+        config_data = {
+            "version": "1.0",
+            "global_settings": {
+                "variables": {
+                    "global_ref": "sensor_a",  # Valid sensor key
+                    "entity_ref": "sensor.temperature",  # Valid entity ID
+                    "collection_ref": "device_class:power",  # Valid collection pattern
+                }
+            },
+            "sensors": {
+                "sensor_a": {
+                    "formula": "global_ref + temp",
+                    "variables": {
+                        "temp": "sensor_b"  # Valid sensor key reference
+                    },
+                    "attributes": {
+                        "test_attr": {
+                            "formula": "attr_var",
+                            "variables": {
+                                "attr_var": "sensor_a"  # Valid self-reference
+                            },
+                        }
+                    },
+                },
+                "sensor_b": {"formula": "sensor_a * 2"},
+            },
+        }
+
+        result = validate_yaml_config(config_data)
+        assert result["valid"] is True
 
     def test_invalid_device_class(self):
         """Test validation allows any device class values in metadata (device_class is just metadata)."""

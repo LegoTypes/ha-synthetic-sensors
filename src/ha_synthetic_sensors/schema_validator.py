@@ -177,6 +177,10 @@ class SchemaValidator:
         # Validate sensors based on version
         if version == "1.0":
             sensors = config_data.get("sensors", {})
+
+            # First validate sensor key references across the entire config
+            self._validate_sensor_key_references(config_data, errors)
+
             for sensor_key, sensor_config in sensors.items():
                 # Validate device class using HA's built-in validation
                 metadata = sensor_config.get("metadata", {})
@@ -513,15 +517,86 @@ class SchemaValidator:
             # This prevents breaking the package if HA changes its validation logic
             _LOGGER.debug("Unit validation failed, skipping: %s", e)
 
+    def _validate_sensor_key_references(self, config_data: dict[str, Any], errors: list[ValidationError]) -> None:
+        """Validate that all sensor key references point to actual sensors in the config."""
+        sensors = config_data.get("sensors", {})
+        sensor_keys = set(sensors.keys())
+
+        # Helper function to check if a string is an entity ID vs sensor key
+        def is_entity_id(value: str) -> bool:
+            return bool(re.match(r"^[a-z_]+\.[a-z0-9_]+$", value))
+
+        # Helper function to check if a string is a collection pattern
+        def is_collection_pattern(value: str) -> bool:
+            return bool(re.match(r"^(device_class|area|label|regex|attribute):", value))
+
+        # Check global variables
+        global_settings = config_data.get("global_settings", {})
+        global_variables = global_settings.get("variables", {})
+        for var_name, var_value in global_variables.items():
+            if (
+                isinstance(var_value, str)
+                and not is_entity_id(var_value)
+                and not is_collection_pattern(var_value)
+                and var_value not in sensor_keys
+            ):
+                errors.append(
+                    ValidationError(
+                        message=f"Global variable '{var_name}' references unknown sensor key '{var_value}'",
+                        path=f"global_settings.variables.{var_name}",
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix=f"Use one of the defined sensor keys: {', '.join(sorted(sensor_keys))}",
+                    )
+                )
+
+        # Check sensor-level variables and attribute variables
+        for sensor_key, sensor_config in sensors.items():
+            # Check sensor-level variables
+            sensor_variables = sensor_config.get("variables", {})
+            for var_name, var_value in sensor_variables.items():
+                if (
+                    isinstance(var_value, str)
+                    and not is_entity_id(var_value)
+                    and not is_collection_pattern(var_value)
+                    and var_value not in sensor_keys
+                ):
+                    errors.append(
+                        ValidationError(
+                            message=f"Sensor '{sensor_key}' variable '{var_name}' references unknown sensor key '{var_value}'",
+                            path=f"sensors.{sensor_key}.variables.{var_name}",
+                            severity=ValidationSeverity.ERROR,
+                            suggested_fix=f"Use one of the defined sensor keys: {', '.join(sorted(sensor_keys))}",
+                        )
+                    )
+
+            # Check attribute-level variables
+            attributes = sensor_config.get("attributes", {})
+            for attr_name, attr_config in attributes.items():
+                if isinstance(attr_config, dict):
+                    attr_variables = attr_config.get("variables", {})
+                    for var_name, var_value in attr_variables.items():
+                        if (
+                            isinstance(var_value, str)
+                            and not is_entity_id(var_value)
+                            and not is_collection_pattern(var_value)
+                            and var_value not in sensor_keys
+                        ):
+                            errors.append(
+                                ValidationError(
+                                    message=f"Sensor '{sensor_key}' attribute '{attr_name}' variable '{var_name}' references unknown sensor key '{var_value}'",
+                                    path=f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                                    severity=ValidationSeverity.ERROR,
+                                    suggested_fix=f"Use one of the defined sensor keys: {', '.join(sorted(sensor_keys))}",
+                                )
+                            )
+
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns
         id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
-        entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
-        # Allow entity IDs OR collection patterns (device_class:, area:, label:, regex:, attribute:)
-        variable_value_pattern = (
-            "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$"
-        )
+        # Allow entity IDs, sensor key references, OR collection patterns (device_class:, area:, label:, regex:, attribute:)
+        # Sensor key references use the same pattern as sensor unique_id (any non-empty string)
+        variable_value_pattern = "^([a-z_]+\\.[a-z0-9_]+|[a-zA-Z_][a-zA-Z0-9_]*|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$"
         var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
         icon_pattern = "^mdi:[a-z0-9-]+$"
 
@@ -530,73 +605,10 @@ class SchemaValidator:
             "title": "HA Synthetic Sensors Configuration",
             "description": ("Schema for Home Assistant Synthetic Sensors YAML configuration"),
             "type": "object",
-            "properties": self._get_v1_main_properties(id_pattern, entity_pattern, var_pattern, icon_pattern),
+            "properties": self._get_v1_main_properties(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
             "required": ["sensors"],
             "additionalProperties": False,
             "definitions": self._get_v1_schema_definitions(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
-        }
-
-    def _get_main_properties(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
-        """Get the main properties for the schema."""
-        return {
-            "version": {
-                "type": "string",
-                "enum": ["1.0"],
-                "description": "Configuration schema version",
-            },
-            "global_settings": {
-                "type": "object",
-                "description": "Global settings for all sensors",
-                "properties": {
-                    "device_identifier": {
-                        "type": "string",
-                        "description": "Default device identifier for all sensors in this set",
-                    },
-                    "variables": {
-                        "type": "object",
-                        "description": "Global variable mappings available to all sensors",
-                        "patternProperties": {
-                            var_pattern: {
-                                "oneOf": [
-                                    {
-                                        "type": "string",
-                                        "pattern": entity_pattern,
-                                        "description": "Home Assistant entity ID",
-                                    },
-                                    {
-                                        "type": "number",
-                                        "description": "Numeric literal value",
-                                    },
-                                ]
-                            }
-                        },
-                        "additionalProperties": False,
-                    },
-                },
-                "additionalProperties": False,
-            },
-            "sensors": {
-                "type": "object",
-                "description": "Dictionary of synthetic sensor definitions",
-                "patternProperties": {
-                    "^[a-zA-Z_][a-zA-Z0-9_]*$": {"$ref": "#/definitions/sensor"},
-                },
-                "minProperties": 1,
-                "additionalProperties": False,
-            },
-        }
-
-    def _get_schema_definitions(
-        self,
-        id_pattern: str,
-        variable_value_pattern: str,
-        var_pattern: str,
-        icon_pattern: str,
-    ) -> dict[str, Any]:
-        """Get the definitions section for the schema."""
-        return {
-            "sensor": self._get_sensor_definition(id_pattern),
-            "formula": self._get_formula_definition(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
         }
 
     def _get_sensor_definition(self, id_pattern: str) -> dict[str, Any]:
@@ -901,7 +913,7 @@ class SchemaValidator:
             return ["measurement", "total", "total_increasing"]
 
     def _get_v1_main_properties(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+        self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str
     ) -> dict[str, Any]:
         """Get the main properties for the v1.0 schema."""
         return {
@@ -926,8 +938,8 @@ class SchemaValidator:
                                 "oneOf": [
                                     {
                                         "type": "string",
-                                        "pattern": entity_pattern,
-                                        "description": "Home Assistant entity ID",
+                                        "pattern": variable_value_pattern,
+                                        "description": "Home Assistant entity ID, sensor key reference, or collection pattern",
                                     },
                                     {
                                         "type": "number",
@@ -976,18 +988,19 @@ class SchemaValidator:
         }
 
     def _get_v1_schema_definitions(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+        self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str
     ) -> dict[str, Any]:
         """Get the definitions section for the v2.0 schema."""
         return {
-            "v1_sensor": self._get_v1_sensor_definition(id_pattern, entity_pattern, var_pattern, icon_pattern),
-            "v1_attribute": self._get_v1_attribute_definition(var_pattern, icon_pattern),
+            "v1_sensor": self._get_v1_sensor_definition(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
+            "v1_attribute": self._get_v1_attribute_definition(variable_value_pattern, var_pattern, icon_pattern),
         }
 
     def _get_v1_sensor_definition(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+        self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str
     ) -> dict[str, Any]:
         """Get the sensor definition for the v2.0 schema."""
+        entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"  # For entity_id field validation
         return {
             "type": "object",
             "description": "Synthetic sensor definition (v2.0 syntax)",
@@ -1035,14 +1048,14 @@ class SchemaValidator:
                 # Common properties for both syntax patterns
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities or numeric literals",
+                    "description": "Variable mappings to Home Assistant entities, sensor keys, or numeric literals",
                     "patternProperties": {
                         var_pattern: {
                             "oneOf": [
                                 {
                                     "type": "string",
-                                    "pattern": entity_pattern,
-                                    "description": "Home Assistant entity ID",
+                                    "pattern": variable_value_pattern,
+                                    "description": "Home Assistant entity ID, sensor key reference, or collection pattern",
                                 },
                                 {
                                     "type": "number",
@@ -1112,9 +1125,8 @@ class SchemaValidator:
             "additionalProperties": False,
         }
 
-    def _get_v1_attribute_definition(self, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_v1_attribute_definition(self, variable_value_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the calculated attribute definition for the v2.0 schema."""
-        entity_pattern = r"^[a-z_][a-z0-9_]*\.[a-z0-9_]+$"
         return {
             "oneOf": [
                 {
@@ -1128,14 +1140,14 @@ class SchemaValidator:
                         },
                         "variables": {
                             "type": "object",
-                            "description": "Variable mappings to Home Assistant entities or numeric literals",
+                            "description": "Variable mappings to Home Assistant entities, sensor keys, or numeric literals",
                             "patternProperties": {
                                 var_pattern: {
                                     "oneOf": [
                                         {
                                             "type": "string",
-                                            "pattern": entity_pattern,
-                                            "description": "Home Assistant entity ID",
+                                            "pattern": variable_value_pattern,
+                                            "description": "Home Assistant entity ID, sensor key reference, or collection pattern",
                                         },
                                         {
                                             "type": "number",

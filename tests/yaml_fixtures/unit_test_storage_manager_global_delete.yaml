@@ -1,0 +1,20 @@
+# YAML fixture for test_storage_manager.py storage tests
+# Used by: test_async_delete_sensor_with_global_settings
+# Test cases covered:
+# - Global settings with multiple sensors
+# - Sensor deletion with global settings preservation
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "global_device:test_123"
+  variables:
+    global_var: "sensor.global_entity"
+
+sensors:
+  test_sensor_1:
+    name: "Test Sensor 1"
+    formula: "1 + 2"
+  test_sensor_2:
+    name: "Test Sensor 2"
+    formula: "2 + 3"

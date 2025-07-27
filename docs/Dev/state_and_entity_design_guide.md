@@ -529,6 +529,10 @@ The cross-sensor reference implementation replaces any reference to the main sen
 entity_id wherever the original reference (to either the sensor key or the sensor's entity_id, if defined in the yaml, was
 placed.
 
+**Critical Implementation Insight**: Cross-sensor variable resolution correctly updates variables to use HA-assigned entity
+IDs rather than original sensor keys. This ensures that cross-sensor references remain valid after entity registration, even
+when collision resolution occurs and entities receive different entity IDs than originally specified.
+
 #### Self-Reference in Attributes: State Token vs Entity ID
 
 When an attribute formula references its own parent sensor, the system uses the `state` token instead of the `entity_id` to
@@ -590,6 +594,10 @@ sensors:
   - **entity_id Fields**: HA-assigned entity IDs (current reality for accurate downstream references)
 - **Storage Persistence**: Entity ID field updates persist to storage and YAML exports to maintain data accuracy.
 
+**Design Decision**: YAML exports include HA-assigned entity_ids for ALL sensors, including those that didn't originally
+specify an entity_id. This ensures that exported YAML reflects the current system state and enables reliable sensor
+referencing for subsequent CRUD operations.
+
 ### Example: YAML Export Format After HA Registration
 
 ```yaml
@@ -650,6 +658,9 @@ sensors:
 - **Cross-sensor references** (between different sensors): Replaced with HA-assigned entity IDs
   - Sensor B referring to Sensor A: `base_power_sensor` → `sensor.base_power_sensor_2`
   - Maintains proper HA entity resolution and dependency tracking
+- **Collision Resolution**: Entity ID collisions are automatically handled by HA's entity registry (e.g., `sensor.base_power`
+  → `sensor.base_power_2` when collision occurs). All cross-sensor references are updated to use the final collision-resolved
+  entity IDs.
 
 ```yaml
 sensors:
@@ -1230,6 +1241,59 @@ sensors:
 - **Validation**: Validate against existing test suites
 
 ### Integration Approach
+
+## Testing and Entity Registry Mocking
+
+### Common Entity Registry Fixtures
+
+When writing tests for synthetic sensors, it's critical to use the common entity registry fixtures provided in `conftest.py`
+rather than manually patching the entity registry. This ensures consistent behavior across all tests.
+
+**Correct Pattern**:
+
+```python
+async def test_sensor_functionality(self, mock_hass, mock_entity_registry, mock_states):
+    """Test using common fixtures that provide proper entity registry mocking."""
+
+    # Test implementation uses properly configured mock_entity_registry
+
+```
+
+**Incorrect Pattern** (leads to test failures):
+
+```python
+@patch("homeassistant.helpers.entity_registry.async_get")
+async def test_sensor_functionality(self, mock_er_async_get, ...):
+    """Manual patching breaks async method mocking."""
+
+    # Manual entity registry setup that doesn't work with async methods
+```
+
+### Entity Index Tracking Behavior
+
+**Key Insight**: The entity index correctly tracks both external entity references AND HA-assigned entity IDs of synthetic
+sensors themselves. This means that after cross-sensor resolution, the entity index will contain more entities than just the
+explicit external references.
+
+**Expected Behavior**:
+
+- External entity references (e.g., `sensor.power_meter`, `binary_sensor.grid_connected`)
+- HA-assigned entity IDs of synthetic sensors (e.g., `sensor.power_efficiency`, `sensor.temperature_status`)
+- Total count = external references + synthetic sensor entity IDs
+
+### Test Expectation Updates
+
+**Cross-Sensor Formula Resolution**: Tests should expect cross-sensor variables to reference HA-assigned entity IDs, not
+original sensor keys:
+
+```yaml
+# Expected in test assertions AFTER cross-sensor resolution:
+formula: "sum('device_class:power', !'sensor.kitchen_oven')" # HA-assigned entity ID
+# NOT: "sum('device_class:power', !'kitchen_oven')"          # Original sensor key
+```
+
+This reflects the correct behavior where cross-sensor references are updated to use actual entity IDs for proper HA
+integration.
 
 ## Summary of Key Clarifications
 

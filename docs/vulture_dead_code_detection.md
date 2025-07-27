@@ -37,7 +37,8 @@ min_confidence = 80
 
 ### Pre-commit Integration
 
-Vulture runs automatically in pre-commit hooks with 80% confidence threshold. This catches high-confidence dead code before commits.
+Vulture runs automatically in pre-commit hooks with 80% confidence threshold. This catches high-confidence dead code before
+commits.
 
 ```yaml
 # In .pre-commit-config.yaml
@@ -45,7 +46,7 @@ Vulture runs automatically in pre-commit hooks with 80% confidence threshold. Th
   rev: v2.14
   hooks:
     - id: vulture
-      args: ['src/', 'vulture_whitelist.py', '--min-confidence=80']
+      args: ["src/", "vulture_whitelist.py", "--min-confidence=80"]
 ```
 
 ## Whitelist File

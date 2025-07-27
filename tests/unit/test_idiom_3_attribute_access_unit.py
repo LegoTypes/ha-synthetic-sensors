@@ -348,20 +348,13 @@ class TestIdiom3AttributeAccess:
 
     def test_simple_state_token_works(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test that basic state token access works (supported feature)."""
-        yaml_content = """
-version: "1.0"
+        from pathlib import Path
 
-sensors:
-  simple_power:
-    name: "Simple Power"
-    entity_id: sensor.span_panel_instantaneous_power
-    formula: state * 1.1  # Basic state token access
-    metadata:
-      unit_of_measurement: W
-      device_class: power
-      state_class: measurement
-      icon: mdi:flash
-"""
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_idioms_attribute_access_simple_state.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = config_manager.load_from_yaml(yaml_content)
         sensor = config.sensors[0]
 

@@ -1,0 +1,18 @@
+# YAML fixture for test_idiom_2_self_reference.py idioms tests
+# Used by: test_self_reference_without_backing_entity
+# Test cases covered:
+# - Self-reference behavior without backing entity
+# - Recursive calculation patterns
+# - External entity references in self-referencing formulas
+
+version: "1.0"
+
+sensors:
+  recursive_calculator:
+    name: "Recursive Calculator"
+    formula: (state + sensor.current_power) / 2  # Uses previous value + external entity
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash

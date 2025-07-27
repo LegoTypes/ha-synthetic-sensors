@@ -248,25 +248,11 @@ class TestIdiom4AttributeState:
 
     def test_attribute_state_without_context(self, mock_hass, mock_entity_registry, mock_states, config_manager):
         """Test attribute formula without proper context fails."""
-        yaml_content = """
-version: "1.0"
+        from pathlib import Path
 
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    entity_id: sensor.span_panel_instantaneous_power
-    formula: state * 2
-    attributes:
-      test_attr:
-        formula: state * 3  # Should fail without context
-        metadata:
-          unit_of_measurement: W
-    metadata:
-      unit_of_measurement: W
-      device_class: power
-      state_class: measurement
-      icon: mdi:flash
-"""
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_idioms_attribute_state_no_context.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = config_manager.load_from_yaml(yaml_content)
         sensor = config.sensors[0]
 
@@ -311,25 +297,13 @@ sensors:
 
     def test_complex_attribute_calculations(self, mock_hass, mock_entity_registry, mock_states, config_manager):
         """Test complex calculations in attribute formulas."""
-        yaml_content = """
-version: "1.0"
+        from pathlib import Path
 
-sensors:
-  complex_calculation_test:
-    name: "Complex Calculation Test"
-    entity_id: sensor.span_panel_instantaneous_power
-    formula: state * 1.1  # Main result = 1100W
-    attributes:
-      weekly_kwh:
-        formula: (state * 24 * 7) / 1000  # Convert to kWh
-        metadata:
-          unit_of_measurement: kWh
-    metadata:
-      unit_of_measurement: W
-      device_class: power
-      state_class: measurement
-      icon: mdi:flash
-"""
+        yaml_fixture_path = (
+            Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_idioms_attribute_complex_calculations.yaml"
+        )
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = config_manager.load_from_yaml(yaml_content)
         sensor = config.sensors[0]
 

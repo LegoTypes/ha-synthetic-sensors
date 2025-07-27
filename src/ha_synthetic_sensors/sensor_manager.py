@@ -956,23 +956,7 @@ class SensorManager:
                     explicit_entity_id=sensor_config.entity_id,
                 )
                 # Create a copy of the sensor config with the generated entity_id
-                sensor_config = SensorConfig(
-                    unique_id=sensor_config.unique_id,
-                    formulas=sensor_config.formulas,
-                    name=sensor_config.name,
-                    enabled=sensor_config.enabled,
-                    update_interval=sensor_config.update_interval,
-                    category=sensor_config.category,
-                    description=sensor_config.description,
-                    entity_id=generated_entity_id,
-                    device_identifier=sensor_config.device_identifier,
-                    device_name=sensor_config.device_name,
-                    device_manufacturer=sensor_config.device_manufacturer,
-                    device_model=sensor_config.device_model,
-                    device_sw_version=sensor_config.device_sw_version,
-                    device_hw_version=sensor_config.device_hw_version,
-                    suggested_area=sensor_config.suggested_area,
-                )
+                sensor_config = sensor_config.copy_with_overrides(entity_id=generated_entity_id)
                 _LOGGER.debug("Generated entity_id '%s' for sensor '%s'", generated_entity_id, sensor_config.unique_id)
             except ValueError as e:
                 _LOGGER.error("Failed to generate entity_id for sensor '%s': %s", sensor_config.unique_id, e)

@@ -18,21 +18,21 @@ from ha_synthetic_sensors.storage_manager import SensorSetMetadata, StorageManag
 
 
 @pytest.fixture
-def mock_hass():
-    """Mock Home Assistant instance."""
+def mock_hass_local():
+    """Mock Home Assistant instance for local tests that don't need entity registry."""
     hass = MagicMock(spec=HomeAssistant)
     hass.data = {}
     return hass
 
 
 @pytest.fixture
-def storage_manager(mock_hass):
+def storage_manager(mock_hass_local):
     """Create StorageManager instance with mocked storage."""
     # Mock the StorageManager without initializing it fully
     manager = MagicMock(spec=StorageManager)
 
     # Add the hass attribute that SensorSet needs
-    manager.hass = mock_hass
+    manager.hass = mock_hass_local
 
     # Mock the storage data
     manager._data = {
@@ -1032,7 +1032,7 @@ class TestSensorSetIntegration:
 
     @pytest.mark.asyncio
     async def test_export_yaml_preserves_entity_id_from_import(self, mock_hass, yaml_fixtures):
-        """Test that entity_id from YAML import is preserved in export."""
+        """Test that entity_ids (both explicit and HA-assigned) are included in YAML export."""
         from unittest.mock import AsyncMock, patch
 
         from ha_synthetic_sensors.storage_manager import StorageManager
@@ -1100,9 +1100,10 @@ class TestSensorSetIntegration:
                 assert sensor_with_id["entity_id"] == "sensor.custom_power_monitor"
                 assert sensor_with_id["name"] == "Sensor With Custom Entity ID"
 
-                # Check that sensor without explicit entity_id doesn't have it in export
+                # Check that sensor without explicit entity_id gets HA-assigned entity_id in export
                 sensor_without_id = exported_data["sensors"]["sensor_without_entity_id"]
-                assert "entity_id" not in sensor_without_id
+                assert "entity_id" in sensor_without_id
+                assert sensor_without_id["entity_id"] == "sensor.sensor_without_entity_id"  # HA-assigned entity_id
                 assert sensor_without_id["name"] == "Sensor Without Custom Entity ID"
 
                 # Verify the sensors were stored correctly by retrieving them
@@ -1112,7 +1113,7 @@ class TestSensorSetIntegration:
 
                 stored_without_id = sensor_set.get_sensor("sensor_without_entity_id")
                 assert stored_without_id is not None
-                assert stored_without_id.entity_id is None
+                assert stored_without_id.entity_id == "sensor.sensor_without_entity_id"  # HA-assigned entity_id
 
 
 class TestSensorSetValidation:

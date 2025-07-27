@@ -13,7 +13,7 @@ from ha_synthetic_sensors.evaluator_dependency import EvaluatorDependency
 def evaluator_dependency_config_manager(mock_hass):
     """Fixture that loads the evaluator dependency test configuration."""
     config_manager = ConfigManager(mock_hass)
-    config_path = Path(__file__).parent / "yaml_fixtures" / "evaluator_dependency_test.yaml"
+    config_path = Path(__file__).parent.parent / "yaml_fixtures" / "evaluator_dependency_test.yaml"
     config = config_manager.load_config(config_path)
     return config_manager, config
 

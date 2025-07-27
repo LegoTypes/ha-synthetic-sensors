@@ -1,0 +1,18 @@
+# YAML fixture for test_storage_manager.py storage tests
+# Used by: test_async_export_yaml_after_delete
+# Test cases covered:
+# - Export functionality after sensor deletion
+# - Multiple sensors with global settings
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "global_device:test_123"
+
+sensors:
+  sensor_to_keep:
+    name: "Sensor to Keep"
+    formula: "1 + 2"
+  sensor_to_delete:
+    name: "Sensor to Delete"
+    formula: "3 + 4"

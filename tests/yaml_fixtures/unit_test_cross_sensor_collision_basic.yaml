@@ -1,0 +1,29 @@
+# YAML fixture for test_cross_sensor_collision_handling_unit.py unit tests
+# Used by: yaml_with_collisions fixture
+# Test cases covered:
+# - Entity ID collision scenarios between sensors
+# - Different unique_ids with same suggested entity names
+# - Collision detection and resolution testing
+
+sensors:
+  # These sensors have different unique_ids but same suggested entity names
+  power_sensor_a:  # unique_id but will try to become sensor.power_sensor
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+
+  power_sensor_b:  # different unique_id but also tries sensor.power_sensor → collision!
+    entity_id: sensor.circuit_a_power
+    formula: state * 2
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+
+  total_power:  # References both sensors by their YAML keys
+    entity_id: sensor.kitchen_temperature
+    formula: power_sensor_a + power_sensor_b  # Both references should resolve correctly
+    metadata:
+      unit_of_measurement: W
+      device_class: power

@@ -152,20 +152,12 @@ class TestIdiom2SelfReference:
 
     def test_self_reference_without_backing_entity(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test self-reference behavior when no backing entity is configured."""
-        # Create a sensor without backing entity
-        yaml_content = """
-version: "1.0"
+        # Load YAML for sensor without backing entity
+        from pathlib import Path
 
-sensors:
-  recursive_calculator:
-    name: "Recursive Calculator"
-    formula: (state + sensor.current_power) / 2  # Uses previous value + external entity
-    metadata:
-      unit_of_measurement: W
-      device_class: power
-      state_class: measurement
-      icon: mdi:flash
-"""
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_idioms_self_reference_no_backing.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = config_manager.load_from_yaml(yaml_content)
         sensor = config.sensors[0]
 
@@ -197,33 +189,11 @@ sensors:
 
     def test_self_reference_in_attributes(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test self-reference patterns in attribute formulas."""
-        yaml_content = """
-version: "1.0"
+        from pathlib import Path
 
-sensors:
-  power_analyzer:
-    name: "Power Analyzer"
-    entity_id: sensor.span_panel_instantaneous_power
-    formula: state * 1.1
-    attributes:
-      daily_power:
-        formula: state * 24  # References main sensor result
-        metadata:
-          unit_of_measurement: W
-      weekly_power:
-        formula: power_analyzer * 24 * 7  # References main sensor by key
-        metadata:
-          unit_of_measurement: W
-      monthly_power:
-        formula: sensor.power_analyzer * 24 * 30  # References main sensor by entity ID
-        metadata:
-          unit_of_measurement: W
-    metadata:
-      unit_of_measurement: W
-      device_class: power
-      state_class: measurement
-      icon: mdi:flash
-"""
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_idioms_self_reference_attributes.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
         config = config_manager.load_from_yaml(yaml_content)
         sensor = config.sensors[0]
 

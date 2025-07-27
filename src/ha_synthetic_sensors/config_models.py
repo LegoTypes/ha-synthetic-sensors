@@ -119,6 +119,34 @@ class SensorConfig:
     device_hw_version: str | None = None
     suggested_area: str | None = None
 
+    def copy_with_overrides(self, **overrides: Any) -> SensorConfig:
+        """Create a copy of this sensor config with optional field overrides.
+
+        Args:
+            **overrides: Fields to override in the copy
+
+        Returns:
+            New SensorConfig instance with overridden values
+        """
+        return SensorConfig(
+            unique_id=overrides.get("unique_id", self.unique_id),
+            formulas=overrides.get("formulas", self.formulas.copy()),
+            name=overrides.get("name", self.name),
+            enabled=overrides.get("enabled", self.enabled),
+            update_interval=overrides.get("update_interval", self.update_interval),
+            category=overrides.get("category", self.category),
+            description=overrides.get("description", self.description),
+            entity_id=overrides.get("entity_id", self.entity_id),
+            metadata=overrides.get("metadata", self.metadata.copy()),
+            device_identifier=overrides.get("device_identifier", self.device_identifier),
+            device_name=overrides.get("device_name", self.device_name),
+            device_manufacturer=overrides.get("device_manufacturer", self.device_manufacturer),
+            device_model=overrides.get("device_model", self.device_model),
+            device_sw_version=overrides.get("device_sw_version", self.device_sw_version),
+            device_hw_version=overrides.get("device_hw_version", self.device_hw_version),
+            suggested_area=overrides.get("suggested_area", self.suggested_area),
+        )
+
     def get_all_dependencies(self) -> set[str]:
         """Get all entity dependencies across all formulas."""
         deps: set[str] = set()

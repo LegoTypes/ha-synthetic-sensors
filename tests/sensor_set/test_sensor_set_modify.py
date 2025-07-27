@@ -79,16 +79,10 @@ class TestSensorSetModifyComprehensive:
         assert len(complex_sensor.formulas) >= 1  # At least the main formula
         assert "0.8" in complex_sensor.formulas[0].formula
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_phase2_add_remove_modify(
-        self, mock_er_async_get, comprehensive_sensor_set, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
+        self, comprehensive_sensor_set, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
     ):
         """Test Phase 2: Add sensors, remove voltage_monitor, modify formulas."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
 
         sensor_set = comprehensive_sensor_set
 
@@ -217,17 +211,10 @@ class TestSensorSetModifyComprehensive:
         updated_local = sensor_set.get_sensor("local_sensor")
         assert "15" in updated_local.formulas[0].formula
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_phase3_bulk_entity_changes(
-        self, mock_er_async_get, comprehensive_sensor_set, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
+        self, comprehensive_sensor_set, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
     ):
         """Test Phase 3: Bulk entity ID changes across all sensors."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
-
         sensor_set = comprehensive_sensor_set
 
         # Apply Phase 2 changes first (simulate accumulated state)
@@ -362,17 +349,10 @@ class TestSensorSetModifyComprehensive:
         assert global_settings["variables"]["main_power"] == "sensor.new_house_power_meter"
         assert global_settings["variables"]["main_voltage"] == "sensor.new_house_voltage"
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_phase4_return_to_origin(
-        self, mock_er_async_get, comprehensive_sensor_set, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
+        self, comprehensive_sensor_set, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
     ):
         """Test Phase 4: Return to original state with some changes."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
-
         sensor_set = comprehensive_sensor_set
 
         # Apply simplified Phase 2 and 3 changes first
@@ -524,17 +504,10 @@ class TestSensorSetModifyComprehensive:
         assert voltage_monitor.entity_id == "sensor.voltage_monitor"
         assert "restored" not in voltage_monitor.formulas[0].attributes
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_cache_invalidation_throughout_phases(
-        self, mock_er_async_get, comprehensive_sensor_set, mock_hass, mock_entity_registry, mock_states
+        self, comprehensive_sensor_set, mock_hass, mock_entity_registry, mock_states
     ):
         """Test that formula caches are properly invalidated throughout all phases."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
-
         sensor_set = comprehensive_sensor_set
 
         # Phase 1: Simple modification
@@ -566,17 +539,8 @@ class TestSensorSetModifyComprehensive:
         temp_sensor = sensor_set.get_sensor("temp_sensor")
         assert temp_sensor is not None
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
-    async def test_validation_across_phases(
-        self, mock_er_async_get, comprehensive_sensor_set, mock_hass, mock_entity_registry, mock_states
-    ):
+    async def test_validation_across_phases(self, comprehensive_sensor_set, mock_hass, mock_entity_registry, mock_states):
         """Test validation works correctly across different modification phases."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
-
         sensor_set = comprehensive_sensor_set
 
         # Test 1: Try to add sensor with existing unique_id
@@ -622,16 +586,8 @@ class TestSensorSetModifyComprehensive:
 class TestSensorSetModifyValidation:
     """Test that modification validation correctly rejects conflicting changes."""
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
-    async def test_valid_modification_succeeds(
-        self, mock_er_async_get, storage_manager_real, mock_hass, mock_entity_registry, mock_states
-    ):
+    async def test_valid_modification_succeeds(self, storage_manager_real, mock_hass, mock_entity_registry, mock_states):
         """Test that a valid modification without conflicts succeeds."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
 
         # Load storage first
         await storage_manager_real.async_load()
@@ -693,17 +649,10 @@ sensors:
         assert len(sensors) == 2
         assert any(s.unique_id == "new_sensor" for s in sensors)
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_conflicting_global_variable_rejected(
-        self, mock_er_async_get, storage_manager_real, mock_hass, mock_entity_registry, mock_states
+        self, storage_manager_real, mock_hass, mock_entity_registry, mock_states
     ):
         """Test that conflicting global variable changes are rejected."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None  # No existing entity
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
-
         # Load storage first
         await storage_manager_real.async_load()
 
@@ -750,17 +699,10 @@ sensors:
             await sensor_set.async_modify(modification)
         assert "conflicts with global variable" in str(exc_info.value)
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_valid_global_variable_change_succeeds(
-        self, mock_er_async_get, storage_manager_real, mock_hass, mock_entity_registry, mock_states
+        self, storage_manager_real, mock_hass, mock_entity_registry, mock_states
     ):
         """Test that valid global variable changes are accepted."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
-
         await storage_manager_real.async_load()
 
         # Create initial sensor set
@@ -810,17 +752,10 @@ class TestSensorSetFormulaEvaluationAfterModify:
 
         return _load_yaml_fixture
 
-    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_formula_modification_structural_changes(
-        self, mock_er_async_get, storage_manager_real, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
+        self, storage_manager_real, load_yaml_fixture, mock_hass, mock_entity_registry, mock_states
     ):
         """Test that formula modifications produce correct structural changes."""
-        # Setup entity registry mock
-        mock_entity_registry = MagicMock()
-        mock_entity_registry.async_get.return_value = None
-        mock_entity_registry.async_update_entity = MagicMock()
-        mock_er_async_get.return_value = mock_entity_registry
-
         await storage_manager_real.async_load()
 
         # Load initial state from YAML fixture

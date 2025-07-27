@@ -1,0 +1,11 @@
+# Invalid YAML fixture for test_yaml_operations.py
+# Used by: test_load_config_with_schema_errors, test_load_from_yaml_with_validation_errors
+# Test cases covered:
+# - Schema validation errors (missing formula)
+# - Config loading error handling
+
+version: "1.0"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    # Missing formula - should cause validation error

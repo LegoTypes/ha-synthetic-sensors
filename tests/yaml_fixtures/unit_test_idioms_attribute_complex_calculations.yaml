@@ -1,0 +1,25 @@
+# YAML fixture for test_idiom_4_attribute_state.py idioms tests
+# Used by: test_complex_attribute_calculations
+# Test cases covered:
+# - Complex calculations in attribute formulas
+# - Unit conversions (W to kWh)
+# - Time-based calculations
+# - State reference in complex expressions
+
+version: "1.0"
+
+sensors:
+  complex_calculation_test:
+    name: "Complex Calculation Test"
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W
+    attributes:
+      weekly_kwh:
+        formula: (state * 24 * 7) / 1000  # Convert to kWh
+        metadata:
+          unit_of_measurement: kWh
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash

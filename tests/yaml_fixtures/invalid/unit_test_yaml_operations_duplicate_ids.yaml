@@ -1,0 +1,18 @@
+# Invalid YAML fixture for test_yaml_operations.py
+# Used by: test_duplicate_unique_ids_validation
+# Test cases covered:
+# - Duplicate unique_id detection
+# - YAML parsing validation errors
+
+sensors:
+  duplicate_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 2
+    metadata:
+      unit_of_measurement: W
+
+  duplicate_sensor:  # Same unique_id, should be rejected
+    entity_id: sensor.circuit_a_power
+    formula: state * 3
+    metadata:
+      unit_of_measurement: W
