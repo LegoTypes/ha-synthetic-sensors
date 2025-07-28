@@ -51,13 +51,13 @@ class TestCrossSensorCollisionHandling:
         # Pre-register entities to cause collisions with the YAML fixture
         # The YAML tries to register sensor.power_sensor_a and sensor.power_sensor_b
         # So we'll pre-register entities with those same entity_ids to force collisions
-        await mock_entity_registry.async_get_or_create(
+        mock_entity_registry.async_get_or_create(
             domain="sensor",
             platform="test_collision",
             unique_id="existing_power_sensor_a",
             suggested_object_id="power_sensor_a",  # This will create sensor.power_sensor_a
         )
-        await mock_entity_registry.async_get_or_create(
+        mock_entity_registry.async_get_or_create(
             domain="sensor",
             platform="test_collision",
             unique_id="existing_power_sensor_b",
@@ -139,7 +139,7 @@ class TestCrossSensorCollisionHandling:
 
         # Pre-register an entity to cause ENTITY_ID collision (not just unique_id collision)
         # The YAML sensor has entity_id: sensor.circuit_a_power, so pre-register that entity_id
-        await mock_entity_registry.async_get_or_create(
+        mock_entity_registry.async_get_or_create(
             domain="sensor",
             platform="test",
             unique_id="existing_collision_entity",
@@ -235,7 +235,7 @@ class TestCrossSensorCollisionHandling:
         # Pre-register an entity to cause entity_id collision
         # The YAML sensors reference "sensor.circuit_a_power", so we need to pre-register that entity_id
         # This will force the YAML sensor to get a collision-handled entity_id like "sensor.circuit_a_power_2"
-        await mock_entity_registry.async_get_or_create(
+        mock_entity_registry.async_get_or_create(
             domain="sensor",
             platform="test_collision",
             unique_id="existing_circuit_a_sensor",  # Different unique_id

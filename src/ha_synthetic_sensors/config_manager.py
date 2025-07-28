@@ -368,11 +368,15 @@ class ConfigManager:
         formula = self._parse_single_formula(sensor_key, sensor_data)
         sensor.formulas.append(formula)
 
-        # Parse calculated attributes if present
+        # Parse calculated attributes if present - only create formula entries for attributes with explicit formula structure
         attributes_data = sensor_data.get("attributes", {})
         for attr_name, attr_config in attributes_data.items():
-            attr_formula = self._parse_attribute_formula(sensor_key, attr_name, attr_config, sensor_data)
-            sensor.formulas.append(attr_formula)
+            # Only create separate formula entries for attributes that have an explicit formula structure
+            if isinstance(attr_config, dict) and "formula" in attr_config:
+                attr_formula = self._parse_attribute_formula(sensor_key, attr_name, attr_config, sensor_data)
+                sensor.formulas.append(attr_formula)
+            # Literal values (str, int, float) are already handled in _parse_single_formula
+            # and added to the main formula's attributes dict
 
         return sensor
 

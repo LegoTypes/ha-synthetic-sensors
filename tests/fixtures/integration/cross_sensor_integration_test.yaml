@@ -23,6 +23,8 @@ sensors:
         formula: roundtrip_base_power_sensor * my_ref  # Self-reference in variable
         metadata:
           unit_of_measurement: W
+      tabs_info: "tabs [30]"  # Simple string attribute to test tab handling
+      tabs: "tabs [30,32]"    # Another string attribute with tabs notation
 
   # Second sensor that references the first (cross-sensor reference)
   roundtrip_efficiency_calc:

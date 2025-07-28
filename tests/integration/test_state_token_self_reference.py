@@ -174,13 +174,15 @@ class TestStateTokenSelfReference:
                     for attr_name, expected_attr in expected_attrs.items():
                         assert attr_name in exported_attrs, f"Expected attribute '{attr_name}' for sensor '{sensor_key}'"
 
-                        # Handle both simple string values and formula objects
+                        # With the new behavior, attributes are exported as simple strings (not formula objects)
+                        # because they don't have explicit formula keys in the original YAML
                         if isinstance(expected_attr, dict) and "formula" in expected_attr:
                             expected_value = expected_attr["formula"]
-                            exported_value = exported_attrs[attr_name]["formula"]
                         else:
                             expected_value = expected_attr
-                            exported_value = exported_attrs[attr_name]
+
+                        # Exported attributes are now simple string values
+                        exported_value = exported_attrs[attr_name]
 
                         assert exported_value == expected_value, (
                             f"Attribute '{attr_name}' mismatch for '{sensor_key}': expected '{expected_value}', got '{exported_value}'"

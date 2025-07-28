@@ -183,19 +183,30 @@ class TestStateTokenExample:
         # Check each sensor has the expected formulas
         for sensor in config.sensors:
             if sensor.unique_id == "test_current_power":
-                assert len(sensor.formulas) == 3  # 1 main + 1 static attribute + 1 formula attribute
-                assert sensor.formulas[0].formula == "state"  # Main formula - references backing entity
-                assert sensor.formulas[1].formula == "240"  # Static voltage attribute
-                assert sensor.formulas[2].formula == "state / 240"  # Amperage attribute
+                assert len(sensor.formulas) == 2  # 1 main + 1 formula attribute (voltage is literal in main)
+                main_formula = next(f for f in sensor.formulas if f.id == "test_current_power")
+                amperage_formula = next(f for f in sensor.formulas if f.id == "test_current_power_amperage")
+                assert main_formula.formula == "state"  # Main formula - references backing entity
+                assert (
+                    "voltage" in main_formula.attributes and main_formula.attributes["voltage"] == 240
+                )  # Literal voltage in main formula
+                assert amperage_formula.formula == "state / 240"  # Amperage attribute
             elif sensor.unique_id == "test_feed_through_power":
-                assert len(sensor.formulas) == 3  # 1 main + 1 static attribute + 1 formula attribute
-                assert sensor.formulas[0].formula == "state"  # Main formula - references backing entity
-                assert sensor.formulas[1].formula == "240"  # Static voltage attribute
-                assert sensor.formulas[2].formula == "state / 240"  # Amperage attribute
+                assert len(sensor.formulas) == 2  # 1 main + 1 formula attribute (voltage is literal in main)
+                main_formula = next(f for f in sensor.formulas if f.id == "test_feed_through_power")
+                amperage_formula = next(f for f in sensor.formulas if f.id == "test_feed_through_power_amperage")
+                assert main_formula.formula == "state"  # Main formula - references backing entity
+                assert (
+                    "voltage" in main_formula.attributes and main_formula.attributes["voltage"] == 240
+                )  # Literal voltage in main formula
+                assert amperage_formula.formula == "state / 240"  # Amperage attribute
             elif sensor.unique_id == "test_energy_consumed":
-                assert len(sensor.formulas) == 2  # 1 main + 1 static attribute
-                assert sensor.formulas[0].formula == "state"  # Main formula - references backing entity
-                assert sensor.formulas[1].formula == "240"  # Static voltage attribute
+                assert len(sensor.formulas) == 1  # 1 main only (voltage is literal in main)
+                main_formula = sensor.formulas[0]
+                assert main_formula.formula == "state"  # Main formula - references backing entity
+                assert (
+                    "voltage" in main_formula.attributes and main_formula.attributes["voltage"] == 240
+                )  # Literal voltage in main formula
             elif sensor.unique_id == "test_power_with_processing":
                 assert len(sensor.formulas) == 3  # 1 main + 2 attribute formulas
                 assert sensor.formulas[0].formula == "state * 1.1"  # Main formula with processing

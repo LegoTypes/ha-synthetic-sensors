@@ -23,6 +23,8 @@ sensors:
         formula: state * my_ref    # Self-reference in variable → 'state'
         metadata:
           unit_of_measurement: W
+      tabs_info: "tabs [30]"  # Simple string attribute should remain unchanged
+      tabs: "tabs [30,32]"    # Another string attribute should remain unchanged
 
   # Second sensor with resolved cross-sensor references and entity ID collision
   roundtrip_efficiency_calc:
