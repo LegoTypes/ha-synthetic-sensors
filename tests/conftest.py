@@ -659,7 +659,7 @@ def mock_entity_registry():
             entities_obj.__contains__ = lambda _, key: key in self._entities
             return entities_obj
 
-        async def async_get_or_create(self, domain, platform, unique_id, **kwargs):
+        def async_get_or_create(self, domain, platform, unique_id, **kwargs):
             """Mock the async_get_or_create method that HA uses for dynamic registration.
 
             Simulates HA's collision handling by appending numbers for duplicates.

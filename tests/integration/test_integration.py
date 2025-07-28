@@ -242,10 +242,20 @@ class TestPublicAPIIntegration:
             assert sensor.name == "Kitchen Lights Power"
             assert sensor.entity_id == "sensor.kitchen_lights_power"
 
-            # Check that the tabs attribute is treated as a literal
-            tabs_formula = next(f for f in sensor.formulas if f.id == "span_abc123_circuit_1_power_tabs")
-            assert tabs_formula.formula == "tabs [3]"
-            assert not tabs_formula.variables  # No variables for literals
+            # Should have 2 formulas: main + amperage (which has explicit formula key)
+            assert len(sensor.formulas) == 2, f"Expected 2 formulas (main + amperage), got {len(sensor.formulas)}"
+
+            # Find the main formula and amperage formula
+            main_formula = next(f for f in sensor.formulas if f.id == "span_abc123_circuit_1_power")
+            amperage_formula = next(f for f in sensor.formulas if f.id == "span_abc123_circuit_1_power_amperage")
+
+            # Check that literal attributes (tabs, voltage) are in main formula's attributes
+            assert "tabs" in main_formula.attributes, "tabs should be in main formula attributes"
+            assert "voltage" in main_formula.attributes, "voltage should be in main formula attributes"
+            assert main_formula.attributes["tabs"] == "tabs [3]", (
+                f"Expected tabs='tabs [3]', got {main_formula.attributes['tabs']}"
+            )
+            assert main_formula.attributes["voltage"] == 120, f"Expected voltage=120, got {main_formula.attributes['voltage']}"
 
 
 class TestPublicAPIConfiguration:

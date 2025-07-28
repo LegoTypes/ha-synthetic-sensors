@@ -123,6 +123,10 @@ class YamlHandler:
             # Attribute formulas have id format: {sensor_unique_id}_{attribute_name}
             if formula.id == sensor_config.unique_id:
                 main_formula = formula
+                # Also extract literal attributes from main formula's attributes dictionary
+                if hasattr(formula, "attributes") and formula.attributes:
+                    for attr_name, attr_value in formula.attributes.items():
+                        attributes_dict[attr_name] = attr_value
             elif formula.id.startswith(f"{sensor_config.unique_id}_"):
                 # Extract attribute name from formula id
                 attribute_name = formula.id[len(sensor_config.unique_id) + 1 :]

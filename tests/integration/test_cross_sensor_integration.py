@@ -147,6 +147,14 @@ class TestCrossSensorIntegration:
             daily_power_formula = base_power_exported["attributes"]["daily_power"]["formula"]
             assert daily_power_formula == "state * 24", f"Daily power attribute should use 'state' token: {daily_power_formula}"
 
+            # Verify simple string attribute remains unchanged
+            tabs_info = base_power_exported["attributes"]["tabs_info"]
+            assert tabs_info == "tabs [30]", f"Simple string attribute should remain unchanged: {tabs_info}"
+
+            # Verify another string attribute with tabs notation remains unchanged
+            tabs = base_power_exported["attributes"]["tabs"]
+            assert tabs == "tabs [30,32]", f"Tabs attribute should remain unchanged: {tabs}"
+
             # Verify efficiency_calc sensor structure
             efficiency_exported = exported_data["sensors"]["roundtrip_efficiency_calc"]
             efficiency_expected = expected_data["sensors"]["roundtrip_efficiency_calc"]

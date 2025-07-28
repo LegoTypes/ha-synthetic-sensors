@@ -89,7 +89,7 @@ class TestYAMLParserIntegration:
             parser_test_sensor = next((s for s in sensors if s.unique_id == "yaml_parser_test_sensor"), None)
             assert parser_test_sensor is not None
             assert parser_test_sensor.entity_id == "sensor.custom_yaml_parser_entity"
-            assert len(parser_test_sensor.formulas) >= 5  # Main + 4 attributes
+            assert len(parser_test_sensor.formulas) == 2  # Main + computed_attribute (literal attributes are in main formula)
 
             # Verify minimal sensor
             minimal_sensor = next((s for s in sensors if s.unique_id == "minimal_sensor"), None)
@@ -147,34 +147,31 @@ class TestYAMLParserIntegration:
             # Literal attributes are stored as formulas with their literal values
             all_formula_ids = [f.id for f in parser_test_sensor.formulas]
 
-            # Check that literal attributes exist (formula IDs include sensor prefix)
+            # Check that computed_attribute exists as separate formula (has explicit formula key)
             computed_formula = next(
                 (f for f in parser_test_sensor.formulas if f.id == "yaml_parser_test_sensor_computed_attribute"), None
             )
             assert computed_formula is not None, f"Expected computed_attribute formula. Found: {all_formula_ids}"
 
-            # Verify literal attributes were parsed correctly
-            literal_attribute = next(
-                (f for f in parser_test_sensor.formulas if f.id == "yaml_parser_test_sensor_literal_attribute"), None
-            )
-            numeric_literal = next(
-                (f for f in parser_test_sensor.formulas if f.id == "yaml_parser_test_sensor_numeric_literal"), None
-            )
-            boolean_literal = next(
-                (f for f in parser_test_sensor.formulas if f.id == "yaml_parser_test_sensor_boolean_literal"), None
-            )
-            negative_literal = next(
-                (f for f in parser_test_sensor.formulas if f.id == "yaml_parser_test_sensor_negative_literal"), None
-            )
+            # Verify literal attributes are stored in main formula's attributes (not as separate formulas)
+            main_formula = next((f for f in parser_test_sensor.formulas if f.id == "yaml_parser_test_sensor"), None)
+            assert main_formula is not None, "Main formula should exist"
 
-            assert literal_attribute is not None, "String literal attribute should be parsed"
-            assert numeric_literal is not None, "Numeric literal attribute should be parsed"
-            assert boolean_literal is not None, "Boolean literal attribute should be parsed"
-            assert negative_literal is not None, "Negative literal attribute should be parsed"
+            # Check literal attributes in main formula's attributes dictionary
+            assert "literal_attribute" in main_formula.attributes, "literal_attribute should be in main formula attributes"
+            assert "numeric_literal" in main_formula.attributes, "numeric_literal should be in main formula attributes"
+            assert "boolean_literal" in main_formula.attributes, "boolean_literal should be in main formula attributes"
+            assert "negative_literal" in main_formula.attributes, "negative_literal should be in main formula attributes"
 
-            # Verify we have all expected formulas: main + computed + 4 literals = 6 total
-            assert len(parser_test_sensor.formulas) == 6, (
-                f"Expected 6 formulas, got {len(parser_test_sensor.formulas)} with IDs: {all_formula_ids}"
+            # Verify literal values
+            assert main_formula.attributes["literal_attribute"] == "static_value", "String literal attribute should be parsed"
+            assert main_formula.attributes["numeric_literal"] == 42, "Numeric literal attribute should be parsed"
+            assert main_formula.attributes["boolean_literal"] is True, "Boolean literal attribute should be parsed"
+            assert main_formula.attributes["negative_literal"] == -123.45, "Negative literal attribute should be parsed"
+
+            # Verify we have 2 formulas: main + computed_attribute (literal attributes are in main formula)
+            assert len(parser_test_sensor.formulas) == 2, (
+                f"Expected 2 formulas (main + computed_attribute), got {len(parser_test_sensor.formulas)} with IDs: {all_formula_ids}"
             )
 
             # Cleanup

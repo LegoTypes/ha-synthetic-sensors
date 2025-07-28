@@ -356,34 +356,123 @@ class SensorSetOpsHandler:
         updated_attributes: dict[str, AttributeValue] = {}
         for attr_name, attr_value in attributes.items():
             updated_attributes[attr_name] = self._process_single_attribute_for_self_references(
-                attr_value, self_reference_patterns
+                attr_value, self_reference_patterns, attr_name
             )
         return updated_attributes
 
     def _process_single_attribute_for_self_references(
-        self, attr_value: AttributeValue, self_reference_patterns: set[str]
+        self, attr_value: AttributeValue, self_reference_patterns: set[str], attr_name: str | None = None
     ) -> AttributeValue:
         """Process a single attribute value to replace self-references."""
         if isinstance(attr_value, str):
-            # Simple string attribute - check for self-references
+            # Simple string attribute - only replace if there's a clear sensor reference
+            if not self._contains_clear_sensor_reference(attr_value, self_reference_patterns):
+                _LOGGER.debug("No clear sensor reference found in attribute '%s' with value: %s", attr_name, attr_value)
+                return attr_value
+            _LOGGER.debug("Replacing self-references in attribute '%s' with value: %s", attr_name, attr_value)
             return self._replace_self_references_in_text(attr_value, self_reference_patterns)
         if isinstance(attr_value, dict) and "formula" in attr_value:
             # Formula-based attribute
-            return self._process_formula_attribute_for_self_references(attr_value, self_reference_patterns)
+            return self._process_formula_attribute_for_self_references(attr_value, self_reference_patterns, attr_name)
         # Non-formula attribute, keep as-is
         return attr_value
 
+    def _contains_clear_sensor_reference(self, text: str, self_reference_patterns: set[str]) -> bool:
+        """Check if text contains a clear reference to one of the sensor patterns.
+
+        This method determines if the text contains an actual sensor reference (like 'sensor.my_sensor'
+        or 'my_sensor_unique_id') rather than just literal text that happens to contain words that
+        might match sensor names.
+
+        Args:
+            text: Text to check for sensor references
+            self_reference_patterns: Set of patterns that constitute self-references
+
+        Returns:
+            True if text contains a clear sensor reference, False otherwise
+        """
+        _LOGGER.debug("Checking text '%s' for sensor references in patterns: %s", text, self_reference_patterns)
+
+        # Build sensor keys from patterns (extract keys from entity IDs if needed)
+        sensor_keys = set()
+        entity_ids = set()
+
+        for pattern in self_reference_patterns:
+            if pattern.startswith("sensor."):
+                entity_ids.add(pattern)
+                # Extract sensor key from entity ID (part after "sensor.")
+                sensor_key = pattern[7:]  # Remove "sensor." prefix
+                sensor_keys.add(sensor_key)
+            else:
+                sensor_keys.add(pattern)
+
+        _LOGGER.debug("Extracted sensor_keys: %s, entity_ids: %s", sensor_keys, entity_ids)
+
+        # Check for entity ID patterns (more specific, so check first)
+        for entity_id in entity_ids:
+            # Pattern 1: sensor.entity_id (exact match)
+            pattern1 = r"\b" + re.escape(entity_id) + r"\b"
+            if re.search(pattern1, text):
+                _LOGGER.debug("Found entity ID exact match for '%s' in text '%s'", entity_id, text)
+                return True
+
+            # Pattern 2: sensor.entity_id.attribute (with attribute access)
+            pattern2 = r"\b" + re.escape(entity_id) + r"\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*"
+            if re.search(pattern2, text):
+                _LOGGER.debug("Found entity ID attribute access for '%s' in text '%s'", entity_id, text)
+                return True
+
+        # Check for sensor key patterns (less specific)
+        for sensor_key in sensor_keys:
+            # Only consider it a clear sensor reference if:
+            # 1. It's the entire text (exact match), or
+            # 2. It's followed by a dot and an attribute name, or
+            # 3. It's part of a larger expression with operators/functions
+
+            # Pattern 3: sensor_key as entire text
+            if text.strip() == sensor_key:
+                _LOGGER.debug("Found sensor key exact match: '%s' == '%s'", text.strip(), sensor_key)
+                return True
+
+            # Pattern 4: sensor_key.attribute (with attribute access)
+            pattern4 = r"\b" + re.escape(sensor_key) + r"\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*"
+            if re.search(pattern4, text):
+                _LOGGER.debug("Found sensor key attribute access for '%s' in text '%s'", sensor_key, text)
+                return True
+
+            # Pattern 5: sensor_key in mathematical/logical expressions
+            # Look for the sensor key surrounded by operators, parentheses, or function calls
+            expression_pattern = r"(?:^|[+\-*/()=<>!&|,\s])\s*" + re.escape(sensor_key) + r"\s*(?:[+\-*/()=<>!&|,\s]|$)"
+            if re.search(expression_pattern, text):
+                _LOGGER.debug("Found sensor key in expression for '%s' in text '%s'", sensor_key, text)
+                return True
+
+        _LOGGER.debug("No clear sensor reference found in text '%s'", text)
+        return False
+
     def _process_formula_attribute_for_self_references(
-        self, attr_value: dict[str, Any], self_reference_patterns: set[str]
+        self, attr_value: dict[str, Any], self_reference_patterns: set[str], attr_name: str | None = None
     ) -> dict[str, Any]:
         """Process a formula-based attribute to replace self-references."""
         updated_attr_value = attr_value.copy()
 
         # Update formula if present
         if isinstance(attr_value.get("formula"), str):
-            updated_attr_value["formula"] = self._replace_self_references_in_text(
-                attr_value["formula"], self_reference_patterns
-            )
+            # Only replace if there's a clear sensor reference
+            if not self._contains_clear_sensor_reference(attr_value["formula"], self_reference_patterns):
+                _LOGGER.debug(
+                    "No clear sensor reference found in formula attribute '%s' with formula: %s",
+                    attr_name,
+                    attr_value["formula"],
+                )
+                updated_attr_value["formula"] = attr_value["formula"]
+            else:
+                _LOGGER.debug(
+                    "Replacing self-references in formula attribute '%s' with formula: %s", attr_name, attr_value["formula"]
+                )
+                updated_attr_value["formula"] = self._replace_self_references_in_text(
+                    attr_value["formula"], self_reference_patterns
+                )
 
         # Update variables in attribute if present
         if "variables" in attr_value and isinstance(attr_value["variables"], dict):
@@ -505,7 +594,7 @@ class SensorSetOpsHandler:
                     suggested_object_id = sensor_config.unique_id
 
                 # Let HA entity registry handle collision resolution
-                entry = await entity_registry.async_get_or_create(  # type: ignore[misc] # HA type stubs incomplete
+                entry = entity_registry.async_get_or_create(
                     domain="sensor",
                     platform="synthetic_sensors",
                     unique_id=sensor_config.unique_id,

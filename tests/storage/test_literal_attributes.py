@@ -78,20 +78,24 @@ class TestLiteralAttributes:
 
         assert test_sensor is not None, "Test sensor not found"
 
-        # Check that literal attributes are converted to formulas
-        literal_formulas = [f for f in test_sensor.formulas if f.id.startswith("test_sensor_")]
-        assert len(literal_formulas) == 3, f"Expected 3 literal formulas, got {len(literal_formulas)}"
+        # Check that literal attributes are stored in the main formula's attributes dictionary
+        # (not as separate formulas)
+        assert len(test_sensor.formulas) == 1, f"Expected 1 main formula, got {len(test_sensor.formulas)}"
+        main_formula = test_sensor.formulas[0]
+
+        # Check that literal attributes are in the attributes dictionary
+        assert "voltage" in main_formula.attributes, "voltage attribute should be present"
+        assert "manufacturer" in main_formula.attributes, "manufacturer attribute should be present"
+        assert "is_enabled" in main_formula.attributes, "is_enabled attribute should be present"
 
         # Check specific literal values
-        voltage_formula = next(f for f in literal_formulas if f.id == "test_sensor_voltage")
-        assert voltage_formula.formula == "240"
-        assert not voltage_formula.variables  # No variables for literals
-
-        manufacturer_formula = next(f for f in literal_formulas if f.id == "test_sensor_manufacturer")
-        assert manufacturer_formula.formula == "TestCorp"
-
-        enabled_formula = next(f for f in literal_formulas if f.id == "test_sensor_is_enabled")
-        assert enabled_formula.formula == "True"
+        assert main_formula.attributes["voltage"] == 240, f"Expected voltage=240, got {main_formula.attributes['voltage']}"
+        assert main_formula.attributes["manufacturer"] == "TestCorp", (
+            f"Expected manufacturer='TestCorp', got {main_formula.attributes['manufacturer']}"
+        )
+        assert main_formula.attributes["is_enabled"] is True, (
+            f"Expected is_enabled=True, got {main_formula.attributes['is_enabled']}"
+        )
 
     def test_storage_manager_roundtrip_literal_attributes(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test that literal attributes survive round-trip through storage manager."""
@@ -390,10 +394,23 @@ class TestLiteralAttributes:
         # Get the sensor
         sensor = config.sensors[0]
 
-        # Check that the tabs attribute is treated as a literal
-        tabs_formula = next(f for f in sensor.formulas if f.id == "test_sensor_tabs")
-        assert tabs_formula.formula == "tabs [3]"
-        assert not tabs_formula.variables  # No variables for literals
+        # Should have 2 formulas: main formula + amperage formula (which has explicit formula key)
+        assert len(sensor.formulas) == 2, f"Expected 2 formulas (main + amperage), got {len(sensor.formulas)}"
+
+        # Find the main formula and amperage formula
+        main_formula = next(f for f in sensor.formulas if f.id == "test_sensor")
+        amperage_formula = next(f for f in sensor.formulas if f.id == "test_sensor_amperage")
+
+        # Check that literal attributes (tabs, voltage) are in main formula's attributes
+        assert "tabs" in main_formula.attributes, "tabs should be in main formula attributes"
+        assert "voltage" in main_formula.attributes, "voltage should be in main formula attributes"
+        assert main_formula.attributes["tabs"] == "tabs [3]", f"Expected tabs='tabs [3]', got {main_formula.attributes['tabs']}"
+        assert main_formula.attributes["voltage"] == 120, f"Expected voltage=120, got {main_formula.attributes['voltage']}"
+
+        # Check that amperage has its own formula (because it has explicit formula key)
+        assert amperage_formula.formula == "state / 120", (
+            f"Expected amperage formula='state / 120', got {amperage_formula.formula}"
+        )
 
         # Test that dependency extraction doesn't extract 'tabs' as a variable
         from ha_synthetic_sensors.dependency_parser import DependencyParser
