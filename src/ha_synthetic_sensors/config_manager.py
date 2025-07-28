@@ -204,7 +204,7 @@ class ConfigManager:
         if cross_sensor_references:
             self._logger.debug("Detected cross-sensor references: %s", {k: list(v) for k, v in cross_sensor_references.items()})
 
-        # Parse sensors (v2.0 dict format)
+        # Parse sensors (v1.0 dict format)
         sensors_data = yaml_data.get("sensors", {})
         for sensor_key, sensor_data in sensors_data.items():
             sensor = self._parse_sensor_config(sensor_key, sensor_data, config.global_settings)
@@ -279,7 +279,7 @@ class ConfigManager:
     def _parse_sensor_config(
         self, sensor_key: str, sensor_data: SensorConfigDict, global_settings: GlobalSettingsDict | None = None
     ) -> SensorConfig:
-        """Parse sensor configuration from v2.0 dict format.
+        """Parse sensor configuration from v1.0 dict format.
 
         Args:
             sensor_key: Sensor key (serves as unique_id)
@@ -326,7 +326,7 @@ class ConfigManager:
         return sensor
 
     def _parse_single_formula(self, sensor_key: str, sensor_data: SensorConfigDict) -> FormulaConfig:
-        """Parse a single formula sensor configuration (v2.0 format).
+        """Parse a single formula sensor configuration (v1.0 format).
 
         Args:
             sensor_key: Sensor key (used as base for formula ID)
@@ -375,7 +375,7 @@ class ConfigManager:
         attr_config: AttributeConfig,
         sensor_data: SensorConfigDict,
     ) -> FormulaConfig:
-        """Parse a calculated attribute formula (v2.0 format).
+        """Parse a calculated attribute formula (v1.0 format).
 
         Args:
             sensor_key: Sensor key (used as base for formula ID)

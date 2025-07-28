@@ -1076,7 +1076,7 @@ class SyntheticSensorCoordinator:
 
 #### 6. Setup Integration
 
-```python
+````python
 # synthetic_sensors.py continued
 async def setup_synthetic_configuration(
     hass: HomeAssistant,
@@ -1209,4 +1209,426 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         "sensor_manager": sensor_manager,
         "synthetic_coordinator": synthetic_coord,
     })
+
+## YAML String-Based CRUD Operations
+
+The synthetic sensors library provides convenient YAML string-based CRUD operations for managing individual sensors within
+sensor sets. This approach enables dynamic sensor management using YAML strings, which is particularly useful for:
+
+- **Dynamic sensor creation** from user input or external configurations
+- **Template-based sensor generation** using YAML templates
+- **Configuration file imports** where sensors are defined in YAML format
+- **Programmatic sensor management** without manual SensorConfig construction
+
+### YAML CRUD Interface
+
+Each sensor set provides YAML-based CRUD operations as public methods:
+
+```python
+# Access YAML CRUD operations
+sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+# Available operations:
+# - sensor_set.async_add_sensor_from_yaml(sensor_yaml: str)
+# - sensor_set.async_update_sensor_from_yaml(sensor_yaml: str) -> bool
+# - sensor_set.add_sensor_from_yaml(sensor_yaml: str)  # Synchronous version
+# - sensor_set.update_sensor_from_yaml(sensor_yaml: str) -> bool  # Synchronous version
 ```
+
+### Reading Existing Sensor Configurations
+
+Before updating sensors, you should read the existing configuration to avoid losing settings:
+
+```python
+# Method 1: Get specific sensor configuration
+sensor_config = sensor_set.get_sensor("my_sensor_unique_id")
+if sensor_config:
+    print(f"Current formula: {sensor_config.formulas[0].formula}")
+    print(f"Current entity_id: {sensor_config.entity_id}")
+    print(f"Current name: {sensor_config.name}")
+
+# Method 2: Export complete sensor set as YAML (includes all sensors)
+complete_yaml = sensor_set.export_yaml()
+# Parse with yaml.safe_load() to modify specific sensors
+
+# Method 3: Check if sensor exists before operations
+if sensor_set.has_sensor("my_sensor_unique_id"):
+    print("Sensor exists - safe to update")
+else:
+    print("Sensor doesn't exist - use add operation instead")
+```
+
+### YAML Sensor Format
+
+Individual sensors are defined using YAML strings that include the sensor key and complete configuration:
+
+```yaml
+# Example YAML sensor definition
+my_power_sensor:
+  name: "My Power Sensor"
+  entity_id: "sensor.test_device_power"
+  formula: "state * 1.1"
+  attributes:
+    calculation_type: "net_power"
+    efficiency_factor:
+      formula: "state / 1000"
+  metadata:
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    suggested_display_precision: 2
+```
+
+### Adding New Sensors from YAML
+
+Use `sensor_set.async_add_sensor_from_yaml()` to add new sensors to an existing sensor set:
+
+```python
+async def add_power_sensor_example(storage_manager: StorageManager, device_id: str):
+    """Example of adding a sensor from YAML string."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Define sensor in YAML format
+    power_sensor_yaml = """
+my_device_power:
+  name: "Device Power Consumption"
+  entity_id: "sensor.my_device_power"
+  formula: "state"
+  metadata:
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    icon: "mdi:flash"
+  attributes:
+    daily_consumption:
+      formula: "state * 24"
+      metadata:
+        unit_of_measurement: "Wh"
+"""
+
+    try:
+        # Add the sensor to the sensor set
+        await sensor_set.async_add_sensor_from_yaml(power_sensor_yaml)
+        print("Sensor added successfully")
+
+    except SyntheticSensorsError as e:
+        if "already exists" in str(e):
+            print("Sensor already exists")
+        else:
+            print(f"Error adding sensor: {e}")
+```
+
+### Updating Existing Sensors from YAML
+
+Use `sensor_set.async_update_sensor_from_yaml()` to update existing sensors.
+**Important**: Always read the existing sensor configuration first to preserve settings and make incremental changes.
+
+```python
+async def update_sensor_example(storage_manager: StorageManager, device_id: str):
+    """Example of updating a sensor from YAML string with read-before-update pattern."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+    sensor_unique_id = "my_device_power"
+
+    try:
+        # STEP 1: Read existing sensor configuration
+        existing_sensor = sensor_set.get_sensor(sensor_unique_id)
+        if not existing_sensor:
+            print(f"Sensor {sensor_unique_id} not found")
+            return
+
+        print(f"Current sensor formula: {existing_sensor.formulas[0].formula}")
+        print(f"Current sensor name: {existing_sensor.name}")
+
+        # STEP 2: Create updated configuration preserving existing settings
+        # This ensures you don't accidentally lose configuration that's not in your update
+        updated_sensor_yaml = f"""
+{sensor_unique_id}:
+  name: "Updated Device Power"  # Changed
+  entity_id: "{existing_sensor.entity_id}"  # Preserved from existing
+  formula: "state * 1.05"  # Updated formula with 5% adjustment
+  metadata:
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    icon: "mdi:lightning-bolt"  # Updated icon
+    suggested_display_precision: 1
+  attributes:
+    # Preserve existing attributes and add new ones
+    daily_consumption:
+      formula: "state * 24"
+      metadata:
+        unit_of_measurement: "Wh"
+    weekly_estimate:  # New attribute
+      formula: "state * 24 * 7"
+      metadata:
+        unit_of_measurement: "Wh"
+"""
+
+        # STEP 3: Update the sensor
+        updated = await sensor_set.async_update_sensor_from_yaml(updated_sensor_yaml)
+
+        if updated:
+            print("Sensor updated successfully")
+            # Verify the update
+            updated_sensor = sensor_set.get_sensor(sensor_unique_id)
+            print(f"New formula: {updated_sensor.formulas[0].formula}")
+        else:
+            print("Sensor not found - use async_add_sensor_from_yaml() to create it")
+
+    except SyntheticSensorsError as e:
+        print(f"Error updating sensor: {e}")
+
+async def incremental_update_example(storage_manager: StorageManager, device_id: str):
+    """Example of making incremental updates to preserve all existing configuration."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+    sensor_unique_id = "my_device_power"
+
+    try:
+        # Read existing sensor
+        existing_sensor = sensor_set.get_sensor(sensor_unique_id)
+        if not existing_sensor:
+            print(f"Sensor {sensor_unique_id} not found")
+            return
+
+        # Export existing configuration to YAML first
+        existing_yaml = sensor_set.export_yaml()
+
+        # Parse existing to modify specific fields only
+        import yaml
+        config_data = yaml.safe_load(existing_yaml)
+        sensor_config = config_data["sensors"][sensor_unique_id]
+
+        # Make incremental changes
+        sensor_config["formula"] = "state * 1.1"  # Only change the formula
+        sensor_config["metadata"]["icon"] = "mdi:flash-outline"  # Only change the icon
+
+        # Add a new attribute while preserving existing ones
+        if "attributes" not in sensor_config:
+            sensor_config["attributes"] = {}
+        sensor_config["attributes"]["hourly_estimate"] = {
+            "formula": "state",
+            "metadata": {"unit_of_measurement": "Wh"}
+        }
+
+        # Convert back to single-sensor YAML
+        updated_sensor_yaml = yaml.dump({sensor_unique_id: sensor_config})
+
+        # Update with preserved configuration
+        updated = await sensor_set.async_update_sensor_from_yaml(updated_sensor_yaml)
+
+        if updated:
+            print("Incremental update successful - all existing config preserved")
+
+    except Exception as e:
+        print(f"Error in incremental update: {e}")
+```
+
+### Template-Based Sensor Generation
+
+YAML CRUD operations work excellently with template-based sensor generation:
+
+```python
+async def generate_sensors_from_templates(
+    storage_manager: StorageManager,
+    device_data: DeviceData,
+    sensor_definitions: list[dict]
+):
+    """Generate sensors using YAML templates and CRUD operations."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_data.serial_number}_sensors")
+
+    for sensor_def in sensor_definitions:
+        # Load template
+        template = await load_yaml_template(sensor_def["template_name"])
+
+        # Fill template with device-specific data
+        filled_yaml = template.format(
+            sensor_key=sensor_def["unique_id"],
+            sensor_name=sensor_def["display_name"],
+            entity_id=f"sensor.{device_data.serial_number}_{sensor_def['suffix']}",
+            device_class=sensor_def["device_class"],
+            unit=sensor_def["unit"]
+        )
+
+        try:
+            # Add generated sensor
+            await sensor_set.async_add_sensor_from_yaml(filled_yaml)
+            print(f"Added sensor: {sensor_def['unique_id']}")
+
+        except SyntheticSensorsError as e:
+            if "already exists" in str(e):
+                print(f"Sensor {sensor_def['unique_id']} already exists, skipping")
+            else:
+                print(f"Error adding {sensor_def['unique_id']}: {e}")
+```
+
+### Synchronous YAML CRUD Operations
+
+For non-async contexts, synchronous versions are available:
+
+```python
+def add_sensor_sync_example(storage_manager: StorageManager, device_id: str):
+    """Example using synchronous YAML CRUD operations."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    sensor_yaml = """
+sync_test_sensor:
+  name: "Sync Test Sensor"
+  entity_id: "sensor.sync_test"
+  formula: "state"
+  metadata:
+    unit_of_measurement: "V"
+    device_class: "voltage"
+"""
+
+    try:
+        # Synchronous add (only use outside async context)
+        sensor_set.add_sensor_from_yaml(sensor_yaml)
+        print("Sensor added synchronously")
+
+    except SyntheticSensorsError as e:
+        if "Use async_add_sensor_from_yaml() in async context" in str(e):
+            print("Cannot use sync method in async context")
+        else:
+            print(f"Error: {e}")
+```
+
+### Error Handling and Validation
+
+YAML CRUD operations include comprehensive validation:
+
+```python
+async def yaml_crud_error_handling_example(storage_manager: StorageManager, device_id: str):
+    """Example of proper error handling with YAML CRUD operations."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Invalid YAML examples
+    invalid_yaml_examples = [
+        # Missing sensor key
+        """
+name: "Invalid Sensor"
+formula: "state"
+""",
+        # Empty YAML
+        "",
+        # Multiple sensor keys (not allowed for individual operations)
+        """
+sensor1:
+  name: "First Sensor"
+  formula: "state"
+sensor2:
+  name: "Second Sensor"
+  formula: "state"
+""",
+        # Invalid formula
+        """
+invalid_formula_sensor:
+  name: "Invalid Formula"
+  formula: "invalid_function(state)"
+"""
+    ]
+
+    for i, invalid_yaml in enumerate(invalid_yaml_examples):
+        try:
+            await sensor_set.async_add_sensor_from_yaml(invalid_yaml)
+        except SyntheticSensorsError as e:
+            print(f"Example {i+1}: Expected error - {e}")
+```
+
+### Integration with Existing YAML Workflows
+
+YAML CRUD operations integrate seamlessly with existing sensor set workflows:
+
+```python
+async def complete_yaml_workflow_example(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    device_data: DeviceData
+):
+    """Complete example showing YAML CRUD integration with sensor set management."""
+
+    # Initialize storage manager
+    storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
+    await storage_manager.async_load()
+
+    device_identifier = device_data.serial_number
+    sensor_set_id = f"{device_identifier}_sensors"
+
+    # Create or get existing sensor set
+    if not storage_manager.sensor_set_exists(sensor_set_id):
+        await storage_manager.async_create_sensor_set(
+            sensor_set_id=sensor_set_id,
+            device_identifier=device_identifier,
+            name=f"Device {device_identifier} Sensors"
+        )
+
+    sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+    # Method 1: Import complete YAML configuration
+    complete_yaml = await generate_complete_sensor_set_yaml(device_data)
+    await sensor_set.async_import_yaml(complete_yaml)
+
+    # Method 2: Add individual sensors via YAML CRUD
+    additional_sensors = [
+        """
+diagnostic_sensor:
+  name: "Device Diagnostic"
+  entity_id: "sensor.{device}_diagnostic"
+  formula: "state"
+  metadata:
+    entity_category: "diagnostic"
+""".format(device=device_identifier),
+
+        """
+efficiency_sensor:
+  name: "Device Efficiency"
+  entity_id: "sensor.{device}_efficiency"
+  formula: "state * 0.95"
+  metadata:
+    unit_of_measurement: "%"
+    icon: "mdi:speedometer"
+""".format(device=device_identifier)
+    ]
+
+    # Add individual sensors
+    for sensor_yaml in additional_sensors:
+        try:
+            await sensor_set.async_add_sensor_from_yaml(sensor_yaml)
+        except SyntheticSensorsError as e:
+            if "already exists" not in str(e):
+                print(f"Error adding sensor: {e}")
+
+    return storage_manager, sensor_set
+
+```
+
+### Best Practices for YAML CRUD Operations
+
+1. **Always use async methods** in async contexts - the library will raise an error if you try to use sync methods
+   inappropriately
+
+2. **Read existing configuration before updates** - Always use `sensor_set.get_sensor()` or `sensor_set.export_yaml()`
+   to read current configuration before making updates. This prevents accidental loss of existing settings.
+
+3. **Make incremental changes** - For updates, preserve existing configuration and only modify the fields you need to change.
+   Use the existing sensor's properties (like `entity_id`) instead of hardcoding values.
+
+4. **Include complete sensor definitions** - YAML strings should contain the sensor key and all required configuration
+
+5. **Handle duplicate sensors gracefully** - Use try/catch to handle cases where sensors already exist
+
+6. **Validate YAML before operations** - Consider using the validation methods to check YAML before attempting operations
+
+7. **Use templates for consistency** - Generate YAML from templates to ensure consistent sensor definitions
+
+8. **Test with minimal examples** - Start with simple sensor definitions and build complexity gradually
+
+9. **Verify updates** - After updating, read the sensor again to confirm changes were applied correctly
+
+The YAML CRUD operations provide a string-based approach to sensor management that complements the existing
+programmatic APIs enabling template-driven sensor configuration workflows.

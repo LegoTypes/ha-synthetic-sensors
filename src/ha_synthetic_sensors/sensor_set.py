@@ -12,9 +12,6 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, Any
 
-import yaml as yaml_lib
-
-from .config_manager import ConfigManager
 from .config_models import FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
 from .entity_index import EntityIndex
@@ -23,6 +20,8 @@ from .sensor_set_bulk_ops import SensorSetBulkOps
 from .sensor_set_entity_index import SensorSetEntityIndex
 from .sensor_set_entity_utils import apply_entity_id_changes_to_sensors_util, update_formula_variables_for_entity_changes
 from .sensor_set_global_settings import SensorSetGlobalSettings
+from .sensor_set_validation import SensorSetValidation
+from .sensor_set_yaml_crud import SensorSetYamlCrud
 
 if TYPE_CHECKING:
     from .storage_manager import SensorSetMetadata, StorageManager
@@ -80,6 +79,8 @@ class SensorSet:
         self._global_settings = SensorSetGlobalSettings(storage_manager, sensor_set_id)
         self._entity_index_handler = SensorSetEntityIndex(storage_manager, sensor_set_id, self._entity_index)
         self._bulk_ops = SensorSetBulkOps(storage_manager, sensor_set_id)
+        self._yaml_crud = SensorSetYamlCrud(self)
+        self._validation = SensorSetValidation(self)
 
         # Initialize entity index with current sensors if the sensor set exists
         if self.exists:
@@ -99,6 +100,10 @@ class SensorSet:
         """Ensure sensor set exists."""
         if not self.exists:
             raise SyntheticSensorsError(f"Sensor set not found: {self.sensor_set_id}")
+
+    def ensure_exists(self) -> None:
+        """Public method to ensure sensor set exists."""
+        self._ensure_exists()
 
     # Sensor CRUD Operations
 
@@ -293,6 +298,84 @@ class SensorSet:
             True if sensor exists, False otherwise
         """
         return self.has_sensor(unique_id)
+
+    # YAML-based CRUD Operations
+
+    async def async_add_sensor_from_yaml(self, sensor_yaml: str) -> None:
+        """
+        Add a sensor to this sensor set from YAML string.
+
+        Args:
+            sensor_yaml: YAML string containing sensor configuration WITH sensor key
+                        Example:
+                        ```
+                        my_power_sensor:
+                          name: My Power Sensor
+                          entity_id: sensor.test_device_power
+                          formula: state * 1.1
+                          attributes:
+                            calculation_type: net_power
+                          metadata:
+                            unit_of_measurement: W
+                            device_class: power
+                        ```
+
+        Raises:
+            SyntheticSensorsError: If sensor set doesn't exist, YAML is invalid, or sensor already exists
+        """
+        self._ensure_exists()
+
+        await self._yaml_crud.async_add_sensor_from_yaml(sensor_yaml)
+
+    async def async_update_sensor_from_yaml(self, sensor_yaml: str) -> bool:
+        """
+        Update a sensor in this sensor set from YAML string.
+
+        Args:
+            sensor_yaml: YAML string containing updated sensor configuration WITH sensor key
+                        The sensor key must match an existing sensor.
+
+        Returns:
+            True if updated, False if sensor not found
+
+        Raises:
+            SyntheticSensorsError: If sensor set doesn't exist or YAML is invalid
+        """
+        self._ensure_exists()
+
+        return await self._yaml_crud.async_update_sensor_from_yaml(sensor_yaml)
+
+    def add_sensor_from_yaml(self, sensor_yaml: str) -> None:
+        """
+        Add a sensor to this sensor set from YAML string (synchronous version).
+
+        For async operations, use async_add_sensor_from_yaml().
+
+        Args:
+            sensor_yaml: YAML string containing sensor configuration WITH sensor key
+
+        Raises:
+            SyntheticSensorsError: If used in async context, sensor set doesn't exist,
+                                  YAML is invalid, or sensor already exists
+        """
+        self._yaml_crud.add_sensor_from_yaml(sensor_yaml)
+
+    def update_sensor_from_yaml(self, sensor_yaml: str) -> bool:
+        """
+        Update a sensor in this sensor set from YAML string (synchronous version).
+
+        For async operations, use async_update_sensor_from_yaml().
+
+        Args:
+            sensor_yaml: YAML string containing updated sensor configuration WITH sensor key
+
+        Returns:
+            True if sensor was updated, False if not found
+
+        Raises:
+            SyntheticSensorsError: If used in async context, sensor set doesn't exist, or YAML is invalid
+        """
+        return self._yaml_crud.update_sensor_from_yaml(sensor_yaml)
 
     # Global Settings Operations
 
@@ -711,10 +794,13 @@ class SensorSet:
 
     async def async_import_yaml(self, yaml_content: str) -> None:
         """
-        Import YAML content to this sensor set, replacing existing sensors.
+        Import sensors from YAML content into this sensor set.
 
         Args:
-            yaml_content: YAML content to import
+            yaml_content: Complete YAML configuration content
+
+        Raises:
+            SyntheticSensorsError: If import fails
         """
         metadata = self.metadata
         device_identifier = metadata.device_identifier if metadata else None
@@ -729,24 +815,30 @@ class SensorSet:
 
     async def async_export_yaml(self) -> str:
         """
-        Export this sensor set to YAML format (async version).
+        Export sensor set configuration to YAML string (async version).
 
         Returns:
-            YAML content as string
+            YAML string containing sensor set configuration
+
+        Raises:
+            SyntheticSensorsError: If sensor set doesn't exist
         """
         self._ensure_exists()
 
-        # Run the YAML export in an executor to avoid blocking the event loop
+        # Run export in executor to avoid blocking event loop,
         # even though it's typically fast, this ensures we don't block on large datasets
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.storage_manager.export_yaml, self.sensor_set_id)
 
     def export_yaml(self) -> str:
         """
-        Export this sensor set to YAML format.
+        Export sensor set configuration to YAML string.
 
         Returns:
-            YAML content as string
+            YAML string containing sensor set configuration
+
+        Raises:
+            SyntheticSensorsError: If sensor set doesn't exist
         """
         self._ensure_exists()
 
@@ -816,26 +908,7 @@ class SensorSet:
         Returns:
             List of validation errors (empty if valid)
         """
-        errors = []
-
-        # Basic validation
-        if not sensor_config.unique_id:
-            errors.append("Sensor unique_id is required")
-
-        if not sensor_config.formulas:
-            errors.append("Sensor must have at least one formula")
-
-        # Check for formula ID uniqueness within sensor
-        formula_ids = [f.id for f in sensor_config.formulas]
-        if len(formula_ids) != len(set(formula_ids)):
-            errors.append("Sensor has duplicate formula IDs")
-
-        # Validate each formula has required fields
-        for formula in sensor_config.formulas:
-            if not formula.formula:
-                errors.append(f"Formula '{formula.id}' missing formula expression")
-
-        return errors
+        return self._validation.validate_sensor_config(sensor_config)
 
     def get_sensor_errors(self) -> dict[str, list[str]]:
         """
@@ -844,17 +917,7 @@ class SensorSet:
         Returns:
             Dictionary mapping sensor unique_id to list of errors
         """
-        self._ensure_exists()
-
-        errors = {}
-        sensors = self.list_sensors()
-
-        for sensor in sensors:
-            sensor_errors = self.validate_sensor_config(sensor)
-            if sensor_errors:
-                errors[sensor.unique_id] = sensor_errors
-
-        return errors
+        return self._validation.get_sensor_errors()
 
     async def async_validate_import(self, yaml_content: str) -> dict[str, Any]:
         """
@@ -869,42 +932,7 @@ class SensorSet:
             - "config_errors": Configuration validation errors
             - "sensor_errors": Per-sensor validation errors
         """
-        validation_results: dict[str, Any] = {
-            "yaml_errors": [],
-            "config_errors": [],
-            "sensor_errors": {},
-        }
-
-        try:
-            # Parse YAML
-            yaml_data = yaml_lib.safe_load(yaml_content)
-            if not yaml_data:
-                validation_results["yaml_errors"].append("Empty YAML content")
-                return validation_results
-
-        except yaml_lib.YAMLError as e:
-            validation_results["yaml_errors"].append(f"YAML parsing error: {e}")
-            return validation_results
-
-        try:
-            # Validate configuration structure
-            config_manager = ConfigManager(self.storage_manager.hass)
-            config = config_manager.load_from_dict(yaml_data)
-
-            # Validate overall config
-            config_errors = config.validate()
-            validation_results["config_errors"] = config_errors
-
-            # Validate individual sensors
-            for sensor in config.sensors:
-                sensor_errors = self.validate_sensor_config(sensor)
-                if sensor_errors:
-                    validation_results["sensor_errors"][sensor.unique_id] = sensor_errors
-
-        except Exception as e:
-            validation_results["config_errors"].append(f"Configuration validation error: {e}")
-
-        return validation_results
+        return await self._validation.async_validate_import(yaml_content)
 
     def is_valid(self) -> bool:
         """
