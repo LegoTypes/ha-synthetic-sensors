@@ -1110,8 +1110,10 @@ def sample_sensor_configs() -> dict[str, dict[str, Any]]:
                 "temp": "sensor.temperature",
                 "humidity": "sensor.humidity",
             },
-            "unit_of_measurement": "units",
-            "device_class": "measurement",
+            "metadata": {
+                "unit_of_measurement": "units",
+                "device_class": "measurement",
+            },
             "enabled": True,
             "update_interval": 30,
         },
@@ -1121,9 +1123,11 @@ def sample_sensor_configs() -> dict[str, dict[str, Any]]:
             "variables": {
                 "power": "sensor.power_meter",
             },
-            "unit_of_measurement": "kW",
-            "device_class": "power",
-            "state_class": "measurement",
+            "metadata": {
+                "unit_of_measurement": "kW",
+                "device_class": "power",
+                "state_class": "measurement",
+            },
             "enabled": True,
             "round_digits": 3,
         },

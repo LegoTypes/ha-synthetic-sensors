@@ -14,7 +14,6 @@ from .config_models import Config, FormulaConfig, SensorConfig
 from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, ConfigDict
 from .exceptions import SchemaValidationError
 from .formula_utils import add_optional_formula_fields
-from .schema_validator import validate_yaml_config
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -192,9 +191,8 @@ class YAMLConfigParser:
         if not isinstance(yaml_data, dict):
             raise ValueError("YAML root must be a dictionary")
 
-        # Validate schema
-        validate_yaml_config(yaml_data)
-
+        # Note: Schema validation is now handled by ConfigManager._validate_yaml_data_with_schema()
+        # This method focuses on basic structural validation only
         return yaml_data
 
     def config_to_yaml(self, config: Config) -> dict[str, Any]:

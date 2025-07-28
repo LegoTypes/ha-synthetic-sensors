@@ -5,7 +5,6 @@ version: "1.0"
 
 global_settings:
   device_identifier: "variable_resolver_device"
-  resolution_strategy: "integration_priority"
 
 sensors:
   context_resolution_strategies:
@@ -41,7 +40,7 @@ sensors:
         metadata:
           unit_of_measurement: "precedence"
     metadata:
-      unit_of_measurement: "context_strategies"
+      unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
 
@@ -77,7 +76,7 @@ sensors:
           branch_b: "sensor.dependency_branch_b"
           leaf_nodes: "sensor.dependency_leaves"
         metadata:
-          unit_of_measurement: "complex_dependency"
+          unit_of_measurement: "W"
     metadata:
       unit_of_measurement: "resolution_chains"
       icon: "mdi:link-variant"
@@ -96,8 +95,6 @@ sensors:
           numeric_var: 150.0
           converted_string: "123.45"
           boolean_factor: false
-        metadata:
-          unit_of_measurement: "mixed_types"
       type_conversion_strategies:
         formula: "auto_convert + explicit_convert + fallback_convert"
         variables:
@@ -115,7 +112,7 @@ sensors:
         metadata:
           unit_of_measurement: "nullable_handling"
     metadata:
-      unit_of_measurement: "type_resolution"
+      unit_of_measurement: "kWh"
       device_class: "energy"
 
   resolver_factory_integration:
@@ -150,7 +147,7 @@ sensors:
           resolver_error: "sensor.resolver_error_case"
           error_recovery: "sensor.resolver_recovery_case"
         metadata:
-          unit_of_measurement: "error_handling"
+          unit_of_measurement: "W"
     metadata:
       unit_of_measurement: "factory_integration"
       icon: "mdi:factory"

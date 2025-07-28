@@ -21,8 +21,8 @@ mathematical expressions.
 
 ## Overview: How Synthetic Sensors Work
 
-Synthetic sensors are **wrapper sensors** that extend other sensors with formula-based calculations. They provide a new state
-value by applying mathematical formulas to other entities, allowing you to:
+Synthetic sensors are **sensor extensions** that provide capabilities beyond the base sensors or create new sensors with formula-based
+calculations. They provide a new state value by applying mathematical formulas to other entities, allowing you to:
 
 - **Extend sensor capabilities** with calculated attributes
 - **Transform sensor values** using mathematical formulations

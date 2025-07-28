@@ -314,15 +314,15 @@ class TestCoverageImprovementIntegration:
             assert len(chains_sensor.formulas) == 4  # Main + 3 attributes
 
             # Verify variable type resolution sensor
-            type_sensor = next((s for s in sensors if s.unique_id == "variable_type_resolution"), None)
-            assert type_sensor is not None
-            assert len(type_sensor.formulas) == 4  # Main + 3 attributes
+        type_sensor = next((s for s in sensors if s.unique_id == "variable_type_resolution"), None)
+        assert type_sensor is not None
+        assert len(type_sensor.formulas) == 4  # Main + 3 attributes (restored mixed_type_handling)
 
-            # Verify resolver factory integration sensor
-            factory_sensor = next((s for s in sensors if s.unique_id == "resolver_factory_integration"), None)
-            assert factory_sensor is not None
-            assert len(factory_sensor.formulas) == 4  # Main + 3 attributes
+        # Verify resolver factory integration sensor
+        factory_sensor = next((s for s in sensors if s.unique_id == "resolver_factory_integration"), None)
+        assert factory_sensor is not None
+        assert len(factory_sensor.formulas) == 4  # Main + 3 attributes
 
-            # Cleanup
-            if storage_manager.sensor_set_exists(sensor_set_id):
-                await storage_manager.async_delete_sensor_set(sensor_set_id)
+        # Cleanup
+        if storage_manager.sensor_set_exists(sensor_set_id):
+            await storage_manager.async_delete_sensor_set(sensor_set_id)

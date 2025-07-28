@@ -33,5 +33,5 @@ sensors:
       temp: sensor.test_temperature
       humidity: sensor.test_humidity
     metadata:
-      unit_of_measurement: complex
+      unit_of_measurement: W
       state_class: measurement

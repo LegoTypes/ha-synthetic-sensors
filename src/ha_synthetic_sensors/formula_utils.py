@@ -1,8 +1,58 @@
 """Utility functions for formula configuration handling."""
 
+import re
 from typing import Any
 
 from .config_models import FormulaConfig
+
+
+def tokenize_formula(formula: str) -> set[str]:
+    """Tokenize formula to extract potential variable/sensor references.
+
+    Args:
+        formula: Formula string to tokenize
+
+    Returns:
+        Set of potential variable/sensor reference tokens
+    """
+    # Pattern to match valid Python identifiers (sensor keys)
+    identifier_pattern = re.compile(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b")
+
+    # Find all potential identifiers
+    tokens = set(identifier_pattern.findall(formula))
+
+    # Filter out common keywords and operators that aren't sensor references
+    excluded_keywords = {
+        "state",
+        "and",
+        "or",
+        "not",
+        "if",
+        "else",
+        "elif",
+        "in",
+        "is",
+        "True",
+        "False",
+        "None",
+        "def",
+        "class",
+        "import",
+        "from",
+        "sum",
+        "max",
+        "min",
+        "avg",
+        "count",
+        "abs",
+        "round",
+        "int",
+        "float",
+    }
+
+    # Remove excluded keywords
+    tokens = tokens - excluded_keywords
+    return tokens
 
 
 def add_optional_formula_fields(formula_data: dict[str, Any], formula: FormulaConfig, include_variables: bool = False) -> None:

@@ -15,6 +15,7 @@ import logging
 import re
 from typing import Any, TypedDict
 
+from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
 
 try:
@@ -56,7 +57,15 @@ class ValidationResult(TypedDict):
 
 
 class SchemaValidator:
-    """Validates synthetic sensor YAML configurations against JSON Schema."""
+    """Validates YAML configuration against JSON schema and additional semantic rules."""
+
+    # Common regex patterns used across validation methods
+    VARIABLE_VALUE_PATTERN = (
+        "^([a-z_]+\\.[a-z0-9_.]+|[a-zA-Z_][a-zA-Z0-9_]*|device_class:[a-z0-9_]+|"
+        "area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+|(sum|avg|mean|count|min|max|std|var)\\(.+\\)|"
+        "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:Z|[+-]\\d{2}:?\\d{2})?|"
+        "v\\d+(\\.\\d+){0,2}([-+][a-zA-Z0-9\\-.]+)?|\\d+\\.\\d+)$"
+    )
 
     def __init__(self) -> None:
         """Initialize the schema validator."""
@@ -517,86 +526,262 @@ class SchemaValidator:
             # This prevents breaking the package if HA changes its validation logic
             _LOGGER.debug("Unit validation failed, skipping: %s", e)
 
+    def _is_entity_id(self, value: str) -> bool:
+        """Check if a string is an entity ID vs sensor key.
+
+        Supports basic entity IDs (sensor.power_meter) and attribute references (sensor.power_meter.state)
+        """
+        return bool(re.match(r"^[a-z_]+\.[a-z0-9_.]+$", value))
+
+    def _is_collection_pattern(self, value: str) -> bool:
+        """Check if a string is a collection pattern."""
+        return bool(re.match(r"^(device_class|area|label|regex|attribute):", value))
+
+    def _is_collection_function(self, value: str) -> bool:
+        """Check if a string is a collection function."""
+        return bool(re.match(r"^(sum|avg|mean|count|min|max|std|var)\(", value))
+
+    def _is_formula_expression(self, value: str) -> bool:
+        """Check if a string is a formula expression.
+
+        Formula expressions contain mathematical operators and variable references.
+        """
+        # Look for mathematical operators like +, -, *, /, ()
+        # Allow decimal numbers (dots followed by digits) but exclude entity IDs (dots followed by letters)
+        # Exclude collection patterns (containing colons)
+        has_operators = bool(re.search(r"[+\-*/()]", value))
+        is_entity_id = bool(re.search(r"\.[a-zA-Z]", value))  # dot followed by letter indicates entity ID
+        has_colon = ":" in value
+        return has_operators and not is_entity_id and not has_colon
+
+    def _is_datetime_literal(self, value: str) -> bool:
+        """Check if a string is a datetime literal."""
+        return bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?$", value))
+
+    def _is_version_literal(self, value: str) -> bool:
+        """Check if a string is a version literal (requires 'v' prefix)."""
+        return bool(re.match(r"^v\d+(\.\d+){0,2}([-+][a-zA-Z0-9\-.]+)?$", value))
+
+    def _validate_formula_tokens(
+        self,
+        formula: str,
+        sensor_keys: set[str],
+        path: str,
+        errors: list[ValidationError],
+        global_vars: set[str] | None = None,
+        sensor_vars: set[str] | None = None,
+        attr_vars: set[str] | None = None,
+    ) -> None:
+        """Validate that all tokens in a formula expression are valid references."""
+        if not self._is_formula_expression(formula):
+            return
+
+        tokens = tokenize_formula(formula)
+        for token in tokens:
+            # Check if token is valid in any scope:
+            # 1. Global variables (accessible from anywhere)
+            # 2. Local sensor variables (accessible within same sensor)
+            # 3. Local attribute variables (accessible within same attribute)
+            # 4. Sensor keys (for cross-sensor references)
+            is_valid = (
+                token in sensor_keys
+                or (global_vars and token in global_vars)
+                or (sensor_vars and token in sensor_vars)
+                or (attr_vars and token in attr_vars)
+            )
+
+            if not is_valid:
+                available_refs: list[str] = []
+                if global_vars:
+                    available_refs.extend(f"global:{var}" for var in sorted(global_vars))
+                if sensor_vars:
+                    available_refs.extend(f"local:{var}" for var in sorted(sensor_vars))
+                if attr_vars:
+                    available_refs.extend(f"attr:{var}" for var in sorted(attr_vars))
+                available_refs.extend(f"sensor:{key}" for key in sorted(sensor_keys))
+
+                errors.append(
+                    ValidationError(
+                        message=f"Formula token '{token}' in '{formula}' references unknown variable or sensor key",
+                        path=path,
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix=f"Available references: {', '.join(available_refs[:10])}{'...' if len(available_refs) > 10 else ''}",
+                    )
+                )
+
+    def _validate_variable_value(
+        self,
+        var_value: str,
+        sensor_keys: set[str],
+        global_vars: set[str],
+        sensor_vars: set[str] | None = None,
+        attr_vars: set[str] | None = None,
+    ) -> bool:
+        """Validate a variable value is a recognized pattern.
+
+        Variable values can only be:
+        - References to sensor keys, global vars, or local vars
+        - Entity IDs (domain.entity format)
+        - Collection patterns (device_class:, area:, etc.)
+        - Simple literals (numbers, dates, versions, plain strings)
+
+        They CANNOT be formula expressions or collection functions.
+
+        Returns True if valid, False otherwise.
+        """
+        # Check if it's a reference to existing variables/sensors
+        if self._is_variable_reference(var_value, sensor_keys, global_vars, sensor_vars, attr_vars):
+            return True
+
+        # Check if it's a valid entity ID or collection pattern
+        if self._is_entity_id(var_value) or self._is_collection_pattern(var_value):
+            return True
+
+        # Check if it's a simple literal (dates, versions, numbers)
+        if self._is_datetime_literal(var_value) or self._is_version_literal(var_value):
+            return True
+
+        # Check if it's a simple number
+        try:
+            float(var_value)
+            return True
+        except ValueError:
+            pass
+
+        # Check if it's a simple string literal (no special characters that suggest it's meant to be a reference)
+        # Simple strings should not contain dots, underscores followed by numbers, or start with numbers
+        # These patterns suggest intended references that are malformed
+        return (
+            var_value.isalpha()  # Pure alphabetic strings are OK
+            or (var_value.replace("_", "").replace(" ", "").replace("-", "").isalpha())
+        )  # Strings with basic separators
+
+    def _is_variable_reference(
+        self,
+        var_value: str,
+        sensor_keys: set[str],
+        global_vars: set[str],
+        sensor_vars: set[str] | None = None,
+        attr_vars: set[str] | None = None,
+    ) -> bool:
+        """Check if a value is a reference to an existing variable or sensor."""
+        return (
+            var_value in sensor_keys
+            or var_value in global_vars
+            or (sensor_vars is not None and var_value in sensor_vars)
+            or (attr_vars is not None and var_value in attr_vars)
+        )
+
+    def _validate_attribute_variables(
+        self,
+        sensor_key: str,
+        attr_name: str,
+        attr_config: dict[str, Any],
+        sensor_keys: set[str],
+        global_var_keys: set[str],
+        sensor_var_keys: set[str],
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate variables within an attribute configuration."""
+        attr_variables = attr_config.get("variables", {})
+        attr_var_keys = set(attr_variables.keys())
+
+        for var_name, var_value in attr_variables.items():
+            if isinstance(var_value, str):
+                # First validate formula expressions by tokenizing them
+                # Attribute variables can reference global vars, sensor vars, other attr vars, and sensor keys
+                self._validate_formula_tokens(
+                    var_value,
+                    sensor_keys,
+                    f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                    errors,
+                    global_vars=global_var_keys,
+                    sensor_vars=sensor_var_keys,
+                    attr_vars=attr_var_keys,
+                )
+
+                # Check what type of value this is by elimination
+                if not self._validate_variable_value(var_value, sensor_keys, global_var_keys, sensor_var_keys, attr_var_keys):
+                    errors.append(
+                        ValidationError(
+                            message=f"Invalid variable value '{var_value}' - must be a sensor key, entity ID, collection pattern, or simple literal",
+                            path=f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                            severity=ValidationSeverity.ERROR,
+                            suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
+                        )
+                    )
+
     def _validate_sensor_key_references(self, config_data: dict[str, Any], errors: list[ValidationError]) -> None:
         """Validate that all sensor key references point to actual sensors in the config."""
         sensors = config_data.get("sensors", {})
         sensor_keys = set(sensors.keys())
 
-        # Helper function to check if a string is an entity ID vs sensor key
-        def is_entity_id(value: str) -> bool:
-            return bool(re.match(r"^[a-z_]+\.[a-z0-9_]+$", value))
-
-        # Helper function to check if a string is a collection pattern
-        def is_collection_pattern(value: str) -> bool:
-            return bool(re.match(r"^(device_class|area|label|regex|attribute):", value))
-
         # Check global variables
         global_settings = config_data.get("global_settings", {})
         global_variables = global_settings.get("variables", {})
+        global_var_keys = set(global_variables.keys())
+
         for var_name, var_value in global_variables.items():
-            if (
-                isinstance(var_value, str)
-                and not is_entity_id(var_value)
-                and not is_collection_pattern(var_value)
-                and var_value not in sensor_keys
-            ):
-                errors.append(
-                    ValidationError(
-                        message=f"Global variable '{var_name}' references unknown sensor key '{var_value}'",
-                        path=f"global_settings.variables.{var_name}",
-                        severity=ValidationSeverity.ERROR,
-                        suggested_fix=f"Use one of the defined sensor keys: {', '.join(sorted(sensor_keys))}",
-                    )
+            if isinstance(var_value, str):
+                # First validate formula expressions by tokenizing them
+                # Global variables can reference other global variables and sensor keys
+                self._validate_formula_tokens(
+                    var_value, sensor_keys, f"global_settings.variables.{var_name}", errors, global_vars=global_var_keys
                 )
+
+                # Check what type of value this is by elimination
+                if not self._validate_variable_value(var_value, sensor_keys, global_var_keys):
+                    errors.append(
+                        ValidationError(
+                            message=f"Invalid variable value '{var_value}' - must be a sensor key, entity ID, collection pattern, or simple literal",
+                            path=f"global_settings.variables.{var_name}",
+                            severity=ValidationSeverity.ERROR,
+                            suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
+                        )
+                    )
 
         # Check sensor-level variables and attribute variables
         for sensor_key, sensor_config in sensors.items():
             # Check sensor-level variables
             sensor_variables = sensor_config.get("variables", {})
+            sensor_var_keys = set(sensor_variables.keys())
+
             for var_name, var_value in sensor_variables.items():
-                if (
-                    isinstance(var_value, str)
-                    and not is_entity_id(var_value)
-                    and not is_collection_pattern(var_value)
-                    and var_value not in sensor_keys
-                ):
-                    errors.append(
-                        ValidationError(
-                            message=f"Sensor '{sensor_key}' variable '{var_name}' references unknown sensor key '{var_value}'",
-                            path=f"sensors.{sensor_key}.variables.{var_name}",
-                            severity=ValidationSeverity.ERROR,
-                            suggested_fix=f"Use one of the defined sensor keys: {', '.join(sorted(sensor_keys))}",
-                        )
+                if isinstance(var_value, str):
+                    # First validate formula expressions by tokenizing them
+                    # Sensor variables can reference global vars, other sensor vars in same sensor, and sensor keys
+                    self._validate_formula_tokens(
+                        var_value,
+                        sensor_keys,
+                        f"sensors.{sensor_key}.variables.{var_name}",
+                        errors,
+                        global_vars=global_var_keys,
+                        sensor_vars=sensor_var_keys,
                     )
+
+                    # Check what type of value this is by elimination
+                    if not self._validate_variable_value(var_value, sensor_keys, global_var_keys, sensor_var_keys):
+                        errors.append(
+                            ValidationError(
+                                message=f"Invalid variable value '{var_value}' - must be a sensor key, entity ID, collection pattern, or simple literal",
+                                path=f"sensors.{sensor_key}.variables.{var_name}",
+                                severity=ValidationSeverity.ERROR,
+                                suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
+                            )
+                        )
 
             # Check attribute-level variables
             attributes = sensor_config.get("attributes", {})
             for attr_name, attr_config in attributes.items():
                 if isinstance(attr_config, dict):
-                    attr_variables = attr_config.get("variables", {})
-                    for var_name, var_value in attr_variables.items():
-                        if (
-                            isinstance(var_value, str)
-                            and not is_entity_id(var_value)
-                            and not is_collection_pattern(var_value)
-                            and var_value not in sensor_keys
-                        ):
-                            errors.append(
-                                ValidationError(
-                                    message=f"Sensor '{sensor_key}' attribute '{attr_name}' variable '{var_name}' references unknown sensor key '{var_value}'",
-                                    path=f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
-                                    severity=ValidationSeverity.ERROR,
-                                    suggested_fix=f"Use one of the defined sensor keys: {', '.join(sorted(sensor_keys))}",
-                                )
-                            )
+                    self._validate_attribute_variables(
+                        sensor_key, attr_name, attr_config, sensor_keys, global_var_keys, sensor_var_keys, errors
+                    )
 
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns
         id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
-        # Allow entity IDs, sensor key references, OR collection patterns (device_class:, area:, label:, regex:, attribute:)
-        # Sensor key references use the same pattern as sensor unique_id (any non-empty string)
-        variable_value_pattern = "^([a-z_]+\\.[a-z0-9_]+|[a-zA-Z_][a-zA-Z0-9_]*|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$"
         var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
         icon_pattern = "^mdi:[a-z0-9-]+$"
 
@@ -605,10 +790,10 @@ class SchemaValidator:
             "title": "HA Synthetic Sensors Configuration",
             "description": ("Schema for Home Assistant Synthetic Sensors YAML configuration"),
             "type": "object",
-            "properties": self._get_v1_main_properties(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
+            "properties": self._get_v1_main_properties(id_pattern, self.VARIABLE_VALUE_PATTERN, var_pattern, icon_pattern),
             "required": ["sensors"],
             "additionalProperties": False,
-            "definitions": self._get_v1_schema_definitions(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
+            "definitions": self._get_v1_schema_definitions(id_pattern, self.VARIABLE_VALUE_PATTERN, var_pattern, icon_pattern),
         }
 
     def _get_sensor_definition(self, id_pattern: str) -> dict[str, Any]:
@@ -652,18 +837,22 @@ class SchemaValidator:
                 },
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities or numeric literals",
+                    "description": "Variable mappings to Home Assistant entities, numeric literals, boolean literals, or datetime strings",
                     "patternProperties": {
                         "^[a-zA-Z_][a-zA-Z0-9_]*$": {
                             "oneOf": [
                                 {
                                     "type": "string",
-                                    "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$",
-                                    "description": "Home Assistant entity ID or collection pattern",
+                                    "pattern": self.VARIABLE_VALUE_PATTERN,
+                                    "description": "Home Assistant entity ID, sensor key, collection pattern, collection function, formula expression, datetime string, or version string",
                                 },
                                 {
                                     "type": "number",
                                     "description": "Numeric literal value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Boolean literal value",
                                 },
                             ]
                         }
@@ -702,10 +891,13 @@ class SchemaValidator:
                                                     "oneOf": [
                                                         {
                                                             "type": "string",
-                                                            "pattern": "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+)$",
+                                                            "pattern": self.VARIABLE_VALUE_PATTERN,
                                                         },
                                                         {
                                                             "type": "number",
+                                                        },
+                                                        {
+                                                            "type": "boolean",
                                                         },
                                                     ]
                                                 }
@@ -807,12 +999,15 @@ class SchemaValidator:
                             "oneOf": [
                                 {
                                     "type": "string",
-                                    "pattern": variable_value_pattern,
-                                    "description": "Home Assistant entity ID or collection pattern (device_class:, area:, etc.)",
+                                    "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                 },
                                 {
                                     "type": "number",
                                     "description": "Numeric literal value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Boolean literal value",
                                 },
                             ]
                         }
@@ -930,6 +1125,30 @@ class SchemaValidator:
                         "type": "string",
                         "description": "Default device identifier for all sensors in this set",
                     },
+                    "device_name": {
+                        "type": "string",
+                        "description": "Default device name for all sensors in this set",
+                    },
+                    "device_manufacturer": {
+                        "type": "string",
+                        "description": "Default device manufacturer for all sensors in this set",
+                    },
+                    "device_model": {
+                        "type": "string",
+                        "description": "Default device model for all sensors in this set",
+                    },
+                    "device_sw_version": {
+                        "type": "string",
+                        "description": "Default device software version for all sensors in this set",
+                    },
+                    "device_hw_version": {
+                        "type": "string",
+                        "description": "Default device hardware version for all sensors in this set",
+                    },
+                    "suggested_area": {
+                        "type": "string",
+                        "description": "Default suggested area for all sensors in this set",
+                    },
                     "variables": {
                         "type": "object",
                         "description": "Global variable mappings available to all sensors",
@@ -938,12 +1157,15 @@ class SchemaValidator:
                                 "oneOf": [
                                     {
                                         "type": "string",
-                                        "pattern": variable_value_pattern,
-                                        "description": "Home Assistant entity ID, sensor key reference, or collection pattern",
+                                        "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                     },
                                     {
                                         "type": "number",
                                         "description": "Numeric literal value",
+                                    },
+                                    {
+                                        "type": "boolean",
+                                        "description": "Boolean literal value",
                                     },
                                 ]
                             }
@@ -1048,18 +1270,21 @@ class SchemaValidator:
                 # Common properties for both syntax patterns
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities, sensor keys, or numeric literals",
+                    "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, or boolean literals",
                     "patternProperties": {
                         var_pattern: {
                             "oneOf": [
                                 {
                                     "type": "string",
-                                    "pattern": variable_value_pattern,
-                                    "description": "Home Assistant entity ID, sensor key reference, or collection pattern",
+                                    "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                 },
                                 {
                                     "type": "number",
                                     "description": "Numeric literal value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Boolean literal value",
                                 },
                             ]
                         }
@@ -1140,18 +1365,21 @@ class SchemaValidator:
                         },
                         "variables": {
                             "type": "object",
-                            "description": "Variable mappings to Home Assistant entities, sensor keys, or numeric literals",
+                            "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, or boolean literals",
                             "patternProperties": {
                                 var_pattern: {
                                     "oneOf": [
                                         {
                                             "type": "string",
-                                            "pattern": variable_value_pattern,
-                                            "description": "Home Assistant entity ID, sensor key reference, or collection pattern",
+                                            "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                         },
                                         {
                                             "type": "number",
                                             "description": "Numeric literal value",
+                                        },
+                                        {
+                                            "type": "boolean",
+                                            "description": "Boolean literal value",
                                         },
                                     ]
                                 }

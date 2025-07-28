@@ -6,10 +6,9 @@ global_settings:
 sensors:
   mixed_dependencies:
     name: "Mixed Dependencies"
-    formula: "state + external_sensor.battery_level + collection_sum"
+    formula: "state + external_sensor.battery_level + sum('device_class:temperature')"
     variables:
       external_sensor: "sensor.battery_device"
-      collection_sum: sum("device_class:temperature")
     metadata:
       unit_of_measurement: "mixed"
       icon: "mdi:calculator"

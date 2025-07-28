@@ -1,0 +1,51 @@
+version: '1.0'
+global_settings:
+  device_identifier: test_device_123
+  device_name: Test Device
+
+sensors:
+  main_power:
+    name: Main Power Sensor
+    entity_id: sensor.test_device_main_power
+    formula: state * 1.1
+    # 'state' token references backing entity (resolved via sensor-to-backing mapping)
+    attributes:
+      calculation_type: net_power
+      source_info: "Calculated from backing entity"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:transmission-tower
+
+  secondary_sensor:
+    name: Secondary Sensor
+    entity_id: sensor.test_device_secondary
+    formula: state + offset
+    # 'state' token references backing entity (resolved via sensor-to-backing mapping)
+    variables:
+      offset: 100.0
+    attributes:
+      calculation_type: addition
+      offset_value: 100.0
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:gauge
+
+  temp_sensor_to_delete:
+    name: Temporary Sensor
+    entity_id: sensor.test_device_temp
+    formula: state + temp_offset
+    # 'state' token references backing entity (resolved via sensor-to-backing mapping)
+    variables:
+      temp_offset: 5.0
+    attributes:
+      calculation_type: temperature_adjustment
+      offset_value: 5.0
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      icon: mdi:thermometer

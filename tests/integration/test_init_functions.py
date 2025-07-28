@@ -939,8 +939,9 @@ class TestInitFunctions:
     async def test_setup_with_empty_config_error(
         self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
     ):
-        """Test async_setup_synthetic_sensors with empty configuration raises ValueError."""
-        from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager
+        """Test that loading empty configuration fails with ConfigEntryError during validation."""
+        from ha_synthetic_sensors import StorageManager
+        from homeassistant.exceptions import ConfigEntryError
 
         # Set up storage manager with proper mocking
         with (
@@ -957,7 +958,7 @@ class TestInitFunctions:
             storage_manager._store = mock_store
             await storage_manager.async_load()
 
-            # Create sensor set and load empty YAML
+            # Create sensor set
             sensor_set_id = "empty_config_test"
             await storage_manager.async_create_sensor_set(
                 sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="Empty Config Test Sensors"
@@ -967,19 +968,9 @@ class TestInitFunctions:
             with open(yaml_fixture_path, "r") as f:
                 yaml_content = f.read()
 
-            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-            assert result["sensors_imported"] == 0
-
-            # Test with empty configuration - should raise ValueError
-            with pytest.raises(ValueError, match="No sensors found in configuration"):
-                await async_setup_synthetic_sensors(
-                    hass=mock_hass,
-                    config_entry=mock_config_entry,
-                    async_add_entities=mock_async_add_entities,
-                    storage_manager=storage_manager,
-                    device_identifier="test_device_123",
-                    allow_ha_lookups=True,
-                )
+            # Test that loading empty configuration fails early with ConfigEntryError
+            with pytest.raises(ConfigEntryError, match="should be non-empty"):
+                await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)

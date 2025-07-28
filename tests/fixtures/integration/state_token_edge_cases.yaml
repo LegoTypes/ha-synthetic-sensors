@@ -27,7 +27,7 @@ sensors:
         metadata:
           unit_of_measurement: "chain"
     metadata:
-      unit_of_measurement: "base"
+      unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
 
@@ -76,15 +76,13 @@ sensors:
         metadata:
           unit_of_measurement: "safe_calc"
     metadata:
-      unit_of_measurement: "error_handling"
+      unit_of_measurement: "W"
       device_class: "power"
 
   nested_formula_variables:
     name: "Nested Formula Variables"
-    formula: "primary_calc + secondary_calc"
+    formula: "(base_A * (multiplier_A + offset_A)) + (base_B * multiplier_B + offset_B)"
     variables:
-      primary_calc: "base_A * (multiplier_A + offset_A)"
-      secondary_calc: "base_B * multiplier_B + offset_B"
       base_A: "sensor.base_source_a"
       multiplier_A: 1.5
       offset_A: 10.0
@@ -93,9 +91,8 @@ sensors:
       offset_B: 5.0
     attributes:
       formula_in_formula:
-        formula: "nested_expression + state"
+        formula: "(var_a * (var_b + var_c)) + state"
         variables:
-          nested_expression: "var_a * (var_b + var_c)"
           var_a: "sensor.variable_a_source"
           var_b: 2.0
           var_c: "sensor.variable_c_source"

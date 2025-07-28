@@ -43,6 +43,6 @@ sensors:
         metadata:
           unit_of_measurement: "boolean"
     metadata:
-      unit_of_measurement: "numeric"
+      unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"

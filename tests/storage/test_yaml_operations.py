@@ -455,7 +455,7 @@ class TestConfigManagerExtended:
             yaml_content = f.read()
 
         # This should fail during schema validation now
-        with pytest.raises(ConfigEntryError, match="must have 'formula' field"):
+        with pytest.raises(ConfigEntryError, match="'formula' is a required property"):
             config_manager.load_from_yaml(yaml_content)
 
     def test_load_from_yaml_with_yaml_error(self, config_manager):

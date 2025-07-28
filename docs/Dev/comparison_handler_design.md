@@ -379,7 +379,7 @@ The system uses a specific order of precedence for type detection:
 - `"2.1.0"` → VERSION (detected from string)
 - `"hello"` → STRING
 
-## Comprehensive Testing Strategy
+## Comparison Handler Testing Strategy
 
 ### Algorithm Validation Matrix
 

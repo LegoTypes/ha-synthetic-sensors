@@ -34,7 +34,7 @@ sensors:
         metadata:
           unit_of_measurement: "deep_computation"
     metadata:
-      unit_of_measurement: "nested_attrs"
+      unit_of_measurement: "W"
       device_class: "power"
 
   missing_entity_attribute_handling:
@@ -108,7 +108,7 @@ sensors:
         metadata:
           unit_of_measurement: "dynamic_resolution"
     metadata:
-      unit_of_measurement: "edge_cases"
+      unit_of_measurement: "kWh"
       device_class: "energy"
       state_class: "measurement"
 

@@ -79,27 +79,8 @@ class ConfigManager:
                 self._config = Config()
                 return self._config
 
-            # Perform schema validation first
-            schema_result = validate_yaml_config(yaml_data)
-
-            # Log warnings
-            for warning in schema_result["warnings"]:
-                self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
-                if warning.suggested_fix:
-                    self._logger.warning("Suggested fix: %s", warning.suggested_fix)
-
-            # Check for schema errors
-            if not schema_result["valid"]:
-                error_messages: list[str] = []
-                for error in schema_result["errors"]:
-                    msg = f"{error.path}: {error.message}"
-                    if error.suggested_fix:
-                        msg += f" (Suggested fix: {error.suggested_fix})"
-                    error_messages.append(msg)
-
-                error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
-                self._logger.error(error_msg)
-                raise ConfigEntryError(error_msg)
+            # Perform schema validation using shared method
+            self._validate_yaml_data_with_schema(yaml_data)
 
             self._config = self._parse_yaml_config(yaml_data)
 
@@ -556,8 +537,8 @@ class ConfigManager:
                 self._config = Config()
                 return self._config
 
-            # Validate YAML data
-            self._yaml_parser.validate_yaml_data(cast(dict[str, Any], yaml_data))
+            # Validate YAML data using the same validation logic as file-based loading
+            self._validate_yaml_data_with_schema(yaml_data)
 
             self._config = self._parse_yaml_config(yaml_data)
 
@@ -920,6 +901,36 @@ class ConfigManager:
         result = self.validate_yaml_data(yaml_data)
         result["file_path"] = str(path)
         return result
+
+    def _validate_yaml_data_with_schema(self, yaml_data: dict[str, Any] | ConfigDict) -> None:
+        """Shared validation logic for both file-based and string-based loading.
+
+        Args:
+            yaml_data: YAML data to validate
+
+        Raises:
+            ConfigEntryError: If schema validation fails
+        """
+        schema_result = validate_yaml_config(cast(dict[str, Any], yaml_data))
+
+        # Log warnings
+        for warning in schema_result["warnings"]:
+            self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
+            if warning.suggested_fix:
+                self._logger.warning("Suggested fix: %s", warning.suggested_fix)
+
+        # Check for schema errors
+        if not schema_result["valid"]:
+            error_messages: list[str] = []
+            for error in schema_result["errors"]:
+                msg = f"{error.path}: {error.message}"
+                if error.suggested_fix:
+                    msg += f" (Suggested fix: {error.suggested_fix})"
+                error_messages.append(msg)
+
+            error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
     def _auto_inject_entity_variables(
         self, formula: str, variables: dict[str, str | int | float]

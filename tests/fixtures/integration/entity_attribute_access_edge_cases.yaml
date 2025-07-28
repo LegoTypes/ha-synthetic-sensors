@@ -27,7 +27,7 @@ sensors:
         metadata:
           unit_of_measurement: "cross_ref"
     metadata:
-      unit_of_measurement: "deep_access"
+      unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
 
@@ -52,7 +52,7 @@ sensors:
         metadata:
           unit_of_measurement: "optional_calc"
     metadata:
-      unit_of_measurement: "error_handling"
+      unit_of_measurement: "kWh"
       device_class: "energy"
 
   collection_with_attribute_access:
@@ -122,5 +122,5 @@ sensors:
         metadata:
           unit_of_measurement: "error_test"
     metadata:
-      unit_of_measurement: "error_cases"
+      unit_of_measurement: "W"
       device_class: "power"

@@ -41,7 +41,7 @@ sensors:
   garage_charger:
     formula: "7000"
     metadata:
-      device_class: "energy"  # Different device class
+      device_class: "power"  # Changed to power to match unit
       unit_of_measurement: "W"
       area: "garage"
 
@@ -49,28 +49,28 @@ sensors:
   power_without_oven:
     formula: "sum('device_class:power', !'kitchen_oven')"
     metadata:
-      device_class: "energy"  # Different class to avoid self-inclusion
+      device_class: "power"  # Changed to power to match unit
       unit_of_measurement: "W"
 
   # Test 2: Multiple specific exclusions
   power_without_kitchen:
     formula: "sum('device_class:power', !'kitchen_fridge', !'kitchen_oven')"
     metadata:
-      device_class: "energy"
+      device_class: "power"  # Changed to power to match unit
       unit_of_measurement: "W"
 
   # Test 3: Area-based exclusion
   power_without_living_room:
     formula: "sum('device_class:power', !'area:living_room')"
     metadata:
-      device_class: "energy"
+      device_class: "power"  # Changed to power to match unit
       unit_of_measurement: "W"
 
   # Test 4: Mixed exclusions - specific sensor and area pattern
   selective_power:
     formula: "sum('device_class:power', !'bedroom_heater', !'area:kitchen')"
     metadata:
-      device_class: "energy"
+      device_class: "power"  # Changed to power to match unit
       unit_of_measurement: "W"
 
   # Test 5: Auto self-exclusion combined with explicit negation
@@ -84,5 +84,5 @@ sensors:
   living_room_without_tv:
     formula: "sum('area:living_room', !'living_room_tv')"
     metadata:
-      device_class: "energy"
+      device_class: "power"  # Changed to power to match unit
       unit_of_measurement: "W"

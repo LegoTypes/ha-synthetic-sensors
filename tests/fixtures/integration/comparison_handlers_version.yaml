@@ -3,9 +3,9 @@ version: "1.0"
 global_settings:
   device_identifier: "test_device_version_comparisons"
   variables:
-    min_firmware: "2.1.0"
-    target_version: "3.0.0"
-    legacy_cutoff: "1.5.0"
+    min_firmware: "v2.1.0"
+    target_version: "v3.0.0"
+    legacy_cutoff: "v1.5.0"
 
 sensors:
   # Test version greater than or equal comparison

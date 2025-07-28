@@ -52,5 +52,5 @@ sensors:
   filtered_power:
     formula: "sum('device_class:power', !'power_analysis')"
     metadata:
-      device_class: "energy"  # Different device class to avoid self-inclusion
+      device_class: "power"  # Changed from energy to power to match unit W
       unit_of_measurement: "W"

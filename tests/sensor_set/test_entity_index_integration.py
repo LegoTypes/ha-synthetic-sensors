@@ -53,8 +53,9 @@ sensors:
     formula: "power / base_voltage * 100"
     variables:
       power: "sensor.power_meter"
-    unit_of_measurement: "%"
-    device_class: "power_factor"
+    metadata:
+      unit_of_measurement: "%"
+      device_class: "power_factor"
 
   temperature_status:
     name: "Temperature Status"
@@ -74,7 +75,8 @@ sensors:
           backup_mode: "switch.backup_mode"
       voltage_ratio:
         formula: "base_voltage / 240.0"
-        unit_of_measurement: "ratio"
+        metadata:
+          unit_of_measurement: "ratio"
 """
 
     @pytest.mark.asyncio

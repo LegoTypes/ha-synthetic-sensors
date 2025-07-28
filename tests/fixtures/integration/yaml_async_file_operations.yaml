@@ -5,7 +5,6 @@ version: "1.0"
 
 global_settings:
   device_identifier: "async_test_device"
-  enable_metrics: true
 
 sensors:
   async_file_test_sensor:
@@ -25,13 +24,13 @@ sensors:
       validation_test_attribute:
         formula: "test_value == 'valid' ? success_value : error_value"
         variables:
-          test_value: "valid"
+          test_value: "base_value"
           success_value: 200.0
           error_value: 0.0
         metadata:
           unit_of_measurement: "validation"
     metadata:
-      unit_of_measurement: "async_ops"
+      unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
 
@@ -92,6 +91,6 @@ sensors:
         metadata:
           unit_of_measurement: "operation_status"
     metadata:
-      unit_of_measurement: "file_io"
+      unit_of_measurement: "kWh"
       device_class: "energy"
       state_class: "total"

@@ -610,9 +610,10 @@ sensors:
     name: Test Sensor
     entity_id: sensor.test_sensor
     formula: state("main_power") * efficiency_factor
-    unit_of_measurement: W
-    device_class: power
-    state_class: measurement
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
 """
 
         await sensor_set.async_import_yaml(initial_yaml)
@@ -676,9 +677,10 @@ sensors:
     formula: state("main_power") * efficiency_factor
     variables:
       efficiency_factor: 0.95  # Local variable matching global
-    unit_of_measurement: W
-    device_class: power
-    state_class: measurement
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
 """
 
         await sensor_set.async_import_yaml(initial_yaml)

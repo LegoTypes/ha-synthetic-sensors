@@ -11,10 +11,9 @@ global_settings:
 sensors:
   nested_structure_sensor:
     name: "Nested Structure Sensor"
-    formula: "base_power * rate_calc + offset"
+    formula: "base_power * (global_rate * global_multiplier) + offset"
     variables:
       base_power: "sensor.base_power"
-      rate_calc: "global_rate * global_multiplier"
       offset: 100
     attributes:
       daily_total:
@@ -30,9 +29,8 @@ sensors:
           unit_of_measurement: "%"
           suggested_display_precision: 1
       complex_nested:
-        formula: "nested_calc + efficiency * adjustment"
+        formula: "(base_power / 1000) + efficiency * adjustment"
         variables:
-          nested_calc: "daily_total / 1000"
           adjustment: 1.2
         metadata:
           unit_of_measurement: "kWh"
@@ -45,11 +43,9 @@ sensors:
 
   deeply_nested_variables:
     name: "Deeply Nested Variables"
-    formula: "level1 + level2 + level3"
+    formula: "level1 + (level1 * 0.5) + ((level1 * 0.5) + level1 * 0.25)"
     variables:
       level1: "sensor.level_one"
-      level2: "level1 * 0.5"
-      level3: "level2 + level1 * 0.25"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
