@@ -1,0 +1,24 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    formula: "state * 2"  # Self-reference to backing entity
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  efficiency_sensor:
+    name: "Efficiency Sensor"
+    formula: "state * 100"  # Self-reference to backing entity
+    metadata:
+      unit_of_measurement: "%"
+
+  combined_sensor:
+    name: "Combined Sensor"
+    formula: "sensor.power_sensor + sensor.efficiency_sensor"
+    metadata:
+      unit_of_measurement: "units"

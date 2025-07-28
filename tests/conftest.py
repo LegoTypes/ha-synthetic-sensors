@@ -216,118 +216,120 @@ class HomeAssistantMockFinder:
     """Custom import finder that mocks all homeassistant modules."""
 
     def find_spec(self, fullname, path, target=None):
-        if fullname.startswith("homeassistant"):
-            # Special handling for sensor module to provide real enums but mock
-            # SensorEntity
-            if fullname == "homeassistant.components.sensor":
-                # Create a mock module with real enums but mock SensorEntity
-                mock_module = MagicMock()
+        if not fullname.startswith("homeassistant"):
+            return None
 
-                # Prevent pytest plugin interference
-                def mock_getattr_sensor(name):
-                    if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
-                        raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
-                    return MagicMock()
+        # Handle special module cases that should not be mocked
+        if self._should_skip_mocking(fullname):
+            return None
 
-                mock_module.__getattr__ = mock_getattr_sensor
-                mock_module.SensorDeviceClass = REAL_SENSOR_DEVICE_CLASS
-                mock_module.SensorStateClass = REAL_SENSOR_STATE_CLASS
-                mock_module.SensorEntity = MockSensorEntity
+        # Handle special sensor module
+        if fullname == "homeassistant.components.sensor":
+            return self._create_sensor_module_spec()
 
-                # Install the mock in sys.modules
-                sys.modules[fullname] = mock_module
+        # Handle special binary_sensor module
+        if fullname == "homeassistant.components.binary_sensor":
+            return self._create_binary_sensor_module_spec()
 
-                # Return a mock spec
-                spec = MagicMock()
-                spec.loader = MagicMock()
-                spec.loader.create_module.return_value = mock_module
-                spec.loader.exec_module.return_value = None
-                return spec
+        # Create standard mock for all other HA modules
+        return self._create_standard_mock_spec(fullname)
 
-            # Special handling for binary_sensor module to provide real enums
-            if fullname == "homeassistant.components.binary_sensor":
-                # Create a mock module with real enums
-                mock_module = MagicMock()
+    def _should_skip_mocking(self, fullname: str) -> bool:
+        """Check if a module should not be mocked."""
+        skip_modules = [
+            "homeassistant.const",
+            "homeassistant.components.binary_sensor.device_trigger",
+            "homeassistant.components.sensor.device_trigger",
+        ]
 
-                # Prevent pytest plugin interference
-                def mock_getattr_binary(name):
-                    if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
-                        raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
-                    return MagicMock()
+        if fullname in skip_modules:
+            return True
 
-                mock_module.__getattr__ = mock_getattr_binary
-                mock_module.BinarySensorDeviceClass = REAL_BINARY_SENSOR_DEVICE_CLASS
+        # Don't mock other modules that contain constants needed by lazy loader
+        if fullname.endswith(".device_trigger"):
+            return True
 
-                # Install the mock in sys.modules
-                sys.modules[fullname] = mock_module
+        return False
 
-                # Return a mock spec
-                spec = MagicMock()
-                spec.loader = MagicMock()
-                spec.loader.create_module.return_value = mock_module
-                spec.loader.exec_module.return_value = None
-                return spec
+    def _create_sensor_module_spec(self):
+        """Create mock spec for sensor module with real enums."""
+        mock_module = MagicMock()
 
-            # Don't mock homeassistant.const - let it be imported normally
-            if fullname == "homeassistant.const":
-                return None
+        def mock_getattr_sensor(name):
+            if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
+                raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
+            return MagicMock()
 
-            # Don't mock device_trigger modules - let lazy loader access real constants
-            if fullname == "homeassistant.components.binary_sensor.device_trigger":
-                return None
-            if fullname == "homeassistant.components.sensor.device_trigger":
-                return None
+        mock_module.__getattr__ = mock_getattr_sensor
+        mock_module.SensorDeviceClass = REAL_SENSOR_DEVICE_CLASS
+        mock_module.SensorStateClass = REAL_SENSOR_STATE_CLASS
+        mock_module.SensorEntity = MockSensorEntity
 
-            # Don't mock other modules that contain constants needed by lazy loader
-            if fullname.endswith(".device_trigger"):
-                return None
+        sys.modules["homeassistant.components.sensor"] = mock_module
+        return self._create_mock_spec(mock_module)
 
-            # Create a comprehensive mock for any HA module
-            mock_module = MagicMock()
+    def _create_binary_sensor_module_spec(self):
+        """Create mock spec for binary_sensor module with real enums."""
+        mock_module = MagicMock()
 
-            # Prevent pytest plugin interference by configuring mock to raise AttributeError for pytest-related attributes
-            def mock_getattr(name):
-                if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
-                    raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
-                return MagicMock()
+        def mock_getattr_binary(name):
+            if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
+                raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
+            return MagicMock()
 
-            mock_module.__getattr__ = mock_getattr
+        mock_module.__getattr__ = mock_getattr_binary
+        mock_module.BinarySensorDeviceClass = REAL_BINARY_SENSOR_DEVICE_CLASS
 
-            # Add specific mocks for known classes/functions
-            if fullname == "homeassistant.core":
-                mock_module.HomeAssistant = MockHomeAssistant
-                mock_module.State = MockState
+        sys.modules["homeassistant.components.binary_sensor"] = mock_module
+        return self._create_mock_spec(mock_module)
 
-                # Mock the callback decorator to be a passthrough
-                def callback_decorator(func):
-                    return func
+    def _create_standard_mock_spec(self, fullname: str):
+        """Create a standard mock spec for HA modules."""
+        mock_module = MagicMock()
+        mock_module.__getattr__ = self._create_safe_getattr(mock_module)
 
-                mock_module.callback = callback_decorator
-            elif fullname == "homeassistant.exceptions":
-                mock_module.ConfigEntryError = MockConfigEntryError
-            elif fullname == "homeassistant.config_entries":
-                mock_module.ConfigEntry = MagicMock
-            elif fullname == "homeassistant.helpers.event":
-                mock_module.async_track_state_change_event = MagicMock
-            elif fullname == "homeassistant.helpers.restore_state":
-                mock_module.RestoreEntity = MockRestoreEntity
-            elif fullname == "homeassistant.util.dt":
-                # Mock datetime utilities
-                from datetime import datetime
+        # Add specific mocks based on module name
+        self._configure_module_specifics(mock_module, fullname)
 
-                mock_module.utcnow = MagicMock(return_value=datetime.now())
+        sys.modules[fullname] = mock_module
+        return self._create_mock_spec(mock_module)
 
-            # Install the mock in sys.modules
-            sys.modules[fullname] = mock_module
+    def _create_safe_getattr(self, mock_module):
+        """Create a safe __getattr__ method that prevents pytest interference."""
 
-            # Return a mock spec
-            spec = MagicMock()
-            spec.loader = MagicMock()
-            spec.loader.create_module.return_value = mock_module
-            spec.loader.exec_module.return_value = None
-            return spec
+        def mock_getattr(name):
+            if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
+                raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
+            return MagicMock()
 
-        return None
+        return mock_getattr
+
+    def _configure_module_specifics(self, mock_module, fullname: str):
+        """Configure module-specific mocks based on the module name."""
+        if fullname == "homeassistant.core":
+            mock_module.HomeAssistant = MockHomeAssistant
+            mock_module.State = MockState
+            mock_module.callback = lambda func: func  # Passthrough decorator
+        elif fullname == "homeassistant.exceptions":
+            mock_module.ConfigEntryError = MockConfigEntryError
+        elif fullname == "homeassistant.config_entries":
+            mock_module.ConfigEntry = MagicMock
+        elif fullname == "homeassistant.helpers.event":
+            mock_module.async_track_state_change_event = MagicMock
+        elif fullname == "homeassistant.helpers.restore_state":
+            mock_module.RestoreEntity = MockRestoreEntity
+        elif fullname == "homeassistant.util.dt":
+            from datetime import datetime
+
+            mock_module.utcnow = MagicMock(return_value=datetime.now())
+
+    def _create_mock_spec(self, mock_module):
+        """Create a mock ModuleSpec for the given module."""
+        spec = MagicMock()
+        spec.loader = MagicMock()
+        spec.loader.create_module.return_value = mock_module
+        spec.loader.exec_module.return_value = None
+        return spec
 
 
 # Install the custom finder
@@ -454,17 +456,9 @@ def mock_state():
     return _create_state
 
 
-@pytest.fixture
-def mock_entity_registry():
-    """Create a dynamic mock entity registry that behaves like the real HA registry.
-
-    This mock automatically registers entities when they have unique_ids and go through
-    the async_added_to_hass() lifecycle, similar to how the real HA registry works.
-    """
-    # Ensure clean state for each test
-    mock_entities = {}
-    # Add all attributes needed for tests
-    entity_data = {
+def _create_test_entity_data() -> dict[str, dict[str, str]]:
+    """Create comprehensive test entity data for mock registry."""
+    return {
         # Basic entities from original fixture
         "sensor.circuit_a_power": {"domain": "sensor", "device_class": "power"},
         "sensor.circuit_b_power": {"domain": "sensor", "device_class": "power"},
@@ -610,6 +604,20 @@ def mock_entity_registry():
         # Cross-sensor reference test entities
         "sensor.backing_entity": {"domain": "sensor", "device_class": "power"},
     }
+
+
+@pytest.fixture
+def mock_entity_registry():
+    """Create a dynamic mock entity registry that behaves like the real HA registry.
+
+    This mock automatically registers entities when they have unique_ids and go through
+    the async_added_to_hass() lifecycle, similar to how the real HA registry works.
+    """
+    # Ensure clean state for each test
+    mock_entities = {}
+
+    # Get entity data from helper function
+    entity_data = _create_test_entity_data()
 
     for entity_id, attrs in entity_data.items():
         mock_entity = Mock()

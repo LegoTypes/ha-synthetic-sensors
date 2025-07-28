@@ -888,8 +888,76 @@ class TestAsyncMethods:
         assert yaml_dict["version"] == "1.0"
         assert "sensors" in yaml_dict
         # The exact structure depends on implementation details
-        assert isinstance(yaml_dict["sensors"], list)
+        assert isinstance(yaml_dict["sensors"], dict)
         assert len(yaml_dict["sensors"]) == 1
+
+    def test_config_to_yaml_no_global_settings(self, config_manager):
+        """Test conversion of config with no global settings."""
+        formula = FormulaConfig(id="test", formula="1 + 1")
+        sensor = SensorConfig(unique_id="test_sensor", formulas=[formula])
+        config = Config(version="1.0", sensors=[sensor], global_settings={})
+
+        yaml_dict = config_manager._config_to_yaml(config)
+        assert yaml_dict["version"] == "1.0"
+        assert "sensors" in yaml_dict
+        # Global settings should not be present if empty
+        assert "global_settings" not in yaml_dict
+
+    def test_config_to_yaml_multiple_formulas(self, config_manager):
+        """Test conversion of sensor with multiple formulas."""
+        formula1 = FormulaConfig(id="main", formula="A + B")
+        formula2 = FormulaConfig(id="backup", formula="A * 2")
+        sensor = SensorConfig(unique_id="test_sensor", formulas=[formula1, formula2])
+        config = Config(version="1.0", sensors=[sensor])
+
+        yaml_dict = config_manager._config_to_yaml(config)
+        sensor_data = yaml_dict["sensors"]["test_sensor"]
+        assert "formulas" in sensor_data
+        assert isinstance(sensor_data["formulas"], list)
+        assert len(sensor_data["formulas"]) == 2
+
+    def test_config_to_yaml_formula_with_attributes(self, config_manager):
+        """Test conversion of formula with attributes."""
+        # Test both nested formula structures and primitive values
+        attributes = {
+            "efficiency": {"formula": "A / B * 100", "unit_of_measurement": "%"},  # Nested formula
+            "static_value": 42,  # Primitive value
+        }
+        formula = FormulaConfig(id="test", formula="A + B", attributes=attributes, metadata={"unit_of_measurement": "W"})
+        sensor = SensorConfig(unique_id="test_sensor", formulas=[formula])
+        config = Config(version="1.0", sensors=[sensor])
+
+        yaml_dict = config_manager._config_to_yaml(config)
+        sensor_data = yaml_dict["sensors"]["test_sensor"]
+        assert "attributes" in sensor_data
+        assert "efficiency" in sensor_data["attributes"]
+        assert "static_value" in sensor_data["attributes"]
+        assert sensor_data["attributes"]["static_value"] == 42
+        assert "metadata" in sensor_data
+
+    def test_config_to_yaml_sensor_no_name(self, config_manager):
+        """Test conversion of sensor with no name set."""
+        formula = FormulaConfig(id="test", formula="1 + 1")
+        sensor = SensorConfig(unique_id="test_sensor", formulas=[formula])  # No name set
+        config = Config(version="1.0", sensors=[sensor])
+
+        yaml_dict = config_manager._config_to_yaml(config)
+        sensor_data = yaml_dict["sensors"]["test_sensor"]
+        assert "name" not in sensor_data
+
+    def test_config_to_yaml_global_settings_full(self, config_manager):
+        """Test conversion with full global settings."""
+        formula = FormulaConfig(id="test", formula="1 + 1")
+        sensor = SensorConfig(unique_id="test_sensor", formulas=[formula])
+        global_settings = {"variables": {"global_var": "sensor.global"}, "device_identifier": "test_device"}
+        config = Config(version="1.0", sensors=[sensor], global_settings=global_settings)
+
+        yaml_dict = config_manager._config_to_yaml(config)
+        assert "global_settings" in yaml_dict
+        assert "variables" in yaml_dict["global_settings"]
+        assert "device_identifier" in yaml_dict["global_settings"]
+        assert yaml_dict["global_settings"]["variables"]["global_var"] == "sensor.global"
+        assert yaml_dict["global_settings"]["device_identifier"] == "test_device"
 
     def test_get_sensor_configs_enabled_only(self, config_manager):
         """Test getting enabled sensor configs only."""
@@ -983,7 +1051,7 @@ class TestYamlWhitespaceTrimming:
         """Create a config manager with common fixtures."""
         return ConfigManager(mock_hass)
 
-    def test_trim_yaml_keys_basic(self):
+    def test_trim_yaml_keys_basic(self, mock_hass, mock_entity_registry, mock_states):
         """Test basic whitespace trimming in dictionary keys."""
         test_data = {"key1 ": "value1", " key2": "value2", " key3 ": "value3", "normal_key": "value4"}
 
@@ -993,7 +1061,7 @@ class TestYamlWhitespaceTrimming:
 
         assert result == expected
 
-    def test_trim_yaml_keys_nested(self):
+    def test_trim_yaml_keys_nested(self, mock_hass, mock_entity_registry, mock_states):
         """Test whitespace trimming in nested dictionaries."""
         test_data = {
             "sensors ": {" sensor1 ": {"name ": "Test Sensor", " formula": "1 + 1"}, "sensor2": {"name": "Normal Sensor"}},
@@ -1009,7 +1077,7 @@ class TestYamlWhitespaceTrimming:
 
         assert result == expected
 
-    def test_trim_yaml_keys_with_lists(self):
+    def test_trim_yaml_keys_with_lists(self, mock_hass, mock_entity_registry, mock_states):
         """Test whitespace trimming with lists containing dictionaries."""
         test_data = {"items ": [{" key1 ": "value1"}, {" key2": "value2"}, "simple_string"]}
 
@@ -1019,7 +1087,7 @@ class TestYamlWhitespaceTrimming:
 
         assert result == expected
 
-    def test_trim_yaml_keys_non_string_keys(self):
+    def test_trim_yaml_keys_non_string_keys(self, mock_hass, mock_entity_registry, mock_states):
         """Test that non-string keys are preserved."""
         test_data = {123: "numeric_key", "string_key ": "string_value", None: "none_key"}
 
@@ -1092,7 +1160,7 @@ global_settings:
         assert len(config.sensors) == 3
         assert config.global_settings["device_identifier"] == "test_device"
 
-    def test_trim_yaml_keys_edge_cases(self):
+    def test_trim_yaml_keys_edge_cases(self, mock_hass, mock_entity_registry, mock_states):
         """Test edge cases for whitespace trimming."""
         # Test with None
         result = trim_yaml_keys(None)

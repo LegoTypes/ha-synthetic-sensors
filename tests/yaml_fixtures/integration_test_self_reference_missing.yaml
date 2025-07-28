@@ -1,0 +1,17 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  available_sensor:
+    name: "Available Sensor"
+    formula: "state * 2"  # Self-reference to available backing entity
+    metadata:
+      unit_of_measurement: "W"
+
+  missing_sensor:
+    name: "Missing Sensor"
+    formula: "state * 3"  # Self-reference to missing backing entity
+    metadata:
+      unit_of_measurement: "W"

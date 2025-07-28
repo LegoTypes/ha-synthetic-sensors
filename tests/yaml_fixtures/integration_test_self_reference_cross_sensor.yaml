@@ -1,0 +1,29 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  base_sensor:
+    name: "Base Sensor"
+    formula: "state + 100"  # Self-reference to backing entity
+    metadata:
+      unit_of_measurement: "W"
+
+  multiplier_sensor:
+    name: "Multiplier Sensor"
+    formula: "state * 10"  # Self-reference to backing entity
+    metadata:
+      unit_of_measurement: "x"
+
+  combined_sensor:
+    name: "Combined Sensor"
+    formula: "sensor.base_sensor * sensor.multiplier_sensor"  # Cross-sensor references
+    metadata:
+      unit_of_measurement: "units"
+
+  recursive_sensor:
+    name: "Recursive Sensor"
+    formula: "sensor.combined_sensor + state"  # Mix of cross-sensor and self-reference
+    metadata:
+      unit_of_measurement: "units"

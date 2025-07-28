@@ -3,6 +3,9 @@
 # Test cases covered:
 # - Duplicate unique_id detection
 # - YAML parsing validation errors
+#
+# NOTE: The duplicate sensor key below is INTENTIONAL for testing validation.
+# CodeFactor: This duplicate key is expected for test purposes.
 
 sensors:
   duplicate_sensor:
@@ -11,7 +14,7 @@ sensors:
     metadata:
       unit_of_measurement: W
 
-  duplicate_sensor:  # Same unique_id, should be rejected
+  duplicate_sensor:  # Same sensor key, should be rejected
     entity_id: sensor.circuit_a_power
     formula: state * 3
     metadata:
