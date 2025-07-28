@@ -35,7 +35,6 @@ class TestCrossSensorCollisionIntegration:
                 while entity_id in self._entities:
                     counter += 1
                     entity_id = f"{base_entity_id}_{counter}"
-                    print(f"🚨 Registry entity_id collision: {base_entity_id} → {entity_id} (collision avoided)")
 
                 # Create mock entity entry
                 mock_entry = Mock()
@@ -236,7 +235,6 @@ class TestCrossSensorCollisionIntegration:
             unique_id="existing_collision_sensor",
             suggested_object_id="circuit_a_power",  # This creates sensor.circuit_a_power
         )
-        print("✅ Pre-registered collision entity: sensor.circuit_a_power")
 
         # Update mock_hass to use the clean entity registry
         mock_hass.entity_registry = clean_entity_registry
@@ -258,19 +256,11 @@ class TestCrossSensorCollisionIntegration:
             with open(yaml_fixture_path, "r") as f:
                 yaml_content = f.read()
 
-            print("📋 Testing complex collision scenarios with YAML:")
-            print(yaml_content)
-            print("=" * 50)
-
             # Create sensor set and import YAML
             sensor_set_id = "complex_collision_test"
             await storage_manager.async_create_sensor_set(sensor_set_id)
 
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-
-            print(f"📊 Import result: {result}")
-            print(f"📝 Sensors imported: {result['sensors_imported']}")
-            print(f"📝 Sensor unique IDs: {result['sensor_unique_ids']}")
 
             # Verify import succeeded
             assert result["sensors_imported"] == 4  # Still 4 sensors, now enhanced with variables
@@ -278,10 +268,6 @@ class TestCrossSensorCollisionIntegration:
 
             # Export and analyze the results
             exported_yaml = await storage_manager.async_export_yaml(sensor_set_id)
-            print("📄 Exported YAML after collision handling:")
-            print("=" * 60)
-            print(exported_yaml)
-            print("=" * 60)
 
             # Parse and analyze the results
             exported_data = yaml.safe_load(exported_yaml)
@@ -290,20 +276,15 @@ class TestCrossSensorCollisionIntegration:
 
             # Analyze collision sensor (should have self-references replaced with 'state')
             collision_sensor = sensors["collision_test_duplicate_sensor"]
-            print(f"🔍 Collision sensor analysis:")
-            print(f"   entity_id: {collision_sensor['entity_id']}")
-            print(f"   formula: {collision_sensor['formula']}")
 
             # Check self-references in main formula
             assert collision_sensor["formula"] == "state * 3", f"Expected 'state * 3', got '{collision_sensor['formula']}'"
-            print("   ✅ Main formula self-reference correctly replaced with 'state'")
 
             # Check self-references in attributes
             daily_energy = collision_sensor["attributes"]["daily_energy"]["formula"]
             efficiency = collision_sensor["attributes"]["efficiency"]["formula"]
             assert daily_energy == "state * 24", f"Expected 'state * 24', got '{daily_energy}'"
             assert efficiency == "state / 1000", f"Expected 'state / 1000', got '{efficiency}'"
-            print("   ✅ Attribute self-references correctly replaced with 'state'")
 
             # Check self-references with attribute access patterns
             self_attr_entity_id = collision_sensor["attributes"]["self_attr_entity_id"]["formula"]
@@ -319,52 +300,38 @@ class TestCrossSensorCollisionIntegration:
             assert nested_self_attr == "state.attributes.power_factor * 0.9", (
                 f"Expected 'state.attributes.power_factor * 0.9', got '{nested_self_attr}'"
             )
-            print("   ✅ Attribute access self-references correctly replaced: entity.attr → state.attr")
-            print("   ✅ Nested attribute access self-references correctly replaced: entity.nested.attr → state.nested.attr")
 
             # Analyze cross-reference sensors
             collision_entity_id = collision_sensor["entity_id"]  # The collision-handled entity_id
 
             # Entity ID reference sensor
             reference_sensor = sensors["collision_test_reference_sensor"]
-            print(f"🔍 Entity ID reference sensor:")
-            print(f"   formula: {reference_sensor['formula']}")
 
             # The entity ID reference should be updated to collision-handled entity_id
             assert collision_entity_id in reference_sensor["formula"], (
                 f"Expected {collision_entity_id} in formula: {reference_sensor['formula']}"
             )
-            print(f"   ✅ Entity ID reference updated to collision-handled entity: {collision_entity_id}")
 
             # Sensor key reference sensor
             sensor_key_ref_sensor = sensors["collision_test_sensor_key_reference"]
-            print(f"🔍 Sensor key reference sensor:")
-            print(f"   formula: {sensor_key_ref_sensor['formula']}")
 
             # The sensor key reference should be resolved to collision-handled entity_id
             assert collision_entity_id in sensor_key_ref_sensor["formula"], (
                 f"Expected {collision_entity_id} in formula: {sensor_key_ref_sensor['formula']}"
             )
-            print(f"   ✅ Sensor key reference resolved to collision-handled entity: {collision_entity_id}")
 
             # Test mixed reference types in attributes
             power_ratio = reference_sensor["attributes"]["power_ratio"]["formula"]
-            print(f"🔍 Mixed reference attribute: {power_ratio}")
 
             # Both sensor key and entity ID references should resolve to same collision-handled entity
             # This should result in something like: sensor.circuit_a_power_2 / sensor.circuit_a_power_2
             # which could be simplified, but at minimum both references should be updated
             reference_count = power_ratio.count(collision_entity_id)
             assert reference_count == 2, f"Expected 2 references to {collision_entity_id} in mixed formula: {power_ratio}"
-            print(f"   ✅ Mixed references both resolved to collision-handled entity")
 
             # Test cross-reference attribute access patterns
             cross_attr_entity_id = reference_sensor["attributes"]["cross_attr_entity_id"]["formula"]
             cross_attr_mixed = reference_sensor["attributes"]["cross_attr_mixed"]["formula"]
-
-            print(f"🔍 Cross-reference attribute access patterns:")
-            print(f"   cross_attr_entity_id: {cross_attr_entity_id}")
-            print(f"   cross_attr_mixed: {cross_attr_mixed}")
 
             # Entity ID with attribute should resolve collision and preserve attribute access
             assert collision_entity_id + ".state" in cross_attr_entity_id, (
@@ -381,12 +348,10 @@ class TestCrossSensorCollisionIntegration:
             assert collision_entity_id + ".last_updated" in cross_attr_mixed, (
                 f"Expected '{collision_entity_id}.last_updated' in cross_attr_mixed: {cross_attr_mixed}"
             )
-            print("   ✅ Cross-reference attribute access correctly resolved with collision handling")
 
             # Test complex attribute patterns in other sensors
             another_ref_sensor = sensors["collision_test_another_reference"]
             complex_cross_attr = another_ref_sensor["attributes"]["complex_cross_attr"]["formula"]
-            print(f"🔍 Complex cross-reference attribute: {complex_cross_attr}")
 
             # Should have collision entity with attribute access
             assert collision_entity_id + ".attributes.power_factor" in complex_cross_attr, (
@@ -395,15 +360,10 @@ class TestCrossSensorCollisionIntegration:
             assert collision_entity_id + ".state" in complex_cross_attr, (
                 f"Expected '{collision_entity_id}.state' in complex formula: {complex_cross_attr}"
             )
-            print("   ✅ Complex attribute access patterns correctly resolved")
 
             # Test nested sensor key attribute patterns
             nested_sensor_key_attr = sensor_key_ref_sensor["attributes"]["nested_sensor_key_attr"]["formula"]
             chained_attr_access = sensor_key_ref_sensor["attributes"]["chained_attr_access"]["formula"]
-
-            print(f"🔍 Nested sensor key attribute patterns:")
-            print(f"   nested_sensor_key_attr: {nested_sensor_key_attr}")
-            print(f"   chained_attr_access: {chained_attr_access}")
 
             # Sensor key with nested attributes should resolve to collision entity
             assert collision_entity_id + ".attributes.efficiency.value" in nested_sensor_key_attr, (
@@ -419,10 +379,8 @@ class TestCrossSensorCollisionIntegration:
             assert last_updated_count == 1, (
                 f"Expected 1 occurrence of '.last_updated' in chained formula: {chained_attr_access}"
             )
-            print("   ✅ Nested and chained attribute access patterns correctly resolved")
 
             # Test global variable collision handling
-            print("🔍 Global variable collision handling:")
             global_variables = global_settings.get("variables", {})
             global_collision_ref_entity_id = global_variables.get("global_collision_ref_entity_id")
             global_collision_ref_sensor_key = global_variables.get("global_collision_ref_sensor_key")
@@ -430,26 +388,18 @@ class TestCrossSensorCollisionIntegration:
             # The global variable should be updated to point to the collision-handled entity
             collision_entity_id = collision_sensor["entity_id"]  # This should be sensor.circuit_a_power_2
 
-            print(f"   Global variable (entity_id): {global_collision_ref_entity_id}")
-            print(f"   Global variable (sensor_key): {global_collision_ref_sensor_key}")
-            print(f"   Collision entity_id: {collision_entity_id}")
-
             # Test global variable referencing collision entity by entity_id
             assert global_collision_ref_entity_id == collision_entity_id, (
                 f"Global variable should be updated from 'sensor.circuit_a_power' to '{collision_entity_id}'"
             )
-            print("   ✅ Global variable (entity_id) correctly updated to collision-handled entity")
 
             # Test global variable referencing collision sensor by sensor key
             assert global_collision_ref_sensor_key == collision_entity_id, (
                 f"Global variable should be updated from 'collision_test_duplicate_sensor' to '{collision_entity_id}'"
             )
-            print("   ✅ Global variable (sensor_key) correctly updated to collision-handled entity")
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)
-            print("🧹 Cleaned up test sensor set")
 
             # No need for manual registry cleanup with clean_entity_registry fixture
             # Each test gets a fresh registry automatically
-            print(f"🧹 Clean registry automatically disposed of collision entities")

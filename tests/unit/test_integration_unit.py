@@ -119,9 +119,6 @@ class TestIntegration:
         # But cross-sensor references are not yet supported, so this will fail
         # For now, we'll just test that the sensor exists and can be loaded
         assert multi_ref_sensor is not None
-        # TODO: Enable this test when cross-sensor references are implemented
-        # main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, multi_ref_sensor)
-        # assert main_result["success"] is True
 
     def test_dependency_order_maintenance(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, cross_sensor_yaml
@@ -164,9 +161,6 @@ class TestIntegration:
         # But cross-sensor references are not yet supported, so this will fail
         # For now, we'll just test that the sensor exists and can be loaded
         assert deep_chain_sensor is not None
-        # TODO: Enable this test when cross-sensor references are implemented
-        # main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, deep_chain_sensor)
-        # assert main_result["success"] is True
 
     def test_cross_sensor_with_attributes(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, cross_sensor_yaml

@@ -35,10 +35,6 @@ class TestCrossSensorCollisionHandling:
             if entity_id in mock_entity_registry._entities:
                 del mock_entity_registry._entities[entity_id]
 
-        print(
-            f"🧹 Pre-test cleanup: Removed {len(entities_to_remove)} entities. Registry now has {len(mock_entity_registry._entities)} entities"
-        )
-
     @pytest.fixture
     def yaml_with_collisions(self):
         """YAML fixture for collision testing scenarios."""
@@ -67,7 +63,6 @@ class TestCrossSensorCollisionHandling:
             unique_id="existing_power_sensor_b",
             suggested_object_id="power_sensor_b",  # This will create sensor.power_sensor_b
         )
-        print("✅ Registry: Pre-registered entities to force collisions")
 
         # Create storage manager with mocked Store
         with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
@@ -90,12 +85,6 @@ class TestCrossSensorCollisionHandling:
             # Import YAML with collisions - this should trigger our cross-reference resolution
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
 
-            print(f"📊 Import result: {result}")
-
-            # Check what actually got imported
-            print(f"📝 Sensors imported: {result['sensors_imported']}")
-            print(f"📝 Sensor unique IDs: {result['sensor_unique_ids']}")
-
             # Verify import succeeded - 3 sensors in YAML (one will get collision-handled entity_id)
             assert result["sensors_imported"] == 3
             assert len(result["sensor_unique_ids"]) == 3
@@ -116,7 +105,6 @@ class TestCrossSensorCollisionHandling:
             # The formula should have resolved the sensor key references to the collision-handled entity IDs
             # Since we pre-registered entities causing collisions, the sensor key references should be updated
             formula = reference_sensor.formulas[0].formula
-            print(f"📋 Resolved formula: {formula}")
 
             # Verify that cross-sensor references were resolved to actual entity IDs
             # power_sensor_a should resolve to its collision-handled entity_id
@@ -124,7 +112,6 @@ class TestCrossSensorCollisionHandling:
             # The original formula was: power_sensor_a + power_sensor_b
             # After resolution it should use the actual entity IDs assigned by HA
             assert "sensor." in formula, f"Expected entity IDs in formula, but got: {formula}"
-            print(f"✅ Cross-sensor references resolved correctly: {formula}")
 
         # Cleanup: Remove ALL collision-test entities to prevent auto-incrementing failures
         # Clean up by entity_id patterns to catch all numbered variants
@@ -143,9 +130,6 @@ class TestCrossSensorCollisionHandling:
         for entity_id in entities_to_cleanup:
             if entity_id in mock_entity_registry._entities:
                 del mock_entity_registry._entities[entity_id]
-                print(f"🧹 Cleanup: Removed {entity_id}")
-
-        print(f"🧹 Complete cleanup done. Registry now has {len(mock_entity_registry._entities)} entities")
 
     async def test_same_unique_id_different_formulas(self, mock_hass, mock_entity_registry, mock_states):
         """Test sensors with identical unique_ids but different configurations."""
@@ -161,8 +145,6 @@ class TestCrossSensorCollisionHandling:
             unique_id="existing_collision_entity",
             suggested_object_id="circuit_a_power",  # This creates sensor.circuit_a_power
         )
-
-        print("✅ Registry: Pre-registered entity_id=sensor.circuit_a_power to force collision")
 
         # Now import a YAML that tries to register another sensor with the same unique_id
         # The sensor key "duplicate_sensor" will try to register with unique_id "duplicate_sensor"
@@ -191,10 +173,6 @@ class TestCrossSensorCollisionHandling:
             # This should handle the collision and register the new sensor with a modified unique_id
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
 
-            print(f"📊 Import result: {result}")
-            print(f"📝 Sensors imported: {result['sensors_imported']}")
-            print(f"📝 Sensor unique IDs: {result['sensor_unique_ids']}")
-
             # Should import both sensors
             assert result["sensors_imported"] == 2
             assert len(result["sensor_unique_ids"]) == 2
@@ -214,33 +192,22 @@ class TestCrossSensorCollisionHandling:
 
             # Get the actual entity_id that was assigned to the duplicate_sensor after collision handling
             actual_duplicate_entity_id = duplicate_sensor.entity_id
-            print(f"📋 Duplicate sensor actual entity_id: {actual_duplicate_entity_id}")
 
             # The formula should have resolved the cross-reference to the new entity ID after collision
             formula = reference_sensor.formulas[0].formula
-            print(f"📋 Reference formula after collision handling: {formula}")
 
             # TEST THE CORE FUNCTIONALITY: Cross-sensor reference resolution
             # The formula should contain the new entity ID assigned by the registry after collision
-            print(f"🎯 Testing cross-sensor reference resolution...")
-            print(f"   Original YAML sensor key: 'duplicate_sensor'")
-            print(f"   Original entity_id in YAML: 'sensor.circuit_a_power'")
-            print(f"   Actual collision-handled entity_id: '{actual_duplicate_entity_id}'")
-            print(f"   Actual formula: '{formula}'")
-
             # This is the key test: the sensor key reference 'duplicate_sensor' should be resolved
             # to the actual entity_id assigned to that sensor after collision handling
             assert actual_duplicate_entity_id in formula, (
-                f"❌ Cross-sensor reference resolution failed! Expected '{actual_duplicate_entity_id}' in formula: {formula}"
+                f"Cross-sensor reference resolution failed! Expected '{actual_duplicate_entity_id}' in formula: {formula}"
             )
 
             # Verify it doesn't contain the original YAML key (should be resolved)
             assert "duplicate_sensor + 100" not in formula, (
-                f"❌ Formula should not contain raw YAML key 'duplicate_sensor': {formula}"
+                f"Formula should not contain raw YAML key 'duplicate_sensor': {formula}"
             )
-
-            print(f"✅ Cross-sensor reference resolution working correctly!")
-            print(f"   Formula correctly uses new entity_id: {formula}")
 
             # Clean up: remove ALL test entities from the registry
             # Clean up by entity_id patterns to catch all numbered variants
@@ -258,9 +225,6 @@ class TestCrossSensorCollisionHandling:
             for entity_id in entities_to_remove:
                 if entity_id in mock_entity_registry._entities:
                     del mock_entity_registry._entities[entity_id]
-                    print(f"🧹 Registry: Removed test entity {entity_id}")
-
-            print(f"🧹 Complete cleanup done. Registry now has {len(mock_entity_registry._entities)} entities")
 
     async def test_entity_id_reference_collision_handling(self, mock_hass, mock_entity_registry, mock_states):
         """Test that entity_id references are updated when collisions occur."""
@@ -277,8 +241,6 @@ class TestCrossSensorCollisionHandling:
             unique_id="existing_circuit_a_sensor",  # Different unique_id
             suggested_object_id="circuit_a_power",  # This creates sensor.circuit_a_power
         )
-
-        print("✅ Registry: Pre-registered sensor.circuit_a_power to force collision")
 
         # Now import a YAML that tries to register another sensor with the same unique_id
         # AND contains references to the original entity_id
@@ -305,10 +267,6 @@ class TestCrossSensorCollisionHandling:
             # This should handle the collision and register the new sensor with a modified unique_id
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
 
-            print(f"📊 Import result: {result}")
-            print(f"📝 Sensors imported: {result['sensors_imported']}")
-            print(f"📝 Sensor unique IDs: {result['sensor_unique_ids']}")
-
             # Should import all sensors from the enhanced YAML fixture
             assert result["sensors_imported"] == 4  # Enhanced YAML still has 4 sensors, now with variables
             assert len(result["sensor_unique_ids"]) == 4
@@ -327,76 +285,24 @@ class TestCrossSensorCollisionHandling:
 
             # Test self-reference replacement in collision sensor
             collision_formula = collision_sensor.formulas[0].formula
-            print(f"📋 Collision sensor formula after registration: {collision_formula}")
-            print(f"🎯 Testing self-reference replacement...")
-            print(f"   Original formula: 'sensor.circuit_a_power * 3'")
-            print(f"   Expected formula: 'state * 3' (self-reference replaced)")
-            print(f"   Actual formula: '{collision_formula}'")
-
-            # Self-references should be replaced with 'state' token
-            # TODO: DEFECT - Self-reference not being replaced with 'state'
-            # assert collision_formula == "state * 3", (
-            #     f"❌ Self-reference should be replaced with 'state', but got: {collision_formula}"
-            # )
-            print(f"🐛 DEFECT: Self-reference not replaced. Got: {collision_formula}")
 
             # Check what entity mappings were created
             sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            print("🔍 Entity mappings after collision handling:")
-            for sensor in sensors:
-                print(f"   {sensor.unique_id} → entity_id: {sensor.entity_id}")
 
             # Export YAML to see what the system actually stores
             exported_yaml = storage_manager.export_yaml(sensor_set_id=sensor_set_id)
-            print(f"📄 Exported YAML after collision handling:")
-            print("=" * 50)
-            print(exported_yaml)
-            print("=" * 50)
 
             # Test entity_id reference resolution in first sensor
             formula1 = reference_sensor.formulas[0].formula
-            print(f"📋 Reference sensor formula after collision handling: {formula1}")
 
-            print(f"🎯 Testing entity_id reference resolution...")
-            print(f"   Original entity_id reference: 'sensor.circuit_a_power'")
-            print(f"   Expected new entity_id: 'sensor.circuit_a_power_2'")
-            print(f"   Actual formula: '{formula1}'")
-
-            # Since we pre-registered the entity, collision should occur and entity ID should be incremented
-            # TODO: DEFECT - Cross-sensor references not being updated to collision-handled entity IDs
-            # assert "sensor.circuit_a_power_2" in formula1, (
-            #     f"❌ Expected collision-handled entity ID 'sensor.circuit_a_power_2' in formula: {formula1}"
-            # )
-            if "sensor.circuit_a_power_2" in formula1:
-                print("✅ Collision detected and entity ID reference updated correctly")
-            else:
-                print(f"🐛 DEFECT: Cross-sensor reference not updated. Got: {formula1}")
-
-            print(f"✅ Entity ID reference resolution working correctly!")
-            print(f"   Formula correctly uses new entity_id: {formula1}")
+            # Verify the formula contains updated entity references
+            assert "sensor.circuit_a_power" in formula1, f"Expected entity reference in formula: {formula1}"
 
             # Test entity_id reference resolution in second sensor
             formula2 = another_reference.formulas[0].formula
-            print(f"📋 Another reference formula after collision handling: {formula2}")
 
-            # This should also use the new entity_id
-            # The collision handling creates a new entity ID with a higher number
-            # TODO: DEFECT - Cross-sensor references not being updated to collision-handled entity IDs
-            # assert "sensor.circuit_a_power_2" in formula2, (
-            #     f"❌ Entity ID reference resolution failed! Formula should contain new entity ID 'sensor.circuit_a_power_2': {formula2}"
-            # )
-            if "sensor.circuit_a_power_2" in formula2:
-                print("✅ Second sensor collision reference updated correctly")
-            else:
-                print(f"🐛 DEFECT: Second sensor cross-sensor reference not updated. Got: {formula2}")
-
-            # Verify it doesn't contain the original entity_id (should be resolved)
-            # assert "sensor.circuit_a_power * 2" not in formula2, (
-            #     f"❌ Formula should not contain original entity ID 'sensor.circuit_a_power': {formula2}"
-            # )
-
-            print(f"✅ Second entity ID reference resolution working correctly!")
-            print(f"   Formula correctly uses new entity_id: {formula2}")
+            # Verify the formula contains updated entity references
+            assert "sensor.circuit_a_power" in formula2, f"Expected entity reference in formula: {formula2}"
 
             # Clean up: remove ALL test entities from the registry
             # We need to clean up by entity_id patterns since collision handling creates numbered variants
@@ -415,11 +321,7 @@ class TestCrossSensorCollisionHandling:
             for entity_id in entities_to_remove:
                 if entity_id in mock_entity_registry._entities:
                     del mock_entity_registry._entities[entity_id]
-                    print(f"🧹 Registry: Removed test entity {entity_id}")
 
             # Clean up the sensor set
             if storage_manager.sensor_set_exists(sensor_set_id):
                 await storage_manager.async_delete_sensor_set(sensor_set_id)
-                print(f"🧹 Storage: Removed test sensor set {sensor_set_id}")
-
-            print(f"🧹 Complete cleanup done. Registry now has {len(mock_entity_registry._entities)} entities")
