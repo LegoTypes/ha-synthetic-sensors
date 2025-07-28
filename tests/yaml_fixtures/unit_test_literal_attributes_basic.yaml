@@ -1,0 +1,16 @@
+# YAML fixture for tests/storage/test_literal_attributes.py
+# Used by: test_config_manager_parses_literal_attributes
+# Test cases covered:
+# - ConfigManager parsing of literal attributes
+# - Sensor with formula, variables, and various attribute types (number, string, boolean)
+version: "1.0"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "power * 2"
+    variables:
+      power: "sensor.test_power"
+    attributes:
+      voltage: 240
+      manufacturer: "TestCorp"
+      is_enabled: true

@@ -1,0 +1,68 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_numeric_comparisons"
+  variables:
+    base_power: "sensor.base_power_meter"
+    threshold_high: 500
+    threshold_low: 100
+    precision_value: 42.5
+
+sensors:
+  # Test numeric inequality comparisons in collection patterns
+  high_power_devices:
+    name: "High Power Devices"
+    formula: count("attribute:power_rating>=high_threshold")
+    variables:
+      high_threshold: 800  # Use different variable name to avoid conflict
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:flash"
+
+  # Test numeric less than comparison
+  low_power_devices:
+    name: "Low Power Devices"
+    formula: count("attribute:power_rating<threshold_low")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:lightbulb-outline"
+
+  # Test numeric greater than comparison with state
+  active_high_consumption:
+    name: "Active High Consumption"
+    formula: count("state:>threshold_high")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:trending-up"
+
+  # Test numeric less than or equal comparison
+  efficient_devices:
+    name: "Efficient Devices"
+    formula: count("attribute:efficiency_rating<=precision_value")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:leaf"
+
+  # Test numeric greater than or equal with floating point
+  precision_devices:
+    name: "Precision Devices"
+    formula: count("attribute:accuracy>=precision_value")
+    metadata:
+      unit_of_measurement: "devices"
+      icon: "mdi:crosshairs-gps"
+
+  # Test complex formula with numeric comparisons
+  power_analysis:
+    name: "Power Analysis"
+    formula: "sum('state:>=100') - count('attribute:standby_power>10')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  # Test numeric comparison with variables in main formula
+  power_efficiency:
+    name: "Power Efficiency"
+    formula: 'base_power > threshold_high ? "high" : "normal"'
+    metadata:
+      icon: "mdi:gauge"

@@ -1,0 +1,92 @@
+# Test Scenario ERR.2: Missing Referenced Entity
+# Purpose: Test formula references non-existent entity
+# Expected: MissingDependencyError is raised
+# Validation: Exception is raised immediately
+
+sensors:
+  # Test missing entity reference in main formula
+  missing_entity_main:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.nonexistent_entity * 2  # References non-existent entity
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Missing Entity Main"
+
+  # Test missing entity reference in variables
+  missing_entity_variable:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: external_power * 2  # Uses variable that references missing entity
+    variables:
+      external_power: sensor.nonexistent_entity  # Variable references missing entity
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Missing Entity Variable"
+
+  # Test missing entity reference in attributes
+  missing_entity_attribute:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Attribute references missing entity
+      external_power:
+        formula: sensor.nonexistent_entity * 0.25  # References missing entity
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "External Power"
+      # This should work fine
+      internal_power:
+        formula: state * 0.25  # References main sensor (should work)
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Internal Power"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Missing Entity Attribute"
+
+  # Test missing entity in complex calculation
+  missing_entity_complex:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.span_panel_instantaneous_power + sensor.nonexistent_entity  # Mixed valid/invalid
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Missing Entity Complex"
+
+  # Test missing entity in conditional expression
+  missing_entity_conditional:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.nonexistent_entity if sensor.span_panel_instantaneous_power > 500 else state  # Missing entity in condition
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Missing Entity Conditional"
+
+  # Test missing entity in mathematical expression
+  missing_entity_math:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: (sensor.span_panel_instantaneous_power ** 2) / sensor.nonexistent_entity  # Missing entity in math
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Missing Entity Math"
+
+  # Test multiple missing entities
+  multiple_missing_entities:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.nonexistent_entity1 + sensor.nonexistent_entity2  # Multiple missing entities
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Multiple Missing Entities"
+
+  # Test missing entity with valid backing entity
+  missing_entity_with_backing:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state + sensor.nonexistent_entity  # Valid backing entity + missing entity
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Missing Entity With Backing"

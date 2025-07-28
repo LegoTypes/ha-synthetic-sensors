@@ -1,0 +1,29 @@
+# YAML fixture for test_integration.py integration tests
+# Used by: test_tabs_literal_integration_real_yaml
+# Test cases covered:
+# - Integration with tabs literal attribute
+# - Complex sensor configuration with calculated attributes
+# - Real-world sensor scenario
+
+version: "1.0"
+sensors:
+  span_abc123_circuit_1_power:
+    name: "Kitchen Lights Power"
+    entity_id: "sensor.kitchen_lights_power"
+    formula: "source_value"
+    variables:
+      source_value: "sensor.span_abc123_circuit_1_power"
+    attributes:
+      tabs: "tabs [3]"
+      voltage: 120
+      amperage:
+        formula: "source_value / 120"
+        metadata:
+          unit_of_measurement: "A"
+          device_class: "current"
+          suggested_display_precision: 2
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      suggested_display_precision: 2

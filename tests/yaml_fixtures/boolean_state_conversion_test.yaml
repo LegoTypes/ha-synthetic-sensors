@@ -1,0 +1,89 @@
+version: '1.0'
+
+sensors:
+  # Single sensor boolean tests - testing if individual sensors are in true/false states
+  door_status:
+    name: Door Status
+    formula: door_sensor
+    variables:
+      door_sensor: binary_sensor.front_door
+    metadata:
+      unit_of_measurement: boolean
+      device_class: door
+      icon: mdi:door
+
+  motion_status:
+    name: Motion Status
+    formula: motion_sensor
+    variables:
+      motion_sensor: binary_sensor.living_room_motion
+    metadata:
+      unit_of_measurement: boolean
+      device_class: motion
+      icon: mdi:motion-sensor
+
+  lock_status:
+    name: Lock Status
+    formula: lock_sensor
+    variables:
+      lock_sensor: binary_sensor.front_door_lock
+    metadata:
+      unit_of_measurement: boolean
+      device_class: lock
+      icon: mdi:lock
+
+  presence_status:
+    name: Presence Status
+    formula: presence_sensor
+    variables:
+      presence_sensor: binary_sensor.home_presence
+    metadata:
+      unit_of_measurement: boolean
+      device_class: presence
+      icon: mdi:home
+
+  moisture_status:
+    name: Moisture Status
+    formula: moisture_sensor
+    variables:
+      moisture_sensor: binary_sensor.basement_moisture
+    metadata:
+      unit_of_measurement: "%"
+      device_class: moisture
+      icon: mdi:water
+
+  # Aggregation tests - counting sensors in specific states
+  open_doors_count:
+    name: Open Doors Count
+    formula: count("state:open")
+    metadata:
+      unit_of_measurement: doors
+      icon: mdi:door-open
+
+  motion_detected_count:
+    name: Motion Detected Count
+    formula: count("state:motion")
+    metadata:
+      unit_of_measurement: sensors
+      icon: mdi:motion-sensor
+
+  unlocked_locks_count:
+    name: Unlocked Locks Count
+    formula: count("state:unlocked")
+    metadata:
+      unit_of_measurement: locks
+      icon: mdi:lock-open
+
+  home_presence_count:
+    name: Home Presence Count
+    formula: count("state:home")
+    metadata:
+      unit_of_measurement: people
+      icon: mdi:home
+
+  wet_sensors_count:
+    name: Wet Sensors Count
+    formula: count("state:wet")
+    metadata:
+      unit_of_measurement: sensors
+      icon: mdi:water-alert

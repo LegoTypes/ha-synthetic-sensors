@@ -42,6 +42,15 @@ class FormulaSyntaxError(FormulaEvaluationError):
         super().__init__(f"Formula syntax error in '{formula}': {details}")
 
 
+class ConditionParsingError(FormulaEvaluationError):
+    """Condition parsing or evaluation error."""
+
+    def __init__(self, condition: str, details: str):
+        self.condition = condition
+        self.details = details
+        super().__init__(f"Condition parsing error in '{condition}': {details}")
+
+
 class DependencyError(FormulaEvaluationError):
     """Base class for dependency-related errors."""
 
@@ -56,6 +65,74 @@ class MissingDependencyError(DependencyError):
             super().__init__(f"Missing dependency '{dependency}' in formula '{formula_name}'")
         else:
             super().__init__(f"Missing dependency '{dependency}'")
+
+
+class BackingEntityResolutionError(MissingDependencyError):
+    """Backing entity for state token cannot be resolved."""
+
+    def __init__(self, entity_id: str, reason: str, formula_name: str | None = None):
+        self.entity_id = entity_id
+        self.reason = reason
+        if formula_name:
+            super().__init__(entity_id, formula_name)
+            self.message = f"Backing entity '{entity_id}' cannot be resolved in formula '{formula_name}': {reason}"
+        else:
+            super().__init__(entity_id)
+            self.message = f"Backing entity '{entity_id}' cannot be resolved: {reason}"
+
+        # Override the message from parent class
+        self.args = (self.message,)
+
+
+class SensorMappingError(MissingDependencyError):
+    """Sensor key mapping cannot be resolved."""
+
+    def __init__(self, sensor_key: str, reason: str, formula_name: str | None = None):
+        self.sensor_key = sensor_key
+        self.reason = reason
+        if formula_name:
+            super().__init__(sensor_key, formula_name)
+            self.message = f"Sensor key '{sensor_key}' cannot be resolved in formula '{formula_name}': {reason}"
+        else:
+            super().__init__(sensor_key)
+            self.message = f"Sensor key '{sensor_key}' cannot be resolved: {reason}"
+
+        # Override the message from parent class
+        self.args = (self.message,)
+
+
+class DependencyValidationError(MissingDependencyError):
+    """Cross-sensor dependency validation failed."""
+
+    def __init__(self, dependency: str, reason: str, formula_name: str | None = None):
+        self.dependency = dependency
+        self.reason = reason
+        if formula_name:
+            super().__init__(dependency, formula_name)
+            self.message = f"Cross-sensor dependency '{dependency}' validation failed in formula '{formula_name}': {reason}"
+        else:
+            super().__init__(dependency)
+            self.message = f"Cross-sensor dependency '{dependency}' validation failed: {reason}"
+
+        # Override the message from parent class
+        self.args = (self.message,)
+
+
+class CrossSensorResolutionError(MissingDependencyError):
+    """Cross-sensor reference resolution failed."""
+
+    def __init__(self, sensor_name: str, reason: str, formula_name: str | None = None):
+        self.sensor_name = sensor_name
+        self.reason = reason
+        if formula_name:
+            super().__init__(sensor_name, formula_name)
+            self.message = f"Cross-sensor reference '{sensor_name}' resolution failed in formula '{formula_name}': {reason}"
+        else:
+            super().__init__(sensor_name)
+            self.message = f"Cross-sensor reference '{sensor_name}' resolution failed: {reason}"
+
+        # Override the message from parent class
+        self.args = (self.message,)
 
 
 class UnavailableDependencyError(DependencyError):
@@ -199,6 +276,21 @@ class SchemaValidationError(SyntheticSensorsConfigError):
             super().__init__(f"Schema validation failed: {details}")
 
 
+# Comparison Handler Exceptions
+
+
+class ComparisonHandlerError(SyntheticSensorsError):
+    """Base exception for comparison handler failures."""
+
+
+class UnsupportedComparisonError(ComparisonHandlerError):
+    """Raised when no handler supports the requested comparison."""
+
+
+class InvalidOperatorError(ComparisonHandlerError):
+    """Raised when an operator is not valid for the given types."""
+
+
 # Utility functions for exception handling
 def is_retriable_error(error: Exception) -> bool:
     """Determine if an error is retriable (temporary condition).
@@ -225,7 +317,12 @@ def is_fatal_error(error: Exception) -> bool:
     # Permanent/fatal errors
     fatal_types = (
         FormulaSyntaxError,
+        ConditionParsingError,
         MissingDependencyError,
+        BackingEntityResolutionError,
+        SensorMappingError,
+        DependencyValidationError,
+        CrossSensorResolutionError,
         CircularDependencyError,
         InvalidCollectionPatternError,
         SensorConfigurationError,
@@ -248,8 +345,5 @@ def should_trigger_not_ready(error: Exception) -> bool:
     """Determine if error should trigger ConfigEntryNotReady."""
     return isinstance(
         error,
-        (
-            SyntheticSensorsNotReadyError,
-            IntegrationNotInitializedError,
-        ),
+        SyntheticSensorsNotReadyError | IntegrationNotInitializedError,
     )

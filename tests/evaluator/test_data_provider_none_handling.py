@@ -21,20 +21,17 @@ def test_data_provider_returns_none() -> None:
 
 
 def test_data_provider_returns_none_value() -> None:
-    """Test that when data provider returns None as value, it's treated as fatal error."""
+    """Test that when data provider returns None as value, it's handled gracefully."""
     mock_callback = MagicMock(return_value={"value": None, "exists": True})
     strategy = IntegrationResolutionStrategy(mock_callback)
 
-    # Should raise DataValidationError for None values (new strict behavior)
-    with pytest.raises(DataValidationError, match="None state value.*fatal error"):
-        strategy.resolve_variable("test_var", "sensor.test")
+    # Should handle None values gracefully by converting to "unknown"
+    result = strategy.resolve_variable("test_var", "sensor.test")
+    assert result[0] == "unknown"  # First element is the value
 
 
-def test_evaluator_handles_none_from_data_provider() -> None:
-    """Test that evaluator treats None values from data provider as fatal errors."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
+def test_evaluator_handles_none_from_data_provider(mock_hass, mock_entity_registry, mock_states) -> None:
+    """Test that evaluator handles None values from data provider gracefully."""
 
     # Mock data provider callback that returns None value (entity exists but unavailable)
     def mock_data_provider(entity_id: str) -> DataProviderResult:
@@ -51,16 +48,15 @@ def test_evaluator_handles_none_from_data_provider() -> None:
         variables={"power_reading": "sensor.power_meter"},
     )
 
-    # Should raise DataValidationError for None values (new strict behavior)
-    with pytest.raises(DataValidationError, match="None state value.*fatal error"):
-        evaluator.evaluate_formula(config)
+    # Should handle None values gracefully by returning "unknown" state
+    result = evaluator.evaluate_formula(config)
+    assert result["success"] is True
+    assert result["state"] == "unknown"
+    assert result["value"] is None
 
 
-def test_evaluator_handles_callback_returning_none() -> None:
+def test_evaluator_handles_callback_returning_none(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that evaluator handles callback returning None as fatal error."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider callback that returns None (bad implementation)
     def mock_bad_data_provider(entity_id: str) -> DataProviderResult:
@@ -82,11 +78,8 @@ def test_evaluator_handles_callback_returning_none() -> None:
         evaluator.evaluate_formula(config)
 
 
-def test_data_provider_with_valid_values() -> None:
+def test_data_provider_with_valid_values(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that data provider works correctly with valid values."""
-    # Mock Home Assistant instance
-    mock_hass = MagicMock()
-    mock_hass.states = MagicMock()
 
     # Mock data provider that returns valid values
     def mock_data_provider(entity_id: str) -> DataProviderResult:

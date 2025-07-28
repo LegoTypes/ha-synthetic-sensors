@@ -2,16 +2,18 @@
 Sensor Set Operations Handler for Storage Manager.
 
 This module handles sensor set creation, deletion, and metadata management
-operations that were previously part of the main StorageManager class.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from .config_manager import ConfigManager
-from .config_types import GlobalSettingsDict
+from .config_models import Config, FormulaConfig
+from .config_types import AttributeValue, GlobalSettingsDict
+from .cross_sensor_reference_reassignment import BulkYamlReassignment
 from .exceptions import SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -235,11 +237,20 @@ class SensorSetOpsHandler:
         config_manager = ConfigManager(self.storage_manager.hass)
         config = config_manager.load_from_yaml(yaml_content)
 
+        # Step 1: Replace self-references with 'state' token before entity registration
+        # This prevents self-references from being treated as cross-sensor references
+        config_with_state_tokens = self._replace_self_references_with_state_token(config)
+
+        # Step 2: Resolve cross-sensor references (entity registration + collision handling)
+        resolved_config = await self._resolve_cross_sensor_references(
+            config_with_state_tokens, sensor_set_id, device_identifier
+        )
+
         # Use the existing async_from_config method to avoid code duplication
         if replace_existing and self.sensor_set_exists(sensor_set_id):
             await self.async_delete_sensor_set(sensor_set_id)
 
-        await self.storage_manager.async_from_config(config, sensor_set_id, device_identifier)
+        await self.storage_manager.async_from_config(resolved_config, sensor_set_id, device_identifier)
         stored_sensors = [sensor_config.unique_id for sensor_config in config.sensors]
 
         return {
@@ -248,3 +259,262 @@ class SensorSetOpsHandler:
             "sensor_unique_ids": stored_sensors,
             "global_settings": config.global_settings,
         }
+
+    def _replace_self_references_with_state_token(self, config: Config) -> Config:
+        """Replace self-references in the configuration with 'state' token.
+
+        This handles both sensor key references (e.g., 'my_sensor') and entity ID references
+        (e.g., 'sensor.my_sensor') within the same sensor's formulas, variables, and attributes.
+
+        Args:
+            config: Original configuration
+
+        Returns:
+            Configuration with self-references replaced by 'state' token
+        """
+        updated_sensors = []
+
+        for sensor_config in config.sensors:
+            # Create a copy with empty formulas to avoid modifying the original
+            updated_sensor = sensor_config.copy_with_overrides(formulas=[])
+
+            # Process each formula
+            for formula_config in sensor_config.formulas:
+                updated_formula = self._replace_self_references_in_formula(
+                    formula_config, sensor_config.unique_id, sensor_config.entity_id
+                )
+                updated_sensor.formulas.append(updated_formula)
+
+            updated_sensors.append(updated_sensor)
+
+        return Config(
+            version=config.version,
+            global_settings=config.global_settings.copy(),
+            sensors=updated_sensors,
+            cross_sensor_references=config.cross_sensor_references.copy(),
+        )
+
+    def _replace_self_references_in_formula(
+        self, formula_config: FormulaConfig, sensor_key: str, entity_id: str | None
+    ) -> FormulaConfig:
+        """Replace self-references in a single formula with 'state' token.
+
+        Args:
+            formula_config: Original formula configuration
+            sensor_key: The sensor's unique_id (sensor key)
+            entity_id: The sensor's entity_id (if specified)
+
+        Returns:
+            Updated formula configuration with self-references replaced
+        """
+        self_reference_patterns = self._build_self_reference_patterns(sensor_key, entity_id)
+
+        # Replace self-references in all components
+        updated_formula = self._replace_self_references_in_text(formula_config.formula, self_reference_patterns)
+        updated_variables = self._process_variables_for_self_references(formula_config.variables, self_reference_patterns)
+        updated_attributes = self._process_attributes_for_self_references(formula_config.attributes, self_reference_patterns)
+
+        return FormulaConfig(
+            id=formula_config.id,
+            formula=updated_formula,
+            name=formula_config.name,
+            metadata=formula_config.metadata.copy(),
+            attributes=updated_attributes,
+            dependencies=formula_config.dependencies.copy(),  # Dependencies handled separately
+            variables=updated_variables,
+        )
+
+    def _build_self_reference_patterns(self, sensor_key: str, entity_id: str | None) -> set[str]:
+        """Build set of patterns that constitute self-references for a sensor."""
+        self_reference_patterns = {sensor_key}
+        if entity_id:
+            self_reference_patterns.add(entity_id)
+
+        # Also add the sensor.{sensor_key} format as a self-reference pattern
+        # This handles cases where the sensor references itself using the full entity ID format
+        sensor_dot_key = f"sensor.{sensor_key}"
+        self_reference_patterns.add(sensor_dot_key)
+
+        return self_reference_patterns
+
+    def _process_variables_for_self_references(
+        self, variables: dict[str, str | int | float], self_reference_patterns: set[str]
+    ) -> dict[str, str | int | float]:
+        """Process variables dictionary to replace self-references."""
+        updated_variables: dict[str, str | int | float] = {}
+        for var_name, var_value in variables.items():
+            if isinstance(var_value, str):
+                updated_variables[var_name] = self._replace_self_references_in_text(var_value, self_reference_patterns)
+            else:
+                updated_variables[var_name] = var_value
+        return updated_variables
+
+    def _process_attributes_for_self_references(
+        self, attributes: dict[str, AttributeValue], self_reference_patterns: set[str]
+    ) -> dict[str, AttributeValue]:
+        """Process attributes dictionary to replace self-references."""
+        updated_attributes: dict[str, AttributeValue] = {}
+        for attr_name, attr_value in attributes.items():
+            updated_attributes[attr_name] = self._process_single_attribute_for_self_references(
+                attr_value, self_reference_patterns
+            )
+        return updated_attributes
+
+    def _process_single_attribute_for_self_references(
+        self, attr_value: AttributeValue, self_reference_patterns: set[str]
+    ) -> AttributeValue:
+        """Process a single attribute value to replace self-references."""
+        if isinstance(attr_value, str):
+            # Simple string attribute - check for self-references
+            return self._replace_self_references_in_text(attr_value, self_reference_patterns)
+        if isinstance(attr_value, dict) and "formula" in attr_value:
+            # Formula-based attribute
+            return self._process_formula_attribute_for_self_references(attr_value, self_reference_patterns)
+        # Non-formula attribute, keep as-is
+        return attr_value
+
+    def _process_formula_attribute_for_self_references(
+        self, attr_value: dict[str, Any], self_reference_patterns: set[str]
+    ) -> dict[str, Any]:
+        """Process a formula-based attribute to replace self-references."""
+        updated_attr_value = attr_value.copy()
+
+        # Update formula if present
+        if isinstance(attr_value.get("formula"), str):
+            updated_attr_value["formula"] = self._replace_self_references_in_text(
+                attr_value["formula"], self_reference_patterns
+            )
+
+        # Update variables in attribute if present
+        if "variables" in attr_value and isinstance(attr_value["variables"], dict):
+            updated_attr_variables: dict[str, Any] = {}
+            for var_name, var_val in attr_value["variables"].items():
+                if isinstance(var_val, str):
+                    updated_attr_variables[var_name] = self._replace_self_references_in_text(var_val, self_reference_patterns)
+                else:
+                    updated_attr_variables[var_name] = var_val
+            updated_attr_value["variables"] = updated_attr_variables
+
+        return updated_attr_value
+
+    def _replace_self_references_in_text(self, text: str, self_reference_patterns: set[str]) -> str:
+        """Replace self-reference patterns in text with 'state' token.
+
+        Handles various self-reference patterns:
+        - sensor_key → state
+        - sensor.sensor_key → state
+        - sensor_key.attribute → state.attribute
+        - sensor.sensor_key.attribute → state.attribute
+
+        Args:
+            text: Text that may contain self-references
+            self_reference_patterns: Set of patterns that constitute self-references
+
+        Returns:
+            Text with self-references replaced by 'state'
+        """
+
+        updated_text = text
+        replacements_made = {}
+
+        # Build sensor keys from patterns (extract keys from entity IDs if needed)
+        sensor_keys = set()
+        entity_ids = set()
+
+        for pattern in self_reference_patterns:
+            if pattern.startswith("sensor."):
+                entity_ids.add(pattern)
+                # Extract sensor key from entity ID (part after "sensor.")
+                sensor_key = pattern[7:]  # Remove "sensor." prefix
+                sensor_keys.add(sensor_key)
+            else:
+                sensor_keys.add(pattern)
+
+        # Replace entity ID patterns first (more specific)
+        for entity_id in entity_ids:
+            # Pattern 1: sensor.entity_id (exact match)
+            pattern1 = r"\b" + re.escape(entity_id) + r"\b"
+            if re.search(pattern1, updated_text):
+                updated_text = re.sub(pattern1, "state", updated_text)
+                replacements_made[entity_id] = "state"
+
+            # Pattern 2: sensor.entity_id.attribute (with attribute access)
+            pattern2 = r"\b" + re.escape(entity_id) + r"(\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)"
+            matches = re.finditer(pattern2, updated_text)
+            for match in matches:
+                full_match = match.group(0)
+                attribute_part = match.group(1)  # The .attribute part
+                replacement = "state" + attribute_part
+                updated_text = updated_text.replace(full_match, replacement)
+                replacements_made[full_match] = replacement
+
+        # Replace sensor key patterns (less specific, so do after entity IDs)
+        for sensor_key in sensor_keys:
+            # Pattern 3: sensor_key (exact match, not part of entity ID)
+            # Use negative lookbehind to avoid matching sensor_key that's part of sensor.sensor_key
+            pattern3 = r"(?<!sensor\.)\b" + re.escape(sensor_key) + r"\b(?!\.[a-zA-Z_])"
+            if re.search(pattern3, updated_text):
+                updated_text = re.sub(pattern3, "state", updated_text)
+                replacements_made[sensor_key] = "state"
+
+            # Pattern 4: sensor_key.attribute (with attribute access, not part of entity ID)
+            pattern4 = r"(?<!sensor\.)\b" + re.escape(sensor_key) + r"(\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)"
+            matches = re.finditer(pattern4, updated_text)
+            for match in matches:
+                full_match = match.group(0)
+                attribute_part = match.group(1)  # The .attribute part
+                replacement = "state" + attribute_part
+                updated_text = updated_text.replace(full_match, replacement)
+                replacements_made[full_match] = replacement
+
+        return updated_text
+
+    async def _resolve_cross_sensor_references(
+        self, config: Config, sensor_set_id: str, device_identifier: str | None
+    ) -> Config:
+        """Resolve cross-sensor references in configuration before storage.
+
+        Args:
+            config: Configuration with potential cross-sensor references
+            sensor_set_id: Target sensor set ID
+            device_identifier: Optional device identifier
+
+        Returns:
+            Configuration with resolved cross-sensor references
+        """
+
+        # Create bulk reassignment processor
+        bulk_reassignment = BulkYamlReassignment(self.storage_manager.hass)
+
+        # Create callback to collect entity IDs by registering with HA
+        async def collect_entity_ids_callback(config: Config) -> dict[str, str]:
+            """Register sensors with HA entity registry and collect assigned entity IDs."""
+            from homeassistant.helpers import entity_registry as er  # pylint: disable=import-outside-toplevel
+
+            entity_mappings = {}
+            entity_registry = er.async_get(self.storage_manager.hass)
+
+            # Register each sensor with HA entity registry
+            for sensor_config in config.sensors:
+                # Determine suggested_object_id from explicit entity_id or fallback to unique_id
+                if sensor_config.entity_id:
+                    # Use the object_id part from explicit entity_id (e.g., "circuit_a_power" from "sensor.circuit_a_power")
+                    suggested_object_id = sensor_config.entity_id.replace("sensor.", "")
+                else:
+                    # Fallback to unique_id if no explicit entity_id
+                    suggested_object_id = sensor_config.unique_id
+
+                # Let HA entity registry handle collision resolution
+                entry = await entity_registry.async_get_or_create(  # type: ignore[misc] # HA type stubs incomplete
+                    domain="sensor",
+                    platform="synthetic_sensors",
+                    unique_id=sensor_config.unique_id,
+                    suggested_object_id=suggested_object_id,
+                )
+                entity_mappings[sensor_config.unique_id] = entry.entity_id
+
+            return entity_mappings
+
+        # Process with cross-reference resolution
+        resolved_config = await bulk_reassignment.process_bulk_yaml(config, collect_entity_ids_callback)
+        return resolved_config

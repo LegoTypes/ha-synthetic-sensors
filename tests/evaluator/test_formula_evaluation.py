@@ -11,14 +11,7 @@ from ha_synthetic_sensors.type_definitions import ContextValue
 class TestFormulaEvaluation:
     """Test cases for formula evaluation functionality."""
 
-    @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        return hass
-
-    def test_enhanced_evaluator_basic_functionality(self, mock_hass):
+    def test_enhanced_evaluator_basic_functionality(self, mock_hass, mock_entity_registry, mock_states):
         """Test basic formula evaluation functionality."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -38,7 +31,9 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 150
 
-    def test_enhanced_evaluator_with_entity_data(self, mock_hass, mock_entities_with_dependencies):
+    def test_enhanced_evaluator_with_entity_data(
+        self, mock_hass, mock_entity_registry, mock_states, mock_entities_with_dependencies
+    ):
         """Test formula evaluation with real entity data."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -63,7 +58,7 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 2000.0  # 1200 + 800
 
-    def test_dependency_resolution(self, mock_hass):
+    def test_dependency_resolution(self, mock_hass, mock_entity_registry, mock_states):
         """Test dependency resolution in enhanced evaluator."""
         from ha_synthetic_sensors.evaluator import Evaluator
 
@@ -77,7 +72,7 @@ class TestFormulaEvaluation:
         dependencies = evaluator.get_formula_dependencies("(HVAC_Upstairs + HVAC_Downstairs) / Total_Power")
         assert dependencies == {"HVAC_Upstairs", "HVAC_Downstairs", "Total_Power"}
 
-    def test_caching_mechanism(self, mock_hass):
+    def test_caching_mechanism(self, mock_hass, mock_entity_registry, mock_states):
         """Test caching mechanism in enhanced evaluator."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -98,7 +93,7 @@ class TestFormulaEvaluation:
         assert result2["value"] == 35
         # Note: Caching behavior may not be explicitly indicated in result dict
 
-    def test_formula_syntax_validation(self, mock_hass):
+    def test_formula_syntax_validation(self, mock_hass, mock_entity_registry, mock_states):
         """Test formula syntax validation."""
         from ha_synthetic_sensors.evaluator import Evaluator
 
@@ -117,7 +112,7 @@ class TestFormulaEvaluation:
         errors = evaluator.validate_formula_syntax("((A + B)")
         assert any("never closed" in error.lower() or "unmatched" in error.lower() for error in errors)
 
-    def test_error_handling(self, mock_hass):
+    def test_error_handling(self, mock_hass, mock_entity_registry, mock_states):
         """Test error handling in formula evaluation."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -140,7 +135,7 @@ class TestFormulaEvaluation:
         assert result["success"] is False
         assert "'B' is not defined" in result.get("error", "")
 
-    def test_complex_formulas(self, mock_hass):
+    def test_complex_formulas(self, mock_hass, mock_entity_registry, mock_states):
         """Test complex mathematical formulas."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -161,7 +156,7 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 25  # abs(-10) + abs(15) = 10 + 15 = 25
 
-    def test_cache_management(self, mock_hass):
+    def test_cache_management(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache management functionality."""
         from ha_synthetic_sensors.evaluator import Evaluator
 
@@ -177,7 +172,7 @@ class TestFormulaEvaluation:
         assert "total_cached_formulas" in stats
         assert "total_cached_evaluations" in stats
 
-    def test_phase1_mathematical_functions(self, mock_hass):
+    def test_phase1_mathematical_functions(self, mock_hass, mock_entity_registry, mock_states):
         """Test Phase 1 advanced mathematical functions."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -222,7 +217,7 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 30  # Within range, unchanged
 
-    def test_map_function(self, mock_hass):
+    def test_map_function(self, mock_hass, mock_entity_registry, mock_states):
         """Test the map range function."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -250,7 +245,7 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 0  # Should return out_min when in_min == in_max
 
-    def test_percent_function(self, mock_hass):
+    def test_percent_function(self, mock_hass, mock_entity_registry, mock_states):
         """Test the percentage calculation function."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -276,7 +271,7 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 0  # Should return 0 when dividing by zero
 
-    def test_average_functions(self, mock_hass):
+    def test_average_functions(self, mock_hass, mock_entity_registry, mock_states):
         """Test average/mean functions."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator
@@ -297,7 +292,7 @@ class TestFormulaEvaluation:
         assert result["success"] is True
         assert result["value"] == 12.5
 
-    def test_complex_phase1_formulas(self, mock_hass):
+    def test_complex_phase1_formulas(self, mock_hass, mock_entity_registry, mock_states):
         """Test complex formulas using multiple Phase 1 functions."""
         from ha_synthetic_sensors.config_manager import FormulaConfig
         from ha_synthetic_sensors.evaluator import Evaluator

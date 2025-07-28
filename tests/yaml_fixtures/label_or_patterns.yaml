@@ -1,0 +1,106 @@
+version: '1.0'
+sensors:
+  critical_important_count:
+    name: Critical and Important Count
+    formula: count("label:critical|important")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
+  alert_status_sum:
+    name: Alert Status Sum
+    formula: sum("label:critical|important|warning")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
+  priority_average:
+    name: Priority Average
+    formula: avg("label:high_priority|medium_priority")
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
+  monitoring_total:
+    name: Monitoring Total
+    formula: sum("label:monitor|alert")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
+  quoted_or_pattern:
+    name: Quoted OR Pattern
+    formula: max("label:emergency|urgent")
+    metadata:
+      unit_of_measurement: count
+      state_class: measurement
+  alert_efficiency:
+    name: Alert Efficiency
+    formula: count("label:critical|important") / total_devices * 100
+    variables:
+      total_devices: input_number.total_devices
+    metadata:
+      unit_of_measurement: '%'
+      state_class: measurement
+  comprehensive_tag_monitoring:
+    name: Comprehensive Tag Monitoring
+    formula: sum("label:monitor|alert") + count("label:critical|important|warning")
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
+  multi_status_average:
+    name: Multi-Status Average
+    formula: avg("label:critical|important|warning|info")
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement
+  advanced_tag_analysis:
+    name: Advanced Tag Analysis
+    formula: count("label:critical|important|warning")
+    attributes:
+      active_alerts:
+        formula: count("label:critical|important" > 0)
+        metadata:
+          unit_of_measurement: devices
+      alert_percentage:
+        formula: state / 10 * 100
+        metadata:
+          unit_of_measurement: '%'
+      daily_average:
+        formula: state * 24
+        metadata:
+          unit_of_measurement: label-hours
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
+  dynamic_or_label:
+    name: Dynamic OR Labels
+    formula: count("label:primary_tag|secondary_tag")
+    variables:
+      primary_tag: input_select.primary_tag
+      secondary_tag: input_select.secondary_tag
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
+  multi_label_efficiency:
+    name: Multi-Label Efficiency
+    formula: (sum("label:monitor|alert") / count("label:critical|important")) * 100
+    metadata:
+      unit_of_measurement: '%'
+      state_class: measurement
+  direct_label_or_config:
+    name: Direct Label OR Config
+    formula: count("label:input_select.tag_type_1|input_select.tag_type_2")
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
+  mixed_label_or_config:
+    name: Mixed Label OR Config
+    formula: count("label:variable_tag|input_select.direct_tag")
+    variables:
+      variable_tag: input_select.variable_tag_type
+    metadata:
+      unit_of_measurement: devices
+      state_class: measurement
+  direct_three_way_tag_config:
+    name: Direct Three-Way Tag Config
+    formula: avg("label:input_select.tag1|input_select.tag2|input_select.tag3")
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement

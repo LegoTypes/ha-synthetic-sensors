@@ -1,0 +1,44 @@
+version: "1.0"
+
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    entity_id: "sensor.power_meter"
+    formula: "state * 1.1"
+    attributes:
+      daily_power:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "Wh"
+      efficiency:
+        formula: "state / 1000 * 100"
+        metadata:
+          unit_of_measurement: "%"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  temperature_sensor:
+    name: "Temperature Sensor"
+    entity_id: "sensor.temperature_monitor"
+    formula: "state + 2.5"
+    attributes:
+      fahrenheit:
+        formula: "state * 9/5 + 32"
+        metadata:
+          unit_of_measurement: "°F"
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+      state_class: "measurement"
+
+  efficiency_calculator:
+    name: "Efficiency Calculator"
+    entity_id: "sensor.efficiency_calculator"
+    # Use entity ID reference instead of sensor key for cross-sensor reference
+    formula: "sensor.power_meter / 5000 * 100"
+    metadata:
+      unit_of_measurement: "%"
+      device_class: "power_factor"
+      state_class: "measurement"

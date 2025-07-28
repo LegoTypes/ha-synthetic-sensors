@@ -17,28 +17,6 @@ class TestHybridDataAccess:
     """Test cases for hybrid data access using push-based registration and HA entities."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-
-        # Mock HA entities with states
-        mock_states = {
-            "sensor.grid_power": Mock(state="1500", attributes={}),
-            "sensor.solar_inverter": Mock(state="800", attributes={}),
-            "sensor.house_total_power": Mock(state="2200", attributes={}),
-            "sensor.workshop_power": Mock(state="300", attributes={}),
-            "sensor.external_sensor": Mock(state="450", attributes={}),
-            "sensor.outside_temperature": Mock(state="22.5", attributes={}),
-        }
-
-        def mock_get_state(entity_id):
-            return mock_states.get(entity_id)
-
-        hass.states.get = Mock(side_effect=mock_get_state)
-        return hass
-
-    @pytest.fixture
     def integration_data(self):
         """Mock integration data store."""
         return {
@@ -90,15 +68,15 @@ class TestHybridDataAccess:
     @pytest.fixture
     def evaluator_with_registration(self, mock_hass: MagicMock, mock_integration_data_provider: Any):
         """Create an evaluator with push-based registration."""
-        # Create evaluator without callbacks first
-        evaluator = Evaluator(hass=mock_hass)
+        # Create evaluator with HA lookups enabled
+        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
 
         # Register integration entities directly with all available entities
         all_entities = set(mock_integration_data_provider._data.keys())
         evaluator.update_integration_entities(all_entities)
 
         # Mock the data provider callback for backward compatibility
-        evaluator._data_provider_callback = mock_integration_data_provider.get_data
+        evaluator.data_provider_callback = mock_integration_data_provider.get_data
 
         return evaluator
 
@@ -114,7 +92,9 @@ class TestHybridDataAccess:
         """Create a name resolver."""
         return NameResolver(mock_hass, variables={})
 
-    def test_pure_integration_data_evaluation(self, evaluator_with_registration, hybrid_config):
+    def test_pure_integration_data_evaluation(
+        self, evaluator_with_registration, hybrid_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation using only integration-provided data."""
         # Get the internal_efficiency sensor config
         sensor_config = None
@@ -128,13 +108,15 @@ class TestHybridDataAccess:
         formula_config = sensor_config.formulas[0]  # Get the main formula
 
         # Evaluate the formula - should use only integration registered data
-        result = evaluator_with_registration.evaluate_formula(formula_config, {})
+        result = evaluator_with_registration.evaluate_formula_with_sensor_config(formula_config, {}, sensor_config)
 
         assert result["success"] is True
         # 850.0 / 1000.0 * 100 = 85.0
         assert result["value"] == 85.0
 
-    def test_pure_ha_data_evaluation(self, evaluator_with_registration, hybrid_config):
+    def test_pure_ha_data_evaluation(
+        self, evaluator_with_registration, hybrid_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation using only Home Assistant entities."""
         # Get the external_power_sum sensor config
         sensor_config = None
@@ -154,7 +136,9 @@ class TestHybridDataAccess:
         # 2200 + 300 = 2500
         assert result["value"] == 2500.0
 
-    def test_mixed_data_source_evaluation(self, evaluator_with_registration, hybrid_config):
+    def test_mixed_data_source_evaluation(
+        self, evaluator_with_registration, hybrid_config, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test evaluation mixing integration data and HA entities."""
         # Get the hybrid_power_analysis sensor config
         sensor_config = None
@@ -174,7 +158,9 @@ class TestHybridDataAccess:
         # 1250.0 (integration) + 1500 (HA) + 800 (HA) = 3550.0
         assert result["value"] == 3550.0
 
-    def test_complex_mixed_with_attributes(self, evaluator_with_registration, hybrid_config, name_resolver):
+    def test_complex_mixed_with_attributes(
+        self, evaluator_with_registration, hybrid_config, name_resolver, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test complex sensor with mixed data sources in attributes."""
         # Get the comprehensive_analysis sensor config
         sensor_config = None
@@ -197,7 +183,7 @@ class TestHybridDataAccess:
         # Just verify that direct entity references work in attributes
         assert len(sensor_config.formulas) >= 1
 
-    def test_integration_registration_priority(self, mock_hass, integration_data):
+    def test_integration_registration_priority(self, mock_hass, integration_data, mock_entity_registry, mock_states):
         """Test that integration registration takes priority over HA states."""
 
         # Create evaluator and mock data provider
@@ -213,7 +199,7 @@ class TestHybridDataAccess:
                 return {"value": integration_data[entity_id], "exists": True}
             return {"value": None, "exists": False}
 
-        evaluator._data_provider_callback = data_provider
+        evaluator.data_provider_callback = data_provider
 
         # Create a formula that uses an entity ID that exists in both integration and HA
         # Add the same entity to HA with a different value
@@ -231,7 +217,7 @@ class TestHybridDataAccess:
         # Should return integration value (1250.0), not HA value (999)
         assert result["value"] == 1250.0
 
-    def test_integration_registration_error_handling(self, mock_hass, integration_data):
+    def test_integration_registration_error_handling(self, mock_hass, integration_data, mock_entity_registry, mock_states):
         """Test proper error handling when integration registration fails for claimed entity."""
 
         # Create evaluator with registration
@@ -248,7 +234,7 @@ class TestHybridDataAccess:
                 return {"value": integration_data[entity_id], "exists": True}
             return {"value": None, "exists": False}
 
-        evaluator._data_provider_callback = failing_data_provider
+        evaluator.data_provider_callback = failing_data_provider
 
         formula_config = FormulaConfig(
             id="test_formula_error",
@@ -264,7 +250,9 @@ class TestHybridDataAccess:
         assert result["state"] == "unavailable"  # Unavailable state reflection
         assert "unavailable_dependencies" in result
 
-    def test_sensor_manager_with_registration(self, mock_hass, mock_integration_data_provider, hybrid_config):
+    def test_sensor_manager_with_registration(
+        self, mock_hass, mock_integration_data_provider, hybrid_config, mock_entity_registry, mock_states
+    ):
         """Test SensorManager with integration registration."""
         # Create mock add_entities callback
         async_add_entities = Mock()
@@ -293,13 +281,13 @@ class TestHybridDataAccess:
         evaluator_entities = sensor_manager._evaluator.get_integration_entities()
         assert evaluator_entities == expected_entities
 
-    def test_no_registration_defaults_to_ha_only(self, mock_hass):
+    def test_no_registration_defaults_to_ha_only(self, mock_hass, mock_entity_registry, mock_states):
         """Test that evaluator without registration uses only HA state queries."""
-        evaluator = Evaluator(hass=mock_hass)
+        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
 
         # Should not have registered entities or callbacks
         assert evaluator.get_integration_entities() == set()
-        assert evaluator._data_provider_callback is None
+        assert evaluator.data_provider_callback is None
 
         # Mock HA state for specific entity
         def mock_get_state(entity_id):
@@ -323,11 +311,11 @@ class TestHybridDataAccess:
         # Verify HA was called
         mock_hass.states.get.assert_called_with("sensor.test")
 
-    def test_registration_determines_data_source(self, mock_hass, integration_data):
+    def test_registration_determines_data_source(self, mock_hass, integration_data, mock_entity_registry, mock_states):
         """Test that registration correctly determines which entities use integration data."""
 
         # Create evaluator and register only subset of integration entities
-        evaluator = Evaluator(hass=mock_hass)
+        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
 
         # Only register subset of integration entities
         registered_entities = {"span.meter_001", "span.local_sensor"}
@@ -339,7 +327,7 @@ class TestHybridDataAccess:
                 return {"value": integration_data[entity_id], "exists": True}
             return {"value": None, "exists": False}
 
-        evaluator._data_provider_callback = data_provider
+        evaluator.data_provider_callback = data_provider
 
         # Mock HA for entities not in integration registration
         def mock_get_state(entity_id):
@@ -367,9 +355,9 @@ class TestHybridDataAccess:
         )
         result2 = evaluator.evaluate_formula(formula_config2, {})
         assert result2["success"] is True
-        assert result2["value"] == 999.0  # HA value, not integration value (850.0)
+        assert result2["value"] == 999.0  # HA value
 
-    def test_registration_update_functionality(self, mock_hass, integration_data):
+    def test_registration_update_functionality(self, mock_hass, integration_data, mock_entity_registry, mock_states):
         """Test that registration can be updated dynamically."""
 
         # Create evaluator and register initial entities
@@ -398,7 +386,7 @@ class TestHybridDataAccess:
         # Verify final registration
         assert evaluator.get_integration_entities() == final_entities
 
-    def test_sensor_manager_registration_methods(self, mock_hass):
+    def test_sensor_manager_registration_methods(self, mock_hass, mock_entity_registry, mock_states):
         """Test SensorManager registration methods."""
 
         # Create sensor manager

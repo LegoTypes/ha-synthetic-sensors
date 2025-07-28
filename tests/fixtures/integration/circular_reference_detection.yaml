@@ -1,0 +1,35 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  sensor_a:
+    name: "Sensor A"
+    formula: "sensor_b + 10"
+    variables:
+      sensor_b: "sensor.sensor_b"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  sensor_b:
+    name: "Sensor B"
+    formula: "sensor_c * 2"
+    variables:
+      sensor_c: "sensor.sensor_c"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  sensor_c:
+    name: "Sensor C"
+    formula: "sensor_a / 2"
+    variables:
+      sensor_a: "sensor.sensor_a"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

@@ -1,0 +1,167 @@
+# Test Scenario EDGE.4: Complex Variable Inheritance
+# Purpose: Test complex variable inheritance patterns
+# Expected: Variables are inherited correctly
+# Validation: All variables are available where expected
+
+sensors:
+  # Test complex variable inheritance patterns
+  complex_inheritance_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: base_power * efficiency_factor  # Uses inherited variables
+    variables:
+      base_power: sensor.span_panel_instantaneous_power  # Main sensor variable
+      efficiency_factor: 1.1  # Main sensor variable
+      cost_rate: 0.25  # Main sensor variable
+      multiplier: 2.0  # Main sensor variable
+    attributes:
+      # Attribute using all inherited variables
+      power_analysis:
+        formula: base_power * efficiency_factor  # Uses inherited variables
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power Analysis"
+      # Attribute using some inherited variables
+      cost_analysis:
+        formula: base_power * cost_rate  # Uses inherited variables
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Cost Analysis"
+      # Attribute with its own variables + inherited
+      efficiency_analysis:
+        formula: efficiency_factor * multiplier * 100  # Uses inherited + own variables
+        variables:
+          local_factor: 0.9  # Local variable
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Efficiency Analysis"
+      # Nested attribute inheritance
+      nested_analysis:
+        formula: power_analysis * cost_rate  # Uses attribute + inherited variable
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Nested Analysis"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Inheritance Test"
+
+  # Test variable inheritance with overrides
+  inheritance_override_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    variables:
+      base_rate: 0.25  # Main sensor variable
+      multiplier: 2.0  # Main sensor variable
+      time_factor: 24  # Main sensor variable
+    attributes:
+      # Attribute overriding inherited variable
+      hourly_cost:
+        formula: base_rate * multiplier  # Uses inherited variables
+        variables:
+          base_rate: 0.30  # Overrides inherited variable
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Hourly Cost"
+      # Attribute using inherited variables (not overridden)
+      daily_cost:
+        formula: base_rate * multiplier * time_factor  # Uses inherited variables
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost"
+      # Attribute with partial override
+      weekly_cost:
+        formula: base_rate * multiplier * time_factor * 7  # Uses mix of inherited and overridden
+        variables:
+          multiplier: 1.5  # Overrides inherited variable
+        metadata:
+          unit_of_measurement: cents/week
+          friendly_name: "Weekly Cost"
+      # Attribute with new variables + inherited
+      monthly_cost:
+        formula: base_rate * multiplier * time_factor * 30  # Uses inherited variables
+        variables:
+          monthly_factor: 1.1  # New local variable
+        metadata:
+          unit_of_measurement: cents/month
+          friendly_name: "Monthly Cost"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Inheritance Override Test"
+
+  # Test deep variable inheritance chain
+  deep_inheritance_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    variables:
+      power_base: sensor.span_panel_instantaneous_power  # Main sensor variable
+      efficiency: 1.1  # Main sensor variable
+      cost_rate: 0.25  # Main sensor variable
+    attributes:
+      # Level 1 attribute
+      power_calc:
+        formula: power_base * efficiency  # Uses inherited variables
+        variables:
+          local_efficiency: 0.9  # Local variable
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power Calculation"
+      # Level 2 attribute using Level 1 + inherited
+      cost_calc:
+        formula: power_calc * cost_rate  # Uses attribute + inherited variable
+        variables:
+          local_cost_rate: 0.30  # Local variable
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Cost Calculation"
+      # Level 3 attribute using Level 2 + inherited
+      daily_cost:
+        formula: cost_calc * 24  # Uses attribute + inherited variable
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost"
+      # Level 4 attribute using Level 3 + inherited
+      weekly_cost:
+        formula: daily_cost * 7  # Uses attribute + inherited variable
+        metadata:
+          unit_of_measurement: cents/week
+          friendly_name: "Weekly Cost"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Deep Inheritance Test"
+
+  # Test variable inheritance with conditional logic
+  conditional_inheritance_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    variables:
+      base_rate: 0.25  # Main sensor variable
+      threshold: 200  # Main sensor variable
+      multiplier: 2.0  # Main sensor variable
+    attributes:
+      # Attribute using inherited variables in conditional
+      conditional_cost:
+        formula: base_rate * multiplier if state > threshold else base_rate  # Uses inherited variables
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Conditional Cost"
+      # Attribute with local variables + inherited in conditional
+      complex_conditional:
+        formula: base_rate * local_multiplier if state > local_threshold else base_rate  # Mix of inherited and local
+        variables:
+          local_multiplier: 1.5  # Local variable
+          local_threshold: 150  # Local variable
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Complex Conditional"
+      # Attribute using inherited variables in mathematical operations
+      math_inheritance:
+        formula: (base_rate ** 2) * multiplier  # Uses inherited variables in math
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Math Inheritance"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Conditional Inheritance Test"

@@ -1,6 +1,7 @@
 """Tests for literal attribute values in synthetic sensors."""
 
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock
 import yaml as yaml_lib
 
@@ -57,24 +58,13 @@ class TestLiteralAttributes:
         result = validate_yaml_config(yaml_data)
         assert result["valid"], f"Schema validation failed: {result['errors']}"
 
-    def test_config_manager_parses_literal_attributes(self) -> None:
+    def test_config_manager_parses_literal_attributes(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test that ConfigManager correctly parses literal attributes."""
-        mock_hass = MagicMock()
         config_manager = ConfigManager(mock_hass)
 
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: "power * 2"
-    variables:
-      power: "sensor.test_power"
-    attributes:
-      voltage: 240
-      manufacturer: "TestCorp"
-      is_enabled: true
-"""
+        # Load YAML content from fixture
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_literal_attributes_basic.yaml"
+        yaml_content = yaml_fixture_path.read_text()
 
         config = config_manager.load_from_yaml(yaml_content)
         assert config is not None
@@ -103,30 +93,19 @@ sensors:
         enabled_formula = next(f for f in literal_formulas if f.id == "test_sensor_is_enabled")
         assert enabled_formula.formula == "True"
 
-    def test_storage_manager_roundtrip_literal_attributes(self) -> None:
+    def test_storage_manager_roundtrip_literal_attributes(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test that literal attributes survive round-trip through storage manager."""
-        mock_hass = MagicMock()
         storage_manager = StorageManager(mock_hass)
 
         # Create sensor set with literal attributes
         sensor_set_id = "test_literal_attributes"
-        yaml_content = """
-version: "1.0"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: "power * 2"
-    variables:
-      power: "sensor.test_power"
-    attributes:
-      voltage: 240
-      manufacturer: "TestCorp"
-      is_enabled: true
-      calculated:
-        formula: "voltage * current"
-        variables:
-          current: "sensor.test_current"
-"""
+
+        # Load YAML content from fixture
+        from pathlib import Path
+
+        yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_literal_attributes_storage.yaml"
+        with open(yaml_fixture_path, "r") as f:
+            yaml_content = f.read()
 
         # Test the YAML handler directly instead of going through storage manager
         from ha_synthetic_sensors.config_manager import ConfigManager
@@ -366,7 +345,7 @@ sensors:
         result = validate_yaml_config(yaml_data)
         assert result["valid"], f"Schema validation failed: {result['errors']}"
 
-    def test_exact_user_yaml_pattern(self) -> None:
+    def test_exact_user_yaml_pattern(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test the exact YAML pattern mentioned by the user."""
         yaml_data = {
             "version": "1.0",
@@ -405,7 +384,6 @@ sensors:
         from ha_synthetic_sensors.storage_manager import StorageManager
         from ha_synthetic_sensors.config_manager import ConfigManager
 
-        mock_hass = MagicMock()
         config_manager = ConfigManager(mock_hass)
         config = config_manager.load_from_yaml(yaml_lib.dump(yaml_data))
 

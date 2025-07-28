@@ -6,7 +6,7 @@ This module contains TypedDicts and type aliases used for YAML configuration par
 
 from __future__ import annotations
 
-from typing import Any, TypeAlias, TypedDict, Union
+from typing import Any, TypedDict
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 
@@ -14,8 +14,8 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 AttributeValue = str | float | int | bool | list[str] | dict[str, Any]
 
 # Type aliases for Home Assistant constants - use the actual enum types
-DeviceClassType: TypeAlias = SensorDeviceClass | str  # str for YAML parsing, enum for runtime
-StateClassType: TypeAlias = SensorStateClass | str  # str for YAML parsing, enum for runtime
+type DeviceClassType = SensorDeviceClass | str  # str for YAML parsing, enum for runtime
+type StateClassType = SensorStateClass | str  # str for YAML parsing, enum for runtime
 
 
 # TypedDicts for v2.0 YAML config structures
@@ -28,7 +28,7 @@ class AttributeConfigDict(TypedDict, total=False):
 
 
 # Type alias for attribute configuration that can be either formula object or literal value
-AttributeConfig: TypeAlias = Union[AttributeConfigDict, str, int, float]
+type AttributeConfig = AttributeConfigDict | str | int | float
 
 
 class SensorConfigDict(TypedDict, total=False):
@@ -80,9 +80,4 @@ class ConfigDict(TypedDict, total=False):
 
 
 # Common error structures for validation
-YAML_SYNTAX_ERROR_TEMPLATE = {
-    "path": "file",
-    "severity": "error",
-    "schema_path": "",
-    "suggested_fix": "Check YAML syntax and formatting",
-}
+YAML_SYNTAX_ERROR_TEMPLATE = "YAML syntax error: {error}"

@@ -18,15 +18,20 @@ repos:
       - id: trailing-whitespace
         exclude: '\..*_cache/.*|dist/.*|venv/.*'
 
-  # Ruff for linting, import sorting, and formatting
+  # Ruff for linting and import sorting
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.13
     hooks:
       - id: ruff-check
         args: ['--fix']
-        exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*|vulture_whitelist\.py$'
+
+  # Ruff for formatting (runs after linting fixes)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.13
+    hooks:
       - id: ruff-format
-        exclude: '\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '\..*_cache/.*|dist/.*|venv/.*|vulture_whitelist\.py$'
 
   # MyPy for type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
@@ -43,7 +48,7 @@ repos:
           - types-jsonschema
           - homeassistant-stubs
         args: ['--config-file=pyproject.toml']
-        exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|docs/.*|scripts/.*|examples/.*|\..*_cache/.*|dist/.*|venv/.*|vulture_whitelist\.py$'
 
   # Pylint for additional code quality checks
   - repo: https://github.com/PyCQA/pylint
@@ -58,14 +63,22 @@ repos:
           - typing-extensions
           - homeassistant-stubs
         args: ['--rcfile=pyproject.toml']
-        exclude: '^tests/.*|docs/.*|\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|docs/.*|examples/.*|test_.*\.py$|.*_test\.py$|\..*_cache/.*|dist/.*|venv/.*|vulture_whitelist\.py$'
+
+  # Vulture for dead code detection
+  - repo: https://github.com/jendrikseipp/vulture
+    rev: v2.14
+    hooks:
+      - id: vulture
+        args: ['src/', 'vulture_whitelist.py', '--min-confidence=80']
+        exclude: '^tests/.*|docs/.*|examples/.*|scripts/.*|\..*_cache/.*|dist/.*|venv/.*'
 
   # Markdownlint for markdown files
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.18.1
     hooks:
       - id: markdownlint-cli2
-        args: ['--config', '.markdownlint-cli2.jsonc']
+        args: ['--fix', '--config', '.markdownlint-cli2.jsonc']
         exclude: '\..*_cache/.*|dist/.*|venv/.*|\.venv/.*|node_modules/.*|htmlcov/.*'
 
   # Check for common security issues

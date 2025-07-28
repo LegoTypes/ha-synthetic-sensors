@@ -1,0 +1,22 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  collection_sensor:
+    name: "Collection Sensor"
+    formula: "sum('device_class:power') + count('device_class:temperature')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  collection_with_variables:
+    name: "Collection with Variables"
+    formula: "sum(power_pattern) + avg(temp_pattern)"
+    variables:
+      power_pattern: "device_class:power"
+      temp_pattern: "device_class:temperature"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

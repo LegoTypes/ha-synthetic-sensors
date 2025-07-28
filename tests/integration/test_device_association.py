@@ -10,16 +10,6 @@ from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConf
 
 
 @pytest.fixture
-def mock_hass():
-    """Create a mock Home Assistant instance."""
-    hass = MagicMock()
-    hass.config = MagicMock()
-    hass.config.config_dir = "/config"
-    hass.states = MagicMock()
-    return hass
-
-
-@pytest.fixture
 def mock_device_registry():
     """Create a mock device registry."""
     registry = MagicMock()
@@ -44,7 +34,7 @@ def mock_device_registry():
 
 
 @pytest.mark.asyncio
-async def test_sensor_with_device_association(mock_hass):
+async def test_sensor_with_device_association(mock_hass, mock_entity_registry, mock_states):
     """Test creating a sensor with device association."""
 
     # Define test integration domain
@@ -117,7 +107,7 @@ async def test_sensor_with_device_association(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_sensor_with_existing_device(mock_hass):
+async def test_sensor_with_existing_device(mock_hass, mock_entity_registry, mock_states):
     """Test creating a sensor that associates with an existing device."""
 
     # Create a sensor config that references an existing device
@@ -190,7 +180,7 @@ async def test_sensor_with_existing_device(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_sensor_without_device_association(mock_hass):
+async def test_sensor_without_device_association(mock_hass, mock_entity_registry, mock_states):
     """Test creating a sensor without device association."""
 
     # Create a sensor config without device fields
@@ -231,7 +221,7 @@ async def test_sensor_without_device_association(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_sensor_with_explicit_entity_id_and_device_association(mock_hass):
+async def test_sensor_with_explicit_entity_id_and_device_association(mock_hass, mock_entity_registry, mock_states):
     """Test creating a sensor with explicit entity_id AND device association.
 
     This test verifies that:
@@ -315,7 +305,7 @@ async def test_sensor_with_explicit_entity_id_and_device_association(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_sensor_without_entity_id_generates_device_prefix(mock_hass):
+async def test_sensor_without_entity_id_generates_device_prefix(mock_hass, mock_entity_registry, mock_states):
     """Test creating a sensor WITHOUT explicit entity_id - device prefix should be generated.
 
     This test verifies that:
@@ -393,7 +383,7 @@ async def test_sensor_without_entity_id_generates_device_prefix(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_device_lookup_fails_with_explicit_entity_id(mock_hass):
+async def test_device_lookup_fails_with_explicit_entity_id(mock_hass, mock_entity_registry, mock_states):
     """Test that device lookup failure affects device association even with explicit entity_id.
 
     This test verifies that:

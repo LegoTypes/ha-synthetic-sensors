@@ -1,0 +1,169 @@
+# Test Scenario EDGE.1: Deep Attribute Chain
+# Purpose: Test very long chain of attribute dependencies
+# Expected: All dependencies resolve correctly
+# Validation: Performance remains acceptable
+
+sensors:
+  # Test deep attribute dependency chain
+  deep_chain_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Level 1
+      level1:
+        formula: state  # 250 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 1"
+      # Level 2
+      level2:
+        formula: level1 * 2  # 500 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 2"
+      # Level 3
+      level3:
+        formula: level2 * 2  # 1000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 3"
+      # Level 4
+      level4:
+        formula: level3 * 2  # 2000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 4"
+      # Level 5
+      level5:
+        formula: level4 * 2  # 4000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 5"
+      # Level 6
+      level6:
+        formula: level5 * 2  # 8000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 6"
+      # Level 7
+      level7:
+        formula: level6 * 2  # 16000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 7"
+      # Level 8
+      level8:
+        formula: level7 * 2  # 32000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 8"
+      # Level 9
+      level9:
+        formula: level8 * 2  # 64000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 9"
+      # Level 10
+      level10:
+        formula: level9 * 2  # 128000 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Level 10"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Deep Chain Test"
+
+  # Test deep chain with complex calculations
+  complex_deep_chain:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Power calculations
+      power_kw:
+        formula: state / 1000  # 1.1 kW
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Power (kW)"
+      # Energy calculations
+      hourly_energy:
+        formula: power_kw * 1  # 1.1 kWh
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Hourly Energy"
+      daily_energy:
+        formula: hourly_energy * 24  # 26.4 kWh
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Daily Energy"
+      weekly_energy:
+        formula: daily_energy * 7  # 184.8 kWh
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Weekly Energy"
+      monthly_energy:
+        formula: weekly_energy * 4  # 739.2 kWh
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Monthly Energy"
+      yearly_energy:
+        formula: monthly_energy * 12  # 8870.4 kWh
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Yearly Energy"
+      # Cost calculations
+      hourly_cost:
+        formula: hourly_energy * 0.25  # 0.275 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Hourly Cost"
+      daily_cost:
+        formula: daily_energy * 0.25  # 6.6 cents/day
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost"
+      weekly_cost:
+        formula: weekly_energy * 0.25  # 46.2 cents/week
+        metadata:
+          unit_of_measurement: cents/week
+          friendly_name: "Weekly Cost"
+      monthly_cost:
+        formula: monthly_energy * 0.25  # 184.8 cents/month
+        metadata:
+          unit_of_measurement: cents/month
+          friendly_name: "Monthly Cost"
+      yearly_cost:
+        formula: yearly_energy * 0.25  # 2217.6 cents/year
+        metadata:
+          unit_of_measurement: cents/year
+          friendly_name: "Yearly Cost"
+      # Efficiency calculations
+      efficiency_hourly:
+        formula: hourly_cost / hourly_energy * 100  # 25%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Hourly Efficiency"
+      efficiency_daily:
+        formula: daily_cost / daily_energy * 100  # 25%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Daily Efficiency"
+      efficiency_weekly:
+        formula: weekly_cost / weekly_energy * 100  # 25%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Weekly Efficiency"
+      efficiency_monthly:
+        formula: monthly_cost / monthly_energy * 100  # 25%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Monthly Efficiency"
+      efficiency_yearly:
+        formula: yearly_cost / yearly_energy * 100  # 25%
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Yearly Efficiency"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Deep Chain"

@@ -1,0 +1,57 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+  variables:
+    global_constant: 100
+  metadata:
+    attribution: "YAML Parser Test"
+
+sensors:
+  yaml_parser_test_sensor:
+    name: "YAML Parser Test Sensor"
+    entity_id: "sensor.custom_yaml_parser_entity"  # Explicit entity ID override
+    formula: "global_constant * multiplier + offset"
+    variables:
+      multiplier: 2.5
+      offset: 50.0
+    attributes:
+      computed_attribute:
+        formula: "state / 2"
+        metadata:
+          unit_of_measurement: "W"
+          suggested_display_precision: 1
+      literal_attribute: "static_value"  # Literal attribute value
+      numeric_literal: 42
+      boolean_literal: true
+      negative_literal: -123.45
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      icon: "mdi:flash"
+
+  minimal_sensor:
+    name: "Minimal Sensor"
+    formula: "base_value"
+    variables:
+      base_value: 1000
+    metadata:
+      unit_of_measurement: "units"
+
+  device_association_sensor:
+    name: "Device Association Sensor"
+    formula: "power_value * efficiency"
+    variables:
+      power_value: "sensor.device_power"
+      efficiency: 0.95
+    device_name: "Custom Test Device"
+    device_manufacturer: "Test Corp"
+    device_model: "Model X"
+    device_sw_version: "1.2.3"
+    device_hw_version: "2.0"
+    suggested_area: "Test Area"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

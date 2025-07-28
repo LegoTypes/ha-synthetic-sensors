@@ -1,0 +1,52 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+  variables:
+    global_rate: 0.12
+    global_multiplier: 1.5
+  metadata:
+    attribution: "Complex YAML Test"
+
+sensors:
+  nested_structure_sensor:
+    name: "Nested Structure Sensor"
+    formula: "base_power * (global_rate * global_multiplier) + offset"
+    variables:
+      base_power: "sensor.base_power"
+      offset: 100
+    attributes:
+      daily_total:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "Wh"
+          device_class: "energy"
+      efficiency:
+        formula: "state / max_power * 100"
+        variables:
+          max_power: 2000
+        metadata:
+          unit_of_measurement: "%"
+          suggested_display_precision: 1
+      complex_nested:
+        formula: "(base_power / 1000) + efficiency * adjustment"
+        variables:
+          adjustment: 1.2
+        metadata:
+          unit_of_measurement: "kWh"
+          suggested_display_precision: 3
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      suggested_display_precision: 0
+
+  deeply_nested_variables:
+    name: "Deeply Nested Variables"
+    formula: "level1 + (level1 * 0.5) + ((level1 * 0.5) + level1 * 0.25)"
+    variables:
+      level1: "sensor.level_one"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

@@ -1,0 +1,43 @@
+version: "1.0"
+
+# Idiom 3 Test Scenario 3.1: Basic Attribute Access
+# Purpose: Validate that formula accesses entity attribute using dot notation
+# Expected: Attribute value is retrieved correctly
+# Validation: Formula result uses attribute value
+
+sensors:
+  battery_efficiency:
+    name: "Battery Efficiency"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: current_power * device.battery_level / 100  # Using attribute access
+    variables:
+      current_power: sensor.span_panel_instantaneous_power
+      device: sensor.backup_device  # Has battery_level attribute
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:battery
+
+  temperature_analysis:
+    name: "Temperature Analysis"
+    formula: outdoor_temp - indoor_temp  # Using attribute access
+    variables:
+      outdoor_temp: sensor.outdoor_temperature  # Has temperature attribute
+      indoor_temp: sensor.indoor_temperature    # Has temperature attribute
+    metadata:
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement
+      icon: mdi:thermometer
+
+  power_factor_calculator:
+    name: "Power Factor Calculator"
+    formula: device.power_factor * 100  # Access power_factor attribute
+    variables:
+      device: sensor.power_meter  # Has power_factor attribute
+    metadata:
+      unit_of_measurement: "%"
+      device_class: power_factor
+      state_class: measurement
+      icon: mdi:percent

@@ -8,13 +8,6 @@ from ha_synthetic_sensors.device_association import DeviceAssociationHelper
 
 
 @pytest.fixture
-def mock_hass():
-    """Create a mock Home Assistant instance."""
-    hass = MagicMock()
-    return hass
-
-
-@pytest.fixture
 def mock_device_entry():
     """Create a mock device entry."""
     device = MagicMock()
@@ -55,7 +48,17 @@ class TestDeviceIdentifierFromEntity:
 
     @patch("ha_synthetic_sensors.device_association.er.async_get")
     @patch("ha_synthetic_sensors.device_association.dr.async_get")
-    def test_get_device_identifier_success(self, mock_dr_get, mock_er_get, device_helper, mock_device_entry, mock_entity_entry):
+    def test_get_device_identifier_success(
+        self,
+        mock_dr_get,
+        mock_er_get,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
+        device_helper,
+        mock_device_entry,
+        mock_entity_entry,
+    ):
         """Test successful device identifier retrieval."""
         # Setup mocks
         mock_entity_registry = MagicMock()
@@ -75,7 +78,7 @@ class TestDeviceIdentifierFromEntity:
         mock_device_registry.async_get.assert_called_once_with("device123")
 
     @patch("ha_synthetic_sensors.device_association.er.async_get")
-    def test_get_device_identifier_no_entity(self, mock_er_get, device_helper):
+    def test_get_device_identifier_no_entity(self, mock_er_get, mock_hass, mock_entity_registry, mock_states, device_helper):
         """Test device identifier when entity doesn't exist."""
         mock_entity_registry = MagicMock()
         mock_entity_registry.async_get.return_value = None
@@ -86,7 +89,7 @@ class TestDeviceIdentifierFromEntity:
         assert result is None
 
     @patch("ha_synthetic_sensors.device_association.er.async_get")
-    def test_get_device_identifier_no_device_id(self, mock_er_get, device_helper):
+    def test_get_device_identifier_no_device_id(self, mock_er_get, mock_hass, mock_entity_registry, mock_states, device_helper):
         """Test device identifier when entity has no device association."""
         mock_entity_entry = MagicMock()
         mock_entity_entry.device_id = None
@@ -101,7 +104,9 @@ class TestDeviceIdentifierFromEntity:
 
     @patch("ha_synthetic_sensors.device_association.er.async_get")
     @patch("ha_synthetic_sensors.device_association.dr.async_get")
-    def test_get_device_identifier_fallback_to_device_id(self, mock_dr_get, mock_er_get, device_helper, mock_entity_entry):
+    def test_get_device_identifier_fallback_to_device_id(
+        self, mock_dr_get, mock_er_get, mock_hass, mock_entity_registry, mock_states, device_helper, mock_entity_entry
+    ):
         """Test fallback to device ID when no identifiers exist."""
         # Device with no identifiers
         mock_device_entry = MagicMock()
@@ -121,7 +126,9 @@ class TestDeviceIdentifierFromEntity:
         assert result == "device123"
 
     @patch("ha_synthetic_sensors.device_association.er.async_get")
-    def test_get_device_identifier_exception_handling(self, mock_er_get, device_helper):
+    def test_get_device_identifier_exception_handling(
+        self, mock_er_get, mock_hass, mock_entity_registry, mock_states, device_helper
+    ):
         """Test exception handling in device identifier retrieval."""
         mock_er_get.side_effect = Exception("Registry error")
 
@@ -201,7 +208,15 @@ class TestEntitiesForDevice:
     @patch("ha_synthetic_sensors.device_association.dr.async_get")
     @patch("ha_synthetic_sensors.device_association.er.async_entries_for_device")
     def test_get_entities_for_device_success(
-        self, mock_entries_for_device, mock_dr_get, mock_er_get, device_helper, mock_device_entry
+        self,
+        mock_entries_for_device,
+        mock_dr_get,
+        mock_er_get,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
+        device_helper,
+        mock_device_entry,
     ):
         """Test successful entity retrieval for device."""
         # Setup mock entities
@@ -225,7 +240,7 @@ class TestEntitiesForDevice:
         mock_entries_for_device.assert_called_once_with(mock_entity_registry, "device123")
 
     @patch("ha_synthetic_sensors.device_association.dr.async_get")
-    def test_get_entities_for_device_not_found(self, mock_dr_get, device_helper):
+    def test_get_entities_for_device_not_found(self, mock_dr_get, mock_hass, mock_entity_registry, mock_states, device_helper):
         """Test entity retrieval when device doesn't exist."""
         mock_device_registry = MagicMock()
         mock_device_registry.async_get_device.return_value = None
@@ -236,7 +251,9 @@ class TestEntitiesForDevice:
         assert result == []
 
     @patch("ha_synthetic_sensors.device_association.dr.async_get")
-    def test_get_entities_for_device_exception_handling(self, mock_dr_get, device_helper):
+    def test_get_entities_for_device_exception_handling(
+        self, mock_dr_get, mock_hass, mock_entity_registry, mock_states, device_helper
+    ):
         """Test exception handling in entity retrieval."""
         mock_dr_get.side_effect = Exception("Registry error")
 

@@ -3,7 +3,7 @@
 This module provides robust parsing of entity dependencies from formulas,
 including support for:
 - Static entity references and variables
-- Dynamic query patterns (regex, tags, device_class, etc.)
+- Dynamic query patterns (regex, label, device_class, etc.)
 - Dot notation attribute access
 - Complex aggregation functions
 """
@@ -17,7 +17,10 @@ import re
 from re import Pattern
 from typing import ClassVar
 
+from homeassistant.core import HomeAssistant
+
 from .math_functions import MathFunctions
+from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, PYTHON_KEYWORDS, get_ha_domains
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,9 +29,10 @@ _LOGGER = logging.getLogger(__name__)
 class DynamicQuery:
     """Represents a dynamic query that needs runtime resolution."""
 
-    query_type: str  # 'regex', 'tags', 'device_class', 'area', 'attribute', 'state'
+    query_type: str  # 'regex', 'label', 'device_class', 'area', 'attribute', 'state'
     pattern: str  # The actual query pattern
     function: str  # The aggregation function (sum, avg, count, etc.)
+    exclusions: list[str] = field(default_factory=list)  # Patterns to exclude from results
 
 
 @dataclass
@@ -43,31 +47,50 @@ class ParsedDependencies:
 class DependencyParser:
     """Enhanced parser for extracting dependencies from synthetic sensor formulas."""
 
-    # Pattern for aggregation functions with query syntax
+    # Pattern for aggregation functions with query syntax and optional exclusions
     AGGREGATION_PATTERN = re.compile(
         r"\b(sum|avg|count|min|max|std|var)\s*\(\s*"
         r"(?:"
-        r'(?P<query_quoted>["\'])(?P<query_content_quoted>[^"\']+)(?P=query_quoted)|'  # Quoted queries
-        r"(?P<query_content_unquoted>[^)]+)"  # Unquoted queries
+        r'(?P<query_quoted>["\'])(?P<query_content_quoted>[^"\']+)(?P=query_quoted)'  # Quoted main query
+        r'(?:\s*,\s*(?P<exclusions>(?:!\s*["\'][^"\']+["\'](?:\s*,\s*)?)+))?|'  # Optional exclusions with !
+        r"(?P<query_content_unquoted>[^),]+)"  # Unquoted main query
+        r"(?:\s*,\s*(?P<exclusions_unquoted>(?:!\s*[^,)]+(?:\s*,\s*)?)+))?"  # Optional exclusions for unquoted
         r")\s*\)",
         re.IGNORECASE,
     )
 
     # Pattern for direct entity references (sensor.entity_name format)
-    ENTITY_PATTERN = re.compile(
-        r"\b((?:sensor|binary_sensor|input_number|input_boolean|switch|light|climate|cover|fan|lock|alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|zone|automation|script|scene|group|timer|counter|sun)\.[a-zA-Z0-9_.]+)",
-        re.IGNORECASE,
-    )
+    # Lazy-loaded to avoid import-time issues with HA constants
+    @property
+    def _entity_domains_pattern(self) -> str:
+        """Get the entity domains pattern for regex compilation."""
+        if self.hass is not None:
+            try:
+                domains = get_ha_domains(self.hass)
+                if domains:
+                    return "|".join(sorted(domains))
+            except (ImportError, AttributeError, TypeError):
+                # These are expected when HA is not fully initialized
+                pass
+
+        # Fallback to basic domains when hass is not available or fails
+        return "sensor|binary_sensor|switch|light|climate|input_number|input_text|span"
+
+    @property
+    def ENTITY_PATTERN(self) -> re.Pattern[str]:
+        """Get the compiled entity pattern."""
+        return re.compile(
+            rf"\b((?:{self._entity_domains_pattern})\.[a-zA-Z0-9_.]+)",
+            re.IGNORECASE,
+        )
 
     # Pattern for dot notation attribute access - more specific to avoid conflicts with entity_ids
-    _entity_domains_pattern = (
-        r"sensor|binary_sensor|input_number|input_boolean|switch|light|climate|cover|fan|lock|"
-        r"alarm_control_panel|vacuum|media_player|camera|weather|device_tracker|person|zone|"
-        r"automation|script|scene|group|timer|counter|sun"
-    )
-    DOT_NOTATION_PATTERN = re.compile(
-        rf"\b(?!(?:{_entity_domains_pattern})\.)([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.(attributes\.)?([a-zA-Z0-9_]+)\b"
-    )
+    @property
+    def DOT_NOTATION_PATTERN(self) -> re.Pattern[str]:
+        """Get the compiled dot notation pattern."""
+        return re.compile(
+            rf"\b(?!(?:{self._entity_domains_pattern})\.)([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.(attributes\.)?([a-zA-Z0-9_]+)\b"
+        )
 
     # Pattern for variable references (simple identifiers that aren't keywords)
     VARIABLE_PATTERN = re.compile(
@@ -77,15 +100,17 @@ class DependencyParser:
     # Query type patterns
     QUERY_PATTERNS: ClassVar[dict[str, re.Pattern[str]]] = {
         "regex": re.compile(r"^regex:\s*(.+)$"),
-        "tags": re.compile(r"^tags:\s*(.+)$"),
+        "label": re.compile(r"^label:\s*(.+)$"),
         "device_class": re.compile(r"^device_class:\s*(.+)$"),
         "area": re.compile(r"^area:\s*(.+)$"),
         "attribute": re.compile(r"^attribute:\s*(.+)$"),
         "state": re.compile(r"^state:\s*(.+)$"),
     }
 
-    def __init__(self) -> None:
+    def __init__(self, hass: HomeAssistant | None = None) -> None:
         """Initialize the parser with compiled regex patterns."""
+        self.hass = hass
+
         # Compile patterns once for better performance
         self._entity_patterns: list[Pattern[str]] = [
             re.compile(r'entity\(["\']([^"\']+)["\']\)'),  # entity("sensor.name")
@@ -205,37 +230,8 @@ class DependencyParser:
         # But exclude dot notation patterns that are likely variables
         potential_entities = self.direct_entity_pattern.findall(formula)
 
-        # Known Home Assistant domains
-        known_domains = {
-            "sensor",
-            "binary_sensor",
-            "input_number",
-            "input_boolean",
-            "switch",
-            "light",
-            "climate",
-            "cover",
-            "fan",
-            "lock",
-            "alarm_control_panel",
-            "vacuum",
-            "media_player",
-            "camera",
-            "weather",
-            "device_tracker",
-            "person",
-            "zone",
-            "automation",
-            "script",
-            "scene",
-            "group",
-            "timer",
-            "counter",
-            "sun",
-            "input_text",
-            "input_select",
-            "input_datetime",
-        }
+        # Check if it's a known domain
+        known_domains = get_ha_domains(self.hass) | {"input_text", "input_select", "input_datetime"}
 
         for entity_id in potential_entities:
             # Only add if it starts with a known domain
@@ -282,21 +278,7 @@ class DependencyParser:
                 and not keyword.iskeyword(entity_part)
                 and entity_part not in entities
                 and entity_part not in entity_id_parts
-                and not any(
-                    entity_part.startswith(domain + ".")
-                    for domain in [
-                        "sensor",
-                        "binary_sensor",
-                        "input_number",
-                        "input_boolean",
-                        "switch",
-                        "light",
-                        "climate",
-                        "cover",
-                        "fan",
-                        "lock",
-                    ]
-                )
+                and not any(entity_part.startswith(domain + ".") for domain in get_ha_domains(self.hass))
             ):
                 variables.add(entity_part)
 
@@ -400,37 +382,15 @@ class DependencyParser:
         Returns:
             Set of excluded terms (keywords, functions, operators)
         """
-        excluded = {
-            # Python keywords
-            "if",
-            "else",
-            "and",
-            "or",
-            "not",
-            "in",
-            "is",
-            "True",
-            "False",
-            "None",
-            # Common operators and literals
-            "def",
-            "class",
-            "import",
-            "from",
-            "as",
-            # Built-in types
-            "str",
-            "int",
-            "float",
-            "bool",
-            "list",
-            "dict",
-            "set",
-            "tuple",
-            # Mathematical constants that might appear
-            "pi",
-            "e",
-        }
+        excluded: set[str] = set()
+
+        # Add Python keywords, built-in types, and boolean literals from shared constants
+        excluded.update(PYTHON_KEYWORDS)
+        excluded.update(BUILTIN_TYPES)
+        excluded.update(BOOLEAN_LITERALS)
+
+        # Mathematical constants that might appear
+        excluded.update({"pi", "e"})
 
         # Add all mathematical function names
         excluded.update(MathFunctions.get_function_names())
@@ -471,22 +431,7 @@ class DependencyParser:
             if entity_part in variables and isinstance(variables[entity_part], str):
                 dependencies.add(str(variables[entity_part]))  # Cast to ensure type safety
             # Check if this looks like an entity_id
-            elif "." in entity_part and any(
-                entity_part.startswith(domain + ".")
-                for domain in [
-                    "sensor",
-                    "binary_sensor",
-                    "input_number",
-                    "input_boolean",
-                    "switch",
-                    "light",
-                    "climate",
-                    "cover",
-                    "fan",
-                    "lock",
-                    "alarm_control_panel",
-                ]
-            ):
+            elif "." in entity_part and any(entity_part.startswith(domain + ".") for domain in get_ha_domains(self.hass)):
                 dependencies.add(entity_part)
 
         return dependencies
@@ -509,6 +454,10 @@ class DependencyParser:
             # Get the query content (either quoted or unquoted)
             query_content = match.group("query_content_quoted") or match.group("query_content_unquoted")
 
+            # Get exclusions (either quoted or unquoted)
+            exclusions_raw = match.group("exclusions") or match.group("exclusions_unquoted")
+            exclusions = self._parse_exclusions(exclusions_raw) if exclusions_raw else []
+
             if query_content:
                 query_content = query_content.strip()
 
@@ -524,11 +473,36 @@ class DependencyParser:
                                 query_type=query_type,
                                 pattern=normalized_pattern,
                                 function=function_name,
+                                exclusions=exclusions,
                             )
                         )
-                        break
+                        break  # Only match the first pattern type
 
         return queries
+
+    def _parse_exclusions(self, exclusions_raw: str) -> list[str]:
+        """Parse exclusion patterns from the raw exclusions string.
+
+        Args:
+            exclusions_raw: Raw exclusions string like "!'area:kitchen', !'sensor1'"
+
+        Returns:
+            List of exclusion patterns without the ! prefix
+        """
+        exclusions: list[str] = []
+        if not exclusions_raw:
+            return exclusions
+
+        # Pattern to match individual exclusions: !'pattern' or !pattern
+        exclusion_pattern = re.compile(r"!\s*(?:[\"']([^\"']+)[\"']|([^,)]+))")
+
+        for match in exclusion_pattern.finditer(exclusions_raw):
+            # Get either quoted or unquoted exclusion
+            exclusion = (match.group(1) or match.group(2)).strip()
+            if exclusion:
+                exclusions.append(exclusion)
+
+        return exclusions
 
     def extract_variable_references(self, formula: str, variables: dict[str, str]) -> set[str]:
         """Extract variable names referenced in the formula.

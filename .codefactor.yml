@@ -26,24 +26,29 @@ engines:
 
 # Disable overly strict engines that don't understand HA patterns
   radon:
-    enabled: true  # Complexity metrics not useful for HA components
+    enabled: false  # Disable complexity metrics for tests and HA patterns
   bandit:
     enabled: false  # Security scanner too strict for HA development patterns
 
 # Exclude certain files/directories from analysis
 exclude_patterns:
-  - "tests/**/*"           # Don't analyze test files
-  - "examples/**/*"        # Don't analyze example code
-  - "docs/**/*"           # Don't analyze documentation
-  - "scripts/**/*"        # Don't analyze utility scripts
-  - "**/__pycache__/**/*" # Python cache files
-  - "**/.venv/**/*"       # Virtual environment
-  - "**/venv/**/*"        # Virtual environment
-  - "**/.mypy_cache/**/*" # MyPy cache
-  - "**/.pytest_cache/**/*" # Pytest cache
-  - "**/.ruff_cache/**/*" # Ruff cache
-  - "**/htmlcov/**/*"     # Coverage HTML reports
-  - "**/dist/**/*"        # Distribution files
-  - "**/*.pyc"           # Compiled Python files
-  - "**/.git/**/*"       # Git files
-  - "**/node_modules/**/*" # Node modules if any
+  - "tests/**"             # Don't analyze any test files
+  - "tests/*"              # Don't analyze test files (alternative pattern)
+  - "**/test_*.py"         # Don't analyze test files by name pattern
+  - "**/conftest.py"       # Don't analyze pytest configuration files
+  - "examples/**"          # Don't analyze example code
+  - "docs/**"              # Don't analyze documentation
+  - "scripts/**"           # Don't analyze utility scripts
+  - "**/__pycache__/**"    # Python cache files
+  - "**/.venv/**"          # Virtual environment
+  - "**/venv/**"           # Virtual environment
+  - "**/.mypy_cache/**"    # MyPy cache
+  - "**/.pytest_cache/**" # Pytest cache
+  - "**/.ruff_cache/**"    # Ruff cache
+  - "**/htmlcov/**"        # Coverage HTML reports
+  - "**/dist/**"           # Distribution files
+  - "**/*.pyc"             # Compiled Python files
+  - "**/.git/**"           # Git files
+  - "**/node_modules/**"   # Node modules if any
+  - "**/*.yaml"            # YAML test fixtures
+  - "**/*.yml"             # YAML test fixtures

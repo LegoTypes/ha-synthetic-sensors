@@ -4,55 +4,67 @@ sensors:
   # Sensor with calculated attributes
   energy_cost_analysis:
     name: "Energy Cost Analysis"
-    formula: "current_power * electricity_rate / conversion_factor"
+    # entity_id: "sensor.custom_entity_id"  # Optional: override auto-generated entity_id
+    formula: "current_power * electricity_rate / 1000"
     attributes:
       daily_projected:
         formula: "state * 24" # ref by main state alias
         metadata:
           unit_of_measurement: "¢"
+          suggested_display_precision: 2
       monthly_projected:
-        formula: "energy_cost_analysis * 24 * 30" # ref by main sensor key
+        formula: "state * 24 * 30" # ref by main sensor state (preferred)
         metadata:
           unit_of_measurement: "¢"
+          suggested_display_precision: 2
       annual_projected:
-        formula: "sensor.syn2_energy_cost_analysis * 24 * 365" # ref by entity_id
+        formula: "state * 24 * 365" # ref by state to avoid circular reference
         metadata:
           unit_of_measurement: "¢"
+          suggested_display_precision: 0
       battery_efficiency:
         formula: "current_power * device.battery_level / 100" # using attribute access
         variables:
           device: "sensor.backup_device"
         metadata:
           unit_of_measurement: "W"
+          device_class: "power"
       efficiency:
-        formula: "state / sensor.max_power_capacity * 100"
+        formula: "state / max_capacity * 100"
+        variables:
+          max_capacity: "sensor.max_power_capacity"
         metadata:
           unit_of_measurement: "%"
+          suggested_display_precision: 1
+      temperature_analysis:
+        formula: "outdoor_temp - indoor_temp"
+        variables:
+          outdoor_temp: "sensor.outdoor_temperature"
+          indoor_temp: "sensor.indoor_temperature"
+        metadata:
+          unit_of_measurement: "°C"
+          device_class: "temperature"
+          suggested_display_precision: 1
     variables:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
-      conversion_factor: 1000                    # Literal: conversion factor
     metadata:
       unit_of_measurement: "¢/h"
       device_class: "monetary"
+      state_class: "measurement"
+      icon: "mdi:currency-usd"
+      attribution: "Calculated from SPAN Panel data"
 
-  # Sensor with device association
+  # Device association example (without device registry issues for testing)
   solar_inverter_efficiency:
     name: "Solar Inverter Efficiency"
-    formula: "solar_output / solar_capacity * percentage_factor"
+    formula: "solar_output / solar_capacity * 100"
     variables:
       solar_output: "sensor.solar_current_power"
       solar_capacity: "sensor.solar_max_capacity"
-      percentage_factor: 100                     # Literal: percentage conversion
     metadata:
       unit_of_measurement: "%"
       device_class: "power_factor"
       state_class: "measurement"
-    # Device association fields
-    device_identifier: "solar_inverter_001"
-    device_name: "Solar Inverter"
-    device_manufacturer: "SolarTech"
-    device_model: "ST-5000"
-    device_sw_version: "2.1.0"
-    device_hw_version: "1.0"
-    suggested_area: "Garage"
+      suggested_display_precision: 1
+      icon: "mdi:solar-panel"

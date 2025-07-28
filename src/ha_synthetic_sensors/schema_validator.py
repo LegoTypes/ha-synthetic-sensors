@@ -5,6 +5,8 @@ This module provides schema-based validation for synthetic sensor YAML configura
 with detailed error reporting and support for schema versioning.
 """
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,8 +15,8 @@ import logging
 import re
 from typing import Any, TypedDict
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES, DEVICE_CLASS_UNITS
+from .formula_utils import tokenize_formula
+from .ha_constants import HAConstantLoader
 
 try:
     from jsonschema import Draft7Validator
@@ -55,7 +57,15 @@ class ValidationResult(TypedDict):
 
 
 class SchemaValidator:
-    """Validates synthetic sensor YAML configurations against JSON Schema."""
+    """Validates YAML configuration against JSON schema and additional semantic rules."""
+
+    # Common regex patterns used across validation methods
+    VARIABLE_VALUE_PATTERN = (
+        "^([a-z_]+\\.[a-z0-9_.]+|[a-zA-Z_][a-zA-Z0-9_]*|device_class:[a-z0-9_]+|"
+        "area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+|(sum|avg|mean|count|min|max|std|var)\\(.+\\)|"
+        "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:Z|[+-]\\d{2}:?\\d{2})?|"
+        "v\\d+(\\.\\d+){0,2}([-+][a-zA-Z0-9\\-.]+)?|\\d+\\.\\d+)$"
+    )
 
     def __init__(self) -> None:
         """Initialize the schema validator."""
@@ -176,7 +186,17 @@ class SchemaValidator:
         # Validate sensors based on version
         if version == "1.0":
             sensors = config_data.get("sensors", {})
+
+            # First validate sensor key references across the entire config
+            self._validate_sensor_key_references(config_data, errors)
+
             for sensor_key, sensor_config in sensors.items():
+                # Validate device class using HA's built-in validation
+                metadata = sensor_config.get("metadata", {})
+                device_class = metadata.get("device_class")
+                if device_class:
+                    self._validate_device_class(sensor_key, device_class, warnings)
+
                 self._validate_sensor_config(sensor_key, sensor_config, warnings)
                 self._validate_state_class_compatibility(sensor_key, sensor_config, warnings)
                 self._validate_unit_compatibility(sensor_key, sensor_config, errors)
@@ -201,34 +221,48 @@ class SchemaValidator:
         try:
             # Convert string values to enum instances for lookup
             try:
-                device_class_enum = SensorDeviceClass(device_class)
-                state_class_enum = SensorStateClass(state_class)
+                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+                sensor_state_class = HAConstantLoader.get_constant("SensorStateClass")
+                device_class_enum = sensor_device_class(device_class)
+                state_class_enum = sensor_state_class(state_class)
             except ValueError:
-                # Invalid enum values - will be caught by schema validation
+                # Check if the state class is valid using component constants
+                try:
+                    sensor_state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
+                    if state_class not in sensor_state_classes:
+                        warnings.append(
+                            ValidationError(
+                                message=f"Invalid state_class '{state_class}'. Valid options: {sensor_state_classes}",
+                                path=f"sensors.{sensor_key}.state_class",
+                                severity=ValidationSeverity.WARNING,
+                            )
+                        )
+                except ValueError:
+                    pass  # Skip validation if we can't get the constants
                 return
 
             # Check if this combination is explicitly allowed by HA
-            allowed_state_classes = DEVICE_CLASS_STATE_CLASSES.get(device_class_enum, set())
+            try:
+                device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
+                allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
 
-            if allowed_state_classes and state_class_enum not in allowed_state_classes:
-                allowed_values = [sc.value for sc in allowed_state_classes]
-                warnings.append(
-                    ValidationError(
-                        message=(
-                            f"Sensor '{sensor_key}' uses state_class '{state_class}' with "
-                            f"device_class '{device_class}'. Home Assistant recommends "
-                            f"state_class values: {', '.join(allowed_values)} for this "
-                            "device class."
-                        ),
-                        path=f"sensors.{sensor_key}.state_class",
-                        severity=ValidationSeverity.WARNING,
-                        suggested_fix=f"Consider using one of: {', '.join(allowed_values)}",
+                if allowed_state_classes and state_class_enum not in allowed_state_classes:
+                    warnings.append(
+                        ValidationError(
+                            message=(
+                                f"Invalid state_class '{state_class}' for device_class '{device_class}'. "
+                                f"Valid options: {[sc.value for sc in allowed_state_classes]}"
+                            ),
+                            path=f"sensors.{sensor_key}.state_class",
+                            severity=ValidationSeverity.WARNING,
+                        )
                     )
-                )
+            except ValueError:
+                pass  # Skip validation if we can't get the constants
 
         except ImportError:
-            # Fall back to basic validation if HA constants not available
-            self._validate_state_class_fallback(sensor_key, sensor_config, device_class, state_class, warnings)
+            # HA not available - skip validation
+            pass
 
     def _validate_state_class_fallback(
         self,
@@ -356,6 +390,59 @@ class SchemaValidator:
 
         return warnings
 
+    def _validate_device_class(
+        self,
+        sensor_key: str,
+        device_class: str,
+        warnings: list[ValidationError],
+    ) -> None:
+        """Validate device class using Home Assistant's built-in validation.
+
+        Args:
+            sensor_key: The sensor key being validated
+            device_class: The device class to validate
+            warnings: List to append validation warnings to
+        """
+        try:
+            # Try to validate against sensor device classes first
+            try:
+                # Check against the component's device class list
+                sensor_device_classes = HAConstantLoader.get_constant("DEVICE_CLASSES", "homeassistant.components.sensor")
+                if device_class in sensor_device_classes:
+                    return  # Valid sensor device class
+            except Exception as e:
+                _LOGGER.debug("Could not check sensor device classes: %s", e)
+
+            # Try to validate against binary sensor device classes
+            try:
+                # Check against the component's device class list
+                binary_sensor_device_classes = HAConstantLoader.get_constant(
+                    "DEVICE_CLASSES", "homeassistant.components.binary_sensor"
+                )
+                if device_class in binary_sensor_device_classes:
+                    return  # Valid binary sensor device class
+            except Exception as e:
+                _LOGGER.debug("Could not check binary sensor device classes: %s", e)
+
+            # If we get here, the device class is not valid
+            warnings.append(
+                ValidationError(
+                    message=(
+                        f"Sensor '{sensor_key}' uses invalid device_class '{device_class}'. "
+                        f"This is not a recognized Home Assistant device class."
+                    ),
+                    path=f"sensors.{sensor_key}.metadata.device_class",
+                    severity=ValidationSeverity.WARNING,
+                    suggested_fix="Use a valid Home Assistant device class",
+                )
+            )
+        except ImportError:
+            # If HA imports fail, skip validation to avoid breaking the package
+            return
+        except Exception:
+            # If validation fails for any other reason, skip to avoid breaking the package
+            return
+
     def _validate_unit_compatibility(
         self,
         sensor_key: str,
@@ -368,87 +455,333 @@ class SchemaValidator:
         unit = metadata.get("unit_of_measurement")
 
         if not device_class or not unit:
-            return
+            return  # No validation needed if either is missing
 
-        # Import HA's official device class to unit mappings
         try:
-            # Convert string to enum for lookup
+            # Check against both SensorDeviceClass and BinarySensorDeviceClass
+            device_class_enum = None
             try:
-                device_class_enum = SensorDeviceClass(device_class)
+                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+                device_class_enum = sensor_device_class(device_class)
             except ValueError:
-                # Invalid device_class - will be caught by schema validation
-                return
+                # Try BinarySensorDeviceClass if SensorDeviceClass fails
+                try:
+                    binary_sensor_device_class = HAConstantLoader.get_constant("BinarySensorDeviceClass")
+                    device_class_enum = binary_sensor_device_class(device_class)
+                except ValueError:
+                    # Invalid device_class - not found in either enum
+                    errors.append(
+                        ValidationError(
+                            message=f"Sensor '{sensor_key}' uses invalid device_class '{device_class}'",
+                            path=f"sensors.{sensor_key}.metadata.device_class",
+                            severity=ValidationSeverity.ERROR,
+                        )
+                    )
+                    return
 
             # Skip validation for device classes with open-ended unit requirements
-            SKIP_UNIT_VALIDATION = {
-                SensorDeviceClass.MONETARY,  # ISO4217 currency codes (180+ options)
-                SensorDeviceClass.DATE,  # ISO8601 date formats (many variations)
-                SensorDeviceClass.TIMESTAMP,  # ISO8601 timestamp formats (many variations)
-                SensorDeviceClass.ENUM,  # User-defined enumeration values
-            }
+            try:
+                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+                SKIP_UNIT_VALIDATION = {
+                    sensor_device_class.MONETARY,  # ISO4217 currency codes (180+ options)
+                    sensor_device_class.DATE,  # ISO8601 date formats (many variations)
+                    sensor_device_class.TIMESTAMP,  # ISO8601 timestamp formats (many variations)
+                    sensor_device_class.ENUM,  # User-defined enumeration values
+                }
+            except ValueError:
+                SKIP_UNIT_VALIDATION = set()
 
             if device_class_enum in SKIP_UNIT_VALIDATION:
-                return  # Punt - too many valid options to validate reasonably
-
-            # Get allowed units for this device class
-            allowed_units_raw = DEVICE_CLASS_UNITS.get(device_class_enum, set())
-
-            # If HA doesn't define units for this device class, punt
-            if not allowed_units_raw:
                 return
 
-            # Convert enum units to string values for comparison
-            allowed_units: set[str | None] = set()
-            for unit_spec in allowed_units_raw:
-                if unit_spec is None:
-                    # None is allowed (unitless)
-                    allowed_units.add(None)
-                elif isinstance(unit_spec, str):
-                    # It's a string constant
-                    allowed_units.add(unit_spec)
-                else:
-                    # It's likely an enum like UnitOfPower.WATT
-                    try:
-                        allowed_units.add(str(unit_spec.value))
-                    except AttributeError:
-                        # If it doesn't have .value, add as string
-                        allowed_units.add(str(unit_spec))
+            # Get allowed units for this device class
+            try:
+                device_class_units = HAConstantLoader.get_constant("DEVICE_CLASS_UNITS")
+                allowed_units = device_class_units.get(device_class_enum, set())
+            except ValueError:
+                allowed_units = set()
 
-            # Check if current unit is allowed
-            if allowed_units and unit not in allowed_units:
-                # Format allowed units for display (handle None separately for sorting)
-                str_units = [u for u in allowed_units if u is not None and isinstance(u, str)]
-                has_none = None in allowed_units
+            if not allowed_units:
+                return  # No known restrictions
 
-                unit_list = sorted(str_units)
-                if has_none:
-                    unit_list.append("None")
+            # Convert allowed units to string representations for comparison
+            allowed_unit_strings = {
+                unit_obj.value if hasattr(unit_obj, "value") else str(unit_obj) for unit_obj in allowed_units
+            }
+
+            if unit not in allowed_unit_strings:
                 errors.append(
                     ValidationError(
                         message=(
-                            f"Sensor '{sensor_key}' uses invalid unit '{unit}' for "
-                            f"device_class '{device_class}'. Home Assistant will log this "
-                            f"as an error. Allowed units: {', '.join(unit_list)}"
+                            f"Sensor '{sensor_key}' uses invalid unit '{unit}' "
+                            f"with device_class '{device_class}'. This combination is not valid."
                         ),
-                        path=f"sensors.{sensor_key}.unit_of_measurement",
+                        path=f"sensors.{sensor_key}.metadata.unit_of_measurement",
                         severity=ValidationSeverity.ERROR,
-                        suggested_fix=f"Use one of the allowed units: {', '.join(unit_list)}",
+                        suggested_fix=f"Use one of: {', '.join(sorted(allowed_unit_strings))}",
+                    )
+                )
+        except Exception as e:
+            # If validation fails (e.g., HA constants not available), skip validation
+            # This prevents breaking the package if HA changes its validation logic
+            _LOGGER.debug("Unit validation failed, skipping: %s", e)
+
+    def _is_entity_id(self, value: str) -> bool:
+        """Check if a string is an entity ID vs sensor key.
+
+        Supports basic entity IDs (sensor.power_meter) and attribute references (sensor.power_meter.state)
+        """
+        return bool(re.match(r"^[a-z_]+\.[a-z0-9_.]+$", value))
+
+    def _is_collection_pattern(self, value: str) -> bool:
+        """Check if a string is a collection pattern."""
+        return bool(re.match(r"^(device_class|area|label|regex|attribute):", value))
+
+    def _is_collection_function(self, value: str) -> bool:
+        """Check if a string is a collection function."""
+        return bool(re.match(r"^(sum|avg|mean|count|min|max|std|var)\(", value))
+
+    def _is_formula_expression(self, value: str) -> bool:
+        """Check if a string is a formula expression.
+
+        Formula expressions contain mathematical operators and variable references.
+        """
+        # Look for mathematical operators like +, -, *, /, ()
+        # Allow decimal numbers (dots followed by digits) but exclude entity IDs (dots followed by letters)
+        # Exclude collection patterns (containing colons)
+        has_operators = bool(re.search(r"[+\-*/()]", value))
+        is_entity_id = bool(re.search(r"\.[a-zA-Z]", value))  # dot followed by letter indicates entity ID
+        has_colon = ":" in value
+        return has_operators and not is_entity_id and not has_colon
+
+    def _is_datetime_literal(self, value: str) -> bool:
+        """Check if a string is a datetime literal."""
+        return bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?$", value))
+
+    def _is_version_literal(self, value: str) -> bool:
+        """Check if a string is a version literal (requires 'v' prefix)."""
+        return bool(re.match(r"^v\d+(\.\d+){0,2}([-+][a-zA-Z0-9\-.]+)?$", value))
+
+    def _validate_formula_tokens(
+        self,
+        formula: str,
+        sensor_keys: set[str],
+        path: str,
+        errors: list[ValidationError],
+        global_vars: set[str] | None = None,
+        sensor_vars: set[str] | None = None,
+        attr_vars: set[str] | None = None,
+    ) -> None:
+        """Validate that all tokens in a formula expression are valid references."""
+        if not self._is_formula_expression(formula):
+            return
+
+        tokens = tokenize_formula(formula)
+        for token in tokens:
+            # Check if token is valid in any scope:
+            # 1. Global variables (accessible from anywhere)
+            # 2. Local sensor variables (accessible within same sensor)
+            # 3. Local attribute variables (accessible within same attribute)
+            # 4. Sensor keys (for cross-sensor references)
+            is_valid = (
+                token in sensor_keys
+                or (global_vars and token in global_vars)
+                or (sensor_vars and token in sensor_vars)
+                or (attr_vars and token in attr_vars)
+            )
+
+            if not is_valid:
+                available_refs: list[str] = []
+                if global_vars:
+                    available_refs.extend(f"global:{var}" for var in sorted(global_vars))
+                if sensor_vars:
+                    available_refs.extend(f"local:{var}" for var in sorted(sensor_vars))
+                if attr_vars:
+                    available_refs.extend(f"attr:{var}" for var in sorted(attr_vars))
+                available_refs.extend(f"sensor:{key}" for key in sorted(sensor_keys))
+
+                errors.append(
+                    ValidationError(
+                        message=f"Formula token '{token}' in '{formula}' references unknown variable or sensor key",
+                        path=path,
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix=f"Available references: {', '.join(available_refs[:10])}{'...' if len(available_refs) > 10 else ''}",
                     )
                 )
 
-        except ImportError:
-            # Fall back if HA constants not available - no validation
+    def _validate_variable_value(
+        self,
+        var_value: str,
+        sensor_keys: set[str],
+        global_vars: set[str],
+        sensor_vars: set[str] | None = None,
+        attr_vars: set[str] | None = None,
+    ) -> bool:
+        """Validate a variable value is a recognized pattern.
+
+        Variable values can only be:
+        - References to sensor keys, global vars, or local vars
+        - Entity IDs (domain.entity format)
+        - Collection patterns (device_class:, area:, etc.)
+        - Simple literals (numbers, dates, versions, plain strings)
+
+        They CANNOT be formula expressions or collection functions.
+
+        Returns True if valid, False otherwise.
+        """
+        # Check if it's a reference to existing variables/sensors
+        if self._is_variable_reference(var_value, sensor_keys, global_vars, sensor_vars, attr_vars):
+            return True
+
+        # Check if it's a valid entity ID or collection pattern
+        if self._is_entity_id(var_value) or self._is_collection_pattern(var_value):
+            return True
+
+        # Check if it's a simple literal (dates, versions, numbers)
+        if self._is_datetime_literal(var_value) or self._is_version_literal(var_value):
+            return True
+
+        # Check if it's a simple number
+        try:
+            float(var_value)
+            return True
+        except ValueError:
             pass
+
+        # Check if it's a simple string literal (no special characters that suggest it's meant to be a reference)
+        # Simple strings should not contain dots, underscores followed by numbers, or start with numbers
+        # These patterns suggest intended references that are malformed
+        return (
+            var_value.isalpha()  # Pure alphabetic strings are OK
+            or (var_value.replace("_", "").replace(" ", "").replace("-", "").isalpha())
+        )  # Strings with basic separators
+
+    def _is_variable_reference(
+        self,
+        var_value: str,
+        sensor_keys: set[str],
+        global_vars: set[str],
+        sensor_vars: set[str] | None = None,
+        attr_vars: set[str] | None = None,
+    ) -> bool:
+        """Check if a value is a reference to an existing variable or sensor."""
+        return (
+            var_value in sensor_keys
+            or var_value in global_vars
+            or (sensor_vars is not None and var_value in sensor_vars)
+            or (attr_vars is not None and var_value in attr_vars)
+        )
+
+    def _validate_attribute_variables(
+        self,
+        sensor_key: str,
+        attr_name: str,
+        attr_config: dict[str, Any],
+        sensor_keys: set[str],
+        global_var_keys: set[str],
+        sensor_var_keys: set[str],
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate variables within an attribute configuration."""
+        attr_variables = attr_config.get("variables", {})
+        attr_var_keys = set(attr_variables.keys())
+
+        for var_name, var_value in attr_variables.items():
+            if isinstance(var_value, str):
+                # First validate formula expressions by tokenizing them
+                # Attribute variables can reference global vars, sensor vars, other attr vars, and sensor keys
+                self._validate_formula_tokens(
+                    var_value,
+                    sensor_keys,
+                    f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                    errors,
+                    global_vars=global_var_keys,
+                    sensor_vars=sensor_var_keys,
+                    attr_vars=attr_var_keys,
+                )
+
+                # Check what type of value this is by elimination
+                if not self._validate_variable_value(var_value, sensor_keys, global_var_keys, sensor_var_keys, attr_var_keys):
+                    errors.append(
+                        ValidationError(
+                            message=f"Invalid variable value '{var_value}' - must be a sensor key, entity ID, collection pattern, or simple literal",
+                            path=f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                            severity=ValidationSeverity.ERROR,
+                            suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
+                        )
+                    )
+
+    def _validate_sensor_key_references(self, config_data: dict[str, Any], errors: list[ValidationError]) -> None:
+        """Validate that all sensor key references point to actual sensors in the config."""
+        sensors = config_data.get("sensors", {})
+        sensor_keys = set(sensors.keys())
+
+        # Check global variables
+        global_settings = config_data.get("global_settings", {})
+        global_variables = global_settings.get("variables", {})
+        global_var_keys = set(global_variables.keys())
+
+        for var_name, var_value in global_variables.items():
+            if isinstance(var_value, str):
+                # First validate formula expressions by tokenizing them
+                # Global variables can reference other global variables and sensor keys
+                self._validate_formula_tokens(
+                    var_value, sensor_keys, f"global_settings.variables.{var_name}", errors, global_vars=global_var_keys
+                )
+
+                # Check what type of value this is by elimination
+                if not self._validate_variable_value(var_value, sensor_keys, global_var_keys):
+                    errors.append(
+                        ValidationError(
+                            message=f"Invalid variable value '{var_value}' - must be a sensor key, entity ID, collection pattern, or simple literal",
+                            path=f"global_settings.variables.{var_name}",
+                            severity=ValidationSeverity.ERROR,
+                            suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
+                        )
+                    )
+
+        # Check sensor-level variables and attribute variables
+        for sensor_key, sensor_config in sensors.items():
+            # Check sensor-level variables
+            sensor_variables = sensor_config.get("variables", {})
+            sensor_var_keys = set(sensor_variables.keys())
+
+            for var_name, var_value in sensor_variables.items():
+                if isinstance(var_value, str):
+                    # First validate formula expressions by tokenizing them
+                    # Sensor variables can reference global vars, other sensor vars in same sensor, and sensor keys
+                    self._validate_formula_tokens(
+                        var_value,
+                        sensor_keys,
+                        f"sensors.{sensor_key}.variables.{var_name}",
+                        errors,
+                        global_vars=global_var_keys,
+                        sensor_vars=sensor_var_keys,
+                    )
+
+                    # Check what type of value this is by elimination
+                    if not self._validate_variable_value(var_value, sensor_keys, global_var_keys, sensor_var_keys):
+                        errors.append(
+                            ValidationError(
+                                message=f"Invalid variable value '{var_value}' - must be a sensor key, entity ID, collection pattern, or simple literal",
+                                path=f"sensors.{sensor_key}.variables.{var_name}",
+                                severity=ValidationSeverity.ERROR,
+                                suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
+                            )
+                        )
+
+            # Check attribute-level variables
+            attributes = sensor_config.get("attributes", {})
+            for attr_name, attr_config in attributes.items():
+                if isinstance(attr_config, dict):
+                    self._validate_attribute_variables(
+                        sensor_key, attr_name, attr_config, sensor_keys, global_var_keys, sensor_var_keys, errors
+                    )
 
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns
         id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
-        entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"
-        # Allow entity IDs OR collection patterns (device_class:, area:, tags:, regex:, attribute:)
-        variable_value_pattern = (
-            "^([a-z_]+\\.[a-z0-9_]+|device_class:[a-z0-9_]+|area:[a-z0-9_]+|tags:[a-z0-9_]+|regex:.+|attribute:.+)$"
-        )
         var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
         icon_pattern = "^mdi:[a-z0-9-]+$"
 
@@ -457,70 +790,10 @@ class SchemaValidator:
             "title": "HA Synthetic Sensors Configuration",
             "description": ("Schema for Home Assistant Synthetic Sensors YAML configuration"),
             "type": "object",
-            "properties": self._get_v1_main_properties(id_pattern, entity_pattern, var_pattern, icon_pattern),
+            "properties": self._get_v1_main_properties(id_pattern, self.VARIABLE_VALUE_PATTERN, var_pattern, icon_pattern),
             "required": ["sensors"],
             "additionalProperties": False,
-            "definitions": self._get_v1_schema_definitions(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
-        }
-
-    def _get_main_properties(self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
-        """Get the main properties for the schema."""
-        return {
-            "version": {
-                "type": "string",
-                "enum": ["1.0"],
-                "description": "Configuration schema version",
-            },
-            "global_settings": {
-                "type": "object",
-                "description": "Global settings for all sensors",
-                "properties": {
-                    "device_identifier": {
-                        "type": "string",
-                        "description": "Default device identifier for all sensors in this set",
-                    },
-                    "variables": {
-                        "type": "object",
-                        "description": "Global variable mappings available to all sensors",
-                        "patternProperties": {
-                            var_pattern: {
-                                "oneOf": [
-                                    {
-                                        "type": "string",
-                                        "pattern": entity_pattern,
-                                        "description": "Home Assistant entity ID",
-                                    },
-                                    {
-                                        "type": "number",
-                                        "description": "Numeric literal value",
-                                    },
-                                ]
-                            }
-                        },
-                        "additionalProperties": False,
-                    },
-                },
-                "additionalProperties": False,
-            },
-            "sensors": {
-                "type": "array",
-                "description": "List of synthetic sensor definitions",
-                "items": {"$ref": "#/definitions/sensor"},
-                "minItems": 1,
-            },
-        }
-
-    def _get_schema_definitions(
-        self,
-        id_pattern: str,
-        variable_value_pattern: str,
-        var_pattern: str,
-        icon_pattern: str,
-    ) -> dict[str, Any]:
-        """Get the definitions section for the schema."""
-        return {
-            "sensor": self._get_sensor_definition(id_pattern),
-            "formula": self._get_formula_definition(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
+            "definitions": self._get_v1_schema_definitions(id_pattern, self.VARIABLE_VALUE_PATTERN, var_pattern, icon_pattern),
         }
 
     def _get_sensor_definition(self, id_pattern: str) -> dict[str, Any]:
@@ -529,12 +802,6 @@ class SchemaValidator:
             "type": "object",
             "description": "Synthetic sensor definition",
             "properties": {
-                "unique_id": {
-                    "type": "string",
-                    "description": "Unique identifier for the sensor",
-                    "pattern": id_pattern,
-                    "minLength": 1,
-                },
                 "name": {
                     "type": "string",
                     "description": "Human-readable name for the sensor",
@@ -558,14 +825,141 @@ class SchemaValidator:
                     "type": "string",
                     "description": "Category for grouping sensors",
                 },
-                "formulas": {
-                    "type": "array",
-                    "description": ("List of formula calculations for this sensor"),
-                    "items": {"$ref": "#/definitions/formula"},
-                    "minItems": 1,
+                "entity_id": {
+                    "type": "string",
+                    "description": "Optional: Explicit entity ID for the sensor",
+                    "pattern": "^[a-z_]+\\.[a-z0-9_]+$",
+                },
+                "formula": {
+                    "type": "string",
+                    "description": "Mathematical expression to evaluate",
+                    "minLength": 1,
+                },
+                "variables": {
+                    "type": "object",
+                    "description": "Variable mappings to Home Assistant entities, numeric literals, boolean literals, or datetime strings",
+                    "patternProperties": {
+                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": self.VARIABLE_VALUE_PATTERN,
+                                    "description": "Home Assistant entity ID, sensor key, collection pattern, collection function, formula expression, datetime string, or version string",
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Numeric literal value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Boolean literal value",
+                                },
+                            ]
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Sensor metadata including unit_of_measurement, device_class, etc.",
+                    "additionalProperties": True,
+                },
+                "attributes": {
+                    "type": "object",
+                    "description": "Calculated attributes for the sensor",
+                    "patternProperties": {
+                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {
+                                            "type": "string",
+                                            "description": "Attribute formula",
+                                            "minLength": 1,
+                                        },
+                                        "metadata": {
+                                            "type": "object",
+                                            "description": "Attribute metadata",
+                                            "additionalProperties": True,
+                                        },
+                                        "variables": {
+                                            "type": "object",
+                                            "description": "Attribute-specific variables",
+                                            "patternProperties": {
+                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                    "oneOf": [
+                                                        {
+                                                            "type": "string",
+                                                            "pattern": self.VARIABLE_VALUE_PATTERN,
+                                                        },
+                                                        {
+                                                            "type": "number",
+                                                        },
+                                                        {
+                                                            "type": "boolean",
+                                                        },
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "type": "string",
+                                    "description": "Literal string value",
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Literal numeric value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Literal boolean value",
+                                },
+                            ]
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                "extra_attributes": {
+                    "type": "object",
+                    "description": "Additional attributes for the entity",
+                    "additionalProperties": True,
+                },
+                "device_identifier": {
+                    "type": "string",
+                    "description": "Device identifier to associate with",
+                },
+                "device_name": {
+                    "type": "string",
+                    "description": "Optional device name override",
+                },
+                "device_manufacturer": {
+                    "type": "string",
+                    "description": "Device manufacturer",
+                },
+                "device_model": {
+                    "type": "string",
+                    "description": "Device model",
+                },
+                "device_sw_version": {
+                    "type": "string",
+                    "description": "Device software version",
+                },
+                "device_hw_version": {
+                    "type": "string",
+                    "description": "Device hardware version",
+                },
+                "suggested_area": {
+                    "type": "string",
+                    "description": "Suggested area for the sensor",
                 },
             },
-            "required": ["unique_id", "formulas"],
+            "required": ["formula"],
             "additionalProperties": False,
         }
 
@@ -605,12 +999,15 @@ class SchemaValidator:
                             "oneOf": [
                                 {
                                     "type": "string",
-                                    "pattern": variable_value_pattern,
-                                    "description": "Home Assistant entity ID or collection pattern (device_class:, area:, etc.)",
+                                    "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                 },
                                 {
                                     "type": "number",
                                     "description": "Numeric literal value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Boolean literal value",
                                 },
                             ]
                         }
@@ -623,8 +1020,7 @@ class SchemaValidator:
                 },
                 "device_class": {
                     "type": "string",
-                    "description": "Home Assistant device class",
-                    "enum": self._get_device_class_enum(),
+                    "description": "Home Assistant device class (any string allowed)",
                 },
                 "state_class": {
                     "type": "string",
@@ -648,14 +1044,71 @@ class SchemaValidator:
 
     def _get_device_class_enum(self) -> list[str]:
         """Get the list of valid device classes from Home Assistant constants."""
-        return [device_class.value for device_class in SensorDeviceClass.__members__.values()]
+        # Return a list of common device classes for schema validation, but allow any string.
+        try:
+            sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+            return [device_class.value for device_class in sensor_device_class.__members__.values()]
+        except Exception:
+            # Fallback if enum access fails - return common device classes
+            return [
+                "apparent_power",
+                "aqi",
+                "atmospheric_pressure",
+                "battery",
+                "carbon_dioxide",
+                "carbon_monoxide",
+                "current",
+                "data_rate",
+                "data_size",
+                "date",
+                "distance",
+                "duration",
+                "energy",
+                "frequency",
+                "gas",
+                "humidity",
+                "illuminance",
+                "irradiance",
+                "moisture",
+                "monetary",
+                "nitrogen_dioxide",
+                "nitrogen_monoxide",
+                "nitrous_oxide",
+                "ozone",
+                "pm1",
+                "pm10",
+                "pm25",
+                "power",
+                "power_factor",
+                "precipitation",
+                "precipitation_intensity",
+                "pressure",
+                "reactive_power",
+                "signal_strength",
+                "sound_pressure",
+                "speed",
+                "sulphur_dioxide",
+                "temperature",
+                "timestamp",
+                "volatile_organic_compounds",
+                "voltage",
+                "volume",
+                "water",
+                "weight",
+                "wind_speed",
+            ]
 
     def _get_state_class_enum(self) -> list[str]:
         """Get the list of valid state classes from Home Assistant constants."""
-        return [state_class.value for state_class in SensorStateClass.__members__.values()]
+        try:
+            state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
+            return list(state_classes)
+        except Exception:
+            # Fallback if enum access fails - return common state classes
+            return ["measurement", "total", "total_increasing"]
 
     def _get_v1_main_properties(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+        self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str
     ) -> dict[str, Any]:
         """Get the main properties for the v1.0 schema."""
         return {
@@ -672,6 +1125,30 @@ class SchemaValidator:
                         "type": "string",
                         "description": "Default device identifier for all sensors in this set",
                     },
+                    "device_name": {
+                        "type": "string",
+                        "description": "Default device name for all sensors in this set",
+                    },
+                    "device_manufacturer": {
+                        "type": "string",
+                        "description": "Default device manufacturer for all sensors in this set",
+                    },
+                    "device_model": {
+                        "type": "string",
+                        "description": "Default device model for all sensors in this set",
+                    },
+                    "device_sw_version": {
+                        "type": "string",
+                        "description": "Default device software version for all sensors in this set",
+                    },
+                    "device_hw_version": {
+                        "type": "string",
+                        "description": "Default device hardware version for all sensors in this set",
+                    },
+                    "suggested_area": {
+                        "type": "string",
+                        "description": "Default suggested area for all sensors in this set",
+                    },
                     "variables": {
                         "type": "object",
                         "description": "Global variable mappings available to all sensors",
@@ -680,12 +1157,15 @@ class SchemaValidator:
                                 "oneOf": [
                                     {
                                         "type": "string",
-                                        "pattern": entity_pattern,
-                                        "description": "Home Assistant entity ID",
+                                        "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                     },
                                     {
                                         "type": "number",
                                         "description": "Numeric literal value",
+                                    },
+                                    {
+                                        "type": "boolean",
+                                        "description": "Boolean literal value",
                                     },
                                 ]
                             }
@@ -698,8 +1178,7 @@ class SchemaValidator:
                         "properties": {
                             "device_class": {
                                 "type": "string",
-                                "enum": self._get_device_class_enum(),
-                                "description": "Default device class for all sensors",
+                                "description": "Default device class for all sensors (any string allowed)",
                             },
                             "state_class": {
                                 "type": "string",
@@ -731,18 +1210,19 @@ class SchemaValidator:
         }
 
     def _get_v1_schema_definitions(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+        self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str
     ) -> dict[str, Any]:
         """Get the definitions section for the v2.0 schema."""
         return {
-            "v1_sensor": self._get_v1_sensor_definition(id_pattern, entity_pattern, var_pattern, icon_pattern),
-            "v1_attribute": self._get_v1_attribute_definition(var_pattern, icon_pattern),
+            "v1_sensor": self._get_v1_sensor_definition(id_pattern, variable_value_pattern, var_pattern, icon_pattern),
+            "v1_attribute": self._get_v1_attribute_definition(variable_value_pattern, var_pattern, icon_pattern),
         }
 
     def _get_v1_sensor_definition(
-        self, id_pattern: str, entity_pattern: str, var_pattern: str, icon_pattern: str
+        self, id_pattern: str, variable_value_pattern: str, var_pattern: str, icon_pattern: str
     ) -> dict[str, Any]:
         """Get the sensor definition for the v2.0 schema."""
+        entity_pattern = "^[a-z_]+\\.[a-z0-9_]+$"  # For entity_id field validation
         return {
             "type": "object",
             "description": "Synthetic sensor definition (v2.0 syntax)",
@@ -790,18 +1270,21 @@ class SchemaValidator:
                 # Common properties for both syntax patterns
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities or numeric literals",
+                    "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, or boolean literals",
                     "patternProperties": {
                         var_pattern: {
                             "oneOf": [
                                 {
                                     "type": "string",
-                                    "pattern": entity_pattern,
-                                    "description": "Home Assistant entity ID",
+                                    "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                 },
                                 {
                                     "type": "number",
                                     "description": "Numeric literal value",
+                                },
+                                {
+                                    "type": "boolean",
+                                    "description": "Boolean literal value",
                                 },
                             ]
                         }
@@ -814,8 +1297,7 @@ class SchemaValidator:
                     "properties": {
                         "device_class": {
                             "type": "string",
-                            "enum": self._get_device_class_enum(),
-                            "description": "Device class for the sensor",
+                            "description": "Device class for the sensor (any string allowed)",
                         },
                         "state_class": {
                             "type": "string",
@@ -868,9 +1350,8 @@ class SchemaValidator:
             "additionalProperties": False,
         }
 
-    def _get_v1_attribute_definition(self, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
+    def _get_v1_attribute_definition(self, variable_value_pattern: str, var_pattern: str, icon_pattern: str) -> dict[str, Any]:
         """Get the calculated attribute definition for the v2.0 schema."""
-        entity_pattern = r"^[a-z_][a-z0-9_]*\.[a-z0-9_]+$"
         return {
             "oneOf": [
                 {
@@ -884,18 +1365,21 @@ class SchemaValidator:
                         },
                         "variables": {
                             "type": "object",
-                            "description": "Variable mappings to Home Assistant entities or numeric literals",
+                            "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, or boolean literals",
                             "patternProperties": {
                                 var_pattern: {
                                     "oneOf": [
                                         {
                                             "type": "string",
-                                            "pattern": entity_pattern,
-                                            "description": "Home Assistant entity ID",
+                                            "description": "String literal value, entity ID, sensor key reference, or collection pattern",
                                         },
                                         {
                                             "type": "number",
                                             "description": "Numeric literal value",
+                                        },
+                                        {
+                                            "type": "boolean",
+                                            "description": "Boolean literal value",
                                         },
                                     ]
                                 }
@@ -908,8 +1392,7 @@ class SchemaValidator:
                             "properties": {
                                 "device_class": {
                                     "type": "string",
-                                    "enum": self._get_device_class_enum(),
-                                    "description": "Device class for the attribute",
+                                    "description": "Device class for the attribute (any string allowed)",
                                 },
                                 "state_class": {
                                     "type": "string",

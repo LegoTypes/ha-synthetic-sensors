@@ -1,0 +1,6 @@
+# YAML fixture for test_yaml_config_parser_unit.py
+# Used by: test_validate_raw_yaml_structure_missing_sensors
+# Test cases covered:
+# - Missing required 'sensors' key in YAML structure
+# - Validation error when required top-level keys are missing
+other_key: value

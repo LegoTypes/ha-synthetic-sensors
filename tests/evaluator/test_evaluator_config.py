@@ -7,7 +7,7 @@ from ha_synthetic_sensors.evaluator_config import CircuitBreakerConfig, RetryCon
 class TestEvaluatorConfiguration:
     """Test evaluator configuration methods."""
 
-    def test_get_circuit_breaker_config_default(self, mock_hass):
+    def test_get_circuit_breaker_config_default(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting default circuit breaker configuration."""
         evaluator = Evaluator(mock_hass)
         config = evaluator.get_circuit_breaker_config()
@@ -18,7 +18,7 @@ class TestEvaluatorConfiguration:
         assert config.track_transitory_errors is True
         assert config.reset_on_success is True
 
-    def test_get_circuit_breaker_config_custom(self, mock_hass):
+    def test_get_circuit_breaker_config_custom(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting custom circuit breaker configuration."""
         custom_config = CircuitBreakerConfig(
             max_fatal_errors=10, max_transitory_errors=50, track_transitory_errors=False, reset_on_success=False
@@ -31,7 +31,7 @@ class TestEvaluatorConfiguration:
         assert config.track_transitory_errors is False
         assert config.reset_on_success is False
 
-    def test_update_circuit_breaker_config(self, mock_hass):
+    def test_update_circuit_breaker_config(self, mock_hass, mock_entity_registry, mock_states):
         """Test updating circuit breaker configuration."""
         evaluator = Evaluator(mock_hass)
 
@@ -52,7 +52,7 @@ class TestEvaluatorConfiguration:
         assert updated_config.track_transitory_errors is False
         assert updated_config.reset_on_success is False
 
-    def test_get_retry_config_default(self, mock_hass):
+    def test_get_retry_config_default(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting default retry configuration."""
         evaluator = Evaluator(mock_hass)
         config = evaluator.get_retry_config()
@@ -65,7 +65,7 @@ class TestEvaluatorConfiguration:
         assert config.retry_on_unknown is True
         assert config.retry_on_unavailable is True
 
-    def test_get_retry_config_custom(self, mock_hass):
+    def test_get_retry_config_custom(self, mock_hass, mock_entity_registry, mock_states):
         """Test getting custom retry configuration."""
         custom_config = RetryConfig(
             enabled=False,
@@ -85,7 +85,7 @@ class TestEvaluatorConfiguration:
         assert config.retry_on_unknown is False
         assert config.retry_on_unavailable is False
 
-    def test_update_retry_config(self, mock_hass):
+    def test_update_retry_config(self, mock_hass, mock_entity_registry, mock_states):
         """Test updating retry configuration."""
         evaluator = Evaluator(mock_hass)
 
@@ -113,7 +113,7 @@ class TestEvaluatorConfiguration:
         assert updated_config.retry_on_unknown is False
         assert updated_config.retry_on_unavailable is True
 
-    def test_integration_entities_management(self, mock_hass):
+    def test_integration_entities_management(self, mock_hass, mock_entity_registry, mock_states):
         """Test integration entities getter and update methods."""
         evaluator = Evaluator(mock_hass)
 

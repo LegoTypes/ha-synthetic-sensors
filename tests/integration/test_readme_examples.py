@@ -17,25 +17,21 @@ def load_yaml_fixture(fixture_name: str) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def test_basic_readme_examples():
+def test_basic_readme_examples(mock_hass, mock_entity_registry, mock_states):
     """Test basic README examples are valid YAML and can be parsed correctly."""
-
-    # Mock hass object
-    hass = MagicMock()
-    hass.states.get = MagicMock()
 
     # Load basic examples fixture
     config_data = load_yaml_fixture("basic_examples.yaml")
     assert config_data is not None
 
     # Test config validation
-    config_manager = ConfigManager(hass)
+    config_manager = ConfigManager(mock_hass)
     validation_result = config_manager.validate_yaml_data(config_data)
     assert validation_result["valid"], f"Configuration validation failed: {validation_result.get('errors', 'Unknown error')}"
 
-    # Check that we have the expected number of sensors
+    # Check that we have the expected number of sensors (based on README basic examples)
     sensors_count = len(config_data.get("sensors", {}))
-    assert sensors_count == 4, f"Expected 4 sensors, got {sensors_count}"
+    assert sensors_count == 2, f"Expected 2 sensors, got {sensors_count}"
 
     # Test that variables contain numeric literals
     sensors = config_data["sensors"]
@@ -50,38 +46,29 @@ def test_basic_readme_examples():
     zero_threshold = solar_sensor["variables"]["zero_threshold"]
     assert zero_threshold == 0, f"Expected zero_threshold=0, got {zero_threshold}"
 
-    # Check temperature_converter sensor
-    temp_sensor = sensors["temperature_converter"]
-    freezing_f = temp_sensor["variables"]["freezing_f"]
-    conversion_factor = temp_sensor["variables"]["conversion_factor"]
-    celsius_factor = temp_sensor["variables"]["celsius_factor"]
+    # Verify the basic sensors match README examples
+    assert "energy_cost_current" in sensors, "energy_cost_current sensor should exist"
+    assert "solar_sold_power" in sensors, "solar_sold_power sensor should exist"
 
-    assert freezing_f == 32, f"Expected freezing_f=32, got {freezing_f}"
-    assert conversion_factor == 5, f"Expected conversion_factor=5, got {conversion_factor}"
-    assert celsius_factor == 9, f"Expected celsius_factor=9, got {celsius_factor}"
+    # Check that energy_cost_current has the expected formula structure
+    assert energy_sensor["formula"] == "current_power * electricity_rate / conversion_factor"
+    assert "current_power" in energy_sensor["variables"]
+    assert "electricity_rate" in energy_sensor["variables"]
 
-    # Check power_efficiency sensor
-    power_sensor = sensors["power_efficiency"]
-    rated_power = power_sensor["variables"]["rated_power"]
-    percentage = power_sensor["variables"]["percentage"]
-
-    assert rated_power == 1000, f"Expected rated_power=1000, got {rated_power}"
-    assert percentage == 100, f"Expected percentage=100, got {percentage}"
+    # Check that solar_sold_power has the expected formula structure
+    assert solar_sensor["formula"] == "abs(min(grid_power, zero_threshold))"
+    assert "grid_power" in solar_sensor["variables"]
 
 
-def test_advanced_readme_examples():
+def test_advanced_readme_examples(mock_hass, mock_entity_registry, mock_states):
     """Test advanced README examples with attributes and device association."""
-
-    # Mock hass object
-    hass = MagicMock()
-    hass.states.get = MagicMock()
 
     # Load advanced examples fixture
     config_data = load_yaml_fixture("advanced_examples.yaml")
     assert config_data is not None
 
     # Test config validation
-    config_manager = ConfigManager(hass)
+    config_manager = ConfigManager(mock_hass)
     validation_result = config_manager.validate_yaml_data(config_data)
     assert validation_result["valid"], f"Configuration validation failed: {validation_result.get('errors', 'Unknown error')}"
 
@@ -89,8 +76,14 @@ def test_advanced_readme_examples():
     sensors = config_data["sensors"]
     energy_analysis = sensors["energy_cost_analysis"]
 
-    # Verify main sensor has numeric literal
-    assert energy_analysis["variables"]["conversion_factor"] == 1000
+    # Verify main sensor formula uses direct numeric literal division
+    assert energy_analysis["formula"] == "current_power * electricity_rate / 1000"
+
+    # Verify main sensor variables (should not include conversion_factor)
+    variables = energy_analysis.get("variables", {})
+    assert "current_power" in variables
+    assert "electricity_rate" in variables
+    # conversion_factor should NOT be a variable since 1000 is used directly in formula
 
     # Verify sensor has attributes
     assert "attributes" in energy_analysis
@@ -99,43 +92,53 @@ def test_advanced_readme_examples():
     assert "monthly_projected" in attributes
     assert "annual_projected" in attributes
 
-    # Check device association sensor
+    # Verify solar inverter efficiency sensor structure
     solar_sensor = sensors["solar_inverter_efficiency"]
-    assert solar_sensor["variables"]["percentage_factor"] == 100
-    assert solar_sensor["device_identifier"] == "solar_inverter_001"
-    assert solar_sensor["device_name"] == "Solar Inverter"
+    assert solar_sensor["formula"] == "solar_output / solar_capacity * 100"
+    assert "solar_output" in solar_sensor["variables"]
+    assert "solar_capacity" in solar_sensor["variables"]
+
+    # Check metadata
+    assert solar_sensor["metadata"]["unit_of_measurement"] == "%"
+    assert solar_sensor["metadata"]["device_class"] == "power_factor"
 
 
-def test_numeric_literals_readme_examples():
+def test_numeric_literals_readme_examples(mock_hass, mock_entity_registry, mock_states):
     """Test numeric literals focused README examples."""
-
-    # Mock hass object
-    hass = MagicMock()
-    hass.states.get = MagicMock()
 
     # Load numeric literals examples fixture
     config_data = load_yaml_fixture("numeric_literals.yaml")
     assert config_data is not None
 
     # Test config validation
-    config_manager = ConfigManager(hass)
+    config_manager = ConfigManager(mock_hass)
     validation_result = config_manager.validate_yaml_data(config_data)
     assert validation_result["valid"], f"Configuration validation failed: {validation_result.get('errors', 'Unknown error')}"
 
     # Test various numeric literal types
     sensors = config_data["sensors"]
 
-    # Check cost calculator with float literals
-    cost_calc = sensors["cost_calculator"]
-    assert cost_calc["variables"]["rate_per_kwh"] == 0.12
-    assert cost_calc["variables"]["tax_rate"] == 0.085
+    # Check temperature converter with numeric literals
+    temp_converter = sensors["temperature_converter"]
+    assert temp_converter["variables"]["freezing_f"] == 32
+    assert temp_converter["variables"]["conversion_factor"] == 5
+    assert temp_converter["variables"]["celsius_factor"] == 9
 
-    # Check mixed calculations with different number types
-    mixed_calc = sensors["mixed_calculations"]
-    variables = mixed_calc["variables"]
-    assert variables["multiplier"] == 2.5  # float
-    assert variables["offset"] == 10  # int
-    assert variables["discount"] == -5.0  # negative float
+    # Check device activity score with numeric literals
+    activity_score = sensors["device_activity_score"]
+    assert activity_score["formula"] == "motion_sensor * 10 + door_sensor * 5 + switch_state * 2"
+
+    # Check device info sensor with float efficiency factor
+    device_info = sensors["device_info_sensor"]
+    assert device_info["variables"]["efficiency_factor"] == 0.95
+
+    # Check literal attribute values
+    attributes = device_info["attributes"]
+    assert attributes["voltage"] == 240
+    assert attributes["manufacturer"] == "TestCorp"
+    assert attributes["max_capacity"] == 5000
+    assert attributes["warranty_years"] == 5
+    assert attributes["is_active"] == True
 
 
 if __name__ == "__main__":

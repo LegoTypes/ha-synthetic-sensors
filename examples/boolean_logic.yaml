@@ -1,0 +1,264 @@
+version: "1.0"
+
+# Boolean Logic Example
+# Demonstrates boolean expression support via simpleeval using Python's native operators
+# Uses only 'and', 'or', 'not' operators (NOT ||, &&, ! which are not valid Python)
+
+sensors:
+  # Basic boolean operators - Python syntax only
+  word_boolean_basic:
+    name: "Word-based Boolean Logic (Basic)"
+    formula: "binary_sensor.front_door or binary_sensor.back_door"  # OR using 'or'
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "door"
+      state_class: "measurement"
+      friendly_name: "Any Door Open"
+
+  word_boolean_and:
+    name: "Word-based Boolean AND"
+    formula: "binary_sensor.security_armed and not binary_sensor.motion_detected"  # AND with NOT
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "security"
+      state_class: "measurement"
+      friendly_name: "Security Active No Motion"
+
+  # Complex boolean expressions with comparisons
+  complex_boolean_comparison:
+    name: "Complex Boolean with Comparisons"
+    formula: "(sensor.temperature > 75) and (sensor.humidity < 60) or (binary_sensor.ac_running)"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "comfort"
+      state_class: "measurement"
+      friendly_name: "Comfort Conditions Met"
+
+  # Boolean logic with variables
+  boolean_with_variables:
+    name: "Boolean Logic with Variables"
+    formula: "(temp_high and humid_low) or ac_on"
+    variables:
+      temp_high: "sensor.temperature > 75"
+      humid_low: "sensor.humidity < 60"
+      ac_on: "binary_sensor.ac_running"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "comfort"
+      state_class: "measurement"
+      friendly_name: "Comfort Logic (Variables)"
+
+  # Nested boolean expressions
+  nested_boolean_logic:
+    name: "Nested Boolean Logic"
+    formula: "(not door_open and not window_open) and (alarm_set or night_mode)"
+    variables:
+      door_open: "binary_sensor.front_door or binary_sensor.back_door"
+      window_open: "binary_sensor.living_room_window or binary_sensor.bedroom_window"
+      alarm_set: "binary_sensor.security_system_armed"
+      night_mode: "input_boolean.night_mode"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "security"
+      state_class: "measurement"
+      friendly_name: "Secure State Check"
+
+  # Boolean logic in conditional expressions
+  conditional_boolean:
+    name: "Conditional Boolean Logic"
+    formula: "home_occupied if (day_time and not vacation_mode) else presence_override"
+    variables:
+      home_occupied: "binary_sensor.motion_detected or binary_sensor.door_recently_opened"
+      day_time: "sensor.sun_elevation > 0"
+      vacation_mode: "input_boolean.vacation_mode"
+      presence_override: "input_boolean.presence_override"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "occupancy"
+      state_class: "measurement"
+      friendly_name: "Smart Presence Detection"
+
+  # Mixed comparison and boolean operators
+  mixed_boolean_comparison:
+    name: "Mixed Boolean and Comparisons"
+    formula: "((temp >= 70) and (temp <= 78)) or heating_on or cooling_on"
+    variables:
+      temp: "sensor.thermostat_temperature"
+      heating_on: "binary_sensor.heating_system"
+      cooling_on: "binary_sensor.cooling_system"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "climate"
+      state_class: "measurement"
+      friendly_name: "Temperature Control Active"
+
+  # Boolean logic with attributes
+  boolean_with_attributes:
+    name: "Boolean Logic with Calculated Attributes"
+    formula: "primary_security or secondary_security"
+    variables:
+      primary_security: "binary_sensor.main_alarm_system"
+      secondary_security: "binary_sensor.backup_sensor_system"
+    attributes:
+      # Boolean attributes using Python operators
+      all_sensors_active:
+        formula: "primary_security and secondary_security"  # Both must be true
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "All Security Systems Active"
+
+      any_sensor_fault:
+        formula: "not primary_security or not secondary_security"  # Either system down
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Security System Fault"
+
+      # Boolean attributes with complex logic
+      backup_needed:
+        formula: "primary_security and not secondary_security"  # Primary only
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Backup Security Needed"
+
+      # Complex boolean attribute with conditionals
+      security_status:
+        formula: "'Full Protection' if (primary_security and secondary_security) else ('Partial' if (primary_security or secondary_security) else 'No Protection')"
+        metadata:
+          unit_of_measurement: "text"
+          friendly_name: "Security Status Description"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "security"
+      state_class: "measurement"
+      friendly_name: "Comprehensive Security Monitor"
+
+  # Precedence and grouping demonstration
+  boolean_precedence:
+    name: "Boolean Operator Precedence"
+    formula: "motion and (door1 or door2) and not alarm"  # Grouping with parentheses
+    variables:
+      motion: "binary_sensor.motion_detected"
+      door1: "binary_sensor.front_door"
+      door2: "binary_sensor.back_door"
+      alarm: "binary_sensor.security_alarm"
+    attributes:
+      # Show equivalent expressions
+      precedence_explicit:
+        formula: "(motion and (door1 or door2)) and (not alarm)"  # Explicit grouping
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Explicit Precedence"
+
+      precedence_different:
+        formula: "motion and door1 or door2 and not alarm"  # Different precedence
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Different Precedence"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "security"
+      state_class: "measurement"
+      friendly_name: "Precedence Demonstration"
+
+  # Real-world use case: Home automation logic
+  smart_lighting_control:
+    name: "Smart Lighting Control"
+    formula: "auto_lights and (motion_detected or recently_arrived) and not manual_override"
+    variables:
+      auto_lights: "input_boolean.automatic_lighting"
+      motion_detected: "binary_sensor.living_room_motion or binary_sensor.kitchen_motion"
+      recently_arrived: "binary_sensor.person_home and (sensor.last_arrival_minutes < 10)"
+      manual_override: "input_boolean.manual_lighting_control"
+    attributes:
+      # Light zones with different logic
+      living_room_lights:
+        formula: "state and binary_sensor.living_room_motion"
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Living Room Auto Lights"
+
+      kitchen_lights:
+        formula: "state and (binary_sensor.kitchen_motion or cooking_mode)"
+        variables:
+          cooking_mode: "input_boolean.cooking_mode"
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Kitchen Auto Lights"
+
+      # Complex evening logic
+      evening_ambiance:
+        formula: "state and evening_time and not bright_outside"
+        variables:
+          evening_time: "sensor.sun_elevation < -6"  # Civil twilight
+          bright_outside: "sensor.outdoor_illuminance > 1000"
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Evening Ambiance Mode"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "light"
+      state_class: "measurement"
+      friendly_name: "Smart Lighting System"
+
+  # Testing edge cases and complex scenarios
+  boolean_edge_cases:
+    name: "Boolean Logic Edge Cases"
+    formula: "complex_condition"
+    variables:
+      # Test short-circuit evaluation
+      complex_condition: "(safe_sensor or emergency_stop) and not (maintenance_mode and not override_maintenance)"
+      safe_sensor: "binary_sensor.safety_system and not binary_sensor.fault_detected"
+      emergency_stop: "binary_sensor.emergency_button"
+      maintenance_mode: "input_boolean.maintenance_mode"
+      override_maintenance: "input_boolean.override_maintenance"
+    attributes:
+      # Test nested boolean logic with state comparisons
+      system_health:
+        formula: "(sensor.system_voltage >= 110) and (sensor.system_voltage <= 130) and not fault_code"
+        variables:
+          fault_code: "sensor.fault_code != 0"
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "System Health OK"
+
+      # Test boolean with mathematical expressions
+      energy_efficiency:
+        formula: "(energy_ratio > 0.85) and (power_stable) and not peak_usage"
+        variables:
+          energy_ratio: "sensor.energy_output / sensor.energy_input"
+          power_stable: "abs(sensor.power_variance) < 50"
+          peak_usage: "sensor.current_usage > sensor.peak_threshold"
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Energy Efficiency Good"
+    metadata:
+      unit_of_measurement: "boolean"
+      device_class: "safety"
+      state_class: "measurement"
+      friendly_name: "System Edge Cases Monitor"
+
+  # Demonstrate truthy/falsy evaluation
+  truthy_falsy_logic:
+    name: "Truthy/Falsy Logic"
+    formula: "zero_value or positive_value"  # 0 is falsy, non-zero is truthy
+    variables:
+      zero_value: "sensor.zero_sensor"  # Assumes this sensor reports 0
+      positive_value: "sensor.positive_sensor"  # Assumes this sensor reports > 0
+    attributes:
+      numeric_and:
+        formula: "positive_value and another_positive"
+        variables:
+          another_positive: "sensor.another_positive_sensor"
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Numeric AND Test"
+
+      mixed_numeric_boolean:
+        formula: "positive_value and binary_sensor.some_switch"
+        metadata:
+          unit_of_measurement: "boolean"
+          friendly_name: "Mixed Numeric Boolean"
+    metadata:
+      unit_of_measurement: "boolean"
+      state_class: "measurement"
+      friendly_name: "Truthy Falsy Demo"

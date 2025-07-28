@@ -1,0 +1,32 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  structure_error_sensor:
+    name: "Structure Error Sensor"
+    # Missing formula field - required field missing
+    variables:
+      base_power: "sensor.base_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  invalid_metadata_sensor:
+    name: "Invalid Metadata Sensor"
+    formula: "base_power"
+    variables:
+      base_power: "sensor.base_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "invalid_device_class"  # Invalid device class
+      state_class: "invalid_state_class"    # Invalid state class
+
+  missing_name_sensor:
+    # Missing name field - required field missing
+    formula: "base_power * 2"
+    variables:
+      base_power: "sensor.base_power"
+    metadata:
+      unit_of_measurement: "W"

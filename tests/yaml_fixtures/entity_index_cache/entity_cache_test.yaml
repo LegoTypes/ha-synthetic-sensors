@@ -1,0 +1,9 @@
+sensors:
+  test_sensor_cache:
+    entity_id: sensor.original_entity_id  # This will be different from HA-assigned
+    formula: state * 2.0
+    variables:
+      other_sensor: sensor.some_other_sensor
+    metadata:
+      unit_of_measurement: W
+      device_class: power

@@ -1,0 +1,69 @@
+version: "1.0"
+
+# Idiom 2 Test Scenario 2.4: Equivalence Test
+# Purpose: Validate that all three reference patterns produce identical results
+# Expected: All produce identical results
+# Validation: Results are mathematically equivalent
+
+sensors:
+  # All three methods should produce identical results (2000W)
+  power_calculator_state:
+    name: "Power Calculator (State Token)"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state * 2  # Method 1: State token
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  power_calculator_key:
+    name: "Power Calculator (Sensor Key)"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: power_calculator_key * 2  # Method 2: Sensor key (auto-injected)
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  power_calculator_entity:
+    name: "Power Calculator (Entity ID)"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: sensor.power_calculator_entity * 2  # Method 3: Direct entity ID
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  # Test with different backing entity
+  voltage_analyzer_state:
+    name: "Voltage Analyzer (State Token)"
+    entity_id: sensor.span_panel_voltage  # Backing entity = 240V
+    formula: state * 1.1  # Method 1: State token
+    metadata:
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:lightning-bolt
+
+  voltage_analyzer_key:
+    name: "Voltage Analyzer (Sensor Key)"
+    entity_id: sensor.span_panel_voltage  # Backing entity = 240V
+    formula: voltage_analyzer_key * 1.1  # Method 2: Sensor key
+    metadata:
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:lightning-bolt
+
+  voltage_analyzer_entity:
+    name: "Voltage Analyzer (Entity ID)"
+    entity_id: sensor.span_panel_voltage  # Backing entity = 240V
+    formula: sensor.voltage_analyzer_entity * 1.1  # Method 3: Direct entity ID
+    metadata:
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:lightning-bolt

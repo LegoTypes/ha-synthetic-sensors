@@ -1,0 +1,16 @@
+# YAML fixture for test_yaml_operations.py
+# Used by: test_auto_inject_with_existing_variables
+# Test cases covered:
+# - Auto-injection with pre-existing variables
+# - Mixed variable and entity references
+
+version: "1.0"
+
+global_settings:
+  variables:
+    temp: sensor.temperature
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: temp + sensor.humidity

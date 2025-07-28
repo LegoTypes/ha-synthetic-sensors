@@ -1,0 +1,23 @@
+# YAML fixture for test_literal_attributes.py storage tests
+# Used by: test_storage_manager_roundtrip_literal_attributes
+# Test cases covered:
+# - Sensors with literal attributes (voltage, manufacturer, is_enabled)
+# - Calculated attributes with formulas
+# - Round-trip storage and export functionality
+
+version: "1.0"
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "power * 2"
+    variables:
+      power: "sensor.test_power"
+    attributes:
+      voltage: 240
+      manufacturer: "TestCorp"
+      is_enabled: true
+      calculated:
+        formula: "voltage * current"
+        variables:
+          current: "sensor.test_current"

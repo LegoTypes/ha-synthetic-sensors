@@ -1,0 +1,49 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  mixed_dependencies:
+    name: "Mixed Dependencies"
+    formula: "state + external_sensor.battery_level + sum('device_class:temperature')"
+    variables:
+      external_sensor: "sensor.battery_device"
+    metadata:
+      unit_of_measurement: "mixed"
+      icon: "mdi:calculator"
+
+  attribute_chaining:
+    name: "Attribute Chaining"
+    formula: "device_a.power + device_b.current * device_c.voltage"
+    variables:
+      device_a: "sensor.power_meter_a"
+      device_b: "sensor.current_meter_b"
+      device_c: "sensor.voltage_meter_c"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  conditional_dependencies:
+    name: "Conditional Dependencies"
+    formula: "primary_source if use_primary else backup_source"
+    variables:
+      primary_source: "sensor.primary_power"
+      backup_source: "sensor.backup_power"
+      use_primary: "binary_sensor.primary_available"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  complex_collection:
+    name: "Complex Collection Dependencies"
+    formula: "avg(power_pattern, !excluded_device) + min(temp_pattern)"
+    variables:
+      power_pattern: "device_class:power"
+      temp_pattern: "device_class:temperature"
+      excluded_device: "sensor.excluded_power_meter"
+    metadata:
+      unit_of_measurement: "mixed"
+      icon: "mdi:chart-line"

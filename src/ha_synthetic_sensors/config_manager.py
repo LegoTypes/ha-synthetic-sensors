@@ -17,27 +17,15 @@ from homeassistant.exceptions import ConfigEntryError
 import yaml
 
 from .config_models import Config, FormulaConfig, SensorConfig
-from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, AttributeConfig, ConfigDict, GlobalSettingsDict, SensorConfigDict
+from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
+from .config_yaml_converter import ConfigYamlConverter
+from .cross_sensor_reference_detector import CrossSensorReferenceDetector
 from .dependency_parser import DependencyParser
 from .schema_validator import validate_yaml_config
+from .validation_utils import load_yaml_file
+from .yaml_config_parser import YAMLConfigParser, trim_yaml_keys
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _trim_yaml_keys(obj: Any) -> Any:
-    """Recursively trim whitespace from dictionary keys in YAML data.
-
-    Args:
-        obj: The object to process (dict, list, or other)
-
-    Returns:
-        The processed object with trimmed keys
-    """
-    if isinstance(obj, dict):
-        return {key.strip() if isinstance(key, str) else key: _trim_yaml_keys(value) for key, value in obj.items()}
-    if isinstance(obj, list):
-        return [_trim_yaml_keys(item) for item in obj]
-    return obj
 
 
 class ConfigManager:
@@ -54,6 +42,8 @@ class ConfigManager:
         self._config_path = Path(config_path) if config_path else None
         self._config: Config | None = None
         self._logger = _LOGGER.getChild(self.__class__.__name__)
+        self._cross_sensor_detector = CrossSensorReferenceDetector()
+        self._yaml_parser = YAMLConfigParser()
 
     @property
     def config(self) -> Config | None:
@@ -82,34 +72,15 @@ class ConfigManager:
         try:
             with open(path, encoding="utf-8") as file:
                 yaml_data_raw = yaml.safe_load(file)
-                yaml_data = _trim_yaml_keys(yaml_data_raw)
+                yaml_data = trim_yaml_keys(yaml_data_raw)
 
             if not yaml_data:
                 self._logger.warning("Empty configuration file, using empty config")
                 self._config = Config()
                 return self._config
 
-            # Perform schema validation first
-            schema_result = validate_yaml_config(yaml_data)
-
-            # Log warnings
-            for warning in schema_result["warnings"]:
-                self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
-                if warning.suggested_fix:
-                    self._logger.warning("Suggested fix: %s", warning.suggested_fix)
-
-            # Check for schema errors
-            if not schema_result["valid"]:
-                error_messages: list[str] = []
-                for error in schema_result["errors"]:
-                    msg = f"{error.path}: {error.message}"
-                    if error.suggested_fix:
-                        msg += f" (Suggested fix: {error.suggested_fix})"
-                    error_messages.append(msg)
-
-                error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
-                self._logger.error(error_msg)
-                raise ConfigEntryError(error_msg)
+            # Perform schema validation using shared method
+            self._validate_yaml_data_with_schema(yaml_data)
 
             self._config = self._parse_yaml_config(yaml_data)
 
@@ -156,7 +127,7 @@ class ConfigManager:
             async with aiofiles.open(path, encoding="utf-8") as file:
                 content = await file.read()
                 yaml_data_raw = yaml.safe_load(content)
-                yaml_data_trimmed = _trim_yaml_keys(yaml_data_raw)
+                yaml_data_trimmed = trim_yaml_keys(yaml_data_raw)
                 if not isinstance(yaml_data_trimmed, dict):
                     yaml_data: dict[str, Any] = {}
                 else:
@@ -225,7 +196,15 @@ class ConfigManager:
             global_settings=yaml_data.get("global_settings", {}),
         )
 
-        # Parse sensors (v2.0 dict format)
+        # Phase 1: Detect cross-sensor references before parsing sensors
+        cross_sensor_references = self._cross_sensor_detector.scan_yaml_references(dict(yaml_data))
+        config.cross_sensor_references = cross_sensor_references
+
+        # Log detected references for debugging
+        if cross_sensor_references:
+            self._logger.debug("Detected cross-sensor references: %s", {k: list(v) for k, v in cross_sensor_references.items()})
+
+        # Parse sensors (v1.0 dict format)
         sensors_data = yaml_data.get("sensors", {})
         for sensor_key, sensor_data in sensors_data.items():
             sensor = self._parse_sensor_config(sensor_key, sensor_data, config.global_settings)
@@ -233,10 +212,125 @@ class ConfigManager:
 
         return config
 
+    def _validate_raw_yaml_structure(self, yaml_content: str) -> None:
+        """Validate raw YAML structure for basic flaws in phase 0.
+
+        Args:
+            yaml_content: Raw YAML content string
+
+        Raises:
+            ConfigEntryError: If basic structural flaws are detected
+        """
+        sensor_keys = self._extract_sensor_keys_from_yaml(yaml_content)
+        self._check_for_duplicate_sensor_keys(sensor_keys)
+
+    def _extract_sensor_keys_from_yaml(self, yaml_content: str) -> list[str]:
+        """Extract sensor keys from raw YAML content.
+
+        Args:
+            yaml_content: Raw YAML content string
+
+        Returns:
+            List of sensor keys found in the YAML
+        """
+        lines = yaml_content.split("\n")
+        sensor_keys = []
+        in_sensors_section = False
+
+        for line in lines:
+            if self._is_sensors_section_start(line):
+                in_sensors_section = True
+                continue
+
+            if not in_sensors_section:
+                continue
+
+            if self._should_skip_line(line):
+                continue
+
+            if self._is_end_of_sensors_section(line):
+                break
+
+            sensor_key = self._extract_sensor_key_from_line(line)
+            if sensor_key:
+                sensor_keys.append(sensor_key)
+
+        return sensor_keys
+
+    def _is_sensors_section_start(self, line: str) -> bool:
+        """Check if line marks the start of sensors section."""
+        return line.strip() == "sensors:"
+
+    def _should_skip_line(self, line: str) -> bool:
+        """Check if line should be skipped during parsing."""
+        stripped = line.strip()
+        return not stripped or stripped.startswith("#")
+
+    def _is_end_of_sensors_section(self, line: str) -> bool:
+        """Check if we've reached the end of the sensors section."""
+        stripped = line.strip()
+        return bool(stripped and not line.startswith(" "))
+
+    def _extract_sensor_key_from_line(self, line: str) -> str | None:
+        """Extract sensor key from a YAML line if it represents a sensor definition.
+
+        Args:
+            line: A line from the YAML content
+
+        Returns:
+            Sensor key if found, None otherwise
+        """
+        if ":" not in line:
+            return None
+
+        # Only process lines that appear to define keys (end with : or have : followed by content)
+        if not (line.strip().endswith(":") or ":" in line.split("#")[0]):
+            return None
+
+        # Count leading spaces to determine indentation level
+        leading_spaces = len(line) - len(line.lstrip())
+
+        # Sensor keys should be at the first indentation level (2 spaces)
+        # Nested properties like "metadata:" are at deeper levels
+        if leading_spaces != 2:
+            return None
+
+        # Extract the key (everything before the colon, trimmed)
+        key = line.split(":")[0].strip()
+        if key and key != "sensors":
+            return key
+
+        return None
+
+    def _check_for_duplicate_sensor_keys(self, sensor_keys: list[str]) -> None:
+        """Check for duplicate sensor keys and raise error if found.
+
+        Args:
+            sensor_keys: List of sensor keys to check
+
+        Raises:
+            ConfigEntryError: If duplicate keys are found
+        """
+        seen_keys = set()
+        duplicates = set()
+
+        for key in sensor_keys:
+            if key in seen_keys:
+                duplicates.add(key)
+            else:
+                seen_keys.add(key)
+
+        if duplicates:
+            duplicate_list = sorted(duplicates)
+            raise ConfigEntryError(f"Duplicate sensor keys found in YAML: {', '.join(duplicate_list)}")
+
+        # Note: Duplicate attributes and variables within sensors will be checked
+        # during the parsed config validation phase, not in raw YAML validation
+
     def _parse_sensor_config(
         self, sensor_key: str, sensor_data: SensorConfigDict, global_settings: GlobalSettingsDict | None = None
     ) -> SensorConfig:
-        """Parse sensor configuration from v2.0 dict format.
+        """Parse sensor configuration from v1.0 dict format.
 
         Args:
             sensor_key: Sensor key (serves as unique_id)
@@ -283,7 +377,7 @@ class ConfigManager:
         return sensor
 
     def _parse_single_formula(self, sensor_key: str, sensor_data: SensorConfigDict) -> FormulaConfig:
-        """Parse a single formula sensor configuration (v2.0 format).
+        """Parse a single formula sensor configuration (v1.0 format).
 
         Args:
             sensor_key: Sensor key (used as base for formula ID)
@@ -303,11 +397,24 @@ class ConfigManager:
         # Parse formula to find entity references that aren't explicitly defined as variables
         variables = self._auto_inject_entity_variables(formula_str, variables)
 
+        # Convert AttributeConfig to AttributeValue for FormulaConfig
+        attributes: dict[str, AttributeValue] = {}
+        for attr_name, attr_config in sensor_data.get("attributes", {}).items():
+            if isinstance(attr_config, dict) and "formula" in attr_config:
+                # Extract formula string from AttributeConfigDict
+                attributes[attr_name] = attr_config["formula"]
+            elif isinstance(attr_config, str | int | float):
+                # Handle literal values (str, int, float) - these are compatible with AttributeValue
+                attributes[attr_name] = attr_config
+            else:
+                # Handle other types by converting to string
+                attributes[attr_name] = str(attr_config)
+
         return FormulaConfig(
             id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
             name=sensor_data.get("name"),
             formula=formula_str,
-            attributes=sensor_data.get("extra_attributes", {}),
+            attributes=attributes,
             variables=variables,
             metadata=sensor_data.get("metadata", {}),
         )
@@ -319,7 +426,7 @@ class ConfigManager:
         attr_config: AttributeConfig,
         sensor_data: SensorConfigDict,
     ) -> FormulaConfig:
-        """Parse a calculated attribute formula (v2.0 format).
+        """Parse a calculated attribute formula (v1.0 format).
 
         Args:
             sensor_key: Sensor key (used as base for formula ID)
@@ -331,7 +438,7 @@ class ConfigManager:
             FormulaConfig: Parsed attribute formula configuration
         """
         # Handle literal values (new feature)
-        if isinstance(attr_config, (int, float, str)):
+        if isinstance(attr_config, int | float | str):
             # Create a formula that just returns the literal value
             return FormulaConfig(
                 id=f"{sensor_key}_{attr_name}",
@@ -352,11 +459,6 @@ class ConfigManager:
         merged_variables = sensor_data.get("variables", {}).copy()
         attr_variables = attr_config.get("variables", {})
         merged_variables.update(attr_variables)
-
-        # Add the parent sensor's main state as a variable reference
-        # This allows attributes to reference the main sensor by key
-        parent_entity_id = f"sensor.{sensor_key}"
-        merged_variables[sensor_key] = parent_entity_id
 
         # AUTO-INJECT MISSING ENTITY REFERENCES AS VARIABLES
         # Parse formula to find entity references that aren't explicitly defined as variables
@@ -476,13 +578,18 @@ class ConfigManager:
             ConfigEntryError: If parsing or validation fails
         """
         try:
-            yaml_data_raw = yaml.safe_load(yaml_content)
-            yaml_data = _trim_yaml_keys(yaml_data_raw)
+            # Phase 0: Validate raw YAML structure for basic flaws BEFORE parsing
+            self._validate_raw_yaml_structure(yaml_content)
+
+            yaml_data = self._yaml_parser.parse_yaml_content(yaml_content)
 
             if not yaml_data:
                 self._logger.warning("Empty YAML content, using empty config")
                 self._config = Config()
                 return self._config
+
+            # Validate YAML data using the same validation logic as file-based loading
+            self._validate_yaml_data_with_schema(yaml_data)
 
             self._config = self._parse_yaml_config(yaml_data)
 
@@ -600,93 +707,8 @@ class ConfigManager:
         Returns:
             dict: YAML-compatible dictionary
         """
-        yaml_data: dict[str, Any] = {
-            "version": config.version,
-            "sensors": [],
-        }
-
-        if config.global_settings:
-            yaml_data["global_settings"] = config.global_settings
-
-        for sensor in config.sensors:
-            sensor_data = self._sensor_to_yaml_dict(sensor)
-            yaml_data["sensors"].append(sensor_data)
-
-        return yaml_data
-
-    def _sensor_to_yaml_dict(self, sensor: SensorConfig) -> dict[str, Any]:
-        """Convert a sensor config to YAML dictionary.
-
-        Args:
-            sensor: Sensor configuration to convert
-
-        Returns:
-            dict: YAML-compatible sensor dictionary
-        """
-        sensor_data: dict[str, Any] = {
-            "unique_id": sensor.unique_id,
-            "enabled": sensor.enabled,
-            "formulas": [],
-        }
-
-        # Add optional sensor fields
-        self._add_optional_sensor_fields(sensor_data, sensor)
-
-        # Convert formulas
-        for formula in sensor.formulas:
-            formula_data = self._formula_to_yaml_dict(formula)
-            sensor_data["formulas"].append(formula_data)
-
-        return sensor_data
-
-    def _add_optional_sensor_fields(self, sensor_data: dict[str, Any], sensor: SensorConfig) -> None:
-        """Add optional sensor fields to the YAML dictionary.
-
-        Args:
-            sensor_data: Dictionary to add fields to
-            sensor: Sensor configuration
-        """
-        if sensor.name:
-            sensor_data["name"] = sensor.name
-        if sensor.update_interval is not None:
-            sensor_data["update_interval"] = sensor.update_interval
-        if sensor.category:
-            sensor_data["category"] = sensor.category
-        if sensor.description:
-            sensor_data["description"] = sensor.description
-
-    def _formula_to_yaml_dict(self, formula: FormulaConfig) -> dict[str, Any]:
-        """Convert a formula config to YAML dictionary.
-
-        Args:
-            formula: Formula configuration to convert
-
-        Returns:
-            dict: YAML-compatible formula dictionary
-        """
-        formula_data: dict[str, Any] = {
-            "id": formula.id,
-            "formula": formula.formula,
-        }
-
-        # Add optional formula fields
-        self._add_optional_formula_fields(formula_data, formula)
-
-        return formula_data
-
-    def _add_optional_formula_fields(self, formula_data: dict[str, Any], formula: FormulaConfig) -> None:
-        """Add optional formula fields to the YAML dictionary.
-
-        Args:
-            formula_data: Dictionary to add fields to
-            formula: Formula configuration
-        """
-        if formula.name:
-            formula_data["name"] = formula.name
-        if formula.metadata:
-            formula_data["metadata"] = formula.metadata
-        if formula.attributes:
-            formula_data["attributes"] = formula.attributes
+        converter = ConfigYamlConverter()
+        return converter.config_to_yaml(config)
 
     def add_variable(self, name: str, entity_id: str) -> bool:
         """Add a variable to the global settings.
@@ -839,75 +861,47 @@ class ConfigManager:
             Dictionary with validation results and file info
         """
         path = Path(config_path)
+        yaml_data, error_response = load_yaml_file(path)
 
-        if not path.exists():
-            return {
-                "valid": False,
-                "errors": [
-                    {
-                        "message": f"Configuration file not found: {path}",
-                        "path": "file",
-                        "severity": "error",
-                        "schema_path": "",
-                        "suggested_fix": "Check file path and ensure file exists",
-                    }
-                ],
-                "warnings": [],
-                "schema_version": "unknown",
-                "file_path": str(path),
-            }
+        if error_response:
+            return error_response
 
-        try:
-            with open(path, encoding="utf-8") as file:
-                yaml_data = yaml.safe_load(file)
+        if yaml_data is None:
+            raise ValueError("yaml_data should not be None when error_response is None")
 
-            if not yaml_data:
-                return {
-                    "valid": False,
-                    "errors": [
-                        {
-                            "message": "Configuration file is empty",
-                            "path": "file",
-                            "severity": "error",
-                            "schema_path": "",
-                            "suggested_fix": "Add configuration content to the file",
-                        }
-                    ],
-                    "warnings": [],
-                    "schema_version": "unknown",
-                    "file_path": str(path),
-                }
+        result = self.validate_yaml_data(yaml_data)
+        result["file_path"] = str(path)
+        return result
 
-            result = self.validate_yaml_data(yaml_data)
-            result["file_path"] = str(path)
-            return result
+    def _validate_yaml_data_with_schema(self, yaml_data: dict[str, Any] | ConfigDict) -> None:
+        """Shared validation logic for both file-based and string-based loading.
 
-        except yaml.YAMLError as exc:
-            error_dict = YAML_SYNTAX_ERROR_TEMPLATE.copy()
-            error_dict["message"] = f"YAML parsing error: {exc}"
-            return {
-                "valid": False,
-                "errors": [error_dict],
-                "warnings": [],
-                "schema_version": "unknown",
-                "file_path": str(path),
-            }
-        except Exception as exc:
-            return {
-                "valid": False,
-                "errors": [
-                    {
-                        "message": f"File reading error: {exc}",
-                        "path": "file",
-                        "severity": "error",
-                        "schema_path": "",
-                        "suggested_fix": "Check file permissions and encoding",
-                    }
-                ],
-                "warnings": [],
-                "schema_version": "unknown",
-                "file_path": str(path),
-            }
+        Args:
+            yaml_data: YAML data to validate
+
+        Raises:
+            ConfigEntryError: If schema validation fails
+        """
+        schema_result = validate_yaml_config(cast(dict[str, Any], yaml_data))
+
+        # Log warnings
+        for warning in schema_result["warnings"]:
+            self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
+            if warning.suggested_fix:
+                self._logger.warning("Suggested fix: %s", warning.suggested_fix)
+
+        # Check for schema errors
+        if not schema_result["valid"]:
+            error_messages: list[str] = []
+            for error in schema_result["errors"]:
+                msg = f"{error.path}: {error.message}"
+                if error.suggested_fix:
+                    msg += f" (Suggested fix: {error.suggested_fix})"
+                error_messages.append(msg)
+
+            error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
     def _auto_inject_entity_variables(
         self, formula: str, variables: dict[str, str | int | float]
@@ -932,8 +926,12 @@ class ConfigManager:
 
         # Filter out dot notation references where the base is already a variable
         # e.g., if variables contains "temp_sensors", don't auto-inject "temp_sensors.temperature"
+        # Also filter out state.attribute patterns which should be resolved by state attribute resolver
         filtered_entities = set()
         for entity_id in direct_entities:
+            # Skip state.attribute patterns - these should be resolved by state attribute resolver
+            if entity_id.startswith("state."):
+                continue
             # Check if this looks like a dot notation reference
             if "." in entity_id:
                 base_part = entity_id.split(".")[0]

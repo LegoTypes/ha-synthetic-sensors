@@ -196,4 +196,6 @@ class TestEntityIndex:
 
         assert index.contains("sensor.main_power")
         assert index.contains("sensor.attr_power")
-        assert len(index.get_all_entities()) == 2
+        # When a sensor has attribute formulas, a self-reference is added
+        assert index.contains("sensor.test_sensor")
+        assert len(index.get_all_entities()) == 3

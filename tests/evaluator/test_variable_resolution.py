@@ -47,9 +47,9 @@ class TestVariableResolution:
         """Create a config manager with mock hass."""
         return ConfigManager(mock_hass)
 
-    def test_formula_config_with_variables(self, mock_hass):
+    def test_formula_config_with_variables(self, mock_hass, mock_entity_registry, mock_states):
         """Test that FormulaConfig with variables can be evaluated correctly."""
-        evaluator = Evaluator(mock_hass)
+        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
 
         # Create a formula config similar to SPAN Panel solar sensors
         config = FormulaConfig(
@@ -83,7 +83,7 @@ class TestVariableResolution:
         assert result_with_context["success"] is True
         assert result_with_context["value"] == 1500  # 1000 + 500
 
-    def test_dynamic_sensor_variable_resolution(self, mock_hass, config_manager):
+    def test_dynamic_sensor_variable_resolution(self, mock_hass, config_manager, mock_entity_registry, mock_states):
         """Test that DynamicSensor correctly resolves variables from formula config."""
         # Create a sensor configuration with variables
         sensor_config_data = {
@@ -143,7 +143,7 @@ class TestVariableResolution:
         assert main_result["success"] is True
         assert main_result["value"] == 1500.0
 
-    def test_variable_resolution_with_unavailable_entity(self, mock_hass):
+    def test_variable_resolution_with_unavailable_entity(self, mock_hass, mock_entity_registry, mock_states):
         """Test variable resolution when one entity is unavailable."""
         evaluator = Evaluator(mock_hass)
 
@@ -176,7 +176,7 @@ class TestVariableResolution:
         # The important thing is that it doesn't crash
         assert result is not None  # Should return some result, even if it's an error
 
-    def test_multiple_formulas_with_different_variables(self, mock_hass, config_manager):
+    def test_multiple_formulas_with_different_variables(self, mock_hass, config_manager, mock_entity_registry, mock_states):
         """Test sensor with multiple formulas that have different variable sets."""
         sensor_config_data = {
             "comprehensive_solar": {
@@ -237,7 +237,7 @@ class TestVariableResolution:
         assert attr_context["base_power"] == 800.0
         assert attr_context["efficiency_factor"] == 1.2
 
-    def test_formula_without_variables(self, mock_hass):
+    def test_formula_without_variables(self, mock_hass, mock_entity_registry, mock_states):
         """Test that formulas without variables still work."""
         evaluator = Evaluator(mock_hass)
 

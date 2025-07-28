@@ -1,0 +1,169 @@
+# Test Scenario EDGE.2: Multiple Circular References
+# Purpose: Test multiple circular reference patterns
+# Expected: All circular references are detected
+# Validation: Clear error messages for each
+
+sensors:
+  # Test multiple circular references in same sensor
+  multiple_circular_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Circular reference 1: A -> B -> A
+      attr_a:
+        formula: attr_b * 2  # References attr_b
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Attribute A"
+      attr_b:
+        formula: attr_a * 3  # References attr_a (circular!)
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Attribute B"
+      # Circular reference 2: C -> D -> E -> C
+      attr_c:
+        formula: attr_d * 1.5  # References attr_d
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Attribute C"
+      attr_d:
+        formula: attr_e * 2  # References attr_e
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Attribute D"
+      attr_e:
+        formula: attr_c * 0.5  # References attr_c (circular!)
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Attribute E"
+      # Self-reference: F -> F
+      attr_f:
+        formula: attr_f * 1.1  # Self-reference!
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Attribute F"
+      # Valid attribute
+      valid_attr:
+        formula: state * 2  # Valid reference to main sensor
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Valid Attribute"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Multiple Circular Test"
+
+  # Test complex circular reference patterns
+  complex_circular_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Complex circular reference: A -> B -> C -> A
+      power_a:
+        formula: power_b + power_c  # References power_b and power_c
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power A"
+      power_b:
+        formula: power_c * 2  # References power_c
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power B"
+      power_c:
+        formula: power_a / 3  # References power_a (circular!)
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power C"
+      # Another circular reference: D -> E -> D
+      energy_d:
+        formula: energy_e * 24  # References energy_e
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Energy D"
+      energy_e:
+        formula: energy_d / 24  # References energy_d (circular!)
+        metadata:
+          unit_of_measurement: kWh
+          friendly_name: "Energy E"
+      # Self-reference with complex calculation
+      complex_self:
+        formula: complex_self * 0.1 + state * 0.9  # Self-reference in complex formula
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Complex Self Reference"
+      # Valid attribute
+      valid_power:
+        formula: state / 1000  # Valid reference to main sensor
+        metadata:
+          unit_of_measurement: kW
+          friendly_name: "Valid Power"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Circular Test"
+
+  # Test circular references with conditional logic
+  conditional_circular_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Circular reference in conditional: A -> B -> A
+      cost_a:
+        formula: cost_b if state > 200 else state  # References cost_b
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Cost A"
+      cost_b:
+        formula: cost_a * 1.5  # References cost_a (circular!)
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Cost B"
+      # Self-reference in conditional
+      conditional_self:
+        formula: conditional_self if state > 100 else state  # Self-reference in condition
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Conditional Self"
+      # Valid conditional
+      valid_conditional:
+        formula: state if state > 100 else 100  # Valid conditional
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Valid Conditional"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Conditional Circular Test"
+
+  # Test circular references with mathematical operations
+  math_circular_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Circular reference with math: A -> B -> A
+      math_a:
+        formula: (math_b ** 2) / 1000  # References math_b
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Math A"
+      math_b:
+        formula: math_a * 10  # References math_a (circular!)
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Math B"
+      # Self-reference with math operations
+      math_self:
+        formula: (math_self ** 2) / 1000  # Self-reference with math
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Math Self"
+      # Valid math calculation
+      valid_math:
+        formula: (state ** 2) / 1000  # Valid math calculation
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Valid Math"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Math Circular Test"

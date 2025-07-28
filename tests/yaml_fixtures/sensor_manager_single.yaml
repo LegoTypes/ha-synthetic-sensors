@@ -1,0 +1,20 @@
+version: "1.0"
+
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    entity_id: "sensor.power_meter"
+    formula: "state * 1.1"
+    attributes:
+      daily_power:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "Wh"
+      efficiency:
+        formula: "state / 1000 * 100"
+        metadata:
+          unit_of_measurement: "%"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

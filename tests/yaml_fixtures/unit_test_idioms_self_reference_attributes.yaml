@@ -1,0 +1,28 @@
+# YAML fixture for test_idiom_2_self_reference.py idioms tests
+# Used by: test_self_reference_in_attributes
+# Test cases covered:
+# - Self-reference patterns in attribute formulas
+# - Main sensor state reference via 'state' token
+# - Main sensor reference by key name
+# - Attribute metadata configuration
+
+version: "1.0"
+
+sensors:
+  power_analyzer:
+    name: "Power Analyzer"
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1
+    attributes:
+      daily_power:
+        formula: state * 24  # References main sensor result
+        metadata:
+          unit_of_measurement: W
+      weekly_power:
+        formula: power_analyzer * 24 * 7  # References main sensor by key
+        metadata:
+          unit_of_measurement: W
+      efficiency_rating:
+        formula: state / 1000  # Another state reference
+        metadata:
+          unit_of_measurement: "%"

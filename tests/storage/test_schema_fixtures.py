@@ -12,7 +12,7 @@ class TestSchemaFixtures:
     """Test schema validation against all YAML test fixtures."""
 
     @pytest.fixture
-    def mock_hass(self):
+    def mock_hass(self, mock_hass, mock_entity_registry, mock_states):
         """Create a mock Home Assistant instance."""
         return MagicMock()
 
@@ -26,7 +26,7 @@ class TestSchemaFixtures:
         """Get the fixtures directory path."""
         return Path(__file__).parent.parent / "yaml_fixtures"
 
-    def test_all_fixtures_are_valid(self, config_manager, fixtures_dir):
+    def test_all_fixtures_are_valid(self, config_manager, fixtures_dir, mock_hass, mock_entity_registry, mock_states):
         """Test that all YAML fixtures pass schema validation."""
         yaml_files = list(fixtures_dir.glob("*.yaml"))
         assert len(yaml_files) > 0, "No YAML fixtures found"
@@ -45,6 +45,11 @@ class TestSchemaFixtures:
             "integration_test_complex_sensors.yaml",
             "integration_test_yaml_setup.yaml",
             "integration_test_valid_comprehensive.yaml",
+            # Exclude unit test fixtures (these are tested in their respective unit tests)
+            "unit_test_yaml_config_parser_missing_sensors.yaml",
+            "unit_test_yaml_config_parser_missing_formula.yaml",
+            "unit_test_yaml_config_parser_sensors_not_dict.yaml",
+            "unit_test_yaml_config_parser_sensor_not_dict.yaml",
         }
         yaml_files = [f for f in yaml_files if f.name not in excluded_files]
 
@@ -92,7 +97,9 @@ class TestSchemaFixtures:
             "syn2_sample_config.yaml",
         ],
     )
-    def test_individual_fixture_validation(self, config_manager, fixtures_dir, fixture_name):
+    def test_individual_fixture_validation(
+        self, config_manager, fixtures_dir, fixture_name, mock_hass, mock_entity_registry, mock_states
+    ):
         """Test each fixture individually for detailed error reporting."""
         fixture_path = fixtures_dir / fixture_name
 

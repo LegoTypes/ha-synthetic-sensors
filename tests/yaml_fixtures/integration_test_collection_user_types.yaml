@@ -1,0 +1,19 @@
+# YAML fixture for test_collection_user_types.py integration tests
+# Used by: test_collection_integration_with_energy_patterns
+# Test cases covered:
+# - Collection patterns with energy attributes
+# - Count function with attribute filtering
+# - Device class energy configuration
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  high_power_devices:
+    name: "High Power Devices"
+    formula: count("attribute:power_consumption>=1kW")
+    metadata:
+      unit_of_measurement: ""
+      device_class: ""

@@ -113,12 +113,12 @@ class EvaluatorCache:
         filtered = {}
         for key, value in context.items():
             # Only cache simple, serializable values
-            if isinstance(value, (str, int, float, bool)):
+            if isinstance(value, str | int | float | bool):
                 filtered[key] = value
             elif hasattr(value, "state") and value is not None:
                 # Handle Home Assistant State objects
                 state_value = value.state
-                if isinstance(state_value, (str, int, float)):
+                if isinstance(state_value, str | int | float):
                     filtered[key] = state_value
 
         return filtered if filtered else None
@@ -158,3 +158,11 @@ class EvaluatorCache:
             return 0.0
 
         return (hits / total) * 100.0
+
+    def start_update_cycle(self) -> None:
+        """Start a new evaluation update cycle."""
+        self._cache.start_update_cycle()
+
+    def end_update_cycle(self) -> None:
+        """End current evaluation update cycle."""
+        self._cache.end_update_cycle()

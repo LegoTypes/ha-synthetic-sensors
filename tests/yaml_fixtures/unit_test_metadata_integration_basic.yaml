@@ -1,0 +1,19 @@
+# YAML fixture for tests/metadata/test_metadata_integration.py
+# Used by: test_yaml_metadata_import_export
+# Test cases covered:
+# - Metadata handling in YAML import/export
+# - ConfigManager parsing of basic structure with global settings and variables
+# - Sensor with formula and variables
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device"
+  variables:
+    base_power: "sensor.test_power"
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "base_power * 2"
+    variables:
+      multiplier: 2

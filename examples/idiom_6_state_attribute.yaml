@@ -1,0 +1,37 @@
+version: "1.0"
+
+# Idiom 6 Test Scenario 6.1: Main Formula State Attribute
+# Purpose: Validate that main formula uses 'state.attribute' pattern correctly
+# Expected: Resolves to backing entity's attribute
+# Validation: No circular dependency issues
+
+sensors:
+  power_analyzer:
+    name: "Power Analyzer"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity with voltage attribute
+    formula: state.voltage * state  # 'state.voltage' = backing entity's voltage attribute
+    metadata:
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:lightning-bolt
+
+  battery_calculator:
+    name: "Battery Calculator"
+    entity_id: sensor.span_panel_battery  # Backing entity with battery_level attribute
+    formula: state.battery_level * state / 100  # 'state.battery_level' = backing entity's battery_level
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:battery
+
+  efficiency_analyzer:
+    name: "Efficiency Analyzer"
+    entity_id: sensor.span_panel_efficiency  # Backing entity with power_factor attribute
+    formula: state.power_factor * state  # 'state.power_factor' = backing entity's power_factor
+    metadata:
+      unit_of_measurement: ""
+      device_class: power_factor
+      state_class: measurement
+      icon: mdi:percent

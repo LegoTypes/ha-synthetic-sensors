@@ -11,10 +11,11 @@ Phase 1 Implementation: Basic storage infrastructure for fresh installations.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 import logging
-from typing import TYPE_CHECKING, Any, Callable, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -143,10 +144,10 @@ class StorageManager:
                         sensors=_default_sensors(),
                         sensor_sets=_default_sensor_sets(),
                     )
-                    _LOGGER.info("Initialized empty synthetic sensor storage")
+                    _LOGGER.debug("Initialized empty synthetic sensor storage")
                 else:
                     self._data = stored_data
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         "Loaded synthetic sensor storage: %d sensors, %d sensor sets",
                         len(stored_data.get("sensors", {})),
                         len(stored_data.get("sensor_sets", {})),
@@ -288,6 +289,13 @@ class StorageManager:
     def export_yaml(self, sensor_set_id: str) -> str:
         """Export sensor set to YAML format."""
         return self._yaml_handler.export_yaml(sensor_set_id)
+
+    async def async_export_yaml(self, sensor_set_id: str) -> str:
+        """Export sensor set to YAML format (async version)."""
+        # Run the YAML export in an executor to avoid blocking the event loop
+        # even though it's typically fast, this ensures we don't block on large datasets
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._yaml_handler.export_yaml, sensor_set_id)
 
     # Sensor Set Operations (delegated to SensorSetOpsHandler)
     async def async_create_sensor_set(
@@ -521,7 +529,7 @@ class StorageManager:
         )
         await self.async_save()
         self._sensor_set_cache.clear()
-        _LOGGER.info("Cleared all synthetic sensor storage data")
+        _LOGGER.debug("Cleared all synthetic sensor storage data")
 
     def get_storage_stats(self) -> dict[str, Any]:
         """Get storage statistics."""

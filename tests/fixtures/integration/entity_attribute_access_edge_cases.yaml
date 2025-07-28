@@ -1,0 +1,126 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  deep_attribute_access_chains:
+    name: "Deep Attribute Access Chains"
+    formula: "device_battery.level + system_status.health.score + nested_data.metrics.performance"
+    variables:
+      device_battery: "sensor.battery_device_complex"
+      system_status: "sensor.system_health_monitor"
+      nested_data: "sensor.performance_metrics_nested"
+    attributes:
+      multi_level_access:
+        formula: "device_battery.level + device_battery.voltage + device_battery.temperature"
+        metadata:
+          unit_of_measurement: "multi_attr"
+      deep_nested_calculation:
+        formula: "system_status.health.score * system_status.health.weight + performance_boost"
+        variables:
+          performance_boost: "sensor.performance_boost.factor"
+        metadata:
+          unit_of_measurement: "deep_calc"
+      cross_attribute_reference:
+        formula: "state.multi_level_access + nested_data.metrics.efficiency * 0.8"
+        metadata:
+          unit_of_measurement: "cross_ref"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  missing_attribute_handling:
+    name: "Missing Attribute Handling"
+    formula: "reliable_entity.known_attr + potentially_missing.unknown_attr + fallback_value"
+    variables:
+      reliable_entity: "sensor.reliable_with_attributes"
+      potentially_missing: "sensor.entity_with_missing_attrs"
+      fallback_value: 100.0
+    attributes:
+      error_resilient_calculation:
+        formula: "reliable_entity.known_attr + safe_fallback"
+        variables:
+          safe_fallback: 50.0
+        metadata:
+          unit_of_measurement: "safe_calc"
+      optional_attribute_access:
+        formula: "potentially_missing.maybe_exists + backup_calculation"
+        variables:
+          backup_calculation: "sensor.backup_value_source"
+        metadata:
+          unit_of_measurement: "optional_calc"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+
+  collection_with_attribute_access:
+    name: "Collection with Attribute Access"
+    formula: "sum(pattern_with_attrs) + avg(battery_pattern)"
+    variables:
+      pattern_with_attrs: "device_class:power"
+      battery_pattern: "device_class:battery"
+    attributes:
+      attribute_filtered_collection:
+        formula: "count(attribute:battery_level>=50) + sum(attribute:power_rating>100)"
+        metadata:
+          unit_of_measurement: "filtered_count"
+      complex_attribute_aggregation:
+        formula: "avg(collection_attr.efficiency) + max(collection_attr.performance)"
+        variables:
+          collection_attr: "sensor.collection_attribute_source"
+        metadata:
+          unit_of_measurement: "aggregated"
+    metadata:
+      unit_of_measurement: "collection_attrs"
+      state_class: "measurement"
+
+  dynamic_attribute_resolution:
+    name: "Dynamic Attribute Resolution"
+    formula: "dynamic_entity.computed_field + runtime_calc.result"
+    variables:
+      dynamic_entity: "sensor.dynamic_attributes_entity"
+      runtime_calc: "sensor.runtime_calculation_result"
+    attributes:
+      computed_from_attributes:
+        formula: "dynamic_entity.field_a * dynamic_entity.field_b + state"
+        metadata:
+          unit_of_measurement: "computed"
+      chained_attribute_access:
+        formula: "runtime_calc.result.value + runtime_calc.result.timestamp"
+        metadata:
+          unit_of_measurement: "chained"
+      conditional_attribute_access:
+        formula: "dynamic_entity.status == 'active' ? dynamic_entity.active_value : fallback_inactive"
+        variables:
+          fallback_inactive: 0
+        metadata:
+          unit_of_measurement: "conditional"
+    metadata:
+      unit_of_measurement: "dynamic"
+      icon: "mdi:access-point"
+
+  entity_attribute_error_cases:
+    name: "Entity Attribute Error Cases"
+    formula: "safe_entity.valid_attr + error_prone_entity.problematic_attr + safety_net"
+    variables:
+      safe_entity: "sensor.always_reliable_entity"
+      error_prone_entity: "sensor.unstable_attribute_entity"
+      safety_net: 25.0
+    attributes:
+      graceful_degradation:
+        formula: "safe_entity.valid_attr * degradation_factor"
+        variables:
+          degradation_factor: 0.9
+        metadata:
+          unit_of_measurement: "degraded"
+      error_handling_test:
+        formula: "error_prone_entity.nonexistent_attr + recovery_value"
+        variables:
+          recovery_value: "sensor.recovery_value_source"
+        metadata:
+          unit_of_measurement: "error_test"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

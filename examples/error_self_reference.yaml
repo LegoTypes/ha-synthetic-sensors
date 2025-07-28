@@ -1,0 +1,123 @@
+# Test Scenario ERR.4: Self-Reference Detection
+# Purpose: Test attribute references itself
+# Expected: CircularDependencyError is raised
+# Validation: Self-reference is detected
+
+sensors:
+  # Test simple self-reference in attribute
+  simple_self_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Simple self-reference
+      self_ref_attr:
+        formula: self_ref_attr * 1.1  # Self-reference!
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Self Reference Attribute"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Simple Self Reference"
+
+  # Test self-reference with state attribute
+  self_ref_state_attr:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Self-reference to its own attribute
+      voltage:
+        formula: state.voltage + 1  # Self-reference to its own voltage attribute
+        metadata:
+          unit_of_measurement: V
+          friendly_name: "Voltage (Self Reference)"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Self Reference State Attribute"
+
+  # Test self-reference in complex calculation
+  complex_self_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Base attribute
+      base_cost:
+        formula: state  # 250 cents/h
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Base Cost"
+      # Self-referencing attribute with complex calculation
+      complex_self_ref:
+        formula: complex_self_ref * 0.1 + base_cost * 0.9  # Self-reference in complex formula
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Complex Self Reference"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Complex Self Reference"
+
+  # Test self-reference with conditional logic
+  conditional_self_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Self-reference in conditional expression
+      conditional_attr:
+        formula: conditional_attr if state > 1000 else state  # Self-reference in condition
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Conditional Self Reference"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Conditional Self Reference"
+
+  # Test self-reference with mathematical operations
+  math_self_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Self-reference with mathematical operations
+      math_self_ref:
+        formula: (math_self_ref ** 2) / 100  # Self-reference with math operations
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Math Self Reference"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Math Self Reference"
+
+  # Test self-reference in nested attribute
+  nested_self_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Self-reference with mathematical operations instead of string concatenation
+      power_factor:
+        formula: power_factor * 0.95 + 0.05  # Self-reference with math operations
+        metadata:
+          unit_of_measurement: ratio
+          friendly_name: "Power Factor (Self Reference)"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Nested Self Reference"
+
+  # Test self-reference with external entity
+  external_self_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Self-reference combined with external entity
+      mixed_self_ref:
+        formula: mixed_self_ref + sensor.span_panel_instantaneous_power * 0.25  # Self-ref + external
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Mixed Self Reference"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "External Self Reference"

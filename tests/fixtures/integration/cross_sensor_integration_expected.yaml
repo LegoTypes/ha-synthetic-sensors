@@ -1,0 +1,51 @@
+sensors:
+  # Base power sensor with resolved self-references using state token
+  roundtrip_base_power_sensor:
+    entity_id: sensor.roundtrip_base_power_sensor_2     # HA-assigned entity_id (collision resolved)
+    formula: state * 1.0              # Self-reference → 'state'
+    variables:
+      my_ref: state               # Self-reference → 'state'
+      scale_factor: 0.95          # Non-reference unchanged
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+    attributes:
+      # Self-references resolved to state token
+      daily_power:
+        formula: state * 24       # Self-reference → 'state'
+        metadata:
+          unit_of_measurement: W
+      weekly_power:
+        formula: state * 24 * 7   # Self-reference → 'state'
+        metadata:
+          unit_of_measurement: W
+      efficiency_calc:
+        formula: state * my_ref    # Self-reference in variable → 'state'
+        metadata:
+          unit_of_measurement: W
+
+  # Second sensor with resolved cross-sensor references and entity ID collision
+  roundtrip_efficiency_calc:
+    entity_id: sensor.roundtrip_efficiency_calc_2     # HA-assigned entity_id (collision resolved)
+    formula: sensor.roundtrip_base_power_sensor_2 * 0.85 # Cross-sensor reference → entity ID
+    variables:
+      other_power: sensor.roundtrip_base_power_sensor_2  # Cross-sensor reference → entity ID
+      local_factor: 0.9
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+    attributes:
+      # Cross-sensor references resolved to entity IDs
+      power_ratio:
+        formula: state / sensor.roundtrip_base_power_sensor_2  # Cross-sensor reference → entity ID
+        metadata:
+          unit_of_measurement: ratio
+      combined_power:
+        formula: state + other_power  # Cross-sensor reference in variable → entity ID
+        metadata:
+          unit_of_measurement: W
+      # Self-references resolved to state token
+      daily_efficiency:
+        formula: state * 24       # Self-reference → 'state'
+        metadata:
+          unit_of_measurement: W

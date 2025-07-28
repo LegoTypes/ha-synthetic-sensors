@@ -6,12 +6,8 @@ from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 
 
-def test_empty_collection_sum_returns_zero():
+def test_empty_collection_sum_returns_zero(mock_hass, mock_entity_registry, mock_states):
     """Test that sum() with no matching entities returns 0."""
-    mock_hass = MagicMock()
-
-    # Mock entity_ids to return empty list (no entities match the pattern)
-    mock_hass.states.entity_ids.return_value = []
 
     evaluator = Evaluator(mock_hass)
 
@@ -25,12 +21,8 @@ def test_empty_collection_sum_returns_zero():
     assert result["value"] == 0
 
 
-def test_empty_collection_avg_returns_zero():
+def test_empty_collection_avg_returns_zero(mock_hass, mock_entity_registry, mock_states):
     """Test that avg() with no matching entities returns 0."""
-    mock_hass = MagicMock()
-
-    # Mock entity_ids to return empty list
-    mock_hass.states.entity_ids.return_value = []
 
     evaluator = Evaluator(mock_hass)
 
@@ -43,12 +35,8 @@ def test_empty_collection_avg_returns_zero():
     assert result["value"] == 0
 
 
-def test_empty_collection_max_returns_zero():
+def test_empty_collection_max_returns_zero(mock_hass, mock_entity_registry, mock_states):
     """Test that max() with no matching entities returns 0."""
-    mock_hass = MagicMock()
-
-    # Mock entity_ids to return empty list
-    mock_hass.states.entity_ids.return_value = []
 
     evaluator = Evaluator(mock_hass)
 
@@ -64,12 +52,8 @@ def test_empty_collection_max_returns_zero():
     assert result["value"] == 0
 
 
-def test_empty_collection_min_returns_zero():
+def test_empty_collection_min_returns_zero(mock_hass, mock_entity_registry, mock_states):
     """Test that min() with no matching entities returns 0."""
-    mock_hass = MagicMock()
-
-    # Mock entity_ids to return empty list
-    mock_hass.states.entity_ids.return_value = []
 
     evaluator = Evaluator(mock_hass)
 
@@ -85,12 +69,8 @@ def test_empty_collection_min_returns_zero():
     assert result["value"] == 0
 
 
-def test_collection_with_zero_sum_returns_zero():
+def test_collection_with_zero_sum_returns_zero(mock_hass, mock_entity_registry, mock_states):
     """Test that sum() with entities that legitimately sum to 0 returns 0."""
-    mock_hass = MagicMock()
-
-    # Mock entities that exist and have numeric values that sum to 0
-    mock_hass.states.entity_ids.return_value = ["sensor.test1", "sensor.test2"]
 
     # Mock states for entities
     mock_state1 = MagicMock()
@@ -121,11 +101,8 @@ def test_collection_with_zero_sum_returns_zero():
     assert result["value"] == 0.0
 
 
-def test_collection_with_non_numeric_entities_returns_zero():
+def test_collection_with_non_numeric_entities_returns_zero(mock_hass, mock_entity_registry, mock_states):
     """Test that collection with entities that have non-numeric values returns 0."""
-    mock_hass = MagicMock()
-
-    # Mock entities that exist but have non-numeric values
     mock_hass.states.entity_ids.return_value = ["binary_sensor.test1", "binary_sensor.test2"]
 
     # Mock states for entities with non-numeric values
@@ -157,12 +134,8 @@ def test_collection_with_non_numeric_entities_returns_zero():
     assert result["value"] == 0
 
 
-def test_count_function_with_empty_collection():
+def test_count_function_with_empty_collection(mock_hass, mock_entity_registry, mock_states):
     """Test that count() function behavior with empty collections."""
-    mock_hass = MagicMock()
-
-    # Mock entity_ids to return empty list
-    mock_hass.states.entity_ids.return_value = []
 
     evaluator = Evaluator(mock_hass)
 
@@ -175,12 +148,8 @@ def test_count_function_with_empty_collection():
     assert result["value"] == 0
 
 
-def test_collection_in_complex_formula():
+def test_collection_in_complex_formula(mock_hass, mock_entity_registry, mock_states):
     """Test that empty collections work properly in complex formulas."""
-    mock_hass = MagicMock()
-
-    # Mock entity_ids to return empty list
-    mock_hass.states.entity_ids.return_value = []
 
     evaluator = Evaluator(mock_hass)
 
@@ -196,21 +165,20 @@ def test_collection_in_complex_formula():
     assert result["value"] == 10
 
 
-def test_empty_collections_workaround_example():
+def test_empty_collections_workaround_example(mock_hass, mock_entity_registry, mock_states):
     """Test workaround example for detecting empty collections.
 
     This demonstrates how users can detect empty collections if needed
     by checking if count() returns 0.
     """
-    mock_hass = MagicMock()
-
-    # Mock entity_ids to return empty list
-    mock_hass.states.entity_ids.return_value = []
 
     evaluator = Evaluator(mock_hass)
 
     # Example of conditional logic to handle empty collections
-    config = FormulaConfig(id="test_workaround", formula='sum("device_class:power") if count("device_class:power") > 0 else -1')
+    # Use a device_class that doesn't exist in the common fixture
+    config = FormulaConfig(
+        id="test_workaround", formula='sum("device_class:nonexistent") if count("device_class:nonexistent") > 0 else -1'
+    )
 
     # Should return -1 because count returns 0 (no entities)
     result = evaluator.evaluate_formula(config)

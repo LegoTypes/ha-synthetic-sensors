@@ -1,0 +1,96 @@
+version: "1.0"
+
+# This fixture tests async YAML file loading, file I/O scenarios, and validation
+# that currently have low coverage in yaml_config_parser.py
+
+global_settings:
+  device_identifier: "async_test_device"
+
+sensors:
+  async_file_test_sensor:
+    name: "Async File Operations Test"
+    formula: "base_value + async_computed_value"
+    variables:
+      base_value: 100.0
+      async_computed_value: "sensor.async_computation_source"
+    attributes:
+      file_processing_result:
+        formula: "state * processing_factor + offset"
+        variables:
+          processing_factor: 1.5
+          offset: 10.0
+        metadata:
+          unit_of_measurement: "async_result"
+      validation_test_attribute:
+        formula: "test_value == 'valid' ? success_value : error_value"
+        variables:
+          test_value: "base_value"
+          success_value: 200.0
+          error_value: 0.0
+        metadata:
+          unit_of_measurement: "validation"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  yaml_structure_validation_sensor:
+    name: "YAML Structure Validation Test"
+    formula: "structure_score + complexity_bonus"
+    variables:
+      structure_score: 85.0
+      complexity_bonus: 15.0
+    attributes:
+      nested_validation:
+        formula: "validation_depth * validation_breadth"
+        variables:
+          validation_depth: 5
+          validation_breadth: 3
+        metadata:
+          unit_of_measurement: "validation_score"
+      error_recovery_test:
+        formula: "recovery_value + fallback_calculation"
+        variables:
+          recovery_value: 50.0
+          fallback_calculation: "sensor.fallback_data_source"
+        metadata:
+          unit_of_measurement: "recovery"
+    metadata:
+      unit_of_measurement: "validation"
+      icon: "mdi:file-check"
+
+  file_io_edge_cases_sensor:
+    name: "File I/O Edge Cases"
+    formula: "io_baseline + error_handling_bonus + encoding_factor"
+    variables:
+      io_baseline: 75.0
+      error_handling_bonus: 25.0
+      encoding_factor: "sensor.encoding_test_source"
+    attributes:
+      unicode_handling:
+        formula: "unicode_score + special_chars_score"
+        variables:
+          unicode_score: 90.0
+          special_chars_score: 10.0
+        metadata:
+          unit_of_measurement: "unicode_score"
+      file_corruption_recovery:
+        formula: "corruption_detected ? recovery_mode : normal_mode"
+        variables:
+          corruption_detected: false
+          recovery_mode: 0.0
+          normal_mode: 100.0
+        metadata:
+          unit_of_measurement: "recovery_mode"
+      async_operation_status:
+        formula: "operation_complete ? completion_value : in_progress_value"
+        variables:
+          operation_complete: true
+          completion_value: 200.0
+          in_progress_value: 50.0
+        metadata:
+          unit_of_measurement: "operation_status"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+      state_class: "total"

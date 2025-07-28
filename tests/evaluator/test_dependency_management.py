@@ -5,13 +5,22 @@ import pytest
 from ha_synthetic_sensors.dependency_parser import DependencyParser
 
 
+from unittest.mock import patch
+
+
 class TestDependencyParser:
     """Test cases for DependencyParser."""
 
+    @pytest.fixture(autouse=True)
+    def setup_patches(self, mock_hass):
+        """Set up patches for all tests in this class."""
+        with patch("ha_synthetic_sensors.constants_entities.er.async_get", side_effect=lambda h: h.entity_registry):
+            yield
+
     @pytest.fixture
-    def parser(self):
+    def parser(self, mock_hass):
         """Create a DependencyParser instance."""
-        return DependencyParser()
+        return DependencyParser(mock_hass)
 
     def test_initialization(self, parser):
         """Test parser initialization."""
@@ -49,10 +58,10 @@ class TestDependencyParser:
 
     def test_extract_direct_entity_references(self, parser):
         """Test extraction of direct entity ID references."""
-        formula = "sensor.kitchen_temp + sensor.living_temp"
+        formula = "sensor.kitchen_temp + sensor.living_room_temp"
         entities = parser.extract_entity_references(formula)
         assert "sensor.kitchen_temp" in entities
-        assert "sensor.living_temp" in entities
+        assert "sensor.living_room_temp" in entities
 
     def test_extract_variables(self, parser):
         """Test extraction of variable names."""

@@ -1,0 +1,63 @@
+version: "1.0"
+
+sensors:
+  multi_formula_sensor:
+    name: "Multi Formula Sensor"
+    entity_id: "sensor.multi_formula_sensor"
+    formula: "state * 0.95"
+    attributes:
+      daily_consumption:
+        formula: "state * 24"
+        metadata:
+          unit_of_measurement: "kWh"
+      weekly_consumption:
+        formula: "state * 24 * 7"
+        metadata:
+          unit_of_measurement: "kWh"
+      monthly_cost:
+        formula: "state * 24 * 30 * 0.12"
+        metadata:
+          unit_of_measurement: "$"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  temperature_sensor:
+    name: "Temperature Sensor"
+    entity_id: "sensor.temperature_monitor"
+    formula: "state + 2.5"
+    attributes:
+      fahrenheit:
+        formula: "state * 9/5 + 32"
+        metadata:
+          unit_of_measurement: "°F"
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+      state_class: "measurement"
+
+  disabled_sensor:
+    name: "Disabled Sensor"
+    entity_id: "sensor.disabled_sensor"
+    formula: "state * 2"
+    enabled: false
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  complex_dependency_sensor:
+    name: "Complex Dependency Sensor"
+    entity_id: "sensor.complex_dependency_sensor"
+    # Use entity ID references instead of sensor keys for cross-sensor references
+    formula: "sensor.multi_formula_sensor + sensor.temperature_monitor * 10"
+    attributes:
+      combined_metric:
+        formula: "state / 1000"
+        metadata:
+          unit_of_measurement: "kW"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

@@ -1,0 +1,33 @@
+# Test Scenario 6.3: Nested Attribute References
+# Purpose: Test nested attribute reference patterns
+# Expected: Nested attributes resolve correctly
+# Validation: Nested attribute access and mathematical operations work
+
+sensors:
+  # Test nested attribute references
+  nested_attr_refs:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Nested attribute reference - calculate power from voltage and current
+      power_calculation:
+        formula: state.voltage * state.current  # Nested attributes for power calculation
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power Calculation"
+      # Deep nested attribute reference - calculate efficiency
+      efficiency_calc:
+        formula: state.attributes.power_factor.value * 100  # Deep nesting for efficiency
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Efficiency Calculation"
+      # Simple nested attribute reference
+      voltage_squared:
+        formula: state.voltage * state.voltage  # Simple nested attribute access
+        metadata:
+          unit_of_measurement: V²
+          friendly_name: "Voltage Squared"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Nested Attribute Refs"

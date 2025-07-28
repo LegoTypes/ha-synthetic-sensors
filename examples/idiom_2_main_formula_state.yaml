@@ -1,0 +1,37 @@
+version: "1.0"
+
+# Idiom 2 Test Scenario 2.2: Main Formula State Patterns (SAFE)
+# Purpose: Demonstrate safe patterns for referencing backing entity state in main formulas
+# Expected: State token resolves to backing entity value
+# Validation: Result matches backing entity state
+
+sensors:
+  power_calculator:
+    name: "Power Calculator"
+    entity_id: sensor.span_panel_instantaneous_power  # Backing entity = 1000W
+    formula: state * 2  # SAFE: State token references backing entity value
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:flash
+
+  voltage_analyzer:
+    name: "Voltage Analyzer"
+    entity_id: sensor.span_panel_voltage  # Backing entity = 240V
+    formula: state * 1.1  # SAFE: State token references backing entity value
+    metadata:
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:lightning-bolt
+
+  efficiency_monitor:
+    name: "Efficiency Monitor"
+    entity_id: sensor.span_panel_efficiency  # Backing entity = 85%
+    formula: state / 100  # SAFE: State token references backing entity value
+    metadata:
+      unit_of_measurement: ""
+      device_class: power_factor
+      state_class: measurement
+      icon: mdi:percent

@@ -1,0 +1,51 @@
+sensors:
+  # Base power sensor with self-references using sensor keys (BEFORE resolution)
+  roundtrip_base_power_sensor:
+    entity_id: sensor.roundtrip_panel_power
+    formula: roundtrip_base_power_sensor * 1.0  # Self-reference by sensor key (will become 'state')
+    variables:
+      my_ref: roundtrip_base_power_sensor      # Self-reference in variable (will become 'state')
+      scale_factor: 0.95
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+    attributes:
+      # Self-references using sensor key (will become 'state')
+      daily_power:
+        formula: roundtrip_base_power_sensor * 24  # Self-reference by sensor key
+        metadata:
+          unit_of_measurement: W
+      weekly_power:
+        formula: roundtrip_base_power_sensor * 24 * 7  # Self-reference by sensor key
+        metadata:
+          unit_of_measurement: W
+      efficiency_calc:
+        formula: roundtrip_base_power_sensor * my_ref  # Self-reference in variable
+        metadata:
+          unit_of_measurement: W
+
+  # Second sensor that references the first (cross-sensor reference)
+  roundtrip_efficiency_calc:
+    entity_id: sensor.roundtrip_panel_power  # Will cause collision
+    formula: roundtrip_base_power_sensor * 0.85 # Cross-sensor reference to Sensor A (will become entity ID)
+    variables:
+      other_power: roundtrip_base_power_sensor              # Cross-sensor reference in variable (will become entity ID)
+      local_factor: 0.9
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+    attributes:
+      # Cross-sensor references using sensor keys (will become entity IDs)
+      power_ratio:
+        formula: state / roundtrip_base_power_sensor         # Cross-sensor reference
+        metadata:
+          unit_of_measurement: ratio
+      combined_power:
+        formula: state + other_power               # Cross-sensor reference in variable
+        metadata:
+          unit_of_measurement: W
+      # Self-references using sensor key (will become 'state')
+      daily_efficiency:
+        formula: roundtrip_efficiency_calc * 24                        # Self-reference by sensor key
+        metadata:
+          unit_of_measurement: W

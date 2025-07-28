@@ -1,21 +1,53 @@
-"""Metadata property constants for Home Assistant entity classification.
-
-This module centralizes metadata property definitions and validation rules,
-making them easier to maintain and update when HA adds new metadata properties
-or changes validation requirements.
-"""
+"""Constants for metadata validation and processing."""
 
 from typing import Any
+
+# Metadata property names
+METADATA_PROPERTY_UNIT_OF_MEASUREMENT = "unit_of_measurement"
+METADATA_PROPERTY_DEVICE_CLASS = "device_class"
+METADATA_PROPERTY_STATE_CLASS = "state_class"
+METADATA_PROPERTY_ICON = "icon"
+METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION = "suggested_display_precision"
+METADATA_PROPERTY_ENTITY_REGISTRY_ENABLED_DEFAULT = "entity_registry_enabled_default"
+METADATA_PROPERTY_ENTITY_REGISTRY_VISIBLE_DEFAULT = "entity_registry_visible_default"
+METADATA_PROPERTY_ASSUMED_STATE = "assumed_state"
+METADATA_PROPERTY_OPTIONS = "options"
+METADATA_PROPERTY_ENTITY_CATEGORY = "entity_category"
+
+# Metadata property types
+METADATA_STRING_PROPERTIES = [
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_ICON,
+]
+
+METADATA_BOOLEAN_PROPERTIES = [
+    METADATA_PROPERTY_ENTITY_REGISTRY_ENABLED_DEFAULT,
+    METADATA_PROPERTY_ENTITY_REGISTRY_VISIBLE_DEFAULT,
+    METADATA_PROPERTY_ASSUMED_STATE,
+]
+
+# Entity category values
+ENTITY_CATEGORY_CONFIG = "config"
+ENTITY_CATEGORY_DIAGNOSTIC = "diagnostic"
+ENTITY_CATEGORY_SYSTEM = "system"
+
+VALID_ENTITY_CATEGORIES = [
+    ENTITY_CATEGORY_CONFIG,
+    ENTITY_CATEGORY_DIAGNOSTIC,
+    ENTITY_CATEGORY_SYSTEM,
+]
 
 # Entity-only metadata properties
 # These properties should only be used on entities, not on attributes
 ENTITY_ONLY_METADATA_PROPERTIES: dict[str, str] = {
-    "device_class": "device_class defines the entity type and should not be used on attributes",
-    "state_class": "state_class controls statistics handling and should only be used on entities",
-    "entity_category": "entity_category groups entities in the UI and should not be used on attributes",
-    "entity_registry_enabled_default": "entity_registry_enabled_default controls entity defaults and should not be used on attributes",
-    "entity_registry_visible_default": "entity_registry_visible_default controls entity visibility and should not be used on attributes",
-    "assumed_state": "assumed_state indicates entity state assumptions and should not be used on attributes",
+    METADATA_PROPERTY_DEVICE_CLASS: "device_class defines the entity type and should not be used on attributes",
+    METADATA_PROPERTY_STATE_CLASS: "state_class controls statistics handling and should only be used on entities",
+    METADATA_PROPERTY_ENTITY_CATEGORY: "entity_category groups entities in the UI and should not be used on attributes",
+    METADATA_PROPERTY_ENTITY_REGISTRY_ENABLED_DEFAULT: "entity_registry_enabled_default controls entity defaults and should not be used on attributes",
+    METADATA_PROPERTY_ENTITY_REGISTRY_VISIBLE_DEFAULT: "entity_registry_visible_default controls entity visibility and should not be used on attributes",
+    METADATA_PROPERTY_ASSUMED_STATE: "assumed_state indicates entity state assumptions and should not be used on attributes",
     "available": "available indicates entity availability and should not be used on attributes",
     "last_reset": "last_reset is for accumulating sensors and should not be used on attributes",
     "force_update": "force_update controls state machine updates and should not be used on attributes",
@@ -79,6 +111,30 @@ SENSOR_BEHAVIOR_METADATA_PROPERTIES: frozenset[str] = frozenset(
     }
 )
 
+# Error messages
+ERROR_METADATA_MUST_BE_DICT = "Metadata must be a dictionary"
+ERROR_UNIT_MUST_BE_STRING = "unit_of_measurement must be a string"
+ERROR_DEVICE_CLASS_MUST_BE_STRING = "device_class must be a string"
+ERROR_STATE_CLASS_MUST_BE_STRING = "state_class must be a string"
+ERROR_ICON_MUST_BE_STRING = "icon must be a string"
+ERROR_SUGGESTED_DISPLAY_PRECISION_MUST_BE_INT = "suggested_display_precision must be an integer"
+ERROR_ENTITY_REGISTRY_ENABLED_DEFAULT_MUST_BE_BOOL = "entity_registry_enabled_default must be a boolean"
+ERROR_ENTITY_REGISTRY_VISIBLE_DEFAULT_MUST_BE_BOOL = "entity_registry_visible_default must be a boolean"
+ERROR_ASSUMED_STATE_MUST_BE_BOOL = "assumed_state must be a boolean"
+ERROR_OPTIONS_MUST_BE_LIST = "options must be a list"
+ERROR_ENTITY_CATEGORY_INVALID = f"entity_category must be one of: {VALID_ENTITY_CATEGORIES}"
+
+# Data structure keys
+DATA_KEY_SENSOR_SETS = "sensor_sets"
+DATA_KEY_GLOBAL_SETTINGS = "global_settings"
+
+# Validation result keys
+VALIDATION_RESULT_IS_VALID = "is_valid"
+VALIDATION_RESULT_ERRORS = "errors"
+VALIDATION_RESULT_MISSING_ENTITIES = "missing_entities"
+VALIDATION_RESULT_VALID_VARIABLES = "valid_variables"
+VALIDATION_RESULT_ENTITY_IDS = "entity_ids"
+
 
 def is_entity_only_property(property_name: str) -> bool:
     """Check if a metadata property should only be used on entities.
@@ -88,10 +144,6 @@ def is_entity_only_property(property_name: str) -> bool:
 
     Returns:
         True if the property should only be used on entities, False if it can be used on attributes
-
-    Note:
-        This function helps validate metadata usage to ensure entity-specific
-        properties are not incorrectly applied to attributes.
     """
     return property_name in ENTITY_ONLY_METADATA_PROPERTIES
 

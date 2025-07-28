@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 import pytest
 
 from ha_synthetic_sensors.config_manager import FormulaConfig, SensorConfig
-from ha_synthetic_sensors.exceptions import SyntheticSensorsError
+from ha_synthetic_sensors.exceptions import SensorUpdateError, SyntheticSensorsError
 from ha_synthetic_sensors.storage_manager import StorageManager
 
 
@@ -406,7 +406,7 @@ class TestStorageManager:
             assert sensor_set_data["updated_at"] != original_updated_at
 
     async def test_update_sensor_not_found(self, storage_manager: StorageManager) -> None:
-        """Test updating a non-existent sensor."""
+        """Test updating a non-existent sensor raises SensorUpdateError."""
         with patch.object(storage_manager._store, "async_load", return_value=None):
             await storage_manager.async_load()
 
@@ -417,8 +417,11 @@ class TestStorageManager:
                 formulas=[],
             )
 
-            success = await storage_manager.async_update_sensor(non_existent_config)
-            assert not success
+            with pytest.raises(SensorUpdateError) as exc_info:
+                await storage_manager.async_update_sensor(non_existent_config)
+
+            assert "non_existent_sensor" in str(exc_info.value)
+            assert "not found for update" in str(exc_info.value)
 
     async def test_delete_sensor_set(self, storage_manager: StorageManager, sample_sensor_config: SensorConfig) -> None:
         """Test deleting a sensor set and all associated sensors."""
@@ -592,13 +595,16 @@ class TestStorageManager:
             assert storage_manager._data["sensor_sets"][sensor_set_id]["sensor_count"] == 0
 
     async def test_delete_sensor_not_found(self, storage_manager: StorageManager) -> None:
-        """Test deleting a non-existent sensor."""
+        """Test deleting a non-existent sensor raises SensorUpdateError."""
         with patch.object(storage_manager._store, "async_load", return_value=None):
             await storage_manager.async_load()
 
             # Try to delete non-existent sensor
-            result = await storage_manager.async_delete_sensor("non_existent_sensor")
-            assert result is False
+            with pytest.raises(SensorUpdateError) as exc_info:
+                await storage_manager.async_delete_sensor("non_existent_sensor")
+
+            assert "non_existent_sensor" in str(exc_info.value)
+            assert "not found for deletion" in str(exc_info.value)
 
     async def test_update_sensor_with_global_settings(self, storage_manager: StorageManager) -> None:
         """Test updating sensor when global settings are present."""
@@ -609,17 +615,13 @@ class TestStorageManager:
             await storage_manager.async_load()
 
             # Import YAML with global settings
-            yaml_content = """
-version: "1.0"
-global_settings:
-  device_identifier: "global_device:test_123"
-  variables:
-    global_var: "sensor.global_entity"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: "1 + 2"
-"""
+            from pathlib import Path
+
+            yaml_fixture_path = (
+                Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_storage_manager_global_settings.yaml"
+            )
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
             result = await storage_manager.async_from_yaml(yaml_content, "test_global_update_set", device_identifier=None)
             sensor_set_id = result["sensor_set_id"]
 
@@ -665,20 +667,11 @@ sensors:
             await storage_manager.async_load()
 
             # Import YAML with global settings
-            yaml_content = """
-version: "1.0"
-global_settings:
-  device_identifier: "global_device:test_123"
-  variables:
-    global_var: "sensor.global_entity"
-sensors:
-  test_sensor_1:
-    name: "Test Sensor 1"
-    formula: "1 + 2"
-  test_sensor_2:
-    name: "Test Sensor 2"
-    formula: "2 + 3"
-"""
+            from pathlib import Path
+
+            yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_storage_manager_global_delete.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
             result = await storage_manager.async_from_yaml(yaml_content, "test_global_delete_set", device_identifier=None)
             sensor_set_id = result["sensor_set_id"]
 
@@ -712,15 +705,11 @@ sensors:
             await storage_manager.async_load()
 
             # Import initial YAML
-            yaml_content = """
-version: "1.0"
-global_settings:
-  device_identifier: "global_device:test_123"
-sensors:
-  original_sensor:
-    name: "Original Sensor"
-    formula: "1 + 2"
-"""
+            from pathlib import Path
+
+            yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_storage_manager_export_update.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
             result = await storage_manager.async_from_yaml(yaml_content, "test_export_after_update", device_identifier=None)
             sensor_set_id = result["sensor_set_id"]
 
@@ -757,18 +746,11 @@ sensors:
             await storage_manager.async_load()
 
             # Import initial YAML with multiple sensors
-            yaml_content = """
-version: "1.0"
-global_settings:
-  device_identifier: "global_device:test_123"
-sensors:
-  sensor_to_keep:
-    name: "Sensor to Keep"
-    formula: "1 + 2"
-  sensor_to_delete:
-    name: "Sensor to Delete"
-    formula: "3 + 4"
-"""
+            from pathlib import Path
+
+            yaml_fixture_path = Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_storage_manager_export_delete.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
             result = await storage_manager.async_from_yaml(yaml_content, "test_export_after_delete", device_identifier=None)
             sensor_set_id = result["sensor_set_id"]
 
@@ -929,17 +911,13 @@ sensors:
             await storage_manager.async_load()
 
             # Import sensor set with global settings
-            yaml_content = """
-version: "1.0"
-global_settings:
-  device_identifier: "global_device:test_123"
-  variables:
-    global_var: "sensor.global_entity"
-sensors:
-  test_sensor:
-    name: "Test Sensor"
-    formula: "1 + 2"
-"""
+            from pathlib import Path
+
+            yaml_fixture_path = (
+                Path(__file__).parent.parent / "yaml_fixtures" / "unit_test_storage_manager_update_validation.yaml"
+            )
+            with open(yaml_fixture_path, "r") as f:
+                yaml_content = f.read()
             result = await storage_manager.async_from_yaml(yaml_content, "test_update_validation", device_identifier=None)
             _ = result["sensor_set_id"]
 

@@ -19,7 +19,7 @@ sensors:
           efficiency: 0.9
           temperature: sensor.different_temperature
         metadata:
-          unit_of_measurement: complex
+          unit_of_measurement: W
       voltage_calc:
         formula: voltage_source * temperature
         variables:

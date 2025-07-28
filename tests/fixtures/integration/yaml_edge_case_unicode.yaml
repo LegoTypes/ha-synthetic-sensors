@@ -1,0 +1,41 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  unicode_sensor:
+    name: "测试传感器 Unicode Sensor"
+    formula: "base_power * multiplier"
+    variables:
+      base_power: "sensor.base_power"
+      multiplier: 1.5
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      attribution: "Unicode test with 特殊字符"
+
+  special_chars_sensor:
+    name: "Special Characters Sensor @#$%^&*()"
+    formula: "external_entity + adjustment"
+    variables:
+      external_entity: "sensor.external_power"
+      adjustment: 100
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      icon: "mdi:flash-circle"
+
+  emoji_sensor:
+    name: "Emoji Sensor ⚡🔋💡"
+    formula: "battery_power * efficiency"
+    variables:
+      battery_power: "sensor.battery_meter"
+      efficiency: 0.95
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+      attribution: "Testing emoji support 🚀"

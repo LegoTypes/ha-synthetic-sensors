@@ -45,18 +45,16 @@ def validate_data_provider_result(result: Any, context: str = "data provider") -
     return result  # type: ignore[return-value]
 
 
-def validate_entity_state_value(value: Any, entity_id: str) -> None:
-    """Validate entity state value and raise fatal error for None values.
+def validate_entity_state_value(value: Any, entity_id: str) -> Any:
+    """Validate and sanitize entity state value, converting None to 'unknown'.
 
     Args:
         value: Entity state value
         entity_id: Entity ID for error context
 
-    Raises:
-        DataValidationError: If value is None (fatal error)
+    Returns:
+        Any: The sanitized value (None converted to 'unknown')
     """
     if value is None:
-        raise DataValidationError(
-            f"Entity '{entity_id}' has None state value - this indicates the entity is unavailable "
-            f"or has invalid data. This is a fatal error."
-        )
+        return "unknown"
+    return value

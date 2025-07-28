@@ -1,16 +1,4 @@
-"""Variable resolution strategies for flexible data access in synthetic sensors.
-
-This module provides a pluggable resolution system that allows synthetic sensors
-to get data from different sources (HA state, integration callbacks, or context)
-in a consistent and predictable way.
-
-Variable Types Supported:
-1. Entity aliases: variable maps to an entity ID (e.g., power: "sensor.power_meter")
-2. Numeric literals: variable contains a direct numeric value (e.g., offset: 5, rate: 1.5)
-
-Note: String literals and string operations are not currently supported since
-the evaluation engine (simpleeval) is focused on mathematical operations.
-"""
+"""Variable resolution strategies for synthetic sensor package."""
 
 from __future__ import annotations
 
@@ -20,11 +8,14 @@ from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.core import HomeAssistant, State
 
+from .constants_boolean_states import FALSE_STATES, TRUE_STATES
 from .data_validation import validate_data_provider_result, validate_entity_state_value
 from .exceptions import MissingDependencyError, NonNumericStateError
+from .type_definitions import ContextValue, DataProviderCallback
+from .utils import denormalize_entity_id
 
 if TYPE_CHECKING:
-    from .type_definitions import ContextValue, DataProviderCallback
+    pass  # No additional imports needed for type checking
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,14 +75,14 @@ class ContextResolutionStrategy(VariableResolutionStrategy):
 
         # Ensure the context value is numeric for mathematical operations
         value = self._context[variable_name]
-        return isinstance(value, (int, float))
+        return isinstance(value, int | float)
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
         """Resolve variable from context."""
         if variable_name in self._context:
             value = self._context[variable_name]
             # Validate that the value is numeric
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return value, True, "context"
             raise MissingDependencyError(
                 f"Context variable '{variable_name}' has non-numeric value '{value}' - "
@@ -108,46 +99,143 @@ class IntegrationResolutionStrategy(VariableResolutionStrategy):
     data without requiring actual HA entities.
     """
 
-    def __init__(self, data_provider_callback: DataProviderCallback, evaluator: Any = None):
-        """Initialize with integration callback and evaluator for push-based pattern."""
+    def __init__(self, data_provider_callback: DataProviderCallback, dependency_handler: Any = None):
+        """Initialize with integration callback and dependency handler for push-based pattern."""
         self._data_provider_callback = data_provider_callback
-        self._evaluator = evaluator  # For accessing new get_integration_entities method
+        self._dependency_handler = dependency_handler  # For accessing get_integration_entities method
 
     def _get_integration_entities(self) -> set[str]:
         """Get the set of entities that the integration can provide using push-based pattern."""
-        # Use new pattern (via evaluator)
-        if self._evaluator and hasattr(self._evaluator, "get_integration_entities"):
-            entities = self._evaluator.get_integration_entities()
+        # Use dependency handler pattern
+        if self._dependency_handler and hasattr(self._dependency_handler, "get_integration_entities"):
+            entities = self._dependency_handler.get_integration_entities()
             return cast(set[str], entities)
 
-        # If no evaluator provided, return empty set (no integration entities available)
+        # If no dependency handler provided, return empty set (no integration entities available)
         return set()
 
     def can_resolve(self, variable_name: str, entity_id: str | None = None) -> bool:
-        """Check if integration can resolve this variable using push-based pattern."""
-        integration_entities = self._get_integration_entities()
+        """Check if integration data provider can resolve this variable.
+
+        Uses registration filtering to only resolve registered entities,
+        implementing the user's architecture to prevent hiding configuration errors.
+        """
         target_entity = entity_id or variable_name
 
-        # If we have registered entities (from push-based pattern), check if entity is in the list
-        if integration_entities:
-            return target_entity in integration_entities
+        # Handle normalized entity IDs (with underscores instead of dots)
+        if "." not in target_entity and "_" in target_entity:
+            original_entity_id = denormalize_entity_id(target_entity)
+            if original_entity_id:
+                # Check registration first, then existence
+                return self._is_entity_registered(original_entity_id) and self._check_entity_exists(original_entity_id)
 
-        # If no registered entities, we can't resolve anything
-        return False
+        # Only resolve if it looks like an entity ID
+        if "." not in target_entity:
+            return False
+
+        # Check registration first, then existence
+        return self._is_entity_registered(target_entity) and self._check_entity_exists(target_entity)
+
+    def _is_entity_registered(self, entity_id: str) -> bool:
+        """Check if an entity is registered with the integration.
+
+        Implements proper registration filtering according to the architecture.
+        """
+        integration_entities = self._get_integration_entities()
+
+        # If no entities are registered, allow any entity (flexible data provider usage)
+        if not integration_entities:
+            return True
+
+        # Only allow registered entities (strict registration validation)
+        return entity_id in integration_entities
+
+    def _check_entity_exists(self, entity_id: str) -> bool:
+        """Check if an entity exists in the integration data provider."""
+        if self._data_provider_callback is None:
+            return False
+
+        # Only call data provider for registered entities
+        if not self._is_entity_registered(entity_id):
+            return False
+
+        result = self._data_provider_callback(entity_id)
+        return result is not None and result.get("exists", False)
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
-        """Resolve variable using integration callback."""
+        """Resolve variable using integration data provider."""
         target_entity = entity_id or variable_name
 
-        # Call data provider and validate result (let exceptions be fatal)
+        # Check if this is an attribute reference (e.g., "state.voltage")
+        if "." in variable_name and entity_id is None:
+            return self._resolve_attribute_reference(variable_name)
+
+        # Regular entity resolution - only call data provider for registered entities
+        if not self._is_entity_registered(target_entity):
+            return None, False, "integration"
+
         result = self._data_provider_callback(target_entity)
         validated_result = validate_data_provider_result(result, f"integration data provider for '{target_entity}'")
 
-        # If entity exists, validate the state value too (per strict error handling requirements)
+        # If entity exists, validate and sanitize the state value
         if validated_result["exists"]:
-            validate_entity_state_value(validated_result["value"], target_entity)
+            sanitized_value = validate_entity_state_value(validated_result["value"], target_entity)
+            return sanitized_value, validated_result["exists"], "integration"
 
         return validated_result["value"], validated_result["exists"], "integration"
+
+    def _resolve_attribute_reference(self, variable_name: str) -> tuple[Any, bool, str]:
+        """Resolve an attribute reference like 'state.voltage' or 'sensor.temp.humidity'."""
+        parts = variable_name.split(".", 1)
+        base_entity = parts[0]
+        attribute_name = parts[1]
+
+        if base_entity == "state":
+            return self._resolve_state_attribute_reference(attribute_name)
+
+        return self._resolve_regular_attribute_reference(base_entity, attribute_name)
+
+    def _resolve_state_attribute_reference(self, attribute_name: str) -> tuple[Any, bool, str]:
+        """Resolve a state attribute reference like 'state.voltage'."""
+        # Try to get backing entity from integration entities
+        integration_entities = self._get_integration_entities()
+        if integration_entities:
+            backing_entity = next(iter(integration_entities))
+            result = self._data_provider_callback(backing_entity)
+            validated_result = validate_data_provider_result(result, f"integration data provider for '{backing_entity}'")
+
+            if validated_result["exists"] and "attributes" in validated_result:
+                attributes = validated_result["attributes"]
+                if attribute_name in attributes:
+                    attribute_value = attributes[attribute_name]
+                    sanitized_value = validate_entity_state_value(attribute_value, f"{backing_entity}.{attribute_name}")
+                    return sanitized_value, True, "integration"
+
+        # Fallback: try to resolve "state" as a regular entity
+        return self._resolve_regular_attribute_reference("state", attribute_name)
+
+    def _resolve_regular_attribute_reference(self, base_entity: str, attribute_name: str) -> tuple[Any, bool, str]:
+        """Resolve a regular attribute reference like 'sensor.temp.humidity'."""
+        # Only call data provider for registered entities
+        if not self._is_entity_registered(base_entity):
+            return None, False, "integration"
+
+        result = self._data_provider_callback(base_entity)
+        validated_result = validate_data_provider_result(result, f"integration data provider for '{base_entity}'")
+
+        if not validated_result["exists"]:
+            return None, False, "integration"
+
+        # Check if the result has attributes
+        if "attributes" in validated_result and isinstance(validated_result["attributes"], dict):
+            attributes = validated_result["attributes"]
+            if attribute_name in attributes:
+                attribute_value = attributes[attribute_name]
+                sanitized_value = validate_entity_state_value(attribute_value, f"{base_entity}.{attribute_name}")
+                return sanitized_value, True, "integration"
+
+        # Attribute not found
+        return None, False, "integration"
 
 
 class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
@@ -165,36 +253,88 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
         """Check if HA has state for this variable."""
         target_entity = entity_id or variable_name
 
+        # Handle normalized entity IDs (with underscores instead of dots)
+        if "." not in target_entity and "_" in target_entity:
+            # Try to convert normalized entity ID back to original format
+            # This handles cases where entity IDs were normalized for simpleeval compatibility
+            original_entity_id = denormalize_entity_id(target_entity)
+            if original_entity_id:
+                state = self._hass.states.get(original_entity_id)
+                result = state is not None
+                return result
+
         # Only resolve if it looks like an entity ID
         if "." not in target_entity:
             return False
 
         state = self._hass.states.get(target_entity)
-        return state is not None
+        result = state is not None
+        return result
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
         """Resolve variable using HA state."""
         target_entity = entity_id or variable_name
 
+        # Check if this is an attribute reference (e.g., "state.voltage")
+        if "." in variable_name and entity_id is None:
+            return self._resolve_attribute_reference(variable_name)
+
+        # Handle normalized entity IDs (with underscores instead of dots)
+        if "." not in target_entity and "_" in target_entity:
+            original_entity_id = denormalize_entity_id(target_entity)
+            if original_entity_id:
+                state = self._hass.states.get(original_entity_id)
+                if state is not None:
+                    return self._process_state(state, "ha")
+
         state = self._hass.states.get(target_entity)
         if state is None:
             return None, False, "ha"
 
+        return self._process_state(state, "ha")
+
+    def _resolve_attribute_reference(self, variable_name: str) -> tuple[Any, bool, str]:
+        """Resolve an attribute reference like 'state.voltage'."""
+        parts = variable_name.split(".", 1)
+        base_entity = parts[0]
+        attribute_name = parts[1]
+
+        # Resolve the base entity first
+        state = self._hass.states.get(base_entity)
+        if state is None:
+            return None, False, "ha"
+
+        # Check if the state has the requested attribute
+        if hasattr(state, "attributes") and attribute_name in state.attributes:
+            attribute_value = state.attributes[attribute_name]
+            # Try to convert to numeric if possible
+            try:
+                numeric_value = float(attribute_value)
+                return numeric_value, True, "ha"
+            except (ValueError, TypeError):
+                # Return as string if not numeric
+                return str(attribute_value), True, "ha"
+
+        # Attribute not found
+        return None, False, "ha"
+
+    def _process_state(self, state: State, source: str) -> tuple[Any, bool, str]:
+        """Process state and return numeric value."""
         # Handle startup race conditions where state exists but state.state is None
         if state.state is None:
-            return None, False, "ha"
+            return None, False, source
 
         # Handle clearly unavailable states
         if str(state.state).lower() in ("unavailable", "unknown"):
-            return None, False, "ha"
+            return None, False, source
 
         try:
             # Try to get numeric state value
             numeric_value = self._get_numeric_state(state)
-            return numeric_value, True, "ha"
+            return numeric_value, True, source
         except (ValueError, TypeError, NonNumericStateError):
             # For truly non-numeric states that can't be converted, treat as unavailable
-            return None, False, "ha"
+            return None, False, source
 
     def get_numeric_state(self, state: State) -> float:
         """Public method to get numeric state value.
@@ -210,6 +350,17 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
         """
         return self._get_numeric_state(state)
 
+    def convert_boolean_state_to_numeric(self, state: State) -> float | None:
+        """Public method to convert boolean-like state to numeric value.
+
+        Args:
+            state: Home Assistant state object
+
+        Returns:
+            Numeric value (1.0 or 0.0) or None if not convertible
+        """
+        return self._convert_boolean_state_to_numeric(state)
+
     def _get_numeric_state(self, state: State) -> float:
         """Extract numeric value from state object.
 
@@ -223,7 +374,7 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
             return float(state.state)
         except (ValueError, TypeError):
             # Convert boolean-like states to numeric values
-            numeric_value = self._convert_boolean_state_to_numeric(state)
+            numeric_value = self.convert_boolean_state_to_numeric(state)
             if numeric_value is not None:
                 return numeric_value
 
@@ -243,116 +394,50 @@ class HomeAssistantResolutionStrategy(VariableResolutionStrategy):
             Numeric value (1.0 or 0.0) or None if not convertible
         """
         state_str = str(state.state).lower()
-        device_class = state.attributes.get("device_class", "").lower()
-
-        # Special handling for device_class-specific states (check first for priority)
-        device_class_value = self._get_device_class_specific_value(state_str, device_class)
-        if device_class_value is not None:
-            return device_class_value
 
         # Standard boolean states (True = 1.0)
-        true_states = {
-            "on",
-            "true",
-            "yes",
-            "1",
-            "open",
-            "opened",  # Basic states and door/window sensors
-            "home",
-            "present",  # Presence detection
-            "locked",  # Lock states
-            "detected",
-            "motion",  # Motion/occupancy sensors
-            "wet",
-            "moisture",  # Moisture/leak sensors
-            "heat",
-            "fire",  # Safety sensors
-            "unsafe",
-            "problem",  # Problem/safety indicators
-            "active",
-            "running",  # Activity states
-            "connected",
-            "online",  # Connectivity states
-            "charging",  # Battery/power states
-            "armed_home",
-            "armed_away",
-            "armed_night",
-            "armed_vacation",  # Alarm states
-        }
+        if state_str in TRUE_STATES:
+            return 1.0
 
         # Standard boolean states (False = 0.0)
-        false_states = {
-            "off",
-            "false",
-            "no",
-            "0",
-            "closed",
-            "close",  # Basic states and door/window sensors
-            "away",
-            "not_home",
-            "absent",  # Presence detection
-            "unlocked",  # Lock states
-            "clear",
-            "no_motion",  # Motion/occupancy sensors
-            "dry",
-            "no_moisture",  # Moisture/leak sensors
-            "cool",
-            "cold",
-            "no_fire",  # Safety sensors
-            "safe",
-            "ok",  # Problem/safety indicators
-            "inactive",
-            "idle",
-            "stopped",  # Activity states
-            "disconnected",
-            "offline",  # Connectivity states
-            "not_charging",
-            "discharging",  # Battery/power states
-            "disarmed",
-            "disabled",  # Alarm states
-        }
-
-        if state_str in true_states:
-            return 1.0
-        if state_str in false_states:
+        if state_str in FALSE_STATES:
             return 0.0
 
-        return None  # Cannot convert
+        # Device-specific boolean states based on device class
+        device_class = state.attributes.get("device_class")
+        if device_class:
+            device_class = device_class.lower()
 
-    def _get_device_class_specific_value(self, state_str: str, device_class: str) -> float | None:
-        """Get device class specific numeric value.
+            # Device-specific true states
+            device_true_states = {
+                "moisture": {"moist", "wet"},
+                "door": {"open"},
+                "window": {"open"},
+                "motion": {"motion", "detected"},
+                "presence": {"home", "detected"},
+                "lock": {"locked"},
+                "battery": {"low"},
+                "problem": {"problem"},
+            }
 
-        Args:
-            state_str: Lowercase state string
-            device_class: Lowercase device class
+            # Device-specific false states
+            device_false_states = {
+                "moisture": {"not_moist", "dry"},
+                "door": {"closed"},
+                "window": {"closed"},
+                "motion": {"clear", "no_motion"},
+                "presence": {"away", "not_home"},
+                "lock": {"unlocked"},
+                "battery": {"normal"},
+                "problem": {"ok", "normal"},
+            }
 
-        Returns:
-            Numeric value or None if not device class specific
-        """
-        # Define device class specific state mappings
-        device_class_mappings: dict[str, dict[str, tuple[str, ...]]] = {
-            "battery": {
-                "true_states": ("normal", "high", "full"),
-                "false_states": ("low", "critical"),
-            },
-            "connectivity": {
-                "true_states": ("connected", "paired"),
-                "false_states": ("disconnected", "unpaired"),
-            },
-            "power": {
-                "true_states": ("power", "powered"),
-                "false_states": ("no_power", "unpowered"),
-            },
-        }
-
-        if device_class in device_class_mappings:
-            mapping = device_class_mappings[device_class]
-            if state_str in mapping["true_states"]:
+            if device_class in device_true_states and state_str in device_true_states[device_class]:
                 return 1.0
-            if state_str in mapping["false_states"]:
+            if device_class in device_false_states and state_str in device_false_states[device_class]:
                 return 0.0
 
-        return None
+        return None  # Cannot convert
 
 
 class VariableResolver:
@@ -395,7 +480,7 @@ class VariableResolver:
         results: dict[str, tuple[Any, bool, str]] = {}
         for var_name, var_value in variables.items():
             # Handle numeric literals directly without entity resolution
-            if isinstance(var_value, (int, float)):
+            if isinstance(var_value, int | float):
                 results[var_name] = (var_value, True, "literal")
             else:
                 # Handle entity ID resolution (string or None)

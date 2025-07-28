@@ -3,6 +3,113 @@
 This guide demonstrates how to integrate the `ha-synthetic-sensors` library into your Home Assistant custom integration for
 creating dynamic, formula-based sensors.
 
+## Overview: How Synthetic Sensors Work
+
+Synthetic sensors are **wrapper sensors** that extend other sensors with formula-based calculations. They provide a new state
+value by applying mathematical formulas to to other entities, allowing you to:
+
+- **Extend sensor capabilities** with calculated attributes
+- **Transform sensor values** using mathematical formulations
+- **Combine multiple sensors** into derived metrics
+- **Add computed states** without modifying original sensors
+- **Add computed attributes** that evaluate base on the main sensor state or other entities
+- **Use custom comparison logic** for domain-specific data types (energy, versions, IP addresses, etc.)
+
+### Data Sources for Synthetic Sensors
+
+Synthetic sensors calculate their state using formulas that reference other sensor data. **The formula determines the
+synthetic sensor's final state value** - there is no requirement for a single "backing entity." Instead, synthetic sensors
+can:
+
+- **Use a dedicated state backing entity** (referenced via `state` token) as the primary data source
+- **Combine multiple existing sensors or attriubutes** using their entity IDs in formulas
+- **Perform pure calculations** across any combination of sensor references
+
+The data sources for the evaluated formulas can be:
+
+**A) Virtual Backing Entity (Integration-Managed)**
+
+- Custom data structure in your integration's memory
+- Not registered in HA's entity registry
+- Updated by your integration's coordinator
+- Referenced via `state` token in formulas when sensor has a dedicated backing entity
+
+**B) Native HA Entity References (Integration-Provided)**
+
+- Real HA sensors created by your integration
+- Registered in HA's entity registry
+- Referenced by entity ID in synthetic sensor formulas
+- Enables extending or combining your integration's existing sensors
+
+**C) External HA Entity References (Cross-Integration)**
+
+- Sensors from other integrations or manual configuration
+- Referenced by entity ID in synthetic sensor formulas
+- Automatically tracked via HA state change events
+- Enables cross-integration calculations and combinations
+
+### Process Flow for Each Pattern
+
+#### Pattern A: Virtual Entity Extension (Device Integrations)
+
+```text
+Your Integration Data → Virtual Backing Entity → Synthetic Sensor Extension
+        ↓                        ↓                           ↓
+   Device API Data        coordinator.register()     Formula calculates new state
+   coordinator.update()   virtual_entity.value      from virtual entity value
+   notify_changes()       (not in HA registry)      (appears in HA as sensor)
+```
+
+**Steps:**
+
+1. **Set up virtual backing entities** in your coordinator's memory
+2. **Register entities** with synthetic sensor package via mapping
+3. **Update virtual values** when your device data changes
+4. **Notify changes** to trigger selective synthetic sensor updates
+5. **Synthetic sensors calculate** new states from virtual entity values
+
+#### Pattern B: Native HA Entity Extension (Integration Sensors)
+
+```text
+Your Integration → Native HA Sensor → Synthetic Sensor Extension
+        ↓                ↓                      ↓
+   Create real sensor   HA entity lifecycle    Formula extends existing
+   via async_add_entities   state updates      sensor with new calculations
+```
+
+**Steps:**
+
+1. **Create native HA sensors** via `async_add_entities`
+2. **Set up synthetic sensors** to reference native sensor entity IDs
+3. **Update native sensors** through normal HA mechanisms
+4. **Synthetic sensors automatically update** via HA state change tracking
+5. **Extended sensors provide** calculated values based on native sensor states
+
+#### Pattern C: External HA Entity Extension (Cross-Integration)
+
+```text
+Other Integration → HA Entity → Synthetic Sensor Extension
+        ↓              ↓              ↓
+   External sensor    HA state      Formula combines/transforms
+   updates normally   changes       external entity values
+```
+
+**Steps:**
+
+1. **Identify external HA entities** you want to extend or combine
+2. **Reference entity IDs** directly in synthetic sensor YAML variables
+3. **Set up synthetic sensors** with `allow_ha_lookups=True`
+4. **External entities update** independently via their own integrations
+5. **Synthetic sensors automatically recalculate** when referenced entities change
+
+### Sythetic Benefits
+
+- **No modification** of original sensors or integrations required
+- **Dynamic formulas** can be updated without code changes (via YAML)
+- **Selective updates** - only affected sensors recalculate when dependencies change
+- **Clean architecture** - separates data provision from sensor presentation
+- **Cross-integration** capabilities for combining data from multiple sources
+
 ## Quick Start - Recommended Pattern
 
 For most integrations, use this simplified pattern with **one function call**:
@@ -15,6 +122,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Create your native sensors first
     native_entities = create_native_sensors(coordinator)
     async_add_entities(native_entities)
+
+    # Register custom comparison handlers (optional)
+    from ha_synthetic_sensors.comparison_handlers import register_user_comparison_handler
+    energy_handler = EnergyComparisonHandler()  # Your custom handler
+    register_user_comparison_handler(energy_handler)
 
     # Then add synthetic sensors with one call
     sensor_manager = await async_setup_synthetic_sensors(
@@ -29,18 +141,19 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     )
 ```
 
-This approach handles everything automatically using storage-based configuration.
+This approach handles everything automatically using storage-based configuration and supports custom comparison logic for
+domain-specific data types.
 
 ## Data Provider Interface with Real-Time Updates
 
-The library supports **change notification** for real-time synthetic sensor updates when using virtual backing entities.
-This approach provides optimal performance by only updating sensors whose underlying data has actually changed.
+The library supports **change notification** for real-time synthetic sensor updates when using virtual backing entities. This
+approach provides optimal performance by only updating sensors whose underlying data has actually changed.
 
 ### Data Provider Components
 
-**Data Provider Callback**: Returns current values for virtual backing entities
-**Change Notifier Callback**: Receives notifications when specific backing entities change
-**Selective Updates**: Only sensors using changed backing entities are updated
+**Data Provider Callback**: Returns current values for virtual backing entities **Change Notifier Callback**: Receives
+notifications when specific backing entities change **Selective Updates**: Only sensors using changed backing entities are
+updated
 
 ### Type Definitions
 
@@ -53,6 +166,38 @@ DataProviderCallback = Callable[[str], DataProviderResult]
 
 # Change notifier receives set of changed backing entity IDs
 DataProviderChangeNotifier = Callable[[set[str]], None]
+```
+
+## User-Defined Comparison Handlers
+
+The synthetic sensors library includes an **extensible comparison handler architecture** that allows users to define custom
+comparison logic for specialized data types. This enables advanced pattern matching in collection functions and condition
+evaluation.
+
+For comprehensive documentation on creating and using custom comparison handlers, see the dedicated guide:
+
+**[User-Defined Comparison Handlers](User_Defined_Comparison_Handlers.md)**
+
+This guide covers:
+
+- **Handler Architecture**: Understanding the extensible comparison system
+- **Creating Custom Handlers**: Step-by-step implementation guide
+- **Priority System**: Handler selection and precedence rules
+- **Advanced Examples**: IP address, version string, and energy handlers
+- **Best Practices**: Design patterns and testing strategies
+- **Integration**: Using handlers with collection functions and patterns
+
+**Quick Start:**
+
+```python
+from ha_synthetic_sensors.comparison_handlers import register_user_comparison_handler
+
+# Register your custom handler
+energy_handler = EnergyComparisonHandler()
+register_user_comparison_handler(energy_handler)
+
+# Use in collection patterns
+formula: count("attribute:power_consumption>=1kW")  # Uses energy handler
 ```
 
 ## Interface Functions Overview
@@ -70,6 +215,8 @@ async def async_setup_synthetic_sensors(
     device_identifier: str,
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
+    sensor_to_backing_mapping: dict[str, str] | None = None,    # Synthetic Sensor Key -> Backing entity_id
+    allow_ha_lookups: bool = False,
 ) -> SensorManager
 ```
 
@@ -83,7 +230,7 @@ async def async_setup_synthetic_sensors_with_entities(
     storage_manager: StorageManager,
     device_identifier: str,
     data_provider_callback: DataProviderCallback | None = None,
-    change_notifier: DataProviderChangeNotifier | None = None,  # NEW
+    change_notifier: DataProviderChangeNotifier | None = None,
     backing_entity_ids: set[str] | None = None,
     allow_ha_lookups: bool = False,
 ) -> SensorManager
@@ -99,7 +246,7 @@ async def async_setup_synthetic_integration(
     integration_domain: str,
     device_identifier: str,
     sensor_configs: list[SensorConfig],
-    backing_entity_ids: set[str] | None = None,
+    sensor_to_backing_mapping: dict[str, str] | None = None,   # Synthetic Sensor Key -> Backing entity_id
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
     sensor_set_name: str | None = None,
@@ -124,51 +271,221 @@ async def async_setup_synthetic_integration_with_auto_backing(
 ) -> tuple[StorageManager, SensorManager]
 ```
 
-## Real-Time Update Patterns
+## Input Validation
 
-### Pattern 1: Virtual Backing Entities (Recommended)
+The library performs strict validation on key parameters to ensure data integrity and prevent runtime errors:
 
-This pattern provides the best performance with in-memory synthetic sensor backing store and real-time updates:
+### Sensor-to-Backing Mapping Validation
+
+The `sensor_to_backing_mapping` parameter is validated to ensure:
+
+- **No `None` values**: Neither keys nor values can be `None`
+- **Valid strings**: All keys and values must be non-empty strings (no empty strings or whitespace-only strings)
+- **Proper types**: All entries must be strings (not integers, booleans, etc.)
+- **HA Compliance**: Entity ID's are NOT validated as HA compliant because in-memory backing may be any valid string
+- **Non-empty mapping**: The mapping cannot be empty (at least one entry is required for state token resolution)
+
+**Example of valid mapping:**
 
 ```python
-# In your sensor.py platform
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    # Set up native sensors
-    native_entities = create_native_sensors(coordinator)
-    async_add_entities(native_entities)
-
-    # Set up synthetic sensor configuration
-    storage_manager = await setup_synthetic_configuration(hass, config_entry, coordinator)
-
-    # Create change notifier callback - this enables real-time updates
-    def change_notifier_callback(changed_entity_ids: set[str]) -> None:
-        """Handle change notifications for selective sensor updates."""
-        # This will be called by your integration when backing entity values change
-        # The sensor_manager will automatically update only affected sensors
-        pass
-
-    # Register synthetic sensors with interface
-    sensor_manager = await async_setup_synthetic_sensors(
-        hass=hass,
-        config_entry=config_entry,
-        async_add_entities=async_add_entities,
-        storage_manager=storage_manager,
-        device_identifier=coordinator.device_id,
-        data_provider_callback=create_data_provider_callback(coordinator),
-        change_notifier=change_notifier_callback,  # Enable real-time updates
-        allow_ha_lookups=False,
-    )
-
-    # Store sensor_manager reference for your integration to use
-    hass.data[DOMAIN][config_entry.entry_id]["sensor_manager"] = sensor_manager
+sensor_to_backing_mapping = {
+    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_power": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power",
+    "span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_energy_consumed": "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_consumed",
+}
 ```
 
-### Pattern 2: Traditional HA Entity Updates
-
-For integrations using real HA entities as backing entities:
+**Examples that will raise `ValueError`:**
 
 ```python
-# Traditional pattern - no change notifier needed
+# Invalid - Empty mapping (breaks state token resolution)
+{}
+
+# Invalid - None values
+{"sensor_key": None}
+{None: "sensor.backing_entity"}
+
+# Invalid - Empty strings
+{"": "sensor.backing_entity"}
+{"sensor_key": ""}
+async def setup_with_yaml_import(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    yaml_content: str
+) -> StorageManager:
+    """Set up sensor set by importing YAML content."""
+
+    storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
+    await storage_manager.async_load()
+
+    device_identifier = "your_device_id"
+    sensor_set_id = f"{device_identifier}_sensors"
+
+    # Create sensor set first
+    await storage_manager.async_create_sensor_set(
+        sensor_set_id=sensor_set_id,
+        device_identifier=device_identifier,
+        name="My Device Sensors",
+    )
+
+    # Import YAML content
+    sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+    await sensor_set.async_import_yaml(yaml_content)
+
+    return storage_manager
+# Invalid - Whitespace-only strings
+{"   ": "sensor.backing_entity"}
+{"sensor_key": "   "}
+
+# Invalid - Wrong types
+{123: "sensor.backing_entity"}
+{"sensor_key": 456}
+```
+
+### Entity IDs Validation
+
+The `backing_entity_ids` parameter (when used directly) is validated to ensure:
+
+- **No `None` values**: No entity ID can be `None`
+- **Valid strings**: All entity IDs must be non-empty strings
+- **Proper types**: All entity IDs must be strings
+
+**Example of valid entity IDs:**
+
+```python
+backing_entity_ids = {
+    "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_power",
+    "sensor.span_nj-2316-005k6_0dad2f16cd514812ae1807b0457d473e_backing_energy_consumed",
+}
+```
+
+**Examples that will raise `SyntheticSensorsConfigError`:**
+
+```python
+# Invalid - Direct registration with empty set in virtual-only mode
+register_data_provider_entities(set(), allow_ha_lookups=False)
+
+# Invalid - Direct registration with empty set (even with HA lookups)
+register_data_provider_entities(set(), allow_ha_lookups=True)
+
+# Invalid - None values in entity set
+{None, "sensor.backing_entity"}
+
+# Invalid - Empty strings in entity set
+{"", "sensor.backing_entity"}
+
+# Invalid - Whitespace-only strings in entity set
+{"   ", "sensor.backing_entity"}
+
+# Invalid - Wrong types in entity set
+{123, "sensor.backing_entity"}
+```
+
+**Valid usage patterns:**
+
+```python
+# Valid - Populated entity set
+backing_entity_ids = {"sensor.virtual_power", "sensor.virtual_energy"}
+register_data_provider_entities(backing_entity_ids, allow_ha_lookups=False)
+
+# Valid - HA-only mode (no direct registration needed)
+# Use convenience methods with sensor_to_backing_mapping=None and allow_ha_lookups=True
+
+# Valid - Empty mapping in convenience method with HA lookups
+sensor_to_backing_mapping = {}  # Empty dict is allowed in convenience methods
+async_setup_synthetic_sensors(..., sensor_to_backing_mapping=sensor_to_backing_mapping, allow_ha_lookups=True)
+```
+
+### API Design Logic
+
+The library distinguishes between **convenience methods** and **direct API calls** to provide appropriate validation:
+
+#### Convenience Methods (Lenient)
+
+```python
+# Empty mapping in convenience methods = HA-only mode (when allow_ha_lookups=True)
+async_setup_synthetic_sensors(
+    sensor_to_backing_mapping={},  # Empty dict is OK
+    allow_ha_lookups=True,  # Will use HA entities only
+)
+
+# No mapping in convenience methods = valid for pure calculation sensors
+async_setup_synthetic_sensors(
+    sensor_to_backing_mapping=None,  # No mapping is OK
+    allow_ha_lookups=False,  # Sensors cannot use 'state' token
+)
+
+```
+
+#### Direct API Calls (Strict)
+
+```python
+# Explicit empty set is always an error - indicates confusion about intent
+sensor_manager.register_data_provider_entities(set())  # ERROR: Empty set is explicit mistake
+
+
+# Use None or omit parameter for HA-only mode instead
+
+# (Don't call register_data_provider_entities at all for HA-only mode)
+```
+
+#### Validation Context
+
+- **`allow_ha_lookups=False`**: Virtual entities required, empty/None backing entities is error
+- **`allow_ha_lookups=True`**: HA fallback allowed, but explicit empty set still error (use None instead)
+
+### Error Handling
+
+When validation fails, the library raises a `SyntheticSensorsConfigError` with detailed information about the issue:
+
+```python
+try:
+    sensor_manager = await async_setup_synthetic_sensors(
+        # ... other parameters ...
+        sensor_to_backing_mapping=invalid_mapping,
+        allow_ha_lookups=False,
+    )
+except SyntheticSensorsConfigError as e:
+    # Error message will explain the validation issue
+    print(f"Configuration error: {e}")
+    # Example: "Empty sensor-to-backing mapping in virtual-only mode (allow_ha_lookups=False)"
+
+try:
+    sensor_manager.register_data_provider_entities(set(), allow_ha_lookups=False)
+except SyntheticSensorsConfigError as e:
+    print(f"Direct API error: {e}")
+    # Example: "No backing entities provided in virtual-only mode (allow_ha_lookups=False).
+    # Either provide backing entities or enable HA lookups."
+```
+
+## Real-Time Update Patterns
+
+The update pattern depends on your backing entity source:
+
+### Virtual Backing Entities (Custom Data Provider)
+
+When your integration provides its own data via virtual backing entities:
+
+```python
+# Pattern 1 setup - Virtual backing entities with change notification
+sensor_manager = await async_setup_synthetic_sensors(
+    hass=hass,
+    config_entry=config_entry,
+    async_add_entities=async_add_entities,
+    storage_manager=storage_manager,
+    device_identifier=coordinator.device_id,
+    data_provider_callback=create_data_provider_callback(coordinator),
+    change_notifier=change_notifier_callback,  # Enable real-time selective updates
+    sensor_to_backing_mapping=sensor_to_backing_mapping,  # Register your virtual entities
+    allow_ha_lookups=False,  # Virtual entities only
+)
+```
+
+### HA Entity Backing (Cross-Integration References)
+
+When your YAML references existing HA entities from other integrations:
+
+```python
+# Pattern 2 setup - HA entity references with automatic tracking
 sensor_manager = await async_setup_synthetic_sensors(
     hass=hass,
     config_entry=config_entry,
@@ -177,7 +494,27 @@ sensor_manager = await async_setup_synthetic_sensors(
     device_identifier=coordinator.device_id,
     # No data_provider_callback - uses HA entity state lookups
     # No change_notifier - automatic via async_track_state_change_event
+    # No sensor_to_backing_mapping - entities resolved from YAML variable references
     allow_ha_lookups=True,  # Use real HA entities
+)
+```
+
+### Hybrid Backing (Mixed Virtual and HA Entities)
+
+When your YAML uses both virtual entities and existing HA entities:
+
+```python
+# Pattern 3 setup - Hybrid virtual and HA entity backing
+sensor_manager = await async_setup_synthetic_sensors(
+    hass=hass,
+    config_entry=config_entry,
+    async_add_entities=async_add_entities,
+    storage_manager=storage_manager,
+    device_identifier=coordinator.device_id,
+    data_provider_callback=create_data_provider_callback(coordinator),  # For virtual entities
+    change_notifier=change_notifier_callback,  # For virtual entity updates
+    sensor_to_backing_mapping=virtual_backing_mapping,  # Only virtual entities registered
+    allow_ha_lookups=True,  # Allow fallback to HA entity lookups
 )
 ```
 
@@ -237,7 +574,8 @@ sensor_manager = await async_setup_synthetic_sensors(
 
 ## Data Provider with Change Notification
 
-When you provide both a `data_provider_callback` and `change_notifier`, the synthetic sensors package enables **real-time updates**:
+When you provide both a `data_provider_callback` and `change_notifier`, the synthetic sensors package enables **real-time
+updates**:
 
 - **Variables are resolved through your data provider callback**
 - **Change notifications trigger selective sensor updates**
@@ -253,19 +591,86 @@ When you provide both a `data_provider_callback` and `change_notifier`, the synt
 4. **Synthetic sensors package updates only affected sensors** using `async_update_sensors_for_entities()`
 5. **Real-time updates with optimal performance**
 
-## Recommended Architecture: Enhanced Virtual Backing Entities
+## YAML-Based Sensor Set Patterns
 
-The cleanest approach uses **YAML templates** with **virtual backing entities** and **change notification**:
+When working with YAML-based sensor definitions, choose the appropriate pattern based on your backing entity needs:
+
+### Pattern 1: Custom Virtual Backing Entities (Recommended for Device Integrations)
+
+**Use when:** Your integration provides its own data and needs virtual backing entities that don't exist in HA.
+
+**Benefits:**
 
 - **Clean separation** between templates and data
 - **Type-safe helpers** for all ID generation
 - **Real-time selective updates** via change notification
 - **Optimal performance** - only update what changed
 - **Virtual entities** don't pollute HA's entity registry
+- **Custom data provider** controls all backing entity values
 
-### Complete Implementation Example
+**Backing Entity Registration Required:** Yes - you must register virtual backing entities with your coordinator.
 
-Here's how to implement this pattern using a real-world example from the SPAN Panel integration:
+```python
+# Register virtual backing entities with your coordinator
+for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
+    api_key = get_api_key_for_sensor(sensor_unique_id)
+    synthetic_coord.register_backing_entity(backing_entity_id, api_key)
+```
+
+### Pattern 2: Reference Existing HA Entities (For Cross-Integration Formulas)
+
+**Use when:** Your YAML references existing HA entities from other integrations or manual entities.
+
+**Benefits:**
+
+- **Simple setup** - no backing entity registration needed
+- **Automatic HA state tracking** via `async_track_state_change_event`
+- **Cross-integration formulas** can reference any HA entity
+- **Mixed mode support** - can combine with virtual entities
+
+**Backing Entity Registration Required:** No - HA entities are automatically resolved.
+
+```python
+# YAML can directly reference existing HA entities
+sensors:
+  combined_power:
+    formula: "solar_power + battery_power"
+    # sensor.solar_power and sensor.battery_power are existing HA entities
+    # 'state' references this sensor's backing entity (if any)
+```
+
+### Pattern 3: Hybrid Approach (Mixed Virtual and HA Entities)
+
+**Use when:** You need both custom virtual entities AND references to existing HA entities.
+
+**Benefits:**
+
+- **Maximum flexibility** - combine custom data with HA entities
+- **Selective registration** - only register virtual entities you provide
+- **Fallback support** - missing virtual entities can fall back to HA lookups
+
+**Backing Entity Registration Required:** Partial - only for virtual entities you provide.
+
+```python
+# Register only your virtual backing entities
+for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
+    if is_virtual_entity(backing_entity_id):  # Your logic to identify virtual entities
+        api_key = get_api_key_for_sensor(sensor_unique_id)
+        synthetic_coord.register_backing_entity(backing_entity_id, api_key)
+# HA entities are automatically resolved via allow_ha_lookups=True
+```
+
+## Pattern Selection Guide
+
+| Integration Type    | Backing Entity Source | Pattern   | `allow_ha_lookups` | Registration Required  |
+| ------------------- | --------------------- | --------- | ------------------ | ---------------------- |
+| Device Integration  | Custom device data    | Pattern 1 | `False`            | Yes - Virtual entities |
+| Cross-Integration   | Existing HA entities  | Pattern 2 | `True`             | No                     |
+| Utility Integration | Mix of both           | Pattern 3 | `True`             | Partial - Virtual only |
+
+### Complete Implementation Example - Pattern 1 (Custom Virtual Backing)
+
+Here's how to implement Pattern 1 using a real-world example from the SPAN Panel integration:
 
 #### 1. Helper Functions for ID Generation
 
@@ -328,34 +733,83 @@ global_settings:
 sensors: {}
 ```
 
-**Important: Understanding Backing Entity References**
+**Important: Understanding YAML Entity References and Backing Entities**
 
-The templates use the `state` special token to reference backing entities:
+The backing entity resolution depends on your pattern choice and how entities are referenced in YAML:
 
-1. **Backing Entity Registration**: The integration registers virtual entity
-   IDs (e.g., `sensor.span_abc123_0_backing_current_power`) with the synthetic sensors package
-2. **State Token Resolution**: When the formula uses `state`, it automatically calls the integration's data provideri
-   to get the current value
-3. **No Variables Needed**: The backing entity is accessed directly through the `state` token, no variable mapping required
+#### Pattern 1: Virtual Backing with `state` Token + Mapping
 
-So when you see:
+For custom virtual backing entities, use the `state` special token with sensor-to-backing mapping:
 
 ```yaml
-formula: "state"
+# In your YAML template
+formula: "state" # References the backing entity for this sensor
 ```
 
-This means:
+**Resolution Process:**
 
-- `state` is a special token that references the backing entity
-- The backing entity is registered by the integration and provides data on demand
-- No variables section is needed - the `state` token handles the resolution automatically
+1. **Sensor-to-Backing Mapping**: Integration provides mapping from sensor keys to virtual backing entity IDs
+2. **State Token Resolution**: When formula uses `state`, package looks up sensor key to find backing entity ID
+3. **Data Provider Callback**: Virtual backing entity ID is passed to your data provider callback
+
+**Example Mapping:**
+
+```python
+sensor_to_backing_mapping = {
+    "span_power_sensor": "sensor.span_virtual_backing_power",
+    "span_energy_sensor": "sensor.span_virtual_backing_energy",
+}
+# Virtual entities registered with your coordinator, not HA
+```
+
+#### Pattern 2: Direct HA Entity References in YAML
+
+For existing HA entities, reference them directly in YAML variables:
+
+```yaml
+# In your YAML configuration
+sensors:
+  combined_power:
+    formula: "solar_power + battery_power"
+    variables:
+      solar_power: "sensor.solar_inverter_power" # Real HA entity
+      battery_power: "sensor.battery_system_power" # Real HA entity
+```
+
+**Resolution Process:**
+
+1. **Direct Entity References**: YAML variables contain actual HA entity IDs
+2. **Automatic HA Lookup**: Package resolves entities via HA state lookups
+3. **No Registration Required**: HA entities are automatically tracked
+
+#### Pattern 3: Hybrid - Mixed References
+
+Combine both approaches in the same YAML:
+
+```yaml
+sensors:
+  total_power:
+    formula: "state + external_solar" # state = virtual, external_solar = HA entity
+    variables:
+      external_solar: "sensor.neighbor_solar_power" # Real HA entity
+# 'state' resolved via sensor_to_backing_mapping to virtual entity
+# 'external_solar' resolved directly to HA entity
+```
+
+**Key Distinctions:**
+
+| Reference Type     | YAML Syntax                           | Registration Required | Data Source        |
+| ------------------ | ------------------------------------- | --------------------- | ------------------ |
+| Virtual Backing    | `state` token                         | Yes - via mapping     | Your data provider |
+| HA Entity Variable | `variable_name: "sensor.real_entity"` | No                    | HA state lookups   |
+| Global HA Variable | From global_settings variables        | No                    | HA state lookups   |
 
 ### Attribute Formulas and the 'state' Variable
 
 Attribute formulas are always evaluated after the main sensor state is calculated. Every attribute formula automatically has
-access to a special variable called `state`, which contains the freshly calculated value of the main sensor.
-This allows attribute formulas to reference the main sensor's value directly, along with any additional variables defined
-for the attribute.
+access to a special variable called `state`, which contains the freshly calculated value of the main sensor. This allows
+attribute formulas to reference the main sensor's value directly, along with any additional variables defined for the
+attribute.
 
 **Example:**
 
@@ -386,7 +840,7 @@ and flexibility in your synthetic sensor definitions.
 
 ```yaml
 # yaml_templates/power_sensor.yaml.txt
-{{sensor_key}}:
+{ { sensor_key } }:
   name: "{{sensor_name}}"
   entity_id: "{{entity_id}}"
   formula: "state"
@@ -400,7 +854,7 @@ and flexibility in your synthetic sensor definitions.
 
 ```yaml
 # yaml_templates/energy_sensor.yaml.txt
-{{sensor_key}}:
+{ { sensor_key } }:
   name: "{{sensor_name}}"
   entity_id: "{{entity_id}}"
   formula: "state"
@@ -472,10 +926,10 @@ PANEL_SENSOR_DEFINITIONS = [
 async def generate_panel_sensors(
     coordinator: YourCoordinator,
     device: DeviceData
-) -> tuple[dict[str, Any], list[BackingEntity]]:
+) -> tuple[dict[str, Any], dict[str, str]]:
     """Generate panel-level synthetic sensors using templates."""
     sensor_configs: dict[str, Any] = {}
-    backing_entities: list[BackingEntity] = []
+    sensor_to_backing_mapping: dict[str, str] = {}
 
     for sensor_def in PANEL_SENSOR_DEFINITIONS:
         # Load the appropriate template
@@ -508,15 +962,10 @@ async def generate_panel_sensors(
         # Add to collection
         sensor_configs[sensor_unique_id] = sensor_yaml[sensor_unique_id]
 
-        # Create backing entity
-        backing_entity = BackingEntity(
-            entity_id=backing_entity_id,
-            value=data_value,
-            data_path=sensor_def["data_path"]
-        )
-        backing_entities.append(backing_entity)
+        # Create sensor-to-backing mapping
+        sensor_to_backing_mapping[sensor_unique_id] = backing_entity_id
 
-    return sensor_configs, backing_entities
+    return sensor_configs, sensor_to_backing_mapping
 
 async def generate_complete_sensor_set_yaml(
     device: DeviceData,
@@ -627,7 +1076,7 @@ class SyntheticSensorCoordinator:
 
 #### 6. Setup Integration
 
-```python
+````python
 # synthetic_sensors.py continued
 async def setup_synthetic_configuration(
     hass: HomeAssistant,
@@ -648,13 +1097,15 @@ async def setup_synthetic_configuration(
 
     # Generate sensors and backing entities using templates
     device_data = main_coordinator.data
-    sensor_configs, backing_entities = await generate_panel_sensors(main_coordinator, device_data)
+    sensor_configs, sensor_to_backing_mapping = await generate_panel_sensors(main_coordinator, device_data)
 
     # Register virtual backing entities with the synthetic coordinator
-    for backing_entity in backing_entities:
-        entity_id = backing_entity["entity_id"]
-        api_key = get_api_key_from_data_path(backing_entity["data_path"])
-        synthetic_coord.register_backing_entity(entity_id, api_key)
+    for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
+        # Find the data path for this sensor
+        sensor_def = next((s for s in PANEL_SENSOR_DEFINITIONS if get_entity_suffix(s["key"]) in sensor_unique_id), None)
+        if sensor_def:
+            api_key = sensor_def["data_path"]
+            synthetic_coord.register_backing_entity(backing_entity_id, api_key)
 
     # Create or update sensor set
     if storage_manager.sensor_set_exists(sensor_set_id):
@@ -732,6 +1183,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         hass, config_entry, coordinator
     )
 
+    # Generate sensor configurations and mapping
+    device_data = coordinator.data
+    sensor_configs, sensor_to_backing_mapping = await generate_panel_sensors(coordinator, device_data)
+
     # Create callbacks
     data_provider = create_data_provider_callback(coordinator)
     change_notifier = create_change_notifier_callback(synthetic_coord)
@@ -745,6 +1200,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         device_identifier=coordinator.data.serial_number,
         data_provider_callback=data_provider,
         change_notifier=change_notifier,  # Enable real-time selective updates
+        sensor_to_backing_mapping=sensor_to_backing_mapping,  # Provide mapping
         allow_ha_lookups=False,
     )
 
@@ -753,72 +1209,426 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         "sensor_manager": sensor_manager,
         "synthetic_coordinator": synthetic_coord,
     })
-```
 
-## CRUD Operations for Dynamic Sensor Management
+## YAML String-Based CRUD Operations
 
-For adding optional sensor configurations (like solar or battery sensors), use the CRUD interface:
+The synthetic sensors library provides convenient YAML string-based CRUD operations for managing individual sensors within
+sensor sets. This approach enables dynamic sensor management using YAML strings, which is particularly useful for:
 
-```python
-# Adding solar sensors dynamically with change notification support
-async def add_solar_sensors(sensor_manager: SensorManager, leg1_circuit: str, leg2_circuit: str):
-    """Add solar sensors using CRUD interface."""
+- **Dynamic sensor creation** from user input or external configurations
+- **Template-based sensor generation** using YAML templates
+- **Configuration file imports** where sensors are defined in YAML format
+- **Programmatic sensor management** without manual SensorConfig construction
 
-    for sensor_id in solar_sensor_ids:
-        success = await sensor_manager.remove_sensor_with_backing_entities(sensor_id)
-        if not success:
-            _LOGGER.error("Failed to remove solar sensor: %s", sensor_id)
-```
+### YAML CRUD Interface
 
-## YAML Export Methods for Sensor Sets
-
-The `SensorSet` class provides both synchronous and asynchronous methods for exporting sensor set configuration to YAML.
-Both methods serialize the current in-memory sensor set configuration to a YAML string. Neither method performs file I/O.
+Each sensor set provides YAML-based CRUD operations as public methods:
 
 ```python
-# Synchronous export
-exported_yaml = sensor_set.export_yaml()  # str
+# Access YAML CRUD operations
+sensor_set = storage_manager.get_sensor_set(sensor_set_id)
 
-# Asynchronous export
-exported_yaml = await sensor_set.async_export_yaml()  # str
+# Available operations:
+# - sensor_set.async_add_sensor_from_yaml(sensor_yaml: str)
+# - sensor_set.async_update_sensor_from_yaml(sensor_yaml: str) -> bool
+# - sensor_set.add_sensor_from_yaml(sensor_yaml: str)  # Synchronous version
+# - sensor_set.update_sensor_from_yaml(sensor_yaml: str) -> bool  # Synchronous version
 ```
 
-## Bulk Modification Performance Benefits
+### Reading Existing Sensor Configurations
 
-### Enhanced Selective Updates
+Before updating sensors, you should read the existing configuration to avoid losing settings:
 
 ```python
-# New approach - updates only sensors using changed backing entities
-async def _handle_coordinator_update(self):
-    # Automatic change detection and selective updates
-    # Only 2-3 sensors updated instead of 20+
-    # 85-90% reduction in unnecessary work
+# Method 1: Get specific sensor configuration
+sensor_config = sensor_set.get_sensor("my_sensor_unique_id")
+if sensor_config:
+    print(f"Current formula: {sensor_config.formulas[0].formula}")
+    print(f"Current entity_id: {sensor_config.entity_id}")
+    print(f"Current name: {sensor_config.name}")
+
+# Method 2: Export complete sensor set as YAML (includes all sensors)
+complete_yaml = sensor_set.export_yaml()
+# Parse with yaml.safe_load() to modify specific sensors
+
+# Method 3: Check if sensor exists before operations
+if sensor_set.has_sensor("my_sensor_unique_id"):
+    print("Sensor exists - safe to update")
+else:
+    print("Sensor doesn't exist - use add operation instead")
 ```
 
-## Migration Guide
+### YAML Sensor Format
 
-To migrate from manual updates to change notification:
+Individual sensors are defined using YAML strings that include the sensor key and complete configuration:
 
-**Update your setup function** to use the simplified interface with `change_notifier` parameter
-**Implement change detection** in your coordinator update handler
-**Replace manual bulk updates** with automatic selective updates
-**Use CRUD operations** for dynamic sensor management
-**Test real-time performance** improvements
+```yaml
+# Example YAML sensor definition
+my_power_sensor:
+  name: "My Power Sensor"
+  entity_id: "sensor.test_device_power"
+  formula: "state * 1.1"
+  attributes:
+    calculation_type: "net_power"
+    efficiency_factor:
+      formula: "state / 1000"
+  metadata:
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    suggested_display_precision: 2
+```
 
-### Migration Example
+### Adding New Sensors from YAML
+
+Use `sensor_set.async_add_sensor_from_yaml()` to add new sensors to an existing sensor set:
 
 ```python
-# Before: Manual bulk updates
-async def _handle_coordinator_update(self):
-    await self.sensor_manager.async_update_sensors()
+async def add_power_sensor_example(storage_manager: StorageManager, device_id: str):
+    """Example of adding a sensor from YAML string."""
 
-# After: Enhanced change notification (automatic)
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    # Just add change_notifier parameter - everything else automatic
-    sensor_manager = await async_setup_synthetic_sensors(
-        # ... existing parameters ...
-        change_notifier=create_change_notifier_callback(synthetic_coord),  # Add this
-    )
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Define sensor in YAML format
+    power_sensor_yaml = """
+my_device_power:
+  name: "Device Power Consumption"
+  entity_id: "sensor.my_device_power"
+  formula: "state"
+  metadata:
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    icon: "mdi:flash"
+  attributes:
+    daily_consumption:
+      formula: "state * 24"
+      metadata:
+        unit_of_measurement: "Wh"
+"""
+
+    try:
+        # Add the sensor to the sensor set
+        await sensor_set.async_add_sensor_from_yaml(power_sensor_yaml)
+        print("Sensor added successfully")
+
+    except SyntheticSensorsError as e:
+        if "already exists" in str(e):
+            print("Sensor already exists")
+        else:
+            print(f"Error adding sensor: {e}")
 ```
 
-This migration dramatically improves performance while maintaining all existing functionality.
+### Updating Existing Sensors from YAML
+
+Use `sensor_set.async_update_sensor_from_yaml()` to update existing sensors.
+**Important**: Always read the existing sensor configuration first to preserve settings and make incremental changes.
+
+```python
+async def update_sensor_example(storage_manager: StorageManager, device_id: str):
+    """Example of updating a sensor from YAML string with read-before-update pattern."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+    sensor_unique_id = "my_device_power"
+
+    try:
+        # STEP 1: Read existing sensor configuration
+        existing_sensor = sensor_set.get_sensor(sensor_unique_id)
+        if not existing_sensor:
+            print(f"Sensor {sensor_unique_id} not found")
+            return
+
+        print(f"Current sensor formula: {existing_sensor.formulas[0].formula}")
+        print(f"Current sensor name: {existing_sensor.name}")
+
+        # STEP 2: Create updated configuration preserving existing settings
+        # This ensures you don't accidentally lose configuration that's not in your update
+        updated_sensor_yaml = f"""
+{sensor_unique_id}:
+  name: "Updated Device Power"  # Changed
+  entity_id: "{existing_sensor.entity_id}"  # Preserved from existing
+  formula: "state * 1.05"  # Updated formula with 5% adjustment
+  metadata:
+    unit_of_measurement: "W"
+    device_class: "power"
+    state_class: "measurement"
+    icon: "mdi:lightning-bolt"  # Updated icon
+    suggested_display_precision: 1
+  attributes:
+    # Preserve existing attributes and add new ones
+    daily_consumption:
+      formula: "state * 24"
+      metadata:
+        unit_of_measurement: "Wh"
+    weekly_estimate:  # New attribute
+      formula: "state * 24 * 7"
+      metadata:
+        unit_of_measurement: "Wh"
+"""
+
+        # STEP 3: Update the sensor
+        updated = await sensor_set.async_update_sensor_from_yaml(updated_sensor_yaml)
+
+        if updated:
+            print("Sensor updated successfully")
+            # Verify the update
+            updated_sensor = sensor_set.get_sensor(sensor_unique_id)
+            print(f"New formula: {updated_sensor.formulas[0].formula}")
+        else:
+            print("Sensor not found - use async_add_sensor_from_yaml() to create it")
+
+    except SyntheticSensorsError as e:
+        print(f"Error updating sensor: {e}")
+
+async def incremental_update_example(storage_manager: StorageManager, device_id: str):
+    """Example of making incremental updates to preserve all existing configuration."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+    sensor_unique_id = "my_device_power"
+
+    try:
+        # Read existing sensor
+        existing_sensor = sensor_set.get_sensor(sensor_unique_id)
+        if not existing_sensor:
+            print(f"Sensor {sensor_unique_id} not found")
+            return
+
+        # Export existing configuration to YAML first
+        existing_yaml = sensor_set.export_yaml()
+
+        # Parse existing to modify specific fields only
+        import yaml
+        config_data = yaml.safe_load(existing_yaml)
+        sensor_config = config_data["sensors"][sensor_unique_id]
+
+        # Make incremental changes
+        sensor_config["formula"] = "state * 1.1"  # Only change the formula
+        sensor_config["metadata"]["icon"] = "mdi:flash-outline"  # Only change the icon
+
+        # Add a new attribute while preserving existing ones
+        if "attributes" not in sensor_config:
+            sensor_config["attributes"] = {}
+        sensor_config["attributes"]["hourly_estimate"] = {
+            "formula": "state",
+            "metadata": {"unit_of_measurement": "Wh"}
+        }
+
+        # Convert back to single-sensor YAML
+        updated_sensor_yaml = yaml.dump({sensor_unique_id: sensor_config})
+
+        # Update with preserved configuration
+        updated = await sensor_set.async_update_sensor_from_yaml(updated_sensor_yaml)
+
+        if updated:
+            print("Incremental update successful - all existing config preserved")
+
+    except Exception as e:
+        print(f"Error in incremental update: {e}")
+```
+
+### Template-Based Sensor Generation
+
+YAML CRUD operations work excellently with template-based sensor generation:
+
+```python
+async def generate_sensors_from_templates(
+    storage_manager: StorageManager,
+    device_data: DeviceData,
+    sensor_definitions: list[dict]
+):
+    """Generate sensors using YAML templates and CRUD operations."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_data.serial_number}_sensors")
+
+    for sensor_def in sensor_definitions:
+        # Load template
+        template = await load_yaml_template(sensor_def["template_name"])
+
+        # Fill template with device-specific data
+        filled_yaml = template.format(
+            sensor_key=sensor_def["unique_id"],
+            sensor_name=sensor_def["display_name"],
+            entity_id=f"sensor.{device_data.serial_number}_{sensor_def['suffix']}",
+            device_class=sensor_def["device_class"],
+            unit=sensor_def["unit"]
+        )
+
+        try:
+            # Add generated sensor
+            await sensor_set.async_add_sensor_from_yaml(filled_yaml)
+            print(f"Added sensor: {sensor_def['unique_id']}")
+
+        except SyntheticSensorsError as e:
+            if "already exists" in str(e):
+                print(f"Sensor {sensor_def['unique_id']} already exists, skipping")
+            else:
+                print(f"Error adding {sensor_def['unique_id']}: {e}")
+```
+
+### Synchronous YAML CRUD Operations
+
+For non-async contexts, synchronous versions are available:
+
+```python
+def add_sensor_sync_example(storage_manager: StorageManager, device_id: str):
+    """Example using synchronous YAML CRUD operations."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    sensor_yaml = """
+sync_test_sensor:
+  name: "Sync Test Sensor"
+  entity_id: "sensor.sync_test"
+  formula: "state"
+  metadata:
+    unit_of_measurement: "V"
+    device_class: "voltage"
+"""
+
+    try:
+        # Synchronous add (only use outside async context)
+        sensor_set.add_sensor_from_yaml(sensor_yaml)
+        print("Sensor added synchronously")
+
+    except SyntheticSensorsError as e:
+        if "Use async_add_sensor_from_yaml() in async context" in str(e):
+            print("Cannot use sync method in async context")
+        else:
+            print(f"Error: {e}")
+```
+
+### Error Handling and Validation
+
+YAML CRUD operations include comprehensive validation:
+
+```python
+async def yaml_crud_error_handling_example(storage_manager: StorageManager, device_id: str):
+    """Example of proper error handling with YAML CRUD operations."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Invalid YAML examples
+    invalid_yaml_examples = [
+        # Missing sensor key
+        """
+name: "Invalid Sensor"
+formula: "state"
+""",
+        # Empty YAML
+        "",
+        # Multiple sensor keys (not allowed for individual operations)
+        """
+sensor1:
+  name: "First Sensor"
+  formula: "state"
+sensor2:
+  name: "Second Sensor"
+  formula: "state"
+""",
+        # Invalid formula
+        """
+invalid_formula_sensor:
+  name: "Invalid Formula"
+  formula: "invalid_function(state)"
+"""
+    ]
+
+    for i, invalid_yaml in enumerate(invalid_yaml_examples):
+        try:
+            await sensor_set.async_add_sensor_from_yaml(invalid_yaml)
+        except SyntheticSensorsError as e:
+            print(f"Example {i+1}: Expected error - {e}")
+```
+
+### Integration with Existing YAML Workflows
+
+YAML CRUD operations integrate seamlessly with existing sensor set workflows:
+
+```python
+async def complete_yaml_workflow_example(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    device_data: DeviceData
+):
+    """Complete example showing YAML CRUD integration with sensor set management."""
+
+    # Initialize storage manager
+    storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic")
+    await storage_manager.async_load()
+
+    device_identifier = device_data.serial_number
+    sensor_set_id = f"{device_identifier}_sensors"
+
+    # Create or get existing sensor set
+    if not storage_manager.sensor_set_exists(sensor_set_id):
+        await storage_manager.async_create_sensor_set(
+            sensor_set_id=sensor_set_id,
+            device_identifier=device_identifier,
+            name=f"Device {device_identifier} Sensors"
+        )
+
+    sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+    # Method 1: Import complete YAML configuration
+    complete_yaml = await generate_complete_sensor_set_yaml(device_data)
+    await sensor_set.async_import_yaml(complete_yaml)
+
+    # Method 2: Add individual sensors via YAML CRUD
+    additional_sensors = [
+        """
+diagnostic_sensor:
+  name: "Device Diagnostic"
+  entity_id: "sensor.{device}_diagnostic"
+  formula: "state"
+  metadata:
+    entity_category: "diagnostic"
+""".format(device=device_identifier),
+
+        """
+efficiency_sensor:
+  name: "Device Efficiency"
+  entity_id: "sensor.{device}_efficiency"
+  formula: "state * 0.95"
+  metadata:
+    unit_of_measurement: "%"
+    icon: "mdi:speedometer"
+""".format(device=device_identifier)
+    ]
+
+    # Add individual sensors
+    for sensor_yaml in additional_sensors:
+        try:
+            await sensor_set.async_add_sensor_from_yaml(sensor_yaml)
+        except SyntheticSensorsError as e:
+            if "already exists" not in str(e):
+                print(f"Error adding sensor: {e}")
+
+    return storage_manager, sensor_set
+
+```
+
+### Best Practices for YAML CRUD Operations
+
+1. **Always use async methods** in async contexts - the library will raise an error if you try to use sync methods
+   inappropriately
+
+2. **Read existing configuration before updates** - Always use `sensor_set.get_sensor()` or `sensor_set.export_yaml()`
+   to read current configuration before making updates. This prevents accidental loss of existing settings.
+
+3. **Make incremental changes** - For updates, preserve existing configuration and only modify the fields you need to change.
+   Use the existing sensor's properties (like `entity_id`) instead of hardcoding values.
+
+4. **Include complete sensor definitions** - YAML strings should contain the sensor key and all required configuration
+
+5. **Handle duplicate sensors gracefully** - Use try/catch to handle cases where sensors already exist
+
+6. **Validate YAML before operations** - Consider using the validation methods to check YAML before attempting operations
+
+7. **Use templates for consistency** - Generate YAML from templates to ensure consistent sensor definitions
+
+8. **Test with minimal examples** - Start with simple sensor definitions and build complexity gradually
+
+9. **Verify updates** - After updating, read the sensor again to confirm changes were applied correctly
+
+The YAML CRUD operations provide a string-based approach to sensor management that complements the existing
+programmatic APIs enabling template-driven sensor configuration workflows.

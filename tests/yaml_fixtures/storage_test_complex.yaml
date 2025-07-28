@@ -81,7 +81,7 @@ sensors:
       state_class: measurement
   tagged_device_monitor:
     name: Tagged Device Monitor
-    formula: count("tags:alert_tag") + count("tags:warning_tag")
+    formula: count("label:alert_tag") + count("label:warning_tag")
     variables:
       alert_tag: input_select.alert_level_tag
       warning_tag: input_select.warning_level_tag

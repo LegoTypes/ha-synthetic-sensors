@@ -2,7 +2,7 @@
 
 This module tests the new features including:
 - Variable inheritance in attribute formulas
-- Dynamic query parsing (regex, tags, device_class, etc.)
+- Dynamic query parsing (regex, label, device_class, etc.)
 - Dot notation attribute access
 - Complex aggregation functions
 """
@@ -52,15 +52,15 @@ class TestDependencyParser:
         assert queries[0].pattern == "sensor\\.circuit_.*_power"
         assert queries[0].function == "sum"
 
-    def test_extract_dynamic_queries_sum_tags(self, parser):
+    def test_extract_dynamic_queries_sum_label(self, parser):
         """Test extraction of tag query patterns."""
-        formula = "avg(tags:heating,cooling) * factor"
+        formula = "avg(label:heating|cooling) * factor"
 
         queries = parser.extract_dynamic_queries(formula)
 
         assert len(queries) == 1
-        assert queries[0].query_type == "tags"
-        assert queries[0].pattern == "heating,cooling"
+        assert queries[0].query_type == "label"
+        assert queries[0].pattern == "heating|cooling"
         assert queries[0].function == "avg"
 
     def test_extract_dynamic_queries_device_class(self, parser):
@@ -76,14 +76,14 @@ class TestDependencyParser:
 
     def test_extract_dynamic_queries_quoted(self, parser):
         """Test extraction of quoted query patterns."""
-        formula = "sum(\"regex:sensor\\.span_.*_power\") + sum('tags:tag with spaces')"
+        formula = "sum(\"regex:sensor\\.span_.*_power\") + sum('label:tag with spaces')"
 
         queries = parser.extract_dynamic_queries(formula)
 
         assert len(queries) == 2
         assert queries[0].query_type == "regex"
         assert queries[0].pattern == "sensor\\.span_.*_power"
-        assert queries[1].query_type == "tags"
+        assert queries[1].query_type == "label"
         assert queries[1].pattern == "tag with spaces"
 
     def test_dot_notation_extraction(self, parser):
@@ -121,7 +121,7 @@ class TestVariableInheritance:
             "name": "Test Sensor",
             "formula": "power_a + power_b",
             "variables": {"power_a": "sensor.meter_a", "power_b": "sensor.meter_b"},
-            "attributes": {"daily_total": {"formula": "power_a * 24"}},
+            "attributes": {"daily_total": {"formula": "test_sensor * 24"}},
         }
 
         # Parse the attribute formula
@@ -134,8 +134,9 @@ class TestVariableInheritance:
         assert formula_config.variables["power_a"] == "sensor.meter_a"
         assert formula_config.variables["power_b"] == "sensor.meter_b"
 
-        # Should auto-inject the referenced entity_id as a variable
-        assert formula_config.variables["test_sensor"] == "sensor.test_sensor"
+        # Should NOT auto-inject sensor key references (removed for safety)
+        # The formula should use explicit entity ID or state token instead
+        assert "test_sensor" not in formula_config.variables
 
     def test_attribute_variable_override(self, config_manager):
         """Test that attribute-specific variables override parent variables."""
@@ -176,9 +177,9 @@ class TestVariableInheritance:
         attr_config = sensor_data["attributes"]["daily_projection"]
         formula_config = config_manager._parse_attribute_formula("power_analysis", "daily_projection", attr_config, sensor_data)
 
-        # Should include main sensor as variable
-        assert "power_analysis" in formula_config.variables
-        assert formula_config.variables["power_analysis"] == "sensor.power_analysis"
+        # Should NOT auto-inject sensor key references (removed for safety)
+        # The formula should use explicit entity ID or state token instead
+        assert "power_analysis" not in formula_config.variables
 
 
 class TestComplexFormulaParsing:
@@ -191,7 +192,7 @@ class TestComplexFormulaParsing:
 
     def test_mixed_dependency_types(self, parser):
         """Test formula with static deps, dynamic queries, and dot notation."""
-        formula = "sum(regex:sensor\\.circuit_.*) + avg(tags:heating) + base_load + sensor1.battery_level"
+        formula = "sum(regex:sensor\\.circuit_.*) + avg(label:heating) + base_load + sensor1.battery_level"
         variables = {"base_load": "sensor.base_power", "sensor1": "sensor.phone"}
 
         parsed = parser.parse_formula_dependencies(formula, variables)
@@ -203,7 +204,7 @@ class TestComplexFormulaParsing:
         # Dynamic queries
         query_types = {q.query_type for q in parsed.dynamic_queries}
         assert "regex" in query_types
-        assert "tags" in query_types
+        assert "label" in query_types
 
         # Dot notation
         assert "sensor1.battery_level" in parsed.dot_notation_refs
@@ -249,14 +250,11 @@ def sample_config_with_attributes():
 
 
 class TestIntegrationScenarios:
-    """Integration tests for complete scenarios."""
+    """Test integration scenarios with enhanced features."""
 
-    @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        return MagicMock()
-
-    def test_config_parsing_with_enhanced_features(self, mock_hass, sample_config_with_attributes):
+    def test_config_parsing_with_enhanced_features(
+        self, mock_hass, mock_entity_registry, mock_states, sample_config_with_attributes
+    ):
         """Test full config parsing with all enhanced features."""
         config_manager = ConfigManager(mock_hass)
 
@@ -280,7 +278,8 @@ class TestIntegrationScenarios:
         daily_proj = next(f for f in sensor.formulas if f.id == "energy_analysis_daily_projection")
         assert "grid_power" in daily_proj.variables  # Inherited
         assert "solar_power" in daily_proj.variables  # Inherited
-        assert "energy_analysis" in daily_proj.variables  # Main sensor reference
+        # Should NOT auto-inject main sensor reference (removed for safety)
+        assert "energy_analysis" not in daily_proj.variables
 
         # Check attribute with custom variables
         custom_calc = next(f for f in sensor.formulas if f.id == "energy_analysis_custom_calc")

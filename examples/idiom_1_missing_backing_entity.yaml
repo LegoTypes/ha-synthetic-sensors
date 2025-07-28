@@ -1,0 +1,40 @@
+version: "1.0"
+
+# Idiom 1 Test Scenario 1.3: Missing Backing Entity Error
+# Purpose: Validate that BackingEntityResolutionError is raised when backing entity doesn't exist
+# Expected: BackingEntityResolutionError is raised
+# Validation: Exception is raised immediately, not converted to error result
+
+sensors:
+  # This should cause BackingEntityResolutionError
+  problematic_sensor:
+    name: "Problematic Sensor"
+    entity_id: sensor.nonexistent_entity  # Entity doesn't exist
+    formula: state * 2  # 'state' cannot be resolved
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:alert
+
+  # Another problematic case
+  invalid_backing_entity:
+    name: "Invalid Backing Entity"
+    entity_id: sensor.invalid_entity_id  # Invalid entity ID
+    formula: state + 100  # 'state' cannot be resolved
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:alert-circle
+
+  # Test with malformed entity ID
+  malformed_entity:
+    name: "Malformed Entity"
+    entity_id: sensor.invalid_entity_format  # Malformed entity ID
+    formula: state * 1.5  # 'state' cannot be resolved
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      icon: mdi:alert-circle-outline

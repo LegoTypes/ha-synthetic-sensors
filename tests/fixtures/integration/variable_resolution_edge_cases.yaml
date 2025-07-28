@@ -1,0 +1,60 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  variable_precedence_resolution:
+    name: "Variable Precedence Resolution"
+    formula: "base_value * multiplier + offset"
+    variables:
+      base_value: "sensor.base_value"
+      multiplier: 2.0
+      offset: 50
+    attributes:
+      attribute_specific_vars:
+        formula: "base_value * attribute_multiplier - attribute_offset"
+        variables:
+          attribute_multiplier: 3.0  # Different name - no conflict
+          attribute_offset: 25       # Different name - no conflict
+        metadata:
+          unit_of_measurement: "W"
+      mixed_inheritance:
+        formula: "base_value + new_variable * multiplier"
+        variables:
+          new_variable: 100
+          # multiplier inherited from sensor-level
+        metadata:
+          unit_of_measurement: "W"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  cross_sensor_variable_refs:
+    name: "Cross Sensor Variable References"
+    formula: "external_sensor + cross_ref_value"
+    variables:
+      external_sensor: "sensor.variable_inheritance_sensor"
+      cross_ref_value: "sensor.self_reference_sensor.state_based"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  numeric_literal_variables:
+    name: "Numeric Literal Variables"
+    formula: "int_value + float_value + negative_value"
+    variables:
+      int_value: 42
+      float_value: 3.14159
+      negative_value: -25.5
+    attributes:
+      calculated_attributes:
+        formula: "int_value * float_value / abs(negative_value)"
+        metadata:
+          unit_of_measurement: "calculated"
+          suggested_display_precision: 3
+    metadata:
+      unit_of_measurement: "mixed"
+      icon: "mdi:numeric"

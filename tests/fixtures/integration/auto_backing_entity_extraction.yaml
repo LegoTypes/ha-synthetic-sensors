@@ -1,0 +1,37 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  main_power:
+    name: "Main Power"
+    formula: "source_value * 2"
+    variables:
+      source_value: "sensor.backing_entity1"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  total_consumption:
+    name: "Total Consumption"
+    formula: "primary_source + secondary_source + offset"
+    variables:
+      primary_source: "sensor.backing_entity2"
+      secondary_source: "sensor.backing_entity3"
+      offset: "sensor.backing_entity4"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+      state_class: "total_increasing"
+
+  efficiency:
+    name: "Efficiency"
+    formula: "output / input * 100"
+    variables:
+      output: "sensor.backing_entity1"
+      input: "sensor.backing_entity2"
+    metadata:
+      unit_of_measurement: "%"
+      device_class: "power_factor"

@@ -1,0 +1,13 @@
+# YAML fixture for tests/storage/test_yaml_operations.py
+# Used by: test_load_config_with_schema_warnings
+# Test cases covered:
+# - Loading config with schema validation warnings
+# - Basic sensor configuration with variables
+version: "1.0"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "A + B"
+    variables:
+      A: "sensor.test_a"
+      B: "sensor.test_b"

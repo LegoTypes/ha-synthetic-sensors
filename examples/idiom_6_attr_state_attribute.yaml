@@ -1,0 +1,43 @@
+version: "1.0"
+
+# Idiom 6 Test Scenario 6.2: Attribute Formula State Attribute
+# Purpose: Validate that attribute formula uses 'state.attribute' pattern correctly
+# Expected: Resolves to main sensor's attribute
+# Validation: Uses post-evaluation attribute value
+
+sensors:
+  energy_calculator:
+    name: "Energy Calculator"
+    entity_id: sensor.power_meter  # Backing entity = 1000W
+    formula: state * 2  # Main result = 2000W
+    attributes:
+      voltage_analysis:
+        formula: state.voltage * 1.1  # 'state.voltage' = main sensor's voltage attribute
+        metadata:
+          unit_of_measurement: V
+          icon: mdi:lightning-bolt
+      efficiency_analysis:
+        formula: state.efficiency * 100  # 'state.efficiency' = main sensor's efficiency attribute
+        metadata:
+          unit_of_measurement: "%"
+          icon: mdi:percent
+      # 'state' = main sensor post-evaluation (2000W)
+      # 'state.voltage' = main sensor's voltage attribute after evaluation
+      # 'state.efficiency' = main sensor's efficiency attribute after evaluation
+
+  power_monitor:
+    name: "Power Monitor"
+    entity_id: sensor.power_meter  # Backing entity = 1000W
+    formula: state * 0.95  # Main result = 950W
+    attributes:
+      battery_level_analysis:
+        formula: state.battery_level / 100  # 'state.battery_level' = main sensor's battery_level attribute
+        metadata:
+          unit_of_measurement: ""
+          icon: mdi:battery
+      temperature_analysis:
+        formula: state.temperature + 273.15  # 'state.temperature' = main sensor's temperature attribute (convert to Kelvin)
+        metadata:
+          unit_of_measurement: K
+          device_class: temperature
+          icon: mdi:thermometer

@@ -1,0 +1,55 @@
+# Test Scenario 4.3: Entity ID in Attributes
+# Purpose: Test attribute formula using full entity ID
+# Expected: Resolves to main sensor's post-evaluation result
+# Validation: Attribute uses main sensor's calculated value
+
+sensors:
+  # Test entity ID reference in attributes
+  entity_id_attribute_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      daily_cost:
+        formula: sensor.entity_id_attribute_test * 24  # Uses full entity ID reference
+        metadata:
+          unit_of_measurement: cents/day
+          friendly_name: "Daily Cost (Entity ID)"
+      weekly_cost:
+        formula: sensor.entity_id_attribute_test * 24 * 7  # Uses full entity ID reference
+        metadata:
+          unit_of_measurement: cents/week
+          friendly_name: "Weekly Cost (Entity ID)"
+      monthly_cost:
+        formula: sensor.entity_id_attribute_test * 24 * 30  # Uses full entity ID reference
+        metadata:
+          unit_of_measurement: cents/month
+          friendly_name: "Monthly Cost (Entity ID)"
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "Cost Calculator (Entity ID Test)"
+
+  # Test entity ID with complex calculations
+  complex_entity_id_test:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      power_efficiency:
+        formula: sensor.complex_entity_id_test / sensor.span_panel_instantaneous_power * 100
+        metadata:
+          unit_of_measurement: "%"
+          friendly_name: "Power Efficiency (Entity ID)"
+      power_trend:
+        formula: (sensor.complex_entity_id_test + sensor.span_panel_instantaneous_power) / 2
+        metadata:
+          unit_of_measurement: W
+          friendly_name: "Power Trend (Entity ID)"
+      power_ratio:
+        formula: sensor.complex_entity_id_test / 1000  # Normalized to 1kW
+        metadata:
+          unit_of_measurement: ratio
+          friendly_name: "Power Ratio (Entity ID)"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      friendly_name: "Complex Entity ID Test"

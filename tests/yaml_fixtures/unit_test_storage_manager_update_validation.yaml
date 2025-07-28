@@ -1,0 +1,17 @@
+# YAML fixture for test_storage_manager.py storage tests
+# Used by: test_async_update_sensor_validation_with_global_settings
+# Test cases covered:
+# - Update validation with global settings
+# - Device identifier conflict detection
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "global_device:test_123"
+  variables:
+    global_var: "sensor.global_entity"
+
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "1 + 2"

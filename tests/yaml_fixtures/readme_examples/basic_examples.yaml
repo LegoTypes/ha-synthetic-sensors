@@ -1,4 +1,4 @@
-version: "1.0"
+version: "1.0" # Required: YAML schema version
 
 sensors:
   # Single formula sensor (90% of use cases)
@@ -8,10 +8,12 @@ sensors:
     variables:
       current_power: "sensor.span_panel_instantaneous_power"
       electricity_rate: "input_number.electricity_rate_cents_kwh"
-      conversion_factor: 1000                    # Literal: watts to kilowatts
+      conversion_factor: 1000 # Literal: watts to kilowatts
     metadata:
       unit_of_measurement: "¢/h"
       state_class: "measurement"
+      device_class: "monetary"
+      icon: "mdi:currency-usd"
 
   # Another simple sensor with numeric literals
   solar_sold_power:
@@ -19,29 +21,10 @@ sensors:
     formula: "abs(min(grid_power, zero_threshold))"
     variables:
       grid_power: "sensor.span_panel_current_power"
-      zero_threshold: 0                         # Literal: threshold value
+      zero_threshold: 0 # Literal: threshold value
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
-
-  temperature_converter:
-    name: "Temperature Converter"
-    formula: "(temp_f - freezing_f) * conversion_factor / celsius_factor"
-    variables:
-      temp_f: "sensor.outdoor_temperature_f"
-      freezing_f: 32                     # Literal: Fahrenheit freezing point
-      conversion_factor: 5               # Literal: F to C numerator
-      celsius_factor: 9                  # Literal: F to C denominator
-    metadata:
-      unit_of_measurement: "°C"
-
-  power_efficiency:
-    name: "Power Efficiency"
-    formula: "actual_power / rated_power * percentage"
-    variables:
-      actual_power: "sensor.current_power"
-      rated_power: 1000                  # Literal: rated power in watts
-      percentage: 100                    # Literal: convert to percentage
-    metadata:
-      unit_of_measurement: "%"
+      suggested_display_precision: 0
+      icon: "mdi:solar-power"

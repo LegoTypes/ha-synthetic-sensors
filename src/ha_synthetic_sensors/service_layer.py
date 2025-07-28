@@ -12,11 +12,12 @@ from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
 import yaml
 
-from .config_manager import ConfigManager, _trim_yaml_keys
+from .config_manager import ConfigManager
 from .config_models import FormulaConfig
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
 from .sensor_manager import SensorManager
+from .yaml_config_parser import trim_yaml_keys
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -472,11 +473,11 @@ class ServiceLayer:
         if isinstance(config_data, str):
             try:
                 yaml_data_raw = yaml.safe_load(config_data)
-                yaml_data = _trim_yaml_keys(yaml_data_raw)
+                yaml_data = trim_yaml_keys(yaml_data_raw)
             except yaml.YAMLError as exc:
                 return _create_yaml_validation_error(f"YAML parsing error: {exc}")
         else:
-            yaml_data = _trim_yaml_keys(config_data)
+            yaml_data = trim_yaml_keys(config_data)
 
         if yaml_data is not None:
             schema_result = self._config_manager.validate_yaml_data(yaml_data)

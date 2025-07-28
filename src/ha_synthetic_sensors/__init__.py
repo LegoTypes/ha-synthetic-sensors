@@ -5,6 +5,7 @@ integrations using formula-based calculations and YAML configuration.
 """
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -16,6 +17,9 @@ from .config_models import FormulaConfig, SensorConfig
 # Public API - Utility classes
 from .device_association import DeviceAssociationHelper
 from .entity_factory import EntityDescription, EntityFactory
+
+# Public API - Exceptions
+from .exceptions import SyntheticSensorsConfigError
 
 # Public API - Integration helpers
 from .integration import (
@@ -36,6 +40,73 @@ from .storage_manager import StorageManager
 from .type_definitions import DataProviderCallback, DataProviderChangeNotifier, DataProviderResult
 
 
+def _register_backing_entities_and_mappings(
+    sensor_manager: SensorManager,
+    backing_entity_ids: set[str] | None,
+    sensor_to_backing_mapping: dict[str, str] | None,
+    allow_ha_lookups: bool,
+    change_notifier: DataProviderChangeNotifier | None,
+    logger: logging.Logger,
+) -> None:
+    """Register backing entities and mappings with the sensor manager."""
+    # Register explicit backing entities if provided directly
+    if backing_entity_ids is not None:
+        if backing_entity_ids:  # Non-empty set
+            logger.info("Registering explicit backing entities with sensor manager...")
+            sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
+            logger.info("Explicit backing entities registered successfully")
+
+            # Also register sensor-to-backing mapping if provided for state token resolution
+            if sensor_to_backing_mapping:
+                sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+                logger.info("Sensor-to-backing mapping registered for state token resolution")
+        else:
+            # Empty set provided explicitly - this is an error regardless of allow_ha_lookups
+            raise SyntheticSensorsConfigError(
+                "Empty backing entity set provided explicitly. Use None for HA-only mode, or provide actual backing entities."
+            )
+    # Register explicit backing entities if provided via mapping
+    elif sensor_to_backing_mapping is not None:
+        logger.info("Registering sensor-to-backing mapping with sensor manager...")
+        # Extract backing entity IDs from the mapping
+        backing_entity_ids = set(sensor_to_backing_mapping.values())
+        if backing_entity_ids:  # Only register if we have actual entities
+            sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
+            # Register the mapping for state token resolution
+            sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+            logger.info("Sensor-to-backing mapping registered successfully")
+        else:
+            # Empty mapping - only valid in HA lookup mode
+            if not allow_ha_lookups:
+                raise SyntheticSensorsConfigError(
+                    "Empty sensor-to-backing mapping in virtual-only mode (allow_ha_lookups=False)"
+                )
+            logger.info("Empty sensor-to-backing mapping provided - using HA-only mode")
+    elif not allow_ha_lookups:
+        # No backing entities and virtual-only mode - this could be valid if no sensors use 'state' token
+        logger.debug("No backing entities provided in virtual-only mode - sensors cannot use 'state' token")
+
+
+def _log_configuration_details(config: Any, device_identifier: str) -> None:
+    """Log detailed configuration information."""
+    if not config or not config.sensors:
+        logging.getLogger(__name__).error("No sensors found in configuration - this is a fatal error")
+        raise ValueError(f"No sensors found in configuration for device {device_identifier}")
+
+    logging.getLogger(__name__).info("Configuration contains %d sensors:", len(config.sensors))
+    for sensor in config.sensors:
+        logging.getLogger(__name__).info("  Sensor: %s", sensor.unique_id)
+        logging.getLogger(__name__).info("    Entity ID: %s", sensor.entity_id or "None")
+        logging.getLogger(__name__).info("    Name: %s", sensor.name)
+        if sensor.formulas:
+            for formula in sensor.formulas:
+                logging.getLogger(__name__).info("    Formula '%s': %s", formula.id, formula.formula)
+                if formula.variables:
+                    logging.getLogger(__name__).info("      Variables:")
+                    for var_name, var_value in formula.variables.items():
+                        logging.getLogger(__name__).info("        %s: %s", var_name, var_value)
+
+
 async def async_setup_synthetic_sensors(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -43,22 +114,28 @@ async def async_setup_synthetic_sensors(
     storage_manager: StorageManager,
     device_identifier: str,
     data_provider_callback: DataProviderCallback | None = None,
+    change_notifier: DataProviderChangeNotifier | None = None,
+    sensor_to_backing_mapping: dict[str, str] | None = None,
+    allow_ha_lookups: bool = False,
 ) -> SensorManager:
-    """Recommended setup pattern for synthetic sensors in HA integrations.
+    """Set up synthetic sensors with storage-based configuration.
 
-    This is the simplified, recommended way to integrate synthetic sensors
-    into your Home Assistant custom integration.
+    This is the recommended pattern for most integrations. It uses storage-based
+    configuration and provides a clean interface for synthetic sensor management.
 
     Args:
         hass: Home Assistant instance
         config_entry: Integration's ConfigEntry
         async_add_entities: AddEntitiesCallback from sensor platform
-        storage_manager: StorageManager with sensor configurations
-        device_identifier: Device identifier for entity IDs
+        storage_manager: Pre-configured StorageManager instance
+        device_identifier: Device identifier for entity IDs and sensor set ID
         data_provider_callback: Optional callback for live data
+        change_notifier: Optional callback for change notifications
+        sensor_to_backing_mapping: Optional mapping from sensor unique IDs to backing entity IDs
+        allow_ha_lookups: If True, backing entities can fall back to HA state lookups
 
     Returns:
-        SensorManager: Configured sensor manager
+        Configured SensorManager instance
 
     Example:
         ```python
@@ -66,30 +143,34 @@ async def async_setup_synthetic_sensors(
         from ha_synthetic_sensors import async_setup_synthetic_sensors
 
         async def async_setup_entry(hass, config_entry, async_add_entities):
-            # Your native sensors first
-            async_add_entities(native_sensors)
+            # Create your native sensors first
+            native_entities = create_native_sensors(coordinator)
+            async_add_entities(native_entities)
 
-            # Then synthetic sensors
-            storage_manager = hass.data[DOMAIN][config_entry.entry_id]["storage_manager"]
+            # Set up synthetic sensors with one call
             sensor_manager = await async_setup_synthetic_sensors(
                 hass=hass,
                 config_entry=config_entry,
                 async_add_entities=async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier=coordinator.device_id,
-                data_provider_callback=create_data_provider(coordinator),
+                data_provider_callback=create_data_provider_callback(coordinator),
+                change_notifier=create_change_notifier_callback(sensor_manager),
+                allow_ha_lookups=False,  # Use virtual entities only (recommended)
             )
         ```
     """
+    logger = logging.getLogger(__name__)
+    logger.info("=== SYNTHETIC SENSORS SETUP DEBUG ===")
+    logger.info("Setting up synthetic sensors for device: %s", device_identifier)
 
     # Get device info if available (integration-specific)
     device_info = None
     if hasattr(config_entry, "data"):
-        # Let the integration provide device_info if needed
         integration_data = hass.data.get(config_entry.domain, {}).get(config_entry.entry_id, {})
         device_info = integration_data.get("device_info")
 
-    # Create sensor manager using the simple helper
+    # Create sensor manager
     sensor_manager = await async_create_sensor_manager(
         hass=hass,
         integration_domain=config_entry.domain,
@@ -98,9 +179,23 @@ async def async_setup_synthetic_sensors(
         data_provider_callback=data_provider_callback,
     )
 
-    # Note: StorageManager doesn't track backing entities directly
-    # Backing entities are managed by SensorManager or provided explicitly
-    # in other interface functions
+    # Register backing entities if provided and non-empty
+    if sensor_to_backing_mapping:
+        backing_entity_ids = set(sensor_to_backing_mapping.values())
+        if backing_entity_ids:  # Only register if we have actual entities
+            sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
+            sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+            logger.info("Sensor-to-backing mapping registered successfully")
+        else:
+            # Empty mapping - only valid in HA lookup mode
+            if not allow_ha_lookups:
+                raise SyntheticSensorsConfigError(
+                    "Empty sensor-to-backing mapping in virtual-only mode (allow_ha_lookups=False)"
+                )
+            logger.info("Empty sensor-to-backing mapping provided - using HA-only mode")
+    elif not allow_ha_lookups:
+        # No mapping and virtual-only mode - this could be valid if no sensors use 'state' token
+        logger.debug("No sensor-to-backing mapping provided in virtual-only mode - sensors cannot use 'state' token")
 
     # CRITICAL: Register sensor manager with storage manager for entity change notifications
     # This must happen before loading configuration to ensure proper dependency tracking
@@ -108,7 +203,14 @@ async def async_setup_synthetic_sensors(
 
     # Load configuration from storage
     config = storage_manager.to_config(device_identifier=device_identifier)
+    logger.info("Loading configuration for device: %s", device_identifier)
+
+    # Log the configuration details
+    _log_configuration_details(config, device_identifier)
+
     await sensor_manager.load_configuration(config)
+    logger.info("Configuration loaded successfully")
+    logger.info("=== END SYNTHETIC SENSORS SETUP DEBUG ===")
 
     return sensor_manager
 
@@ -120,32 +222,48 @@ async def async_setup_synthetic_sensors_with_entities(
     storage_manager: StorageManager,
     device_identifier: str,
     data_provider_callback: DataProviderCallback | None = None,
-    backing_entity_ids: set[str] | None = None,
-    allow_ha_lookups: bool = False,
     change_notifier: DataProviderChangeNotifier | None = None,
+    backing_entity_ids: set[str] | None = None,
+    sensor_to_backing_mapping: dict[str, str] | None = None,
+    allow_ha_lookups: bool = False,
 ) -> SensorManager:
     """Simplified setup pattern for synthetic sensors with explicit backing entities.
 
-    This is a variant of async_setup_synthetic_sensors that allows explicit
-    specification of backing entity IDs for integrations that manage them separately.
+    This function allows direct specification of backing entity IDs for integrations
+    that manage virtual entities separately from sensor-to-backing mapping.
 
     Args:
         hass: Home Assistant instance
         config_entry: Integration's ConfigEntry
-        async_add_entities: AddEntitiesCallback from sensor platform
-        storage_manager: StorageManager with sensor configurations
-        device_identifier: Device identifier for entity IDs
-        data_provider_callback: Optional callback for live data
-        backing_entity_ids: Set of backing entity IDs to register
-        allow_ha_lookups: If True, backing entities can fall back to HA state lookups
-                        when not found in data provider. If False (default), backing
-                        entities are always virtual and only use data provider callback.
-        change_notifier: Optional callback that the integration can call when backing
-                       entity data changes to trigger selective sensor updates.
+        async_add_entities: Callback to add entities to HA
+        storage_manager: Storage manager for sensor configuration
+        device_identifier: Device identifier for sensor grouping
+        data_provider_callback: Optional callback for providing entity data
+        change_notifier: Optional callback for real-time change notifications
+        backing_entity_ids: Set of backing entity IDs to register (or None for HA-only mode)
+        sensor_to_backing_mapping: Optional mapping for state token resolution
+        allow_ha_lookups: Whether to allow fallback to HA state lookups
 
     Returns:
         SensorManager: Configured sensor manager
     """
+
+    logger = logging.getLogger(__name__)
+
+    # Log the setup parameters
+    logger.info("=== SYNTHETIC SENSORS SETUP DEBUG ===")
+    logger.info("Setting up synthetic sensors with entities:")
+    logger.info("  Device identifier: %s", device_identifier)
+    logger.info("  Allow HA lookups: %s", allow_ha_lookups)
+    logger.info("  Data provider callback: %s", "Provided" if data_provider_callback else "None")
+    logger.info("  Change notifier: %s", "Provided" if change_notifier else "None")
+
+    if sensor_to_backing_mapping:
+        logger.info("  Sensor-to-backing mapping provided (%d mappings):", len(sensor_to_backing_mapping))
+        for sensor_key, backing_entity_id in sorted(sensor_to_backing_mapping.items()):
+            logger.info("    %s -> %s", sensor_key, backing_entity_id)
+    else:
+        logger.info("  No sensor-to-backing mapping provided")
 
     # Get device info if available (integration-specific)
     device_info = None
@@ -163,9 +281,10 @@ async def async_setup_synthetic_sensors_with_entities(
         data_provider_callback=data_provider_callback,
     )
 
-    # Register explicit backing entities if provided
-    if backing_entity_ids:
-        sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
+    # Register backing entities and mappings
+    _register_backing_entities_and_mappings(
+        sensor_manager, backing_entity_ids, sensor_to_backing_mapping, allow_ha_lookups, change_notifier, logger
+    )
 
     # CRITICAL: Register sensor manager with storage manager for entity change notifications
     # This must happen before loading configuration to ensure proper dependency tracking
@@ -173,7 +292,14 @@ async def async_setup_synthetic_sensors_with_entities(
 
     # Load configuration from storage
     config = storage_manager.to_config(device_identifier=device_identifier)
+    logger.info("Loading configuration for device: %s", device_identifier)
+
+    # Log the configuration details
+    _log_configuration_details(config, device_identifier)
+
     await sensor_manager.load_configuration(config)
+    logger.info("Configuration loaded successfully")
+    logger.info("=== END SYNTHETIC SENSORS SETUP DEBUG ===")
 
     return sensor_manager
 
@@ -185,7 +311,7 @@ async def async_setup_synthetic_integration(
     integration_domain: str,
     device_identifier: str,
     sensor_configs: list[SensorConfig],
-    backing_entity_ids: set[str] | None = None,
+    sensor_to_backing_mapping: dict[str, str] | None = None,
     data_provider_callback: DataProviderCallback | None = None,
     sensor_set_name: str | None = None,
     allow_ha_lookups: bool = False,
@@ -206,7 +332,7 @@ async def async_setup_synthetic_integration(
         integration_domain: Domain name for the integration
         device_identifier: Device identifier for entity IDs and sensor set ID
         sensor_configs: List of SensorConfig objects defining the sensors
-        backing_entity_ids: Set of backing entity IDs to register (optional)
+        sensor_to_backing_mapping: Optional mapping from sensor unique IDs to backing entity IDs
         data_provider_callback: Optional callback for live data
         sensor_set_name: Optional name for the sensor set (defaults to device-based name)
         allow_ha_lookups: If True, backing entities can fall back to HA state lookups
@@ -252,7 +378,7 @@ async def async_setup_synthetic_integration(
                 integration_domain=DOMAIN,
                 device_identifier=coordinator.device_id,
                 sensor_configs=sensor_configs,
-                backing_entity_ids=backing_entities,
+                sensor_to_backing_mapping=backing_entities, # Pass the mapping
                 data_provider_callback=create_data_provider(coordinator),
             )
         ```
@@ -306,9 +432,21 @@ async def async_setup_synthetic_integration(
         data_provider_callback=data_provider_callback,
     )
 
-    # Register backing entities if provided
-    if backing_entity_ids:
-        sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
+    # Register backing entities if provided and non-empty
+    if sensor_to_backing_mapping:
+        backing_entity_ids = set(sensor_to_backing_mapping.values())
+        if backing_entity_ids:  # Only register if we have actual entities
+            sensor_manager.register_data_provider_entities(backing_entity_ids, allow_ha_lookups, change_notifier)
+            sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
+        else:
+            # Empty mapping - only valid in HA lookup mode
+            if not allow_ha_lookups:
+                raise SyntheticSensorsConfigError(
+                    "Empty sensor-to-backing mapping in virtual-only mode (allow_ha_lookups=False)"
+                )
+    elif not allow_ha_lookups:
+        # No mapping and virtual-only mode - this could be valid if no sensors use 'state' token
+        pass  # Allow this case for pure calculation sensors
 
     # Register with storage manager for entity change notifications
     sensor_manager.register_with_storage_manager(storage_manager)

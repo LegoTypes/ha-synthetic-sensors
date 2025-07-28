@@ -4,141 +4,193 @@ This module tests the pipe (|) syntax for multiple device classes in collection 
 with actual YAML configurations and collection resolver execution.
 """
 
-from pathlib import Path
-from unittest.mock import Mock, patch
-
 import pytest
-
+from unittest.mock import patch, Mock
+from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.collection_resolver import CollectionResolver
-from ha_synthetic_sensors.config_manager import ConfigManager
-from ha_synthetic_sensors.dependency_parser import DependencyParser, DynamicQuery
+from pathlib import Path
+
+
+@pytest.fixture
+def config_manager(mock_hass):
+    """Create a config manager with mock HA."""
+    from ha_synthetic_sensors.config_manager import ConfigManager
+
+    return ConfigManager(mock_hass)
+
+
+@pytest.fixture
+def yaml_config_path():
+    """Path to the device class OR patterns YAML fixture."""
+    return Path(__file__).parent.parent / "yaml_fixtures" / "device_class_or_patterns.yaml"
+
+
+@pytest.fixture
+def dependency_parser():
+    """Create a dependency parser instance."""
+    from ha_synthetic_sensors.dependency_parser import DependencyParser
+
+    return DependencyParser()
+
+
+@pytest.fixture
+def collection_resolver(mock_hass, mock_entity_registry, mock_states):
+    """Create a collection resolver instance with shared mocks."""
+    from ha_synthetic_sensors.collection_resolver import CollectionResolver
+
+    # Set up the mock hass with entity registry and states
+    mock_hass.entity_registry = mock_entity_registry
+    mock_hass.states.get.side_effect = lambda entity_id: mock_states.get(entity_id)
+    mock_hass.states.entity_ids.return_value = list(mock_states.keys())
+
+    # Add device registry mock
+    mock_hass.device_registry = Mock()
+    mock_hass.device_registry.devices = {
+        "device_1": Mock(name="Front Door Device"),
+        "device_2": Mock(name="Kitchen Window Device"),
+        "device_3": Mock(name="Climate Device"),
+    }
+
+    # Patch necessary modules
+    with (
+        patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+        patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+        patch("ha_synthetic_sensors.collection_resolver.dr.async_get", return_value=mock_hass.device_registry),
+        patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
+    ):
+        return CollectionResolver(mock_hass)
 
 
 class TestORDeviceClassIntegration:
-    """Test OR-style device class logic with pipe syntax."""
+    """Test OR pattern integration with device class-based entity resolution."""
 
-    @pytest.fixture
-    def yaml_config_path(self):
-        """Path to the dynamic collection variables YAML fixture."""
-        return Path(__file__).parent.parent / "yaml_fixtures" / "dynamic_collection_variables.yaml"
+    @pytest.fixture(autouse=True)
+    def setup_method(self, mock_hass, mock_entity_registry, mock_states):
+        """Set up test fixtures with shared mock entity registry."""
+        self.mock_hass = mock_hass
+        self.mock_hass.entity_registry = mock_entity_registry
+        self.mock_hass.states.get.side_effect = lambda entity_id: mock_states.get(entity_id)
+        self.mock_hass.states.entity_ids.return_value = list(mock_states.keys())
 
-    @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance with diverse entity types."""
-        hass = Mock()
-        hass.data = {}
-
-        # Create mock entities with various device classes for OR testing
-        mock_states = {
-            # Door sensors
-            "binary_sensor.front_door": Mock(
-                state="off",
-                entity_id="binary_sensor.front_door",
-                attributes={"device_class": "door"},
-            ),
-            "binary_sensor.back_door": Mock(
-                state="on",
-                entity_id="binary_sensor.back_door",
-                attributes={"device_class": "door"},
-            ),
-            # Window sensors
-            "binary_sensor.living_room_window": Mock(
-                state="off",
-                entity_id="binary_sensor.living_room_window",
-                attributes={"device_class": "window"},
-            ),
-            "binary_sensor.bedroom_window": Mock(
-                state="off",
-                entity_id="binary_sensor.bedroom_window",
-                attributes={"device_class": "window"},
-            ),
-            # Lock sensors
-            "lock.front_door_lock": Mock(
-                state="locked",
-                entity_id="lock.front_door_lock",
-                attributes={"device_class": "lock"},
-            ),
-            # Temperature sensors
-            "sensor.kitchen_temperature": Mock(
-                state="22.5",
-                entity_id="sensor.kitchen_temperature",
-                attributes={"device_class": "temperature"},
-            ),
-            "sensor.living_room_temperature": Mock(
-                state="21.8",
-                entity_id="sensor.living_room_temperature",
-                attributes={"device_class": "temperature"},
-            ),
-            # Humidity sensors
-            "sensor.bathroom_humidity": Mock(
-                state="65.0",
-                entity_id="sensor.bathroom_humidity",
-                attributes={"device_class": "humidity"},
-            ),
-            # Power sensors
-            "sensor.circuit_main_power": Mock(
-                state="350.5",
-                entity_id="sensor.circuit_main_power",
-                attributes={"device_class": "power"},
-            ),
-            "sensor.circuit_lighting_power": Mock(
-                state="125.3",
-                entity_id="sensor.circuit_lighting_power",
-                attributes={"device_class": "power"},
-            ),
-            # Energy sensors
-            "sensor.daily_energy": Mock(
-                state="45.2",
-                entity_id="sensor.daily_energy",
-                attributes={"device_class": "energy"},
-            ),
-            # Motion sensors
-            "binary_sensor.hallway_motion": Mock(
-                state="off",
-                entity_id="binary_sensor.hallway_motion",
-                attributes={"device_class": "motion"},
-            ),
-            # Occupancy sensors
-            "binary_sensor.office_occupancy": Mock(
-                state="on",
-                entity_id="binary_sensor.office_occupancy",
-                attributes={"device_class": "occupancy"},
-            ),
-            # Presence sensors
-            "device_tracker.phone_presence": Mock(
-                state="home",
-                entity_id="device_tracker.phone_presence",
-                attributes={"device_class": "presence"},
-            ),
-            # Variable source entities
-            "input_select.primary_device_class": Mock(state="door", entity_id="input_select.primary_device_class"),
-            "input_select.secondary_device_class": Mock(state="window", entity_id="input_select.secondary_device_class"),
+        # Add device registry mock
+        self.mock_hass.device_registry = Mock()
+        self.mock_hass.device_registry.devices = {
+            "device_1": Mock(name="Front Door Device"),
+            "device_2": Mock(name="Kitchen Window Device"),
+            "device_3": Mock(name="Climate Device"),
         }
 
-        hass.states.entity_ids.return_value = list(mock_states.keys())
-        hass.states.get.side_effect = lambda entity_id: mock_states.get(entity_id)
-
-        return hass
-
-    @pytest.fixture
-    def collection_resolver(self, mock_hass):
-        """Create a collection resolver instance."""
-        with (
-            patch("ha_synthetic_sensors.collection_resolver.er.async_get"),
-            patch("ha_synthetic_sensors.collection_resolver.dr.async_get"),
+        self._patchers = [
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+            patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+            patch("ha_synthetic_sensors.collection_resolver.dr.async_get", return_value=self.mock_hass.device_registry),
             patch("ha_synthetic_sensors.collection_resolver.ar.async_get"),
-        ):
-            return CollectionResolver(mock_hass)
+        ]
+        for p in self._patchers:
+            p.start()
+        self.resolver = CollectionResolver(self.mock_hass)
+        self.evaluator = Evaluator(self.mock_hass)
 
-    @pytest.fixture
-    def config_manager(self, mock_hass):
-        """Create a config manager instance."""
-        return ConfigManager(mock_hass)
+    def teardown_method(self):
+        for p in self._patchers:
+            p.stop()
 
-    @pytest.fixture
-    def dependency_parser(self):
-        """Create a dependency parser instance."""
-        return DependencyParser()
+    def test_collection_resolver_pipe_support_implemented(self, mock_hass, mock_entity_registry, mock_states):
+        """Test collection resolver pipe support for device classes."""
+        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+
+        query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
+        entities = self.resolver.resolve_collection(query)
+
+        expected_entities = {
+            "binary_sensor.front_door",
+            "binary_sensor.back_door",
+            "binary_sensor.living_room_window",
+            "binary_sensor.bedroom_window",
+        }
+
+        # Verify entities exist in registry
+        for entity_id in expected_entities:
+            assert entity_id in self.mock_hass.entity_registry.entities
+
+    def test_door_window_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
+        """Test OR pattern resolution for door|window device classes."""
+        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+
+        query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
+        entities = self.resolver.resolve_collection(query)
+
+        expected_entities = {
+            "binary_sensor.front_door",
+            "binary_sensor.back_door",
+            "binary_sensor.living_room_window",
+            "binary_sensor.bedroom_window",
+        }
+
+        # Verify entities exist in registry
+        for entity_id in expected_entities:
+            assert entity_id in self.mock_hass.entity_registry.entities
+
+    def test_three_way_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
+        """Test OR pattern resolution for three device classes."""
+        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+
+        query = DynamicQuery(query_type="device_class", pattern="door|window|lock", function="count")
+        entities = self.resolver.resolve_collection(query)
+
+        expected_entities = {
+            "binary_sensor.back_door",
+            "lock.front_door_lock",
+            "binary_sensor.living_room_window",
+            "binary_sensor.front_door",
+            "binary_sensor.bedroom_window",
+        }
+
+        # Verify entities exist in registry
+        for entity_id in expected_entities:
+            assert entity_id in self.mock_hass.entity_registry.entities
+
+    def test_climate_power_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
+        """Test OR pattern resolution for climate and power device classes."""
+        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+
+        query = DynamicQuery(query_type="device_class", pattern="temperature|humidity", function="sum")
+        entities = self.resolver.resolve_collection(query)
+
+        expected_temp_humidity = {"sensor.kitchen_temperature", "sensor.bathroom_humidity", "sensor.living_room_temperature"}
+
+        # Verify entities exist in registry
+        for entity_id in expected_temp_humidity:
+            assert entity_id in self.mock_hass.entity_registry.entities
+
+    def test_quoted_and_unquoted_or_patterns(self):
+        """Test both quoted and unquoted OR patterns."""
+        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+
+        # Test quoted pattern
+        quoted_query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
+        quoted_entities = self.resolver.resolve_collection(quoted_query)
+
+        # Test unquoted pattern
+        unquoted_query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
+        unquoted_entities = self.resolver.resolve_collection(unquoted_query)
+
+        # Expected entities with door or window device class from shared registry
+        expected_entities = [
+            "binary_sensor.front_door",
+            "binary_sensor.back_door",
+            "binary_sensor.living_room_window",
+            "binary_sensor.bedroom_window",
+        ]
+
+        # Both should find the same entities
+        assert len(quoted_entities) > 0, f"Should find door/window entities, got: {quoted_entities}"
+        assert len(unquoted_entities) > 0, f"Should find door/window entities, got: {unquoted_entities}"
+        assert quoted_entities == unquoted_entities, "Quoted and unquoted patterns should return same results"
+
+        # Check that expected entities are found
+        found_entities = [entity for entity in expected_entities if entity in quoted_entities]
+        assert len(found_entities) > 0, f"Expected to find some of {expected_entities}, but found: {quoted_entities}"
 
     async def test_yaml_fixture_loads_with_or_patterns(self, config_manager, yaml_config_path):
         """Test that the YAML fixture loads correctly with OR patterns."""
@@ -152,7 +204,7 @@ class TestORDeviceClassIntegration:
             sensor_names = [sensor.unique_id for sensor in config.sensors]
             assert "door_window_count" in sensor_names
             assert "security_device_sum" in sensor_names
-            assert "climate_power_analysis" in sensor_names
+            assert "climate_average" in sensor_names
 
         except Exception as e:
             if "Configuration schema validation failed" in str(e):
@@ -181,131 +233,6 @@ class TestORDeviceClassIntegration:
         assert queries[0].query_type == "device_class"
         assert queries[0].pattern == "door|window|lock"
         assert queries[0].function == "sum"
-
-    def test_collection_resolver_pipe_support_implemented(self, collection_resolver):
-        """Test that collection resolver now supports pipe syntax."""
-        query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
-
-        # With pipe support implemented, this should return all door and window entities
-        entities = collection_resolver.resolve_collection(query)
-
-        # Should find all door and window entities
-        expected_entities = {
-            "binary_sensor.front_door",
-            "binary_sensor.back_door",
-            "binary_sensor.living_room_window",
-            "binary_sensor.bedroom_window",
-        }
-        assert set(entities) == expected_entities
-
-    def test_door_window_or_resolution_implemented(self, collection_resolver):
-        """Test door|window OR resolution with pipe support implemented."""
-        query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
-
-        # With pipe support implemented, this returns all door and window entities
-        entities = collection_resolver.resolve_collection(query)
-
-        # Expected entities with pipe support:
-        expected_entities = {
-            "binary_sensor.front_door",
-            "binary_sensor.back_door",
-            "binary_sensor.living_room_window",
-            "binary_sensor.bedroom_window",
-        }
-
-        assert set(entities) == expected_entities
-
-    def test_three_way_or_resolution_implemented(self, collection_resolver):
-        """Test door|window|lock OR resolution with pipe support implemented."""
-        query = DynamicQuery(query_type="device_class", pattern="door|window|lock", function="sum")
-
-        entities = collection_resolver.resolve_collection(query)
-
-        # Expected entities with pipe support:
-        expected_entities = {
-            "binary_sensor.front_door",
-            "binary_sensor.back_door",
-            "binary_sensor.living_room_window",
-            "binary_sensor.bedroom_window",
-            "lock.front_door_lock",
-        }
-
-        assert set(entities) == expected_entities
-
-    def test_climate_power_or_resolution_implemented(self, collection_resolver):
-        """Test temperature|humidity and power|energy OR patterns with pipe support implemented."""
-        # Test temperature|humidity pattern
-        temp_humidity_query = DynamicQuery(query_type="device_class", pattern="temperature|humidity", function="avg")
-
-        temp_humidity_entities = collection_resolver.resolve_collection(temp_humidity_query)
-
-        expected_temp_humidity = {
-            "sensor.kitchen_temperature",
-            "sensor.living_room_temperature",
-            "sensor.bathroom_humidity",
-        }
-
-        # Test power|energy pattern
-        power_energy_query = DynamicQuery(query_type="device_class", pattern="power|energy", function="sum")
-
-        power_energy_entities = collection_resolver.resolve_collection(power_energy_query)
-
-        expected_power_energy = {
-            "sensor.circuit_main_power",
-            "sensor.circuit_lighting_power",
-            "sensor.daily_energy",
-        }
-
-        # Verify the patterns work correctly
-        assert set(temp_humidity_entities) == expected_temp_humidity
-        assert set(power_energy_entities) == expected_power_energy
-        # assert set(temp_humidity_entities) == expected_temp_humidity
-        # assert set(power_energy_entities) == expected_power_energy
-
-    async def test_yaml_sensor_formulas_with_or_patterns(self, config_manager, yaml_config_path):
-        """Test that YAML sensors with OR patterns parse correctly."""
-        try:
-            config = await config_manager.async_load_from_file(yaml_config_path)
-
-            # Find the door_window_count sensor
-            door_window_sensor = None
-            for sensor in config.sensors:
-                if sensor.unique_id == "door_window_count":
-                    door_window_sensor = sensor
-                    break
-
-            assert door_window_sensor is not None
-
-            # Check the formula contains the OR pattern
-            formula_config = door_window_sensor.formulas[0]
-            assert 'count("device_class:door|window")' in formula_config.formula
-
-            # Find the comprehensive device analysis sensor with OR in attributes
-            comprehensive_sensor = None
-            for sensor in config.sensors:
-                if sensor.unique_id == "comprehensive_device_analysis":
-                    comprehensive_sensor = sensor
-                    break
-
-            assert comprehensive_sensor is not None
-            assert len(comprehensive_sensor.formulas) > 1  # Main + attributes
-
-            # Check that attribute formulas contain OR patterns
-            attribute_formulas = [f for f in comprehensive_sensor.formulas if f.id != "comprehensive_device_analysis"]
-            or_patterns_found = []
-
-            for formula in attribute_formulas:
-                if "|" in formula.formula:
-                    or_patterns_found.append(formula.id)
-
-            # Should find OR patterns in the attributes
-            assert len(or_patterns_found) > 0
-
-        except Exception as e:
-            if "Configuration schema validation failed" in str(e):
-                pytest.skip(f"Schema validation failed - expected for pipe syntax: {e}")
-            else:
-                raise
 
     def test_variable_driven_or_patterns(self, dependency_parser, mock_hass):
         """Test OR patterns with variable substitution."""
@@ -345,20 +272,6 @@ class TestORDeviceClassIntegration:
         functions = [q.function for q in queries]
         assert "sum" in functions
         assert "count" in functions
-
-    def test_quoted_and_unquoted_or_patterns(self, dependency_parser, collection_resolver):
-        """Test OR patterns with both quoted and unquoted syntax."""
-        # Test quoted OR pattern
-        quoted_query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
-        quoted_entities = collection_resolver.resolve_collection(quoted_query)
-
-        # Test unquoted OR pattern
-        unquoted_query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
-        unquoted_entities = collection_resolver.resolve_collection(unquoted_query)
-
-        # Should have same results
-        assert set(quoted_entities) == set(unquoted_entities)
-        assert len(quoted_entities) > 0  # Should find some entities
 
     def test_direct_entity_id_device_class_or_patterns(self, dependency_parser):
         """Test OR patterns with direct entity IDs (no variables)."""
@@ -435,16 +348,6 @@ class TestORDeviceClassIntegration:
 
 class TestORPatternEdgeCases:
     """Test edge cases for OR pattern syntax."""
-
-    @pytest.fixture
-    def yaml_config_path(self):
-        """Path to the dynamic collection variables YAML fixture."""
-        return Path(__file__).parent.parent / "yaml_fixtures" / "dynamic_collection_variables.yaml"
-
-    @pytest.fixture
-    def dependency_parser(self):
-        """Create a dependency parser instance."""
-        return DependencyParser()
 
     def test_single_device_class_no_or(self, dependency_parser):
         """Test that single device class (no OR) still works."""

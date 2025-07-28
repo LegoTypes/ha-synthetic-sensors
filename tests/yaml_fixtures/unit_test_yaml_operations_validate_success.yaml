@@ -1,0 +1,14 @@
+# YAML fixture for test_yaml_operations.py
+# Used by: test_validate_config_file_success
+# Test cases covered:
+# - Successful config file validation
+# - Valid sensor configuration
+
+version: "1.0"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "A + B"
+    variables:
+      A: "sensor.test_a"
+      B: "sensor.test_b"

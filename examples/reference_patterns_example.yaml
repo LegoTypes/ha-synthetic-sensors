@@ -1,0 +1,80 @@
+version: '1.0'
+sensors:
+  energy_cost_analysis:
+    name: Energy Cost Analysis
+    formula: current_power * electricity_rate / 1000
+    variables:
+      current_power: sensor.span_panel_instantaneous_power
+      electricity_rate: input_number.electricity_rate_cents_kwh
+    attributes:
+      daily_projected:
+        formula: state * 24
+        metadata:
+          unit_of_measurement: ¢
+      monthly_projected:
+        formula: energy_cost_analysis * 24 * 30
+        metadata:
+          unit_of_measurement: ¢
+      annual_projected:
+        formula: sensor.energy_cost_analysis * 24 * 365
+        metadata:
+          unit_of_measurement: ¢
+    metadata:
+      unit_of_measurement: ¢/h
+      device_class: monetary
+      state_class: measurement
+  grid_dependency_analysis:
+    name: Grid Dependency Analysis
+    formula: sensor.span_panel_instantaneous_power + sensor.energy_cost_analysis
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  enhanced_power_analysis:
+    name: Enhanced Power Analysis
+    formula: base_power_analysis * efficiency_factor
+    variables:
+      base_power_analysis: sensor.base_power_analysis
+      efficiency_factor: input_number.electricity_rate_cents_kwh
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  power_efficiency:
+    name: Power Efficiency Analysis
+    formula: current_power * device_efficiency / 100
+    variables:
+      current_power: sensor.span_panel_instantaneous_power
+      device_efficiency: input_number.efficiency_factor
+      backup_device: sensor.backup_power_system
+    attributes:
+      battery_adjusted:
+        formula: sensor.energy_cost_analysis * backup_device.battery_level / 100
+        metadata:
+          unit_of_measurement: W
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+  comprehensive_analysis:
+    name: Comprehensive Reference Test
+    formula: base_power + base_efficiency
+    variables:
+      base_power: sensor.base_power_meter
+      base_efficiency: input_number.base_efficiency
+    attributes:
+      daily_state_ref:
+        formula: state * 24
+        metadata:
+          unit_of_measurement: units
+      monthly_key_ref:
+        formula: comprehensive_analysis * 24 * 30
+        metadata:
+          unit_of_measurement: units
+      annual_entity_ref:
+        formula: sensor.comprehensive_analysis * 24 * 365
+        metadata:
+          unit_of_measurement: units
+    metadata:
+      unit_of_measurement: units
+      state_class: measurement

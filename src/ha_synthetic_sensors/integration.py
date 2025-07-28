@@ -86,7 +86,7 @@ class SyntheticSensorsIntegration:
         self._config_entry = config_entry
 
         # Initialize core components
-        self._name_resolver = NameResolver(hass, variables={})
+        self._name_resolver = NameResolver(hass, {})
         self._config_manager = ConfigManager(hass)
         self._sensor_manager: SensorManager | None = None
         self._service_manager: ServiceLayer | None = None
@@ -437,7 +437,7 @@ async def async_create_sensor_manager(
         ```
     """
     # Create minimal components needed for sensor manager
-    name_resolver = NameResolver(hass, variables={})
+    name_resolver = NameResolver(hass, {})
 
     # Create manager config for external integration
     manager_config = SensorManagerConfig(

@@ -12,22 +12,12 @@ class TestStateVariableInAttributes:
     """Test that attribute formulas can access the sensor's state via the 'state' variable."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-        hass.states = MagicMock()
-        hass.states.get = MagicMock(return_value=None)
-        # Set the hass attribute properly for the entity
-        hass.async_create_task = MagicMock()
-        return hass
-
-    @pytest.fixture
-    def evaluator(self, mock_hass):
+    def evaluator(self, mock_hass, mock_entity_registry, mock_states):
         """Create an evaluator instance."""
         return Evaluator(mock_hass)
 
     @pytest.fixture
-    def sensor_manager(self, mock_hass):
+    def sensor_manager(self, mock_hass, mock_entity_registry, mock_states):
         """Create a sensor manager instance."""
         name_resolver = MagicMock()
         add_entities_callback = MagicMock()
@@ -49,7 +39,9 @@ class TestStateVariableInAttributes:
             ],
         )
 
-    async def test_state_variable_available_in_attributes(self, mock_hass, evaluator, sensor_manager, basic_sensor_config):
+    async def test_state_variable_available_in_attributes(
+        self, mock_hass, mock_entity_registry, mock_states, evaluator, sensor_manager, basic_sensor_config
+    ):
         """Test that attribute formulas can access the sensor's state."""
         # Create the sensor
         sensor = DynamicSensor(hass=mock_hass, config=basic_sensor_config, evaluator=evaluator, sensor_manager=sensor_manager)
@@ -61,7 +53,7 @@ class TestStateVariableInAttributes:
         main_result = {"success": True, "value": 100.0, "state": "ok"}
 
         # Mock the attribute formula evaluations
-        def mock_evaluate_formula(config, context=None):
+        def mock_evaluate_formula_with_sensor_config(config, context=None, sensor_config=None):
             if config.id == "daily_total":
                 # Should have access to state=100.0
                 assert context is not None
@@ -85,7 +77,7 @@ class TestStateVariableInAttributes:
             else:
                 return main_result
 
-        evaluator.evaluate_formula = mock_evaluate_formula
+        evaluator.evaluate_formula_with_sensor_config = mock_evaluate_formula_with_sensor_config
 
         # Mock the _build_variable_context method to return proper variable values
         def mock_build_context(formula_config):
@@ -116,7 +108,9 @@ class TestStateVariableInAttributes:
             assert "with_additional_vars" in sensor._calculated_attributes
             assert sensor._calculated_attributes["with_additional_vars"] == 250.0
 
-    async def test_state_variable_with_none_context(self, mock_hass, evaluator, sensor_manager):
+    async def test_state_variable_with_none_context(
+        self, mock_hass, mock_entity_registry, mock_states, evaluator, sensor_manager
+    ):
         """Test that state variable works even when _build_variable_context returns None."""
         config = SensorConfig(
             unique_id="test_sensor",
@@ -141,7 +135,7 @@ class TestStateVariableInAttributes:
         # Mock the evaluator
         main_result = {"success": True, "value": 50.0, "state": "ok"}
 
-        def mock_evaluate_formula(config, context=None):
+        def mock_evaluate_formula_with_sensor_config(config, context=None, sensor_config=None):
             if config.id == "simple_attr":
                 # Should have context with state even though _build_variable_context returned None
                 assert context is not None
@@ -151,7 +145,7 @@ class TestStateVariableInAttributes:
             else:
                 return main_result
 
-        evaluator.evaluate_formula = mock_evaluate_formula
+        evaluator.evaluate_formula_with_sensor_config = mock_evaluate_formula_with_sensor_config
 
         # Mock async_write_ha_state to avoid Home Assistant lifecycle issues
         with patch.object(sensor, "async_write_ha_state"):

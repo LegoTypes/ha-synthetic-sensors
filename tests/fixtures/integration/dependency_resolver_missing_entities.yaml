@@ -1,0 +1,13 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  missing_dependency_sensor:
+    name: "Missing Dependency Sensor"
+    entity_id: "sensor.backing_entity"  # Add backing entity so 'state' gets evaluated
+    formula: "state + sensor.missing_reference"  # state=backing entity, missing_reference=missing
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

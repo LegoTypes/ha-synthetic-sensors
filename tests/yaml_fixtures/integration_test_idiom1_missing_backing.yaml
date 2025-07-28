@@ -1,0 +1,21 @@
+# YAML fixture for test_idiom_1_backing_entity_integration.py
+# Used by: test_missing_backing_entity_integration
+# Test cases covered:
+# - Behavior when backing entity is missing/unavailable
+# - Error handling for missing state references
+# - Graceful degradation
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  missing_backing_test:
+    name: "Missing Backing Test"
+    entity_id: "sensor.missing_backing_entity"
+    formula: "state * 1.5"  # References missing entity
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

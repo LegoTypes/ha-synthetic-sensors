@@ -1,0 +1,155 @@
+# YAML fixture for test_cross_sensor_collision_handling.py integration tests
+# Used by: test_complex_collision_handling
+# Test cases covered:
+# - Complex collision scenarios with multiple reference types
+# - Entity ID reference resolution after collision handling
+# - Sensor key reference resolution after collision handling
+# - Attribute-level references to collision-handled entities
+# - Mixed reference types in formulas and attributes
+# - Attribute access patterns (sensor.entity.attribute, sensor_key.attribute)
+# - Variable cross-references with collision handling
+# - Variable self-references with collision entities
+# - Variable attribute access patterns with collisions
+
+version: "1.0"
+
+# Global variables that reference collision entities
+global_settings:
+  variables:
+    global_collision_ref_entity_id: sensor.circuit_a_power  # Will be updated to collision entity_id (sensor.circuit_a_power_2)
+    global_collision_ref_sensor_key: collision_test_duplicate_sensor  # Will be updated to collision entity_id (sensor.circuit_a_power_2)
+    global_efficiency_factor: 0.85
+
+sensors:
+  collision_test_duplicate_sensor:
+    entity_id: sensor.circuit_a_power  # This will collide with pre-registered entity
+    formula: sensor.circuit_a_power * 3  # Self-reference (entity ID) that should become 'state * 3'
+    variables:
+      self_ref_by_key: collision_test_duplicate_sensor  # Self-reference by sensor key (should become 'state')
+      self_ref_by_entity_id: sensor.circuit_a_power  # Self-reference by entity_id (should become 'state')
+    metadata:
+      unit_of_measurement: W
+    attributes:
+      daily_energy:
+        formula: collision_test_duplicate_sensor * 24  # Self-reference (sensor key) should become 'state * 24'
+      efficiency:
+        formula: sensor.circuit_a_power / 1000  # Self-reference (entity ID) should become 'state / 1000'
+      # Test attribute access patterns with self-references
+      self_attr_entity_id:
+        formula: sensor.circuit_a_power.last_changed + 3600  # Should become 'state.last_changed + 3600'
+      self_attr_sensor_key:
+        formula: collision_test_duplicate_sensor.last_updated * 2  # Should become 'state.last_updated * 2'
+      nested_self_attr:
+        formula: sensor.circuit_a_power.attributes.power_factor * 0.9  # Should become 'state.attributes.power_factor * 0.9'
+      # Variable-based self-references
+      var_self_ref_key:
+        formula: self_ref_by_key * 4  # Variable self-reference by sensor key (should become 'state * 4')
+      var_self_ref_entity_id:
+        formula: self_ref_by_entity_id / 2  # Variable self-reference by entity_id (should become 'state / 2')
+      # Variable-based attribute access
+      var_self_attr_key:
+        formula: var_key_attr.last_changed + 7200  # Variable with attribute access (sensor key)
+        variables:
+          var_key_attr: collision_test_duplicate_sensor  # Should become 'state.last_changed + 7200'
+      var_self_attr_entity_id:
+        formula: var_entity_attr.last_updated * 3  # Variable with attribute access (entity_id)
+        variables:
+          var_entity_attr: sensor.circuit_a_power  # Should become 'state.last_updated * 3'
+      var_nested_attr:
+        formula: var_nested.attributes.power_factor * var_efficiency
+        variables:
+          var_nested: sensor.circuit_a_power  # Should become 'state.attributes.power_factor * 0.95'
+          var_efficiency: 0.95
+      # Global variable self-reference
+      global_var_self_ref:
+        formula: global_collision_ref_entity_id + global_efficiency_factor  # Global variable reference to collision entity
+      global_var_key_self_ref:
+        formula: global_collision_ref_sensor_key * global_efficiency_factor  # Global variable reference by sensor key
+
+  collision_test_reference_sensor:
+    entity_id: sensor.kitchen_temperature
+    formula: sensor.circuit_a_power + 100  # Entity ID reference to collision entity
+    variables:
+      collision_ref_by_entity_id: sensor.circuit_a_power  # Variable reference to collision entity by entity_id
+      collision_ref_by_key: collision_test_duplicate_sensor  # Variable reference to collision entity by sensor key
+    metadata:
+      unit_of_measurement: W
+    attributes:
+      power_ratio:
+        formula: collision_test_duplicate_sensor / sensor.circuit_a_power  # Mixed: sensor key / entity ID (both should resolve to collision-handled entity)
+      # Test attribute access with cross-references
+      cross_attr_entity_id:
+        formula: sensor.circuit_a_power.state + collision_test_duplicate_sensor.last_changed  # Should resolve collision entity and preserve attribute access
+      cross_attr_mixed:
+        formula: collision_test_duplicate_sensor.attributes.daily_total - sensor.circuit_a_power.last_updated  # Mixed reference types with attributes
+      # Variable-based cross-references
+      var_cross_ref_entity_id:
+        formula: collision_ref_by_entity_id * 2  # Variable cross-reference by entity_id (should resolve to collision entity)
+      var_cross_ref_key:
+        formula: collision_ref_by_key + 50  # Variable cross-reference by sensor key (should resolve to collision entity)
+      var_mixed_comparison:
+        formula: collision_ref_by_key - collision_ref_by_entity_id  # Both variables resolve to same collision entity (should be 0)
+      # Variable-based attribute access for cross-references
+      var_cross_attr_entity_id:
+        formula: var_cross_entity.state + var_cross_key.last_changed
+        variables:
+          var_cross_entity: sensor.circuit_a_power  # Variable for collision entity attribute access
+          var_cross_key: collision_test_duplicate_sensor  # Variable for collision sensor attribute access
+      var_cross_nested_attr:
+        formula: var_cross_nested.attributes.daily_total * global_efficiency_factor
+        variables:
+          var_cross_nested: collision_test_duplicate_sensor  # Variable with nested attribute + global variable
+
+  collision_test_another_reference:
+    entity_id: sensor.living_room_temperature
+    formula: sensor.circuit_a_power * 2 + 50  # Entity ID reference to collision entity
+    variables:
+      another_collision_ref: sensor.circuit_a_power  # Variable reference to collision entity
+    metadata:
+      unit_of_measurement: W
+    attributes:
+      complex_cross_attr:
+        formula: collision_test_duplicate_sensor.attributes.power_factor / sensor.circuit_a_power.state * 100  # Complex attribute access with collision resolution
+      # Variable-based complex cross-reference
+      var_complex_cross:
+        formula: another_collision_ref.attributes.power_factor / global_collision_ref_entity_id.state * 100
+        # Uses local variable + global variable (both resolve to collision entity)
+
+  collision_test_sensor_key_reference:
+    entity_id: sensor.bathroom_humidity
+    formula: collision_test_duplicate_sensor + 200  # Sensor key reference to collision entity
+    variables:
+      key_collision_ref: collision_test_duplicate_sensor  # Variable reference by sensor key
+      entity_collision_ref: sensor.circuit_a_power  # Variable reference by entity_id
+    metadata:
+      unit_of_measurement: W
+    attributes:
+      comparison:
+        formula: collision_test_duplicate_sensor - sensor.circuit_a_power  # Mixed: sensor key - entity ID (both should resolve to same collision-handled entity, result should be 'state - state' = 0)
+      power_multiple:
+        formula: collision_test_duplicate_sensor * 5  # Sensor key reference in attribute
+      # Test nested attribute access with sensor keys
+      nested_sensor_key_attr:
+        formula: collision_test_duplicate_sensor.attributes.efficiency.value + 10  # Should resolve to collision entity with preserved nested attribute path
+      chained_attr_access:
+        formula: collision_test_duplicate_sensor.last_changed - collision_test_duplicate_sensor.last_updated  # Multiple attribute accesses on same sensor key
+      # Variable-based reference tests
+      var_key_ref:
+        formula: key_collision_ref * 6  # Variable reference by sensor key (should resolve to collision entity)
+      var_entity_ref:
+        formula: entity_collision_ref + 300  # Variable reference by entity_id (should resolve to collision entity)
+      var_comparison_test:
+        formula: key_collision_ref - entity_collision_ref  # Both variables resolve to same collision entity (should be 0)
+      # Variable-based attribute access
+      var_key_attr:
+        formula: var_key_with_attr.last_changed + var_entity_with_attr.last_updated
+        variables:
+          var_key_with_attr: collision_test_duplicate_sensor  # Sensor key variable with attribute
+          var_entity_with_attr: sensor.circuit_a_power  # Entity_id variable with attribute
+      var_comprehensive_test:
+        formula: var_a + var_b - var_c * global_collision_ref_entity_id
+        variables:
+          var_a: collision_test_duplicate_sensor  # Sensor key variable
+          var_b: sensor.circuit_a_power  # Entity_id variable
+          var_c: collision_test_duplicate_sensor  # Reference to collision sensor key
+        # All variables should resolve to the same collision-handled entity

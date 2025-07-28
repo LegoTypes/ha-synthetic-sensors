@@ -13,7 +13,7 @@ from ha_synthetic_sensors.name_resolver import NameResolver
 class TestSensorManagerDeviceManagement:
     """Test device management functionality in SensorManager."""
 
-    def test_get_existing_device_info_found(self) -> None:
+    def test_get_existing_device_info_found(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _get_existing_device_info when device is found."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -45,7 +45,7 @@ class TestSensorManagerDeviceManagement:
         assert result["sw_version"] == "1.0.0"
         assert result["hw_version"] == "v1"
 
-    def test_get_existing_device_info_not_found(self) -> None:
+    def test_get_existing_device_info_not_found(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _get_existing_device_info when device is not found."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -62,7 +62,7 @@ class TestSensorManagerDeviceManagement:
 
         assert result is None
 
-    def test_create_new_device_info_success(self) -> None:
+    def test_create_new_device_info_success(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _create_new_device_info with complete device metadata."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -95,7 +95,7 @@ class TestSensorManagerDeviceManagement:
         assert result["hw_version"] == "v2"
         assert result["suggested_area"] == "Living Room"
 
-    def test_create_new_device_info_fallback_name(self) -> None:
+    def test_create_new_device_info_fallback_name(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _create_new_device_info with fallback device name."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -116,7 +116,7 @@ class TestSensorManagerDeviceManagement:
 
         assert result["name"] == "Device device_123"  # Fallback name
 
-    def test_create_new_device_info_missing_identifier(self) -> None:
+    def test_create_new_device_info_missing_identifier(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _create_new_device_info with missing device_identifier."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -137,7 +137,7 @@ class TestSensorManagerDeviceManagement:
 class TestSensorManagerDataProviderManagement:
     """Test data provider entity management functionality."""
 
-    def test_register_data_provider_entities(self) -> None:
+    def test_register_data_provider_entities(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test register_data_provider_entities method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -154,7 +154,7 @@ class TestSensorManagerDataProviderManagement:
         assert manager._allow_ha_lookups is True
         assert manager._change_notifier == change_notifier
 
-    def test_update_data_provider_entities(self) -> None:
+    def test_update_data_provider_entities(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test update_data_provider_entities method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -173,7 +173,7 @@ class TestSensorManagerDataProviderManagement:
         assert manager._registered_entities == updated_entities
         assert manager._allow_ha_lookups is True
 
-    def test_get_registered_entities(self) -> None:
+    def test_get_registered_entities(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test get_registered_entities method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -190,7 +190,7 @@ class TestSensorManagerDataProviderManagement:
         # Ensure it returns a copy, not the original
         assert result is not manager._registered_entities
 
-    def test_extract_backing_entities_from_sensor(self) -> None:
+    def test_extract_backing_entities_from_sensor(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _extract_backing_entities_from_sensor method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -223,7 +223,7 @@ class TestSensorManagerDataProviderManagement:
 
         assert result == {"sensor.backing1", "sensor.backing2"}
 
-    def test_extract_backing_entities_from_sensors(self) -> None:
+    def test_extract_backing_entities_from_sensors(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test _extract_backing_entities_from_sensors method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -258,7 +258,7 @@ class TestSensorManagerDataProviderManagement:
         assert result == {"sensor.backing1", "sensor.backing2", "sensor.backing3"}
 
     @pytest.mark.asyncio
-    async def test_async_update_sensors_for_entities(self) -> None:
+    async def test_async_update_sensors_for_entities(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test async_update_sensors_for_entities method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -297,7 +297,9 @@ class TestSensorManagerDataProviderManagement:
             assert called_configs[0].unique_id == "sensor1"
 
     @pytest.mark.asyncio
-    async def test_async_update_sensors_for_entities_no_affected_sensors(self) -> None:
+    async def test_async_update_sensors_for_entities_no_affected_sensors(
+        self, mock_hass, mock_entity_registry, mock_states
+    ) -> None:
         """Test async_update_sensors_for_entities when no sensors are affected."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -327,7 +329,7 @@ class TestSensorManagerDataProviderManagement:
 class TestSensorManagerStateManagement:
     """Test sensor state management functionality."""
 
-    def test_on_sensor_updated_new_sensor(self) -> None:
+    def test_on_sensor_updated_new_sensor(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test on_sensor_updated for a new sensor."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -349,7 +351,7 @@ class TestSensorManagerStateManagement:
         assert state.is_available is True
         assert state.error_count == 0
 
-    def test_on_sensor_updated_existing_sensor(self) -> None:
+    def test_on_sensor_updated_existing_sensor(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test on_sensor_updated for an existing sensor."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -383,7 +385,7 @@ class TestSensorManagerStateManagement:
         # Error count should be preserved
         assert state.error_count == 5
 
-    def test_update_sensor_states(self) -> None:
+    def test_update_sensor_states(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test update_sensor_states method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -402,7 +404,7 @@ class TestSensorManagerStateManagement:
         assert state.main_value == main_value
         assert state.calculated_attributes == calculated_attributes
 
-    def test_update_sensor_states_no_calculated_attributes(self) -> None:
+    def test_update_sensor_states_no_calculated_attributes(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test update_sensor_states method without calculated attributes."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -420,7 +422,7 @@ class TestSensorManagerStateManagement:
         assert state.main_value == main_value
         assert state.calculated_attributes == {}
 
-    def test_get_sensor_statistics(self) -> None:
+    def test_get_sensor_statistics(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test get_sensor_statistics method."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -471,7 +473,7 @@ class TestSensorManagerErrorHandling:
     """Test error handling in sensor manager."""
 
     @pytest.mark.asyncio
-    async def test_load_configuration_error_handling(self) -> None:
+    async def test_load_configuration_error_handling(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test load_configuration error handling and rollback."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -499,7 +501,7 @@ class TestSensorManagerErrorHandling:
             assert manager._current_config == old_config
 
     @pytest.mark.asyncio
-    async def test_remove_sensor_not_found(self) -> None:
+    async def test_remove_sensor_not_found(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test remove_sensor when sensor is not found."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -512,7 +514,7 @@ class TestSensorManagerErrorHandling:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_remove_sensor_success(self) -> None:
+    async def test_remove_sensor_success(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test remove_sensor when sensor exists."""
         hass = MagicMock()
         name_resolver = MagicMock(spec=NameResolver)
@@ -535,7 +537,7 @@ class TestSensorManagerErrorHandling:
         assert "sensor.test" not in manager._sensors_by_entity_id
         assert "test_sensor" not in manager._sensor_states
 
-    async def test_normal_variable_extraction_still_works(self) -> None:
+    async def test_normal_variable_extraction_still_works(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test that normal variable extraction still works for formulas with operators."""
         # Create sensor manager
         hass = MagicMock()

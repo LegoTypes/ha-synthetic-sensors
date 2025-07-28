@@ -13,7 +13,7 @@ from .variable_resolver import HomeAssistantResolutionStrategy
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
 
-    from .config_models import FormulaConfig
+    from .config_models import FormulaConfig, SensorConfig
     from .type_definitions import ContextValue, DataProviderCallback, DependencyValidation
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,18 +22,22 @@ _LOGGER = logging.getLogger(__name__)
 class EvaluatorDependency:
     """Handles dependency parsing, validation, and resolution for formula evaluation."""
 
-    def __init__(self, hass: HomeAssistant, data_provider_callback: DataProviderCallback | None = None) -> None:
+    def __init__(
+        self, hass: HomeAssistant, data_provider_callback: DataProviderCallback | None = None, allow_ha_lookups: bool = False
+    ) -> None:
         """Initialize dependency manager.
 
         Args:
             hass: Home Assistant instance
             data_provider_callback: Optional callback for getting data directly from integrations
+            allow_ha_lookups: Whether to allow fallback to HA state lookups for backing entities
         """
         self._hass = hass
         self._dependency_parser = DependencyParser()
         self._collection_resolver = CollectionResolver(hass)
         self._data_provider_callback = data_provider_callback
         self._registered_integration_entities: set[str] | None = None
+        self._allow_ha_lookups = allow_ha_lookups
 
     def update_integration_entities(self, entity_ids: set[str]) -> None:
         """Update the set of entities that the integration can provide (push-based pattern).
@@ -64,6 +68,16 @@ class EvaluatorDependency:
         """Set the data provider callback."""
         self._data_provider_callback = value
 
+    @property
+    def allow_ha_lookups(self) -> bool:
+        """Get the allow_ha_lookups setting."""
+        return self._allow_ha_lookups
+
+    @property
+    def hass(self) -> HomeAssistant:
+        """Get the Home Assistant instance."""
+        return self._hass
+
     def get_formula_dependencies(self, formula: str) -> set[str]:
         """Get all dependencies for a formula (entities and variables).
 
@@ -76,17 +90,37 @@ class EvaluatorDependency:
         # Use the comprehensive dependency extraction method
         return self._dependency_parser.extract_dependencies(formula)
 
-    def extract_formula_dependencies(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> set[str]:
+    def extract_formula_dependencies(
+        self, config: FormulaConfig, context: dict[str, ContextValue] | None = None, sensor_config: SensorConfig | None = None
+    ) -> set[str]:
         """Extract dependencies from a formula configuration, handling collection patterns.
 
         Args:
             config: Formula configuration
             context: Optional context for variable resolution
+            sensor_config: Optional sensor configuration for state token resolution
 
         Returns:
             Set of entity IDs that the formula depends on (excluding config variables)
         """
         dependencies = set()
+
+        # Check if the formula contains the 'state' token
+        if "state" in config.formula:
+            # Check if this is an attribute formula (has underscore in ID and not the main formula)
+            is_attribute_formula = sensor_config and "_" in config.id and config.id != sensor_config.unique_id
+
+            _LOGGER.debug(
+                "Formula '%s' (ID: %s) contains state token. Is attribute: %s", config.formula, config.id, is_attribute_formula
+            )
+
+            if not is_attribute_formula:
+                # Main formula: add state token as dependency (will be replaced with backing entity later)
+                dependencies.add("state")
+                _LOGGER.debug("Added 'state' as dependency for main formula")
+            else:
+                _LOGGER.debug("Skipping 'state' dependency for attribute formula")
+            # For attribute formulas, state token will be provided by context, so don't add it as a dependency
 
         # Extract entity references from variables (for backward compatibility)
         if config.variables:
@@ -111,18 +145,19 @@ class EvaluatorDependency:
         return dependencies
 
     def extract_and_prepare_dependencies(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None
+        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None = None
     ) -> tuple[set[str], set[str]]:
         """Extract dependencies and identify collection pattern entities.
 
         Args:
             config: Formula configuration
             context: Optional context for variable resolution
+            sensor_config: Optional sensor configuration for state token resolution
 
         Returns:
             Tuple of (dependencies, collection_pattern_entities)
         """
-        dependencies = self.extract_formula_dependencies(config, context)
+        dependencies = self.extract_formula_dependencies(config, context, sensor_config)
 
         # Identify collection pattern entities that don't need numeric validation
         parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
@@ -181,12 +216,22 @@ class EvaluatorDependency:
         Returns:
             Status: "ok", "missing", or "unavailable"
         """
+        # Special handling for 'state' token - it will be resolved during evaluation
+        if entity_id == "state":
+            return "ok"
+
         # Check data provider first if available
         if self._should_use_data_provider(entity_id):
             return self._check_data_provider_entity(entity_id)
 
-        # Check Home Assistant entity
-        return self._check_home_assistant_entity(entity_id, collection_pattern_entities)
+        # Check Home Assistant entity only if allow_ha_lookups is True
+        # This implements the user's architecture for registration validation
+        if self._allow_ha_lookups:
+            return self._check_home_assistant_entity(entity_id, collection_pattern_entities)
+
+        # If allow_ha_lookups is False and entity is not in data provider, it's missing
+        # This prevents hiding registration errors by falling back to HA lookups
+        return "missing"
 
     def validate_dependencies(self, dependencies: set[str]) -> DependencyValidation:
         """Validate dependencies and return validation result."""
@@ -221,7 +266,7 @@ class EvaluatorDependency:
         # Add context variables
         if context:
             for key, value in context.items():
-                if isinstance(value, (str, int, float, bool)):
+                if isinstance(value, str | int | float | bool):
                     context_dict[key] = value
 
         # Add config variables
@@ -230,17 +275,29 @@ class EvaluatorDependency:
 
         return context_dict
 
-    def _should_use_data_provider(self, entity_id: str) -> bool:
-        """Check if we should use the data provider for this entity."""
+    def should_use_data_provider(self, entity_id: str) -> bool:
+        """Check if we should use the data provider for this entity.
+
+        Implements proper registration filtering according to the architecture:
+        - If integration entities are registered, only use data provider for those entities
+        - Registration validation prevents hiding configuration errors
+        - HA fallback is controlled by allow_ha_lookups flag at dependency checking level
+        """
         if not self._data_provider_callback:
             return False
 
-        # Use push-based pattern if available
+        # If we have registered integration entities, only use data provider for registered entities
+        # This implements the user's architecture to prevent hiding registration errors
         if self._registered_integration_entities is not None:
             return entity_id in self._registered_integration_entities
 
-        # Fallback: assume data provider can handle any entity
+        # If no integration entities are registered, data provider can handle any entity
+        # This supports the flexible data provider usage described in the guide
         return True
+
+    def _should_use_data_provider(self, entity_id: str) -> bool:
+        """Protected method for internal use."""
+        return self.should_use_data_provider(entity_id)
 
     def _check_data_provider_entity(self, entity_id: str) -> str:
         """Check entity status using data provider callback.
@@ -267,16 +324,18 @@ class EvaluatorDependency:
             if not result["exists"]:
                 return "missing"
 
-            # Validate the value - this will raise DataValidationError for fatal cases (None, unsupported types)
+            # Validate the value - this will raise DataValidationError for fatal cases (unsupported types)
             self._validate_data_provider_value(entity_id, result["value"])
+
+            # Handle None values as "unknown" for graceful handling
+            if result["value"] is None:
+                return "unknown"
 
             # Check for operational state strings that should be handled gracefully
             if isinstance(result["value"], str):
                 value_lower = result["value"].lower()
-                if value_lower == "unavailable":
-                    return "unavailable"
-                if value_lower == "unknown":
-                    return "unknown"
+                if value_lower in ["unavailable", "unknown"]:
+                    return value_lower
 
             return "ok"
 
@@ -298,11 +357,12 @@ class EvaluatorDependency:
             DataValidationError: If value is invalid (fatal error)
         """
         if value is None:
-            # None values from data providers are always fatal - integrations should use "unknown"
-            raise DataValidationError(f"Data provider returned None state value for {entity_id} - fatal error")
+            # None values from data providers should be converted to "unknown" for graceful handling
+            # This allows integrations to use None initially and have it handled gracefully
+            return
 
         # Allow numeric values, strings, and booleans (including "unknown", "unavailable" strings)
-        if not isinstance(value, (int, float, str, bool)):
+        if not isinstance(value, int | float | str | bool):
             raise DataValidationError(f"Data provider returned unsupported type {type(value)} for {entity_id} - fatal error")
 
     def _check_home_assistant_entity(self, entity_id: str, collection_pattern_entities: set[str]) -> str:

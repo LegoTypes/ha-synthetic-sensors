@@ -1,0 +1,11 @@
+# YAML fixture for test_yaml_operations.py
+# Used by: test_auto_inject_dot_notation_filtering
+# Test cases covered:
+# - Auto-injection filtering (only dot notation entities)
+# - Mixed entity references, variables, and literals
+
+version: "1.0"
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: sensor.temperature + variable_name + 42

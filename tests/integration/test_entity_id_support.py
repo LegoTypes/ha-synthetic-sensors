@@ -19,35 +19,6 @@ class TestEntityIdSupport:
     """Test explicit entity_id field support in YAML configuration."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock()
-
-        # Mock entity states for testing
-        def mock_states_get(entity_id):
-            state_values = {
-                "sensor.power_meter": MagicMock(state="1000"),
-                "sensor.base_power_reading": MagicMock(state="800"),
-                "input_number.efficiency_multiplier": MagicMock(state="1.2"),
-                "sensor.daily_energy_total": MagicMock(state="48"),
-                "sensor.active_power": MagicMock(state="500"),
-                "sensor.standby_power": MagicMock(state="50"),
-                "input_number.max_power_rating": MagicMock(state="1000"),
-                # Expected synthetic sensor entity_ids
-                "sensor.standard_power_sensor": MagicMock(state="1000"),
-                "sensor.custom_energy_monitor": MagicMock(state="960"),  # 800 * 1.2
-                "sensor.special_consumption": MagicMock(state="2"),  # 48 / 24
-                "sensor.comprehensive_energy": MagicMock(state="550"),  # 500 + 50
-            }
-            state_obj = state_values.get(entity_id)
-            if state_obj:
-                state_obj.entity_id = entity_id
-            return state_obj
-
-        hass.states.get.side_effect = mock_states_get
-        return hass
-
-    @pytest.fixture
     def config_manager(self, mock_hass):
         """Create a ConfigManager instance."""
         return ConfigManager(mock_hass)
@@ -59,13 +30,15 @@ class TestEntityIdSupport:
         with open(fixture_path) as f:
             return yaml.safe_load(f)
 
-    def test_yaml_fixture_loads_correctly(self, entity_id_yaml):
+    def test_yaml_fixture_loads_correctly(self, mock_hass, mock_entity_registry, mock_states, entity_id_yaml):
         """Test that the YAML fixture loads without errors."""
         assert entity_id_yaml["version"] == "1.0"
         assert "sensors" in entity_id_yaml
         assert len(entity_id_yaml["sensors"]) == 4
 
-    def test_standard_sensor_without_entity_id(self, config_manager, entity_id_yaml):
+    def test_standard_sensor_without_entity_id(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml
+    ):
         """Test sensor without explicit entity_id uses default pattern."""
         config = config_manager._parse_yaml_config(entity_id_yaml)
 
@@ -91,7 +64,7 @@ class TestEntityIdSupport:
         # Should not have explicit entity_id set (HA will auto-generate)
         assert not hasattr(dynamic_sensor, "_attr_entity_id")
 
-    def test_custom_entity_id_field_parsing(self, config_manager, entity_id_yaml):
+    def test_custom_entity_id_field_parsing(self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml):
         """Test that explicit entity_id field is parsed correctly."""
         config = config_manager._parse_yaml_config(entity_id_yaml)
 
@@ -105,7 +78,7 @@ class TestEntityIdSupport:
         assert custom_sensor.name == "Custom Named Energy Monitor"
         assert custom_sensor.formulas[0].formula == "base_power * efficiency_factor"
 
-    def test_multiple_custom_entity_ids(self, config_manager, entity_id_yaml):
+    def test_multiple_custom_entity_ids(self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml):
         """Test multiple sensors with different custom entity_ids."""
         config = config_manager._parse_yaml_config(entity_id_yaml)
 
@@ -117,7 +90,9 @@ class TestEntityIdSupport:
         custom_sensor2 = next(s for s in config.sensors if s.unique_id == "special_consumption_tracker")
         assert custom_sensor2.entity_id == "sensor.special_consumption"
 
-    def test_custom_entity_id_with_attributes(self, config_manager, entity_id_yaml):
+    def test_custom_entity_id_with_attributes(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml
+    ):
         """Test sensor with custom entity_id and calculated attributes."""
         config = config_manager._parse_yaml_config(entity_id_yaml)
 
@@ -137,7 +112,9 @@ class TestEntityIdSupport:
         assert daily_proj.formula == "state * 24"
         assert efficiency.formula == "state / 1000 * 100"
 
-    def test_dynamic_sensor_respects_custom_entity_id(self, config_manager, entity_id_yaml):
+    def test_dynamic_sensor_respects_custom_entity_id(
+        self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml
+    ):
         """Test that DynamicSensor respects custom entity_id field."""
         config = config_manager._parse_yaml_config(entity_id_yaml)
         evaluator = Evaluator(config_manager._hass)
@@ -172,7 +149,7 @@ class TestEntityIdSupport:
         assert hasattr(custom_dynamic, "entity_id")
         assert custom_dynamic.entity_id == "sensor.custom_energy_monitor"
 
-    def test_entity_id_validation_in_config(self, config_manager, entity_id_yaml):
+    def test_entity_id_validation_in_config(self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml):
         """Test that entity_id values are validated during config parsing."""
         # This should parse without errors
         config = config_manager._parse_yaml_config(entity_id_yaml)
@@ -197,27 +174,121 @@ class TestEntityIdSupport:
         error_messages = [error.message for error in result["errors"]]
         assert any("invalid_format_no_domain" in msg for msg in error_messages)
 
-    def test_entity_id_cross_references(self, config_manager, entity_id_yaml):
-        """Test that custom entity_ids can be referenced by other sensors."""
-        # Add a sensor that references the custom entity_id
-        test_yaml = entity_id_yaml.copy()
-        test_yaml["sensors"]["referencing_sensor"] = {
-            "name": "Referencing Sensor",
-            "formula": "sensor.custom_energy_monitor * 2",
-            "unit_of_measurement": "W",
-        }  # Reference custom entity_id
+    def test_entity_id_cross_references(self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml):
+        """Test that entity_id field works correctly with cross-references."""
+        config = config_manager._parse_yaml_config(entity_id_yaml)
 
-        config = config_manager._parse_yaml_config(test_yaml)
+        # Test that sensors can reference each other's custom entity_ids
+        comprehensive_sensor = next(s for s in config.sensors if s.unique_id == "comprehensive_monitor")
 
-        # Find the referencing sensor
-        ref_sensor = next(s for s in config.sensors if s.unique_id == "referencing_sensor")
+        # The comprehensive sensor should have the custom entity_id
+        assert comprehensive_sensor.entity_id == "sensor.comprehensive_energy"
 
-        # Should auto-inject the referenced entity_id as a variable
-        main_formula = ref_sensor.formulas[0]
-        assert "sensor.custom_energy_monitor" in main_formula.variables
-        assert main_formula.variables["sensor.custom_energy_monitor"] == "sensor.custom_energy_monitor"
+        # Test that the formula can be evaluated (this tests the entity_id resolution)
+        evaluator = Evaluator(config_manager._hass)
+        mock_sensor_manager = MagicMock()
+        dynamic_sensor = DynamicSensor(
+            config_manager._hass,
+            comprehensive_sensor,
+            evaluator,
+            mock_sensor_manager,
+            SensorManagerConfig(),
+        )
 
-    def test_entity_id_in_schema_validation(self, config_manager, entity_id_yaml):
+        # Should have the custom entity_id
+        assert dynamic_sensor.entity_id == "sensor.comprehensive_energy"
+
+    def test_state_token_in_main_formula(self, mock_hass, mock_entity_registry, mock_states, config_manager):
+        """Test that the 'state' token in main formulas resolves to the backing entity."""
+        # Load the state token example
+        from pathlib import Path
+
+        example_path = Path(__file__).parent.parent.parent / "examples" / "state_token_example.yaml"
+        with open(example_path) as f:
+            state_token_yaml = yaml.safe_load(f)
+
+        config = config_manager._parse_yaml_config(state_token_yaml)
+
+        # Find the current power sensor
+        current_power_sensor = next(s for s in config.sensors if s.unique_id == "test_current_power")
+
+        # Should have explicit entity_id set
+        assert current_power_sensor.entity_id == "sensor.current_power"
+
+        # The main formula should be "state"
+        assert current_power_sensor.formulas[0].formula == "state"
+
+        # Mock the backing entity state
+        mock_state = MagicMock()
+        mock_state.state = "1500.0"  # Simulate a power reading
+
+        # Set up the mock to return the state for the backing entity
+        def mock_states_get(entity_id):
+            if entity_id == "sensor.current_power":
+                return mock_state
+            return None
+
+        config_manager._hass.states.get.side_effect = mock_states_get
+
+        # Test that the sensor can be created and the state token is resolved
+        evaluator = Evaluator(config_manager._hass, allow_ha_lookups=True)
+
+        # Set up data provider callback that uses the mock_hass.states.get
+        def mock_data_provider(entity_id: str):
+            state = config_manager._hass.states.get(entity_id)
+            if state:
+                return {"value": float(state.state), "exists": True}
+            return {"value": None, "exists": False}
+
+        evaluator.data_provider_callback = mock_data_provider
+
+        # Register the sensor-to-backing mapping for state token resolution
+        sensor_to_backing_mapping = {"test_current_power": "sensor.current_power"}
+        evaluator.update_sensor_to_backing_mapping(sensor_to_backing_mapping)
+
+        mock_sensor_manager = MagicMock()
+        dynamic_sensor = DynamicSensor(
+            config_manager._hass,
+            current_power_sensor,
+            evaluator,
+            mock_sensor_manager,
+            SensorManagerConfig(),
+        )
+
+        # Should have the custom entity_id
+        assert dynamic_sensor.entity_id == "sensor.current_power"
+
+        # Test that the formula dependencies include the backing entity
+        # The state token should be resolved to the backing entity during evaluation
+        main_formula = current_power_sensor.formulas[0]
+
+        # The raw formula should contain "state"
+        assert main_formula.formula == "state"
+
+        # The dependencies should include "state" (this is the raw dependency extraction)
+        dependencies = evaluator.get_formula_dependencies(main_formula.formula)
+        assert "state" in dependencies
+
+        # Test that the state token is properly resolved during evaluation
+        # This tests the actual state token resolution functionality
+
+        # Add debug output to see what's happening
+        print(f"Testing evaluation with formula: {main_formula.formula}")
+        print(f"Backing entity ID: {current_power_sensor.entity_id}")
+
+        # Test the preprocessing first
+        processed_formula = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(
+            main_formula.formula, None, current_power_sensor, main_formula, evaluator._sensor_to_backing_mapping
+        )
+        print(f"Processed formula: {processed_formula}")
+
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, current_power_sensor)
+
+        # The evaluation should succeed and return the backing entity's value
+        assert result["success"] is True
+        assert result["value"] == 1500.0  # Should be the mocked state value
+
+    def test_entity_id_in_schema_validation(self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml):
         """Test that schema validation accepts entity_id field."""
         # Load and validate the config
         config = config_manager._parse_yaml_config(entity_id_yaml)
