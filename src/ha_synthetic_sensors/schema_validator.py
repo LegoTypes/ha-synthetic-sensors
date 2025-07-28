@@ -15,6 +15,7 @@ import logging
 import re
 from typing import Any, TypedDict
 
+from .constants_formula import FORMULA_RESERVED_WORDS
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
 
@@ -359,32 +360,9 @@ class SchemaValidator:
         # Find potential variable references (simple heuristic)
         potential_vars = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", formula)
 
-        # Filter out known functions and operators
-        known_functions = {
-            "abs",
-            "min",
-            "max",
-            "round",
-            "sum",
-            "float",
-            "int",
-            "sqrt",
-            "pow",
-            "clamp",
-            "map",
-            "percent",
-            "avg",
-            "mean",
-            "floor",
-            "ceil",
-            "if",
-            "and",
-            "or",
-            "not",
-        }
-
+        # Use the centralized formula reserved words that includes 'state' token
         for var in potential_vars:
-            if var not in variables and var not in known_functions and not var.isdigit() and var not in ["True", "False"]:
+            if var not in variables and var not in FORMULA_RESERVED_WORDS and not var.isdigit():
                 # Check if it looks like it could be a variable
                 warnings.append(f"Potential undefined variable '{var}' in formula")
 
