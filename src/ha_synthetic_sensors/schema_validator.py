@@ -15,6 +15,13 @@ import logging
 import re
 from typing import Any, TypedDict
 
+try:
+    import jsonschema
+
+    HAS_JSONSCHEMA = True
+except ImportError:
+    HAS_JSONSCHEMA = False
+
 from .constants_formula import FORMULA_RESERVED_WORDS
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
@@ -689,26 +696,44 @@ class SchemaValidator:
                         )
                     )
 
-    def _validate_sensor_key_references(self, config_data: dict[str, Any], errors: list[ValidationError]) -> None:
-        """Validate that all sensor key references point to actual sensors in the config."""
-        sensors = config_data.get("sensors", {})
-        sensor_keys = set(sensors.keys())
+    def _validate_global_settings(
+        self,
+        global_settings: dict[str, Any],
+        sensor_keys: set[str] | None,
+        errors: list[ValidationError],
+        warnings: list[ValidationError],
+    ) -> None:
+        """Validate global settings configuration.
 
-        # Check global variables
-        global_settings = config_data.get("global_settings", {})
+        Args:
+            global_settings: Global settings dictionary to validate
+            sensor_keys: Set of available sensor keys (None for standalone validation)
+            errors: List to append validation errors to
+            warnings: List to append validation warnings to
+        """
+        if not global_settings:
+            return
+
         global_variables = global_settings.get("variables", {})
         global_var_keys = set(global_variables.keys())
+
+        # Use empty set if no sensor keys provided (for standalone validation)
+        available_sensor_keys = sensor_keys or set()
 
         for var_name, var_value in global_variables.items():
             if isinstance(var_value, str):
                 # First validate formula expressions by tokenizing them
                 # Global variables can reference other global variables and sensor keys
                 self._validate_formula_tokens(
-                    var_value, sensor_keys, f"global_settings.variables.{var_name}", errors, global_vars=global_var_keys
+                    var_value,
+                    available_sensor_keys,
+                    f"global_settings.variables.{var_name}",
+                    errors,
+                    global_vars=global_var_keys,
                 )
 
                 # Check what type of value this is by elimination
-                if not self._validate_variable_value(var_value, sensor_keys, global_var_keys):
+                if not self._validate_variable_value(var_value, available_sensor_keys, global_var_keys):
                     errors.append(
                         ValidationError(
                             message=f"Invalid variable value '{var_value}' - must be a sensor key, entity ID, collection pattern, or simple literal",
@@ -717,6 +742,37 @@ class SchemaValidator:
                             suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
                         )
                     )
+
+    def validate_global_settings(
+        self,
+        global_settings: dict[str, Any],
+        sensor_keys: set[str] | None,
+        errors: list[ValidationError],
+        warnings: list[ValidationError],
+    ) -> None:
+        """Public wrapper for global settings validation.
+
+        Args:
+            global_settings: Global settings dictionary to validate
+            sensor_keys: Set of available sensor keys (None for standalone validation)
+            errors: List to append validation errors to
+            warnings: List to append validation warnings to
+        """
+        self._validate_global_settings(global_settings, sensor_keys, errors, warnings)
+
+    def _validate_sensor_key_references(self, config_data: dict[str, Any], errors: list[ValidationError]) -> None:
+        """Validate that all sensor key references point to actual sensors in the config."""
+        sensors = config_data.get("sensors", {})
+        sensor_keys = set(sensors.keys())
+        warnings: list[ValidationError] = []
+
+        # Validate global settings using the dedicated method
+        global_settings = config_data.get("global_settings", {})
+        self._validate_global_settings(global_settings, sensor_keys, errors, warnings)
+
+        # Get global variable keys for sensor validation
+        global_variables = global_settings.get("variables", {})
+        global_var_keys = set(global_variables.keys())
 
         # Check sensor-level variables and attribute variables
         for sensor_key, sensor_config in sensors.items():
@@ -1429,6 +1485,68 @@ def validate_yaml_config(config_data: dict[str, Any]) -> ValidationResult:
     """
     validator = SchemaValidator()
     return validator.validate_config(config_data)
+
+
+def validate_global_settings_only(global_settings_data: dict[str, Any]) -> ValidationResult:
+    """Validate only global settings without requiring sensors section.
+
+    This is used by the global CRUD interface to validate global settings
+    in isolation without requiring a complete sensor configuration.
+
+    Args:
+        global_settings_data: Global settings dictionary to validate
+
+    Returns:
+        ValidationResult with validation status and any errors/warnings
+    """
+    validator = SchemaValidator()
+
+    if not JSONSCHEMA_AVAILABLE:
+        return ValidationResult(valid=True, errors=[], warnings=[])
+
+    errors: list[ValidationError] = []
+    warnings: list[ValidationError] = []
+
+    # Get the schema for version 1.0
+    schema = validator.schemas.get("1.0")
+    if not schema:
+        errors.append(
+            ValidationError(message="Schema version 1.0 not found", path="version", severity=ValidationSeverity.ERROR)
+        )
+        return ValidationResult(valid=False, errors=errors, warnings=warnings)
+
+    # Extract just the global_settings schema portion
+    global_settings_schema = schema["properties"].get("global_settings", {})
+    if not global_settings_schema:
+        errors.append(
+            ValidationError(
+                message="Global settings schema not found", path="global_settings", severity=ValidationSeverity.ERROR
+            )
+        )
+        return ValidationResult(valid=False, errors=errors, warnings=warnings)
+
+    # Validate against JSON schema first
+    if HAS_JSONSCHEMA:
+        try:
+            jsonschema.validate(global_settings_data, global_settings_schema)
+        except jsonschema.ValidationError as e:
+            errors.append(
+                ValidationError(
+                    message=str(e.message),
+                    path=f"global_settings.{e.absolute_path[-1] if e.absolute_path else ''}",
+                    severity=ValidationSeverity.ERROR,
+                )
+            )
+        except Exception as e:
+            errors.append(
+                ValidationError(message=f"Validation error: {e!s}", path="global_settings", severity=ValidationSeverity.ERROR)
+            )
+
+    # Perform additional semantic validation using the public method
+    # Pass None for sensor_keys since we're validating in isolation
+    validator.validate_global_settings(global_settings_data, None, errors, warnings)
+
+    return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
 
 
 def get_schema_for_version(version: str) -> dict[str, Any] | None:

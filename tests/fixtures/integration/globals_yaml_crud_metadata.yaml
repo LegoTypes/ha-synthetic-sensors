@@ -1,0 +1,11 @@
+# Test fixture for test_globals_yaml_crud_full_lifecycle - Metadata update
+# Used to test updating global metadata via YAML CRUD interface
+# Key fields:
+# - metadata section: Contains custom metadata fields
+
+metadata:
+  location: "Garage"                   # Updated location
+  installation_date: "2024-02-01"     # Updated installation date
+  notes: "Updated installation"       # Custom notes field
+  version: "2.0"                      # Version tracking
+  technician: "John Doe"              # Additional custom field

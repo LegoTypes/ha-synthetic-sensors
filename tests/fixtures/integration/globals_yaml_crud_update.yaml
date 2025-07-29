@@ -1,0 +1,16 @@
+# Test fixture for test_globals_yaml_crud_full_lifecycle - Global settings update
+# Used to test partial updates to global settings (section-level replacement)
+# Key fields:
+# - device_name: Updates existing device name
+# - variables: Replaces entire variables section but keeps multiplier for sensor formula
+# - metadata: Replaces entire metadata section
+
+device_name: "Updated Smart Device"    # Updates existing device name
+variables:
+  multiplier: 2.0                      # Updated value for sensor formula (was 1.5)
+  new_variable: 42                     # New variable to be added
+  efficiency: 0.85                     # Another new variable
+metadata:
+  location: "Living Room"              # Updates existing location
+  installation_date: "2024-01-15"     # New metadata field
+  notes: "Updated via YAML CRUD"      # Additional new metadata

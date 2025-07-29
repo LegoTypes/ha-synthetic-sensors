@@ -20,8 +20,10 @@ from .sensor_set_bulk_ops import SensorSetBulkOps
 from .sensor_set_entity_index import SensorSetEntityIndex
 from .sensor_set_entity_utils import apply_entity_id_changes_to_sensors_util, update_formula_variables_for_entity_changes
 from .sensor_set_global_settings import SensorSetGlobalSettings
+from .sensor_set_globals_yaml_crud import SensorSetGlobalsYamlCrud
 from .sensor_set_validation import SensorSetValidation
 from .sensor_set_yaml_crud import SensorSetYamlCrud
+from .sensor_set_yaml_operations import SensorSetYamlOperationsMixin
 
 if TYPE_CHECKING:
     from .storage_manager import SensorSetMetadata, StorageManager
@@ -55,7 +57,7 @@ class SensorSetModification:
     global_settings: dict[str, Any] | None = None
 
 
-class SensorSet:
+class SensorSet(SensorSetYamlOperationsMixin):
     """
     Handle for individual sensor set operations.
 
@@ -80,6 +82,7 @@ class SensorSet:
         self._entity_index_handler = SensorSetEntityIndex(storage_manager, sensor_set_id, self._entity_index)
         self._bulk_ops = SensorSetBulkOps(storage_manager, sensor_set_id)
         self._yaml_crud = SensorSetYamlCrud(self)
+        self._globals_yaml_crud = SensorSetGlobalsYamlCrud(self)
         self._validation = SensorSetValidation(self)
 
         # Initialize entity index with current sensors if the sensor set exists
@@ -299,84 +302,6 @@ class SensorSet:
         """
         return self.has_sensor(unique_id)
 
-    # YAML-based CRUD Operations
-
-    async def async_add_sensor_from_yaml(self, sensor_yaml: str) -> None:
-        """
-        Add a sensor to this sensor set from YAML string.
-
-        Args:
-            sensor_yaml: YAML string containing sensor configuration WITH sensor key
-                        Example:
-                        ```
-                        my_power_sensor:
-                          name: My Power Sensor
-                          entity_id: sensor.test_device_power
-                          formula: state * 1.1
-                          attributes:
-                            calculation_type: net_power
-                          metadata:
-                            unit_of_measurement: W
-                            device_class: power
-                        ```
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist, YAML is invalid, or sensor already exists
-        """
-        self._ensure_exists()
-
-        await self._yaml_crud.async_add_sensor_from_yaml(sensor_yaml)
-
-    async def async_update_sensor_from_yaml(self, sensor_yaml: str) -> bool:
-        """
-        Update a sensor in this sensor set from YAML string.
-
-        Args:
-            sensor_yaml: YAML string containing updated sensor configuration WITH sensor key
-                        The sensor key must match an existing sensor.
-
-        Returns:
-            True if updated, False if sensor not found
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist or YAML is invalid
-        """
-        self._ensure_exists()
-
-        return await self._yaml_crud.async_update_sensor_from_yaml(sensor_yaml)
-
-    def add_sensor_from_yaml(self, sensor_yaml: str) -> None:
-        """
-        Add a sensor to this sensor set from YAML string (synchronous version).
-
-        For async operations, use async_add_sensor_from_yaml().
-
-        Args:
-            sensor_yaml: YAML string containing sensor configuration WITH sensor key
-
-        Raises:
-            SyntheticSensorsError: If used in async context, sensor set doesn't exist,
-                                  YAML is invalid, or sensor already exists
-        """
-        self._yaml_crud.add_sensor_from_yaml(sensor_yaml)
-
-    def update_sensor_from_yaml(self, sensor_yaml: str) -> bool:
-        """
-        Update a sensor in this sensor set from YAML string (synchronous version).
-
-        For async operations, use async_update_sensor_from_yaml().
-
-        Args:
-            sensor_yaml: YAML string containing updated sensor configuration WITH sensor key
-
-        Returns:
-            True if sensor was updated, False if not found
-
-        Raises:
-            SyntheticSensorsError: If used in async context, sensor set doesn't exist, or YAML is invalid
-        """
-        return self._yaml_crud.update_sensor_from_yaml(sensor_yaml)
-
     # Global Settings Operations
 
     def get_global_settings(self) -> dict[str, Any]:
@@ -388,6 +313,15 @@ class SensorSet:
         """
         self._ensure_exists()
         return self._global_settings.get_global_settings()
+
+    def get_global_settings_handler(self) -> SensorSetGlobalSettings:
+        """
+        Get the global settings handler for this sensor set.
+
+        Returns:
+            SensorSetGlobalSettings handler instance
+        """
+        return self._global_settings
 
     async def async_set_global_settings(self, global_settings: GlobalSettingsDict) -> None:
         """
@@ -415,6 +349,85 @@ class SensorSet:
         # Invalidate cache for sensors that might use these global variables
         if hasattr(self.storage_manager, "evaluator") and self.storage_manager.evaluator:
             await self.storage_manager.evaluator.async_invalidate_sensor_set_cache(self.sensor_set_id)
+
+    # Global Settings CRUD Operations
+
+    async def async_create_global_settings(self, global_settings: GlobalSettingsDict) -> None:
+        """Create global settings for this sensor set (replaces any existing)."""
+        await self._global_settings.async_create_global_settings(global_settings)
+        self.rebuild_entity_index()
+        if hasattr(self.storage_manager, "evaluator") and self.storage_manager.evaluator:
+            await self.storage_manager.evaluator.async_invalidate_sensor_set_cache(self.sensor_set_id)
+
+    def read_global_settings(self) -> GlobalSettingsDict:
+        """Read complete global settings for this sensor set."""
+        return self._global_settings.read_global_settings()
+
+    async def async_update_global_settings_partial(self, updates: dict[str, Any]) -> None:
+        """Update specific parts of global settings while preserving others."""
+        await self._global_settings.async_update_global_settings_partial(updates)
+        self.rebuild_entity_index()
+        if hasattr(self.storage_manager, "evaluator") and self.storage_manager.evaluator:
+            await self.storage_manager.evaluator.async_invalidate_sensor_set_cache(self.sensor_set_id)
+
+    async def async_delete_global_settings(self) -> bool:
+        """Delete all global settings for this sensor set."""
+        result = await self._global_settings.async_delete_global_settings()
+        if result:
+            self.rebuild_entity_index()
+            if hasattr(self.storage_manager, "evaluator") and self.storage_manager.evaluator:
+                await self.storage_manager.evaluator.async_invalidate_sensor_set_cache(self.sensor_set_id)
+        return result
+
+    # Global Variables CRUD Operations
+
+    async def async_set_global_variable(self, variable_name: str, variable_value: str | int | float) -> None:
+        """Set a specific global variable."""
+        await self._global_settings.async_set_global_variable(variable_name, variable_value)
+        self.rebuild_entity_index()
+        if hasattr(self.storage_manager, "evaluator") and self.storage_manager.evaluator:
+            await self.storage_manager.evaluator.async_invalidate_sensor_set_cache(self.sensor_set_id)
+
+    def get_global_variable(self, variable_name: str) -> str | int | float | None:
+        """Get a specific global variable value."""
+        return self._global_settings.get_global_variable(variable_name)
+
+    async def async_delete_global_variable(self, variable_name: str) -> bool:
+        """Delete a specific global variable."""
+        result = await self._global_settings.async_delete_global_variable(variable_name)
+        if result:
+            self.rebuild_entity_index()
+            if hasattr(self.storage_manager, "evaluator") and self.storage_manager.evaluator:
+                await self.storage_manager.evaluator.async_invalidate_sensor_set_cache(self.sensor_set_id)
+        return result
+
+    def list_global_variables(self) -> dict[str, str | int | float]:
+        """List all global variables."""
+        return self._global_settings.list_global_variables()
+
+    # Device Info CRUD Operations
+
+    async def async_set_device_info(self, device_info: dict[str, str]) -> None:
+        """Set device information in global settings."""
+        await self._global_settings.async_set_device_info(device_info)
+
+    def get_device_info(self) -> dict[str, str]:
+        """Get device information from global settings."""
+        return self._global_settings.get_device_info()
+
+    # Global Metadata CRUD Operations
+
+    async def async_set_global_metadata(self, metadata: dict[str, Any]) -> None:
+        """Set global metadata."""
+        await self._global_settings.async_set_global_metadata(metadata)
+
+    def get_global_metadata(self) -> dict[str, Any]:
+        """Get global metadata."""
+        return self._global_settings.get_global_metadata()
+
+    async def async_delete_global_metadata(self) -> bool:
+        """Delete all global metadata."""
+        return await self._global_settings.async_delete_global_metadata()
 
     async def async_update_global_settings(self, updates: dict[str, Any]) -> None:
         """
@@ -790,60 +803,6 @@ class SensorSet:
             data["sensor_sets"][self.sensor_set_id]["updated_at"] = self.storage_manager.get_current_timestamp()
             await self.storage_manager.async_save()
 
-    # YAML Operations
-
-    async def async_import_yaml(self, yaml_content: str) -> None:
-        """
-        Import sensors from YAML content into this sensor set.
-
-        Args:
-            yaml_content: Complete YAML configuration content
-
-        Raises:
-            SyntheticSensorsError: If import fails
-        """
-        metadata = self.metadata
-        device_identifier = metadata.device_identifier if metadata else None
-
-        await self.storage_manager.async_from_yaml(
-            yaml_content=yaml_content,
-            sensor_set_id=self.sensor_set_id,
-            device_identifier=device_identifier,
-        )
-
-        _LOGGER.debug("Imported YAML to sensor set: %s", self.sensor_set_id)
-
-    async def async_export_yaml(self) -> str:
-        """
-        Export sensor set configuration to YAML string (async version).
-
-        Returns:
-            YAML string containing sensor set configuration
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist
-        """
-        self._ensure_exists()
-
-        # Run export in executor to avoid blocking event loop,
-        # even though it's typically fast, this ensures we don't block on large datasets
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.storage_manager.export_yaml, self.sensor_set_id)
-
-    def export_yaml(self) -> str:
-        """
-        Export sensor set configuration to YAML string.
-
-        Returns:
-            YAML string containing sensor set configuration
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist
-        """
-        self._ensure_exists()
-
-        return self.storage_manager.export_yaml(self.sensor_set_id)
-
     # Sensor Set Management
 
     async def async_delete(self) -> bool:
@@ -918,21 +877,6 @@ class SensorSet:
             Dictionary mapping sensor unique_id to list of errors
         """
         return self._validation.get_sensor_errors()
-
-    async def async_validate_import(self, yaml_content: str) -> dict[str, Any]:
-        """
-        Validate YAML content before importing without actually importing.
-
-        Args:
-            yaml_content: YAML content to validate
-
-        Returns:
-            Dictionary with validation results:
-            - "yaml_errors": YAML parsing errors
-            - "config_errors": Configuration validation errors
-            - "sensor_errors": Per-sensor validation errors
-        """
-        return await self._validation.async_validate_import(yaml_content)
 
     def is_valid(self) -> bool:
         """

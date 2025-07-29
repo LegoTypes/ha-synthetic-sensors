@@ -1,0 +1,12 @@
+# Test fixture for test_globals_yaml_crud_full_lifecycle - Device info update
+# Used to test updating device information via YAML CRUD interface
+# Key fields:
+# - device_* fields: All valid device information fields
+
+device_identifier: "test_device_123"        # Required: device identifier
+device_name: "Super Smart Device"           # Updated device name
+device_manufacturer: "Acme Corp"            # Device manufacturer
+device_model: "Smart-2000"                  # Device model number
+device_sw_version: "v1.2.3"                # Software version
+device_hw_version: "rev2.1"                # Hardware version
+suggested_area: "Garage"                    # Suggested Home Assistant area
