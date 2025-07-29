@@ -1,0 +1,27 @@
+# Test fixture for test_globals_yaml_crud_full_lifecycle - Initial global settings
+# Used to test creating global settings from YAML string
+# Key fields:
+# - device_identifier: Must match test device "test_device_123"
+# - variables: Contains backing entity reference for formula evaluation
+# - metadata: Common properties applied to all sensors
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"  # Required: matches test device setup
+  device_name: "Test Smart Device"      # Optional: will be set on device
+  variables:
+    multiplier: 1.5                     # Numeric literal for calculations
+  metadata:
+    location: "Kitchen"                 # Custom metadata for device location
+    manufacturer: "Test Corp"           # Device manufacturer info
+
+sensors:
+  # Simple sensor using 'state' token to reference backing entity
+  power_analysis:
+    name: "Power Analysis"
+    formula: "state * multiplier"       # Uses 'state' token + global variable
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

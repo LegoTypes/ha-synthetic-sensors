@@ -1632,3 +1632,581 @@ efficiency_sensor:
 
 The YAML CRUD operations provide a string-based approach to sensor management that complements the existing
 programmatic APIs enabling template-driven sensor configuration workflows.
+
+## Global Settings CRUD Operations
+
+The synthetic sensors library provides comprehensive CRUD operations for managing global settings within sensor sets.
+Global settings include device information, global variables, and metadata that apply to all sensors in a sensor set.
+These operations enable dynamic configuration management and template-based global settings workflows.
+
+### Global Settings CRUD Interface
+
+Each sensor set provides global settings CRUD operations through the global settings handler:
+
+```python
+# Access global settings CRUD operations
+sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+# Available operations:
+# - sensor_set.async_create_global_settings(global_settings: GlobalSettingsDict)
+# - sensor_set.read_global_settings() -> GlobalSettingsDict
+# - sensor_set.async_update_global_settings_partial(updates: dict[str, Any])
+# - sensor_set.async_delete_global_settings() -> bool
+
+# Global variable operations:
+# - sensor_set.async_set_global_variable(variable_name: str, variable_value: str | int | float)
+# - sensor_set.get_global_variable(variable_name: str) -> str | int | float | None
+# - sensor_set.async_delete_global_variable(variable_name: str) -> bool
+# - sensor_set.list_global_variables() -> dict[str, str | int | float]
+
+# Device info operations:
+# - sensor_set.async_set_device_info(device_info: dict[str, str])
+# - sensor_set.get_device_info() -> dict[str, str]
+
+# Metadata operations:
+# - sensor_set.async_set_global_metadata(metadata: dict[str, Any])
+# - sensor_set.get_global_metadata() -> dict[str, Any]
+# - sensor_set.async_delete_global_metadata() -> bool
+```
+
+### Global Settings Structure
+
+Global settings follow a structured format with three main components:
+
+```python
+# Complete global settings structure
+global_settings = {
+    # Device information fields
+    "device_identifier": "my_device_001",
+    "device_name": "My Smart Device",
+    "device_manufacturer": "Acme Corp",
+    "device_model": "Smart-1000",
+    "device_sw_version": "1.2.3",
+    "device_hw_version": "2.1",
+    "suggested_area": "Kitchen",
+
+    # Global variables accessible to all sensors
+    "variables": {
+        "base_power": "sensor.power_meter",
+        "rate_multiplier": 1.15,
+        "threshold_value": 100.0,
+        "backup_sensor": "sensor.backup_power"
+    },
+
+    # Custom metadata
+    "metadata": {
+        "installation_date": "2024-01-15",
+        "location": "Kitchen Counter",
+        "notes": "Primary measurement device"
+    }
+}
+```
+
+### Creating Global Settings
+
+Use `async_create_global_settings()` to create or completely replace global settings:
+
+```python
+async def create_global_settings_example(storage_manager: StorageManager, device_id: str):
+    """Example of creating complete global settings."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    global_settings = {
+        "device_identifier": device_id,
+        "device_name": f"Device {device_id}",
+        "device_manufacturer": "Your Company",
+        "variables": {
+            "base_power": f"sensor.{device_id}_power",
+            "efficiency_factor": 0.95,
+            "max_threshold": 1000
+        },
+        "metadata": {
+            "created_by": "integration_setup",
+            "version": "1.0"
+        }
+    }
+
+    try:
+        await sensor_set.async_create_global_settings(global_settings)
+        print("Global settings created successfully")
+
+    except SyntheticSensorsError as e:
+        print(f"Error creating global settings: {e}")
+```
+
+### Reading Global Settings
+
+Always read current global settings before making updates to preserve existing configuration:
+
+```python
+async def read_global_settings_example(storage_manager: StorageManager, device_id: str):
+    """Example of reading current global settings."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Read complete global settings
+    current_settings = sensor_set.read_global_settings()
+
+    if current_settings:
+        print(f"Device identifier: {current_settings.get('device_identifier', 'Not set')}")
+        print(f"Global variables: {current_settings.get('variables', {})}")
+        print(f"Metadata: {current_settings.get('metadata', {})}")
+    else:
+        print("No global settings found")
+
+    # Read specific components
+    device_info = sensor_set.get_device_info()
+    global_vars = sensor_set.list_global_variables()
+    metadata = sensor_set.get_global_metadata()
+
+    print(f"Device info: {device_info}")
+    print(f"Variables: {global_vars}")
+    print(f"Metadata: {metadata}")
+```
+
+### Updating Global Settings
+
+Use partial updates to modify specific parts while preserving other settings:
+
+```python
+async def update_global_settings_example(storage_manager: StorageManager, device_id: str):
+    """Example of updating global settings with preservation of existing config."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    try:
+        # Read current settings first to understand what exists
+        current_settings = sensor_set.read_global_settings()
+        print(f"Current variables: {current_settings.get('variables', {})}")
+
+        # Update only specific fields - other settings are preserved
+        updates = {
+            "device_name": "Updated Device Name",
+            "variables": {
+                # Add new variables while preserving existing ones requires reading first
+                **current_settings.get('variables', {}),
+                "new_sensor": f"sensor.{device_id}_additional",
+                "updated_rate": 1.25  # Update existing or add new
+            }
+        }
+
+        await sensor_set.async_update_global_settings_partial(updates)
+        print("Global settings updated successfully")
+
+        # Verify the update
+        updated_settings = sensor_set.read_global_settings()
+        print(f"Updated variables: {updated_settings.get('variables', {})}")
+
+    except SyntheticSensorsError as e:
+        print(f"Error updating global settings: {e}")
+```
+
+### Global Variable Management
+
+Manage individual global variables without affecting other settings:
+
+```python
+async def manage_global_variables_example(storage_manager: StorageManager, device_id: str):
+    """Example of managing individual global variables."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    try:
+        # Add or update individual variables
+        await sensor_set.async_set_global_variable("power_sensor", f"sensor.{device_id}_power")
+        await sensor_set.async_set_global_variable("efficiency", 0.95)
+        await sensor_set.async_set_global_variable("threshold", 100)
+
+        # Read specific variable
+        power_sensor = sensor_set.get_global_variable("power_sensor")
+        efficiency = sensor_set.get_global_variable("efficiency")
+        print(f"Power sensor: {power_sensor}, Efficiency: {efficiency}")
+
+        # List all variables
+        all_variables = sensor_set.list_global_variables()
+        print(f"All global variables: {all_variables}")
+
+        # Delete specific variable
+        deleted = await sensor_set.async_delete_global_variable("threshold")
+        if deleted:
+            print("Threshold variable deleted")
+        else:
+            print("Threshold variable not found")
+
+    except SyntheticSensorsError as e:
+        print(f"Error managing global variables: {e}")
+```
+
+### Device Information Management
+
+Manage device-specific information that applies to all sensors:
+
+```python
+async def manage_device_info_example(storage_manager: StorageManager, device_data):
+    """Example of managing device information in global settings."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_data.serial_number}_sensors")
+
+    try:
+        # Set device information
+        device_info = {
+            "device_identifier": device_data.serial_number,
+            "device_name": device_data.name,
+            "device_manufacturer": "Your Company",
+            "device_model": device_data.model,
+            "device_sw_version": device_data.firmware_version,
+            "suggested_area": device_data.location
+        }
+
+        await sensor_set.async_set_device_info(device_info)
+        print("Device information updated")
+
+        # Read current device info
+        current_device_info = sensor_set.get_device_info()
+        print(f"Device info: {current_device_info}")
+
+    except SyntheticSensorsError as e:
+        print(f"Error managing device info: {e}")
+```
+
+### Global Metadata Management
+
+Manage custom metadata that applies to the entire sensor set:
+
+```python
+async def manage_global_metadata_example(storage_manager: StorageManager, device_id: str):
+    """Example of managing global metadata."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    try:
+        # Set custom metadata
+        metadata = {
+            "installation_date": "2024-01-15",
+            "location": "Kitchen",
+            "installer": "Integration Setup",
+            "notes": "Automatically generated sensors",
+            "config_version": "2.1"
+        }
+
+        await sensor_set.async_set_global_metadata(metadata)
+        print("Global metadata updated")
+
+        # Read current metadata
+        current_metadata = sensor_set.get_global_metadata()
+        print(f"Current metadata: {current_metadata}")
+
+        # Delete all metadata
+        deleted = await sensor_set.async_delete_global_metadata()
+        if deleted:
+            print("All global metadata deleted")
+        else:
+            print("No metadata found to delete")
+
+    except SyntheticSensorsError as e:
+        print(f"Error managing metadata: {e}")
+```
+
+### YAML-Based Global Settings CRUD
+
+The library also provides YAML-based CRUD operations for global settings, enabling template-driven configuration:
+
+```python
+# Access YAML-based global settings operations
+sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+# Available YAML operations:
+# - sensor_set.async_create_global_settings_from_yaml(global_settings_yaml: str)
+# - sensor_set.async_update_global_settings_from_yaml(global_settings_yaml: str)
+# - sensor_set.read_global_settings_as_yaml() -> str
+
+# Variable-specific YAML operations:
+# - sensor_set.async_add_variable_from_yaml(variable_yaml: str)
+# - sensor_set.read_variables_as_yaml() -> str
+
+# Device info YAML operations:
+# - sensor_set.async_update_device_info_from_yaml(device_info_yaml: str)
+# - sensor_set.read_device_info_as_yaml() -> str
+
+# Metadata YAML operations:
+# - sensor_set.async_update_metadata_from_yaml(metadata_yaml: str)
+# - sensor_set.read_metadata_as_yaml() -> str
+```
+
+### Creating Global Settings from YAML
+
+```python
+async def create_global_settings_from_yaml_example(storage_manager: StorageManager, device_id: str):
+    """Example of creating global settings from YAML."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    global_settings_yaml = f"""
+device_identifier: {device_id}
+device_name: "Smart Device {device_id}"
+device_manufacturer: "Your Company"
+device_model: "Model-2024"
+variables:
+  main_power: "sensor.{device_id}_power"
+  backup_power: "sensor.{device_id}_backup"
+  efficiency_factor: 0.95
+  max_threshold: 1000
+metadata:
+  installation_date: "2024-01-15"
+  location: "Living Room"
+  version: "1.0"
+"""
+
+    try:
+        await sensor_set.async_create_global_settings_from_yaml(global_settings_yaml)
+        print("Global settings created from YAML")
+
+    except SyntheticSensorsError as e:
+        print(f"Error creating from YAML: {e}")
+```
+
+### Reading Global Settings as YAML
+
+```python
+async def read_global_settings_as_yaml_example(storage_manager: StorageManager, device_id: str):
+    """Example of reading global settings as YAML."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Read complete global settings as YAML
+    global_yaml = sensor_set.read_global_settings_as_yaml()
+    if global_yaml:
+        print("Current global settings YAML:")
+        print(global_yaml)
+    else:
+        print("No global settings found")
+
+    # Read specific components as YAML
+    variables_yaml = sensor_set.read_variables_as_yaml()
+    device_info_yaml = sensor_set.read_device_info_as_yaml()
+    metadata_yaml = sensor_set.read_metadata_as_yaml()
+
+    print(f"Variables YAML:\n{variables_yaml}")
+    print(f"Device info YAML:\n{device_info_yaml}")
+    print(f"Metadata YAML:\n{metadata_yaml}")
+```
+
+### Updating Global Settings from YAML
+
+```python
+async def update_global_settings_from_yaml_example(storage_manager: StorageManager, device_id: str):
+    """Example of updating global settings from YAML with preservation."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    try:
+        # Read current settings first to understand what exists
+        current_yaml = sensor_set.read_global_settings_as_yaml()
+        print(f"Current settings:\n{current_yaml}")
+
+        # Update only specific parts - other settings are preserved
+        update_yaml = f"""
+device_name: "Updated Smart Device {device_id}"
+variables:
+  # This will merge with existing variables
+  new_sensor: "sensor.{device_id}_additional"
+  updated_efficiency: 0.98
+metadata:
+  last_updated: "2024-02-01"
+  notes: "Updated via YAML"
+"""
+
+        await sensor_set.async_update_global_settings_from_yaml(update_yaml)
+        print("Global settings updated from YAML")
+
+        # Verify the update
+        updated_yaml = sensor_set.read_global_settings_as_yaml()
+        print(f"Updated settings:\n{updated_yaml}")
+
+    except SyntheticSensorsError as e:
+        print(f"Error updating from YAML: {e}")
+```
+
+### Managing Variables with YAML
+
+```python
+async def manage_variables_with_yaml_example(storage_manager: StorageManager, device_id: str):
+    """Example of managing global variables using YAML format."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    try:
+        # Add variables using YAML - supports both formats
+
+        # Format 1: Direct variable definition
+        single_variable_yaml = f"""
+power_sensor_main: "sensor.{device_id}_power"
+"""
+
+        # Format 2: Nested under 'variables' key
+        multiple_variables_yaml = f"""
+variables:
+  backup_sensor: "sensor.{device_id}_backup"
+  rate_multiplier: 1.25
+  threshold_low: 50
+  threshold_high: 500
+"""
+
+        await sensor_set.async_add_variable_from_yaml(single_variable_yaml)
+        await sensor_set.async_add_variable_from_yaml(multiple_variables_yaml)
+
+        print("Variables added from YAML")
+
+        # Read all variables as YAML
+        variables_yaml = sensor_set.read_variables_as_yaml()
+        print(f"All variables:\n{variables_yaml}")
+
+    except SyntheticSensorsError as e:
+        print(f"Error managing variables with YAML: {e}")
+```
+
+### Template-Based Global Settings Generation
+
+Global settings CRUD operations work excellently with template-based configuration:
+
+```python
+async def generate_global_settings_from_template(
+    storage_manager: StorageManager,
+    device_data: DeviceData,
+    template_config: dict
+):
+    """Generate global settings from templates."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_data.serial_number}_sensors")
+
+    # Load template
+    template = await load_global_settings_template(template_config["template_name"])
+
+    # Fill template with device-specific data
+    global_settings_yaml = template.format(
+        device_id=device_data.serial_number,
+        device_name=device_data.name,
+        manufacturer=template_config["manufacturer"],
+        model=device_data.model,
+        location=device_data.location,
+        main_power_sensor=f"sensor.{device_data.serial_number}_power",
+        backup_sensor=f"sensor.{device_data.serial_number}_backup"
+    )
+
+    try:
+        # Create global settings from template
+        await sensor_set.async_create_global_settings_from_yaml(global_settings_yaml)
+        print(f"Global settings created from template for device {device_data.serial_number}")
+
+    except SyntheticSensorsError as e:
+        print(f"Error creating global settings from template: {e}")
+
+# Example template file: global_settings_template.yaml.txt
+"""
+device_identifier: "{device_id}"
+device_name: "{device_name}"
+device_manufacturer: "{manufacturer}"
+device_model: "{model}"
+suggested_area: "{location}"
+
+variables:
+  main_power: "{main_power_sensor}"
+  backup_power: "{backup_sensor}"
+  efficiency_factor: 0.95
+  update_interval: 30
+
+metadata:
+  template_version: "1.2"
+  created_by: "template_generator"
+  installation_location: "{location}"
+"""
+```
+
+### Integration with Complete Sensor Set Workflows
+
+Global settings CRUD operations integrate seamlessly with sensor set management:
+
+```python
+async def complete_global_settings_workflow(
+    storage_manager: StorageManager,
+    device_data: DeviceData
+):
+    """Complete example showing global settings integration with sensor set management."""
+
+    device_identifier = device_data.serial_number
+    sensor_set_id = f"{device_identifier}_sensors"
+
+    # Create or get existing sensor set
+    if not storage_manager.sensor_set_exists(sensor_set_id):
+        await storage_manager.async_create_sensor_set(
+            sensor_set_id=sensor_set_id,
+            device_identifier=device_identifier,
+            name=f"Device {device_identifier} Sensors"
+        )
+
+    sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+
+    # Set up global settings first (provides context for all sensors)
+    global_settings = {
+        "device_identifier": device_identifier,
+        "device_name": device_data.name,
+        "device_manufacturer": "Your Company",
+        "device_model": device_data.model,
+        "variables": {
+            "main_power": f"sensor.{device_identifier}_power",
+            "efficiency": 0.95,
+            "max_capacity": device_data.max_power
+        },
+        "metadata": {
+            "setup_date": "2024-01-15",
+            "location": device_data.location
+        }
+    }
+
+    await sensor_set.async_create_global_settings(global_settings)
+
+    # Import sensor configurations that can reference global variables
+    sensor_yaml = f"""
+version: "1.0"
+sensors:
+  power_monitor:
+    name: "Power Monitor"
+    formula: "main_power * efficiency"  # References global variables
+    entity_id: "sensor.{device_identifier}_power_monitor"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+"""
+
+    await sensor_set.async_import_yaml(sensor_yaml)
+
+    return sensor_set
+
+```
+
+### Best Practices for Global Settings CRUD
+
+1. **Read before updating**: Always read current global settings before making changes to preserve existing configuration
+   that may have been customized by users.
+
+2. **Use partial updates**: Prefer `async_update_global_settings_partial()` over complete replacement to avoid losing settings.
+
+3. **Organize by component**: Use specific methods for variables, device info, and metadata to maintain clear separation of concerns.
+
+4. **Template-driven configuration**: Use YAML templates for consistent global settings across multiple devices or sensor sets.
+
+5. **Validate before operations**: Consider the impact of global variable changes on existing sensors that reference them.
+
+6. **Handle missing settings gracefully**: Check for existence of settings before assuming they are present.
+
+7. **Use meaningful variable names**: Global variables should have descriptive names since they're accessible to all sensors
+   in the set.
+
+8. **Document global variables**: Use metadata to document the purpose and expected values of global variables.
+
+9. **Version your templates**: Include version information in metadata to track global settings evolution.
+
+The global settings CRUD operations provide comprehensive management of sensor set-wide configuration, enabling flexible and
+maintainable synthetic sensor deployments with shared context across all sensors.
+````

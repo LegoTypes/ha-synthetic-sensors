@@ -1,0 +1,10 @@
+# Test fixture for test_globals_yaml_crud_full_lifecycle - Variable-specific operations
+# Used to test adding variables via YAML CRUD interface
+# Key fields:
+# - multiplier: Keep the sensor formula variable, but change its value again
+# - Variables defined at root level (both formats supported)
+
+multiplier: 3.0                        # Updated multiplier for sensor formula (was 2.0)
+power_multiplier: 2.5                 # Direct variable definition
+efficiency_factor: 0.85               # Another direct variable
+base_rate: 0.12                       # Numeric rate for calculations

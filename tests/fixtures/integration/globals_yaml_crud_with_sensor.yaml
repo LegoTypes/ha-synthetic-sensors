@@ -1,0 +1,21 @@
+# Test fixture for test_globals_yaml_crud_full_lifecycle - Complete configuration with sensor
+# Used to test importing YAML with global settings and creating sensors
+# Key fields:
+# - global_settings: Device and variable configuration
+# - sensors: Single sensor using global variables and state token
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"  # Required: matches test device setup
+  variables:
+    rate: 0.15                          # Global variable for calculations
+
+sensors:
+  power_analysis:
+    name: "Power Analysis"
+    formula: "state * rate"             # Uses 'state' token + global variable
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
