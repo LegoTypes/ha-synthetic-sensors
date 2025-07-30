@@ -49,7 +49,7 @@ class TestVariableResolution:
 
     def test_formula_config_with_variables(self, mock_hass, mock_entity_registry, mock_states):
         """Test that FormulaConfig with variables can be evaluated correctly."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Create a formula config similar to SPAN Panel solar sensors
         config = FormulaConfig(
@@ -116,13 +116,7 @@ class TestVariableResolution:
         evaluator = Evaluator(mock_hass)
         mock_sensor_manager = MagicMock()
 
-        dynamic_sensor = DynamicSensor(
-            mock_hass,
-            sensor_config,
-            evaluator,
-            mock_sensor_manager,
-            SensorManagerConfig(),
-        )
+        dynamic_sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager, SensorManagerConfig())
 
         # Test the _build_variable_context method
         formula_config = sensor_config.formulas[0]
@@ -217,13 +211,7 @@ class TestVariableResolution:
         evaluator = Evaluator(mock_hass)
         mock_sensor_manager = MagicMock()
 
-        dynamic_sensor = DynamicSensor(
-            mock_hass,
-            sensor_config,
-            evaluator,
-            mock_sensor_manager,
-            SensorManagerConfig(),
-        )
+        dynamic_sensor = DynamicSensor(mock_hass, sensor_config, evaluator, mock_sensor_manager, SensorManagerConfig())
 
         # Test context building for both formulas
         main_context = dynamic_sensor._build_variable_context(main_formula)

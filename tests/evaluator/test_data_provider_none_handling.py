@@ -42,11 +42,7 @@ def test_evaluator_handles_none_from_data_provider(mock_hass, mock_entity_regist
     evaluator.update_integration_entities({"sensor.power_meter"})
 
     # Test simple variable reference with None value
-    config = FormulaConfig(
-        id="test_formula",
-        formula="power_reading",
-        variables={"power_reading": "sensor.power_meter"},
-    )
+    config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
 
     # Should handle None values gracefully by returning "unknown" state
     result = evaluator.evaluate_formula(config)
@@ -67,11 +63,7 @@ def test_evaluator_handles_callback_returning_none(mock_hass, mock_entity_regist
     evaluator.update_integration_entities({"sensor.power_meter"})
 
     # Test simple variable reference
-    config = FormulaConfig(
-        id="test_formula",
-        formula="power_reading",
-        variables={"power_reading": "sensor.power_meter"},
-    )
+    config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
 
     # Should raise DataValidationError for None callback result (new strict behavior)
     with pytest.raises(DataValidationError, match="Data provider callback returned None.*fatal implementation error"):
@@ -92,11 +84,7 @@ def test_data_provider_with_valid_values(mock_hass, mock_entity_registry, mock_s
     evaluator.update_integration_entities({"sensor.valid_power"})
 
     # Test simple variable reference with valid value
-    config = FormulaConfig(
-        id="test_formula",
-        formula="power_reading",
-        variables={"power_reading": "sensor.valid_power"},
-    )
+    config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.valid_power"})
 
     result = evaluator.evaluate_formula(config)
 

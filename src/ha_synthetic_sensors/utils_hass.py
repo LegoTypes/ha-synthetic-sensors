@@ -11,20 +11,15 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def check_hass_lookup_conditions(dependency_handler: Any) -> bool:
-    """Check if HASS lookup conditions are met.
+    """Check if HA lookups are available.
 
     Args:
         dependency_handler: The dependency handler to check
 
     Returns:
-        True if HASS lookups are allowed and available
+        True if HASS lookups are available (natural fallback always allowed)
     """
-    return (
-        dependency_handler
-        and hasattr(dependency_handler, "hass")
-        and hasattr(dependency_handler, "allow_ha_lookups")
-        and dependency_handler.allow_ha_lookups
-    )
+    return dependency_handler and hasattr(dependency_handler, "hass")
 
 
 def check_data_provider_conditions(dependency_handler: Any, entity_id: str) -> bool:

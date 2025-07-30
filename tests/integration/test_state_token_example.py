@@ -70,7 +70,7 @@ class TestStateTokenExample:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities({"sensor.raw_power"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.raw_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"test_power_with_processing": "sensor.raw_power"}
@@ -139,10 +139,10 @@ class TestStateTokenExample:
         assert attr_result["success"] is False
         assert "state" in str(attr_result["error"]).lower()
 
-    def test_state_token_main_formula_fails_without_backing_entity(
+    def test_state_token_main_formula_with_self_reference(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, state_token_example_yaml
     ):
-        """Test that state token main formula fails without backing entity registration."""
+        """Test that state token main formula works with self-reference to sensor's own HA state."""
         # Validate and load the config
         validation_result = config_manager.validate_yaml_data(state_token_example_yaml)
         assert validation_result["valid"]
@@ -151,10 +151,21 @@ class TestStateTokenExample:
         # Find the test_power_with_processing sensor
         sensor = next(s for s in config.sensors if s.unique_id == "test_power_with_processing")
 
+        # Setup mock HA state for the sensor's entity_id using the proper mock_states fixture
+        sensor_entity_id = sensor.entity_id  # Should be "sensor.raw_power"
+        mock_states[sensor_entity_id] = type(
+            "MockState",
+            (),
+            {
+                "state": "100",  # Initial state value
+                "attributes": {},
+            },
+        )()
+
         # Create sensor manager WITHOUT registering backing entities
         mock_add_entities = MagicMock()
         sensor_manager = SensorManager(
-            config_manager._hass,
+            mock_hass,  # Use mock_hass directly to ensure proper HA instance
             MagicMock(),  # name_resolver
             mock_add_entities,  # add_entities_callback
             SensorManagerConfig(),
@@ -164,14 +175,17 @@ class TestStateTokenExample:
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]  # First formula is the main formula
 
-        # Should fail because backing entity is not registered
-        with pytest.raises(SensorMappingError) as exc_info:
-            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Should now succeed with state token self-reference
+        # State token should resolve to sensor's own HA state (100) and multiply by 1.1 = 110
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
 
-        # Verify the error message
-        error_msg = str(exc_info.value)
-        assert "backing entity" in error_msg.lower()
-        assert "test_power_with_processing" in error_msg
+        # Should succeed with self-reference behavior
+        assert result["success"] is True
+        assert abs(result["value"] - 110.0) < 0.001  # 100 * 1.1 = ~110.0 (handle floating point precision)
+
+        # Verify that the sensor's entity_id was accessed via the mock_states fixture
+        # The mock_hass.states.get should have been called with the sensor's entity_id
+        # This is handled by the mock_states fixture which provides the proper state lookup
 
     def test_state_token_example_all_sensors_have_correct_formulas(self, config_manager, state_token_example_yaml):
         """Test that all sensors in the example have the expected formulas."""
@@ -240,7 +254,7 @@ class TestStateTokenExample:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities({"sensor.raw_power"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.raw_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"test_power_with_processing": "sensor.raw_power"}
@@ -284,7 +298,7 @@ class TestStateTokenExample:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities({"sensor.raw_power"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.raw_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"test_power_with_processing": "sensor.raw_power"}
@@ -306,10 +320,10 @@ class TestStateTokenExample:
         assert attr_result["success"] is True
         assert abs(attr_result["value"] - 2.291) < 0.001  # Allow small floating point differences
 
-    def test_backing_entity_resolution_error(
+    def test_state_token_self_reference_succeeds(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, state_token_example_yaml
     ):
-        """Test that BackingEntityResolutionError is raised when backing entity is not registered."""
+        """Test that state token succeeds with self-reference when no backing entity is registered."""
         # Validate and load the config
         validation_result = config_manager.validate_yaml_data(state_token_example_yaml)
         assert validation_result["valid"]
@@ -318,10 +332,21 @@ class TestStateTokenExample:
         # Find the test_power_with_processing sensor
         sensor = next(s for s in config.sensors if s.unique_id == "test_power_with_processing")
 
+        # Setup mock HA state for the sensor's entity_id for self-reference
+        sensor_entity_id = sensor.entity_id  # Should be "sensor.raw_power"
+        mock_states[sensor_entity_id] = type(
+            "MockState",
+            (),
+            {
+                "state": "100",  # Initial state value
+                "attributes": {},
+            },
+        )()
+
         # Create sensor manager WITHOUT registering the backing entity
         mock_add_entities = MagicMock()
         sensor_manager = SensorManager(
-            config_manager._hass,
+            mock_hass,  # Use mock_hass directly to ensure proper HA instance
             MagicMock(),  # name_resolver
             mock_add_entities,  # add_entities_callback
             SensorManagerConfig(),
@@ -331,15 +356,12 @@ class TestStateTokenExample:
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        # Should raise SensorMappingError for missing backing entity
-        with pytest.raises(SensorMappingError) as exc_info:
-            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Should now succeed with state token self-reference
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
 
-        # Check the error message
-        error_msg = str(exc_info.value)
-        assert "backing entity" in error_msg.lower()
-        assert "test_power_with_processing" in error_msg  # Now uses sensor key instead of backing entity ID
-        assert "not registered" in error_msg.lower()
+        # Should succeed with self-reference behavior
+        assert result["success"] is True
+        assert abs(result["value"] - 110.0) < 0.001  # 100 * 1.1 = ~110.0
 
     def test_self_reference_replacement_behavior(self, mock_hass, mock_entity_registry, mock_states, config_manager):
         """Test that self-references in YAML are replaced with state tokens according to design guide."""

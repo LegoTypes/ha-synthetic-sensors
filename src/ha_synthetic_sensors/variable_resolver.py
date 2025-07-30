@@ -117,24 +117,28 @@ class IntegrationResolutionStrategy(VariableResolutionStrategy):
     def can_resolve(self, variable_name: str, entity_id: str | None = None) -> bool:
         """Check if integration data provider can resolve this variable.
 
-        Uses registration filtering to only resolve registered entities,
-        implementing the user's architecture to prevent hiding configuration errors.
+        Always returns True for registered entity IDs to enable natural fallback.
+        Error validation happens in resolve_variable, not here.
         """
+        # Can't resolve anything without a data provider callback
+        if self._data_provider_callback is None:
+            return False
+
         target_entity = entity_id or variable_name
 
         # Handle normalized entity IDs (with underscores instead of dots)
         if "." not in target_entity and "_" in target_entity:
             original_entity_id = denormalize_entity_id(target_entity)
             if original_entity_id:
-                # Check registration first, then existence
-                return self._is_entity_registered(original_entity_id) and self._check_entity_exists(original_entity_id)
+                # Only check if registered - let resolve_variable handle validation
+                return self._is_entity_registered(original_entity_id)
 
         # Only resolve if it looks like an entity ID
         if "." not in target_entity:
             return False
 
-        # Check registration first, then existence
-        return self._is_entity_registered(target_entity) and self._check_entity_exists(target_entity)
+        # Only check if registered - let resolve_variable handle validation/fallback
+        return self._is_entity_registered(target_entity)
 
     def _is_entity_registered(self, entity_id: str) -> bool:
         """Check if an entity is registered with the integration.
@@ -155,12 +159,13 @@ class IntegrationResolutionStrategy(VariableResolutionStrategy):
         if self._data_provider_callback is None:
             return False
 
-        # Only call data provider for registered entities
-        if not self._is_entity_registered(entity_id):
-            return False
-
         result = self._data_provider_callback(entity_id)
-        return result is not None and result.get("exists", False)
+        # If the callback returns None, it's a fatal error that should be raised
+        # during resolution, not during existence checking
+        if result is None:
+            return False  # Let the resolution phase handle the error
+
+        return result.get("exists", False)
 
     def resolve_variable(self, variable_name: str, entity_id: str | None = None) -> tuple[Any, bool, str]:
         """Resolve variable using integration data provider."""
@@ -170,8 +175,8 @@ class IntegrationResolutionStrategy(VariableResolutionStrategy):
         if "." in variable_name and entity_id is None:
             return self._resolve_attribute_reference(variable_name)
 
-        # Regular entity resolution - only call data provider for registered entities
-        if not self._is_entity_registered(target_entity):
+        # Regular entity resolution - we only get here if can_resolve returned True
+        if self._data_provider_callback is None:
             return None, False, "integration"
 
         result = self._data_provider_callback(target_entity)

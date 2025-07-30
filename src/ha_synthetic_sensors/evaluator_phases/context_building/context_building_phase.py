@@ -60,7 +60,6 @@ class ContextBuildingPhase:
         context: dict[str, ContextValue] | None = None,
         config: FormulaConfig | None = None,
         sensor_config: SensorConfig | None = None,
-        allow_ha_lookups: bool = False,
     ) -> dict[str, ContextValue]:
         """Build the complete evaluation context for formula evaluation."""
         eval_context: dict[str, ContextValue] = {}
@@ -68,8 +67,8 @@ class ContextBuildingPhase:
         # Add Home Assistant constants to evaluation context (lowest priority)
         self._add_ha_constants_to_context(eval_context)
 
-        # Create variable resolver with allow_ha_lookups setting
-        resolver = self._create_variable_resolver(context, allow_ha_lookups)
+        # Create variable resolver
+        resolver = self._create_variable_resolver(context)
 
         # Add context variables first (highest priority)
         self._add_context_variables(eval_context, context)
@@ -79,15 +78,13 @@ class ContextBuildingPhase:
 
         # Resolve config variables (can override entity values)
         # Create a new resolver with the current eval_context to include resolved entities
-        resolver_with_context = self._create_variable_resolver(eval_context, allow_ha_lookups)
+        resolver_with_context = self._create_variable_resolver(eval_context)
         self._resolve_config_variables(eval_context, config, resolver_with_context, sensor_config)
 
         _LOGGER.debug("Context building phase: built context with %d variables", len(eval_context))
         return eval_context
 
-    def _create_variable_resolver(
-        self, context: dict[str, ContextValue] | None, allow_ha_lookups: bool = False
-    ) -> VariableResolver:
+    def _create_variable_resolver(self, context: dict[str, ContextValue] | None) -> VariableResolver:
         """Create variable resolver with appropriate strategies."""
         strategies: list[VariableResolutionStrategy] = []
 
@@ -101,8 +98,8 @@ class ContextBuildingPhase:
                 IntegrationResolutionStrategy(self._dependency_handler.data_provider_callback, self._dependency_handler)
             )
 
-        # Home Assistant resolution (lowest priority, only if allowed)
-        if allow_ha_lookups and self._hass:
+        # Home Assistant resolution (lowest priority, always included if hass available)
+        if self._hass:
             strategies.append(HomeAssistantResolutionStrategy(self._hass))
 
         return VariableResolver(strategies)

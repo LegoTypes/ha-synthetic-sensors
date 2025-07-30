@@ -5,11 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 import yaml
 
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 
 
 class TestCrossSensorCollisionIntegration:
@@ -134,7 +130,6 @@ class TestCrossSensorCollisionIntegration:
                 device_identifier="test_device_123",
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             assert sensor_manager is not None
@@ -210,7 +205,6 @@ class TestCrossSensorCollisionIntegration:
                 device_identifier="test_device_123",
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
-                allow_ha_lookups=False,
             )
 
             assert sensor_manager is not None

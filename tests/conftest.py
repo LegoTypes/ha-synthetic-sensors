@@ -1203,13 +1203,7 @@ def service_layer(mock_hass, mock_config_manager, mock_sensor_manager, mock_name
     """Create a service layer instance with mocked dependencies."""
     from ha_synthetic_sensors.service_layer import ServiceLayer
 
-    return ServiceLayer(
-        mock_hass,
-        mock_config_manager,
-        mock_sensor_manager,
-        mock_name_resolver,
-        mock_evaluator,
-    )
+    return ServiceLayer(mock_hass, mock_config_manager, mock_sensor_manager, mock_name_resolver, mock_evaluator)
 
 
 @pytest.fixture

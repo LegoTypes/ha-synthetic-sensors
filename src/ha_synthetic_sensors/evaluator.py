@@ -91,7 +91,6 @@ class Evaluator(FormulaEvaluator):
         circuit_breaker_config: CircuitBreakerConfig | None = None,
         retry_config: RetryConfig | None = None,
         data_provider_callback: DataProviderCallback | None = None,
-        allow_ha_lookups: bool = False,
     ):
         """Initialize the enhanced formula evaluator.
 
@@ -103,7 +102,7 @@ class Evaluator(FormulaEvaluator):
             data_provider_callback: Optional callback for getting data directly from integrations
                                    without requiring actual HA entities. Should return (value, exists)
                                    where exists=True if data is available, False if not found.
-            allow_ha_lookups: Whether to allow fallback to HA state lookups for backing entities
+                                   Variables automatically try backing entities first, then HA fallback.
         """
         self._hass = hass
 
@@ -116,7 +115,7 @@ class Evaluator(FormulaEvaluator):
         self._retry_config = retry_config or RetryConfig()
 
         # Initialize handler modules
-        self._dependency_handler = EvaluatorDependency(hass, data_provider_callback, allow_ha_lookups)
+        self._dependency_handler = EvaluatorDependency(hass, data_provider_callback)
         self._cache_handler = EvaluatorCache(cache_config)
         self._error_handler = EvaluatorErrorHandler(self._circuit_breaker_config, self._retry_config)
         self._formula_preprocessor = FormulaPreprocessor(self._collection_resolver)
@@ -128,7 +127,7 @@ class Evaluator(FormulaEvaluator):
         self._sensor_to_backing_mapping: dict[str, str] = {}
 
         # Initialize phase modules for compiler-like evaluation
-        self._variable_resolution_phase = VariableResolutionPhase(self._sensor_to_backing_mapping, data_provider_callback)
+        self._variable_resolution_phase = VariableResolutionPhase(self._sensor_to_backing_mapping, data_provider_callback, hass)
         self._dependency_management_phase = DependencyManagementPhase()
         self._context_building_phase = ContextBuildingPhase()
         self._pre_evaluation_phase = PreEvaluationPhase()
@@ -144,9 +143,6 @@ class Evaluator(FormulaEvaluator):
         # Store data provider callback for backward compatibility
         self._data_provider_callback = data_provider_callback
 
-        # Store allow_ha_lookups setting
-        self._allow_ha_lookups = allow_ha_lookups
-
         # Set dependencies for context building phase (after all attributes are initialized)
         self._context_building_phase.set_evaluator_dependencies(
             hass, data_provider_callback, self._dependency_handler, self._sensor_to_backing_mapping
@@ -160,7 +156,6 @@ class Evaluator(FormulaEvaluator):
             self._cache_handler,
             self._error_handler,
             self._sensor_to_backing_mapping,
-            self._allow_ha_lookups,
             self._variable_resolution_phase,
             self._dependency_management_phase,
             self._context_building_phase,
@@ -560,12 +555,9 @@ class Evaluator(FormulaEvaluator):
         context: dict[str, ContextValue] | None = None,
         config: FormulaConfig | None = None,
         sensor_config: SensorConfig | None = None,
-        allow_ha_lookups: bool = False,
     ) -> dict[str, ContextValue]:
         """Build evaluation context from dependencies and configuration."""
-        return self._context_building_phase.build_evaluation_context(
-            dependencies, context, config, sensor_config, allow_ha_lookups
-        )
+        return self._context_building_phase.build_evaluation_context(dependencies, context, config, sensor_config)
 
     def _resolve_all_references_in_formula(
         self,
@@ -624,9 +616,7 @@ class Evaluator(FormulaEvaluator):
     ) -> dict[str, ContextValue]:
         """Get the evaluation context for a formula configuration."""
         dependencies, _ = self._extract_and_prepare_dependencies(formula_config, None, sensor_config)
-        return self._build_evaluation_context(
-            dependencies, None, formula_config, sensor_config, allow_ha_lookups=self._allow_ha_lookups
-        )
+        return self._build_evaluation_context(dependencies, None, formula_config, sensor_config)
 
     # Delegate cache operations to handler
     def clear_cache(self, formula_name: str | None = None) -> None:
@@ -697,19 +687,9 @@ class Evaluator(FormulaEvaluator):
         _LOGGER.debug("Updated retry config: max_attempts=%d, backoff=%f", config.max_attempts, config.backoff_seconds)
 
     @property
-    def allow_ha_lookups(self) -> bool:
-        """Get the allow_ha_lookups setting."""
-        return self._allow_ha_lookups
-
-    @property
     def dependency_management_phase(self) -> Any:
         """Get the dependency management phase."""
         return self._dependency_management_phase
-
-    def update_allow_ha_lookups(self, allow_ha_lookups: bool) -> None:
-        """Update the allow_ha_lookups setting."""
-        self._allow_ha_lookups = allow_ha_lookups
-        _LOGGER.debug("Updated allow_ha_lookups setting: %s", allow_ha_lookups)
 
     def update_sensor_to_backing_mapping(self, sensor_to_backing_mapping: dict[str, str]) -> None:
         """Update the sensor-to-backing entity mapping for state token resolution."""
@@ -728,7 +708,6 @@ class Evaluator(FormulaEvaluator):
             self._cache_handler,
             self._error_handler,
             self._sensor_to_backing_mapping,
-            self._allow_ha_lookups,
             self._variable_resolution_phase,
             self._dependency_management_phase,
             self._context_building_phase,
@@ -742,7 +721,6 @@ class Evaluator(FormulaEvaluator):
             self._dependency_handler,
             self._sensor_to_backing_mapping,
         )
-
         _LOGGER.debug("Updated sensor-to-backing mapping: %d mappings", len(sensor_to_backing_mapping))
 
     # CROSS-SENSOR REFERENCE MANAGEMENT

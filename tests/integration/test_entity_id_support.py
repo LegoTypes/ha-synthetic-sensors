@@ -52,11 +52,7 @@ class TestEntityIdSupport:
         evaluator = Evaluator(config_manager._hass)
         mock_sensor_manager = MagicMock()
         dynamic_sensor = DynamicSensor(
-            config_manager._hass,
-            standard_sensor,
-            evaluator,
-            mock_sensor_manager,
-            SensorManagerConfig(),
+            config_manager._hass, standard_sensor, evaluator, mock_sensor_manager, SensorManagerConfig()
         )
 
         # Should have the unique_id without prefix (new behavior)
@@ -123,11 +119,7 @@ class TestEntityIdSupport:
         standard_sensor = next(s for s in config.sensors if s.unique_id == "standard_power_sensor")
         mock_sensor_manager = MagicMock()
         standard_dynamic = DynamicSensor(
-            config_manager._hass,
-            standard_sensor,
-            evaluator,
-            mock_sensor_manager,
-            SensorManagerConfig(),
+            config_manager._hass, standard_sensor, evaluator, mock_sensor_manager, SensorManagerConfig()
         )
 
         # Should use unique_id without prefix (new behavior)
@@ -137,11 +129,7 @@ class TestEntityIdSupport:
         # Test custom entity_id sensor
         custom_sensor = next(s for s in config.sensors if s.unique_id == "custom_named_sensor")
         custom_dynamic = DynamicSensor(
-            config_manager._hass,
-            custom_sensor,
-            evaluator,
-            mock_sensor_manager,
-            SensorManagerConfig(),
+            config_manager._hass, custom_sensor, evaluator, mock_sensor_manager, SensorManagerConfig()
         )
 
         # Should use unique_id without prefix (new behavior)
@@ -188,11 +176,7 @@ class TestEntityIdSupport:
         evaluator = Evaluator(config_manager._hass)
         mock_sensor_manager = MagicMock()
         dynamic_sensor = DynamicSensor(
-            config_manager._hass,
-            comprehensive_sensor,
-            evaluator,
-            mock_sensor_manager,
-            SensorManagerConfig(),
+            config_manager._hass, comprehensive_sensor, evaluator, mock_sensor_manager, SensorManagerConfig()
         )
 
         # Should have the custom entity_id
@@ -231,7 +215,7 @@ class TestEntityIdSupport:
         config_manager._hass.states.get.side_effect = mock_states_get
 
         # Test that the sensor can be created and the state token is resolved
-        evaluator = Evaluator(config_manager._hass, allow_ha_lookups=True)
+        evaluator = Evaluator(config_manager._hass)
 
         # Set up data provider callback that uses the mock_hass.states.get
         def mock_data_provider(entity_id: str):
@@ -248,11 +232,7 @@ class TestEntityIdSupport:
 
         mock_sensor_manager = MagicMock()
         dynamic_sensor = DynamicSensor(
-            config_manager._hass,
-            current_power_sensor,
-            evaluator,
-            mock_sensor_manager,
-            SensorManagerConfig(),
+            config_manager._hass, current_power_sensor, evaluator, mock_sensor_manager, SensorManagerConfig()
         )
 
         # Should have the custom entity_id

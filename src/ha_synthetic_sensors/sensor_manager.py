@@ -270,14 +270,14 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         Returns:
             Dictionary mapping variable names to entity state values, or None if no variables
-            or if data provider callback is available and HA lookups are disabled
+            or if data provider callback is available (natural fallback will be used)
         """
         if not formula_config.variables:
             return None
 
-        # If data provider callback is available and HA lookups are disabled,
-        # let the evaluator handle variable resolution through IntegrationResolutionStrategy
-        if self._evaluator.data_provider_callback and not self._sensor_manager.allow_ha_lookups:
+        # If data provider callback is available,
+        # let the evaluator handle variable resolution through natural fallback
+        if self._evaluator.data_provider_callback:
             return None
 
         context: dict[str, Any] = {}
@@ -555,7 +555,6 @@ class SensorManager:
 
         # Integration data provider tracking
         self._registered_entities: set[str] = set()  # entity_ids registered by integration
-        self._allow_ha_lookups: bool = False  # Whether backing entities can fall back to HA lookups
         self._change_notifier: DataProviderChangeNotifier | None = None  # Callback for data change notifications
         self._sensor_to_backing_mapping: dict[str, str] = {}  # Mapping from sensor keys to backing entity IDs
 
@@ -566,7 +565,6 @@ class SensorManager:
         self._evaluator = self._manager_config.evaluator or Evaluator(
             self._hass,
             data_provider_callback=self._manager_config.data_provider_callback,
-            allow_ha_lookups=self._allow_ha_lookups,
         )
         self._config_manager = self._manager_config.config_manager
         self._logger = _LOGGER.getChild(self.__class__.__name__)
@@ -1319,17 +1317,16 @@ class SensorManager:
 
     # New push-based registration API
     def register_data_provider_entities(
-        self, entity_ids: set[str], allow_ha_lookups: bool = False, change_notifier: DataProviderChangeNotifier | None = None
+        self, entity_ids: set[str], change_notifier: DataProviderChangeNotifier | None = None
     ) -> None:
         """Register entities that the integration can provide data for.
 
-        This replaces any existing entity list with the new one.
+        This replaces any existing entity list with the new one. Variables will
+        automatically try registered backing entities first, then fall back to
+        HA entity lookups for unregistered entities.
 
         Args:
             entity_ids: Set of entity IDs that the integration can provide data for
-            allow_ha_lookups: If True, backing entities can fall back to HA state lookups
-                            when not found in data provider. If False (default), backing
-                            entities are always virtual and only use data provider callback.
             change_notifier: Optional callback that the integration can call when backing
                            entity data changes to trigger selective sensor updates.
 
@@ -1338,7 +1335,6 @@ class SensorManager:
         """
         _LOGGER.debug("=== REGISTERING DATA PROVIDER ENTITIES ===")
         _LOGGER.debug("Registering %d entities for integration data provider", len(entity_ids))
-        _LOGGER.debug("Allow HA lookups: %s", allow_ha_lookups)
         _LOGGER.debug("Change notifier: %s", "Provided" if change_notifier else "None")
 
         # Validate the entity IDs
@@ -1361,37 +1357,25 @@ class SensorManager:
                 _LOGGER.debug("  - %s", entity_id)
 
             _LOGGER.debug(
-                "Registered %d entities for integration data provider (allow_ha_lookups=%s, change_notifier=%s)",
+                "Registered %d entities for integration data provider (change_notifier=%s)",
                 len(entity_ids),
-                allow_ha_lookups,
                 change_notifier is not None,
             )
         else:
-            # Empty set provided directly - validate based on context
-            if not allow_ha_lookups:
-                raise SyntheticSensorsConfigError(
-                    "No backing entities provided in virtual-only mode (allow_ha_lookups=False). "
-                    "Either provide backing entities or enable HA lookups."
-                )
+            # Empty set provided directly - this is an error
             raise SyntheticSensorsConfigError(
                 "Empty backing entity set provided explicitly. "
                 "Use None or omit the parameter for HA-only mode, or provide actual backing entities."
             )
 
-        # Store the registered entities and lookup preference
+        # Store the registered entities
         self._registered_entities = entity_ids.copy()
-        self._allow_ha_lookups = allow_ha_lookups
         self._change_notifier = change_notifier
 
         # Update the evaluator if it has the new registration support
         if hasattr(self._evaluator, "update_integration_entities"):
             self._evaluator.update_integration_entities(entity_ids)
             _LOGGER.debug("Updated evaluator with %d integration entities", len(entity_ids))
-
-        # Update the evaluator's allow_ha_lookups setting
-        if hasattr(self._evaluator, "update_allow_ha_lookups"):
-            self._evaluator.update_allow_ha_lookups(allow_ha_lookups)
-            _LOGGER.debug("Updated evaluator allow_ha_lookups setting: %s", allow_ha_lookups)
 
         _LOGGER.debug("=== END REGISTERING DATA PROVIDER ENTITIES ===")
 
@@ -1450,19 +1434,16 @@ class SensorManager:
         _LOGGER.debug("=== END REGISTERING SENSOR-TO-BACKING MAPPING ===")
 
     def update_data_provider_entities(
-        self, entity_ids: set[str], allow_ha_lookups: bool = False, change_notifier: DataProviderChangeNotifier | None = None
+        self, entity_ids: set[str], change_notifier: DataProviderChangeNotifier | None = None
     ) -> None:
         """Update the registered entity list (replaces existing list).
 
         Args:
             entity_ids: Updated set of entity IDs the integration can provide data for
-            allow_ha_lookups: If True, backing entities can fall back to HA state lookups
-                            when not found in data provider. If False (default), backing
-                            entities are always virtual and only use data provider callback.
             change_notifier: Optional callback that the integration can call when backing
                            entity data changes to trigger selective sensor updates.
         """
-        self.register_data_provider_entities(entity_ids, allow_ha_lookups, change_notifier)
+        self.register_data_provider_entities(entity_ids, change_notifier)
 
     def get_registered_entities(self) -> set[str]:
         """
@@ -1559,15 +1540,13 @@ class SensorManager:
 
         return all_backing_entities
 
-    async def add_sensor_with_backing_entities(self, sensor_config: SensorConfig, allow_ha_lookups: bool | None = None) -> bool:
+    async def add_sensor_with_backing_entities(self, sensor_config: SensorConfig) -> bool:
         """Add a sensor and automatically register its backing entities.
 
         This is the enhanced CRUD method that makes backing entity management invisible.
 
         Args:
             sensor_config: The sensor configuration to add
-            allow_ha_lookups: If specified, overrides the current HA lookup setting for backing entities.
-                            If None, uses the current setting.
 
         Returns:
             True if sensor was added successfully
@@ -1579,15 +1558,12 @@ class SensorManager:
             # Add backing entities to our registered entities
             if backing_entities:
                 updated_entities = self._registered_entities.union(backing_entities)
-                # Use provided allow_ha_lookups or keep current setting
-                lookup_setting = allow_ha_lookups if allow_ha_lookups is not None else self._allow_ha_lookups
-                self.register_data_provider_entities(updated_entities, lookup_setting)
+                self.register_data_provider_entities(updated_entities)
                 _LOGGER.debug(
-                    "Auto-registered %d backing entities for sensor %s: %s (allow_ha_lookups=%s)",
+                    "Auto-registered %d backing entities for sensor %s: %s",
                     len(backing_entities),
                     sensor_config.unique_id,
                     backing_entities,
-                    lookup_setting,
                 )
 
             # Create the sensor entity
@@ -1653,7 +1629,7 @@ class SensorManager:
                 if orphaned_backing_entities:
                     # Remove orphaned backing entities from registered entities
                     updated_entities = self._registered_entities - orphaned_backing_entities
-                    self.register_data_provider_entities(updated_entities, self._allow_ha_lookups)
+                    self.register_data_provider_entities(updated_entities)
                     _LOGGER.debug(
                         "Auto-removed %d orphaned backing entities after removing sensor %s: %s",
                         len(orphaned_backing_entities),
@@ -1703,11 +1679,6 @@ class SensorManager:
         if hasattr(self._evaluator, "dependency_management_phase"):
             return self._evaluator.dependency_management_phase
         return None
-
-    @property
-    def allow_ha_lookups(self) -> bool:
-        """Get the allow_ha_lookups setting."""
-        return self._allow_ha_lookups
 
     @property
     def sensor_to_backing_mapping(self) -> dict[str, str]:

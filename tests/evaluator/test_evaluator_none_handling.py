@@ -22,9 +22,7 @@ def test_evaluator_handles_unknown_value_from_data_provider(mock_hass, mock_enti
 
     # Test simple variable reference where the variable resolves to unknown
     config = FormulaConfig(
-        id="test_formula",
-        formula="source_value",
-        variables={"source_value": "sensor.panel_power"},
+        id="test_formula", formula="source_value", variables={"source_value": "sensor.panel_power"}
     )  # Simple variable reference
 
     # Should return success result with unknown state (graceful state reflection)
@@ -79,11 +77,7 @@ def test_evaluator_works_with_valid_values(mock_hass, mock_entity_registry, mock
     evaluator.update_integration_entities({"sensor.valid_power"})
 
     # Test simple variable reference with valid value
-    config = FormulaConfig(
-        id="test_formula",
-        formula="power_reading",
-        variables={"power_reading": "sensor.valid_power"},
-    )
+    config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.valid_power"})
 
     result = evaluator.evaluate_formula(config)
 

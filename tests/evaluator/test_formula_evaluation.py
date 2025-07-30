@@ -300,33 +300,21 @@ class TestFormulaEvaluation:
         evaluator = Evaluator(mock_hass)
 
         # Test complex formula: Energy efficiency calculation
-        config = FormulaConfig(
-            id="efficiency",
-            name="efficiency",
-            formula="clamp(percent(output, input), 0, 100)",
-        )
+        config = FormulaConfig(id="efficiency", name="efficiency", formula="clamp(percent(output, input), 0, 100)")
         context = cast(dict[str, ContextValue], {"output": 850, "input": 1000})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
         assert result["value"] == 85.0
 
         # Test complex formula: Temperature comfort index
-        config = FormulaConfig(
-            id="comfort",
-            name="comfort",
-            formula="floor(map(clamp(temp, 18, 26), 18, 26, 0, 100))",
-        )
+        config = FormulaConfig(id="comfort", name="comfort", formula="floor(map(clamp(temp, 18, 26), 18, 26, 0, 100))")
         context = cast(dict[str, ContextValue], {"temp": 22})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
         assert result["value"] == 50.0  # 22°C maps to 50% comfort
 
         # Test complex formula: Power analysis with square root
-        config = FormulaConfig(
-            id="power_analysis",
-            name="power_analysis",
-            formula="sqrt(pow(voltage, 2) + pow(current, 2))",
-        )
+        config = FormulaConfig(id="power_analysis", name="power_analysis", formula="sqrt(pow(voltage, 2) + pow(current, 2))")
         context = cast(dict[str, ContextValue], {"voltage": 3, "current": 4})
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True

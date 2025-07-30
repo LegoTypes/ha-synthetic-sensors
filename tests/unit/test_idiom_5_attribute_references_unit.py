@@ -63,9 +63,7 @@ class TestIdiom5AttributeReferences:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"energy_analyzer": "sensor.span_panel_instantaneous_power"}
@@ -108,9 +106,7 @@ class TestIdiom5AttributeReferences:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"multiple_deps_test": "sensor.span_panel_instantaneous_power"}
@@ -159,9 +155,7 @@ class TestIdiom5AttributeReferences:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"problematic_sensor": "sensor.span_panel_instantaneous_power"}
@@ -197,9 +191,7 @@ class TestIdiom5AttributeReferences:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"self_reference_test": "sensor.span_panel_instantaneous_power"}
@@ -238,9 +230,7 @@ class TestIdiom5AttributeReferences:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"complex_deps_test": "sensor.span_panel_instantaneous_power"}
@@ -288,9 +278,7 @@ class TestIdiom5AttributeReferences:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"energy_analyzer": "sensor.span_panel_instantaneous_power"}

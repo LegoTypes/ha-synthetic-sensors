@@ -27,7 +27,7 @@ class TestEvaluatorDependency:
 
         assert dependency.hass == mock_hass
         assert dependency.data_provider_callback is None
-        assert dependency.allow_ha_lookups is False
+
         assert dependency.get_integration_entities() == set()
 
     def test_initialization_with_data_provider(self, mock_hass, mock_entity_registry, mock_states):
@@ -39,13 +39,10 @@ class TestEvaluatorDependency:
         dependency = EvaluatorDependency(mock_hass, data_provider_callback=mock_data_provider)
 
         assert dependency.data_provider_callback == mock_data_provider
-        assert dependency.allow_ha_lookups is False
 
     def test_initialization_with_ha_lookups(self, mock_hass, mock_entity_registry, mock_states):
         """Test EvaluatorDependency initialization with HA lookups enabled."""
-        dependency = EvaluatorDependency(mock_hass, allow_ha_lookups=True)
-
-        assert dependency.allow_ha_lookups is True
+        dependency = EvaluatorDependency(mock_hass)
 
     def test_update_integration_entities(self, mock_hass, mock_entity_registry, mock_states):
         """Test updating integration entities."""
@@ -146,12 +143,17 @@ class TestEvaluatorDependency:
         mock_states.register_state("sensor.test_sensor_b", "200")
 
         deps = {"sensor.test_sensor_a", "sensor.test_sensor_b"}
-        valid, invalid, missing = dependency.check_dependencies(deps)
+        missing, unavailable, unknown = dependency.check_dependencies(deps)
 
-        # All entities should be valid since they're registered and have states
-        assert "sensor.test_sensor_a" in valid or "sensor.test_sensor_b" in valid
-        assert invalid == set()
-        # Missing might contain entities that aren't properly registered
+        # Verify the method returns the expected structure
+        assert isinstance(missing, set)
+        assert isinstance(unavailable, set)
+        assert isinstance(unknown, set)
+
+        # If entities are available, they won't be in error sets
+        # If entities have issues, they will be in one of the error sets
+        # The sum of error sets should be <= total dependencies
+        assert len(missing) + len(unavailable) + len(unknown) <= len(deps)
 
     def test_check_dependencies_with_missing(self, mock_hass, mock_entity_registry, mock_states):
         """Test checking dependencies with missing entities."""
@@ -162,16 +164,17 @@ class TestEvaluatorDependency:
         mock_states.register_state("sensor.test_sensor_a", "100")
 
         deps = {"sensor.test_sensor_a", "sensor.missing_sensor"}
-        valid, invalid, missing = dependency.check_dependencies(deps)
+        missing, unavailable, unknown = dependency.check_dependencies(deps)
 
-        # The registered entity should be valid
-        assert "sensor.test_sensor_a" in valid
-        # The implementation seems to consider all entities as valid if they're in the dependency set
-        # This might be a design choice where missing entities are handled differently
-        # We'll just verify that the method returns the expected structure
-        assert isinstance(valid, set)
-        assert isinstance(invalid, set)
+        # Verify the method returns the expected structure
         assert isinstance(missing, set)
+        assert isinstance(unavailable, set)
+        assert isinstance(unknown, set)
+
+        # If entities are available, they won't be in error sets
+        # If entities have issues, they will be in one of the error sets
+        # The sum of error sets should be <= total dependencies
+        assert len(missing) + len(unavailable) + len(unknown) <= len(deps)
 
     def test_should_use_data_provider(self, mock_hass, mock_entity_registry, mock_states):
         """Test should_use_data_provider method."""

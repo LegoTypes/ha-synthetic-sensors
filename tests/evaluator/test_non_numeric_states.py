@@ -19,7 +19,7 @@ class TestNonNumericStateHandling:
         # Set the state to 'on' for this test
         mock_states.register_state("switch.test", state_value="on", attributes={"device_class": "switch"})
 
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Register the entity with the evaluator
         evaluator.update_integration_entities({"switch.test"})
@@ -73,7 +73,7 @@ class TestNonNumericStateHandling:
         # Set the state to 'on' for this test
         mock_states.register_state("binary_sensor.opening", state_value="on", attributes={"device_class": "opening"})
 
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Register the entity with the evaluator
         evaluator.update_integration_entities({"binary_sensor.opening"})
@@ -102,7 +102,7 @@ class TestNonNumericStateHandling:
         # Set the state to 'starting_up' for this test
         mock_states.register_state("sensor.power_meter", state_value="starting_up", attributes={"device_class": "power"})
 
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Register the entity with the evaluator
         evaluator.update_integration_entities({"sensor.power_meter"})
@@ -129,7 +129,7 @@ class TestNonNumericStateHandling:
         # Set the state to 'unavailable' for this test
         mock_states.register_state("sensor.temperature", state_value="unavailable", attributes={"device_class": "temperature"})
 
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Register the entity with the evaluator
         evaluator.update_integration_entities({"sensor.temperature"})
@@ -167,7 +167,7 @@ class TestNonNumericStateHandling:
 
     def test_mixed_dependencies_handling(self, mock_hass, mock_entity_registry, mock_states):
         """Test handling of mixed numeric and non-numeric dependencies."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         def mock_states_get(entity_id):
             """Mock state getter with mixed states."""
@@ -198,7 +198,7 @@ class TestNonNumericStateHandling:
     def test_circuit_breaker_for_non_numeric_states(self, mock_hass, mock_entity_registry, mock_states):
         """Test that unavailable states reflect to synthetic sensor (non-fatal)."""
         cb_config = CircuitBreakerConfig(max_fatal_errors=2, track_transitory_errors=True)
-        evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config)
 
         # Mock entity that is temporarily unavailable
         entity_id = "sensor.temperature"  # Use existing entity from shared registry
@@ -236,7 +236,7 @@ class TestNonNumericStateHandling:
     def test_missing_vs_non_numeric_entities(self, mock_hass, mock_entity_registry, mock_states):
         """Test distinction between missing entities (fatal) and non-numeric."""
         cb_config = CircuitBreakerConfig(max_fatal_errors=2)
-        evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config)
 
         def mock_states_get(entity_id):
             if entity_id == "sensor.missing_entity":  # Use existing entity from shared registry
@@ -270,7 +270,7 @@ class TestNonNumericStateHandling:
 
     def test_startup_race_condition_none_state(self, mock_hass, mock_entity_registry, mock_states):
         """Test handling of startup race condition where entities exist but have None state values (reflects as unavailable)."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Mock entity that exists but has None state (startup race condition)
         entity_id = "sensor.circuit_a_power"  # Use existing entity from shared registry
@@ -287,11 +287,7 @@ class TestNonNumericStateHandling:
 
         mock_hass.states.get.side_effect = mock_states_get
 
-        config = FormulaConfig(
-            id="startup_race_test",
-            name="startup_race",
-            formula=f"{entity_id} + 10",
-        )
+        config = FormulaConfig(id="startup_race_test", name="startup_race", formula=f"{entity_id} + 10")
 
         # None state should reflect as unknown (non-fatal, can recover when entity comes online)
         result = evaluator.evaluate_formula(config)
@@ -301,7 +297,7 @@ class TestNonNumericStateHandling:
 
     def test_startup_race_condition_solar_formula(self, mock_hass, mock_entity_registry, mock_states):
         """Test the specific solar inverter formula case from the reported bug."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         def mock_states_get(entity_id):
             """Mock state getter simulating startup race condition."""
@@ -341,7 +337,7 @@ class TestNonNumericStateHandling:
 
     def test_startup_race_condition_mixed_states(self, mock_hass, mock_entity_registry, mock_states):
         """Test mixed scenario where some entities are ready and others have None state."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         def mock_states_get(entity_id):
             """Mock state getter with mixed availability."""
@@ -380,7 +376,7 @@ class TestNonNumericStateHandling:
 
     def test_none_state_value_conversion(self, mock_hass, mock_entity_registry, mock_states):
         """Test that None state values are properly handled in conversion methods."""
-        _evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        _evaluator = Evaluator(mock_hass)
 
         # Test convert_to_numeric with None value
         from ha_synthetic_sensors.validation_helper import convert_to_numeric
@@ -399,7 +395,7 @@ class TestNonNumericStateHandling:
 
     def test_missing_entity_handling_in_evaluation(self, mock_hass, mock_entity_registry, mock_states):
         """Test that missing entities are properly handled in formula evaluation."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Mock that no entities exist
         mock_hass.states.get.return_value = None
@@ -417,7 +413,7 @@ class TestNonNumericStateHandling:
 
     def test_unavailable_and_unknown_entity_states(self, mock_hass, mock_entity_registry, mock_states):
         """Test comprehensive handling of 'unavailable' and 'unknown' entity states."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         def mock_states_get(entity_id):
             """Mock state getter with various unavailable states."""
@@ -481,7 +477,7 @@ class TestNonNumericStateHandling:
 
     def test_startup_race_all_scenarios(self, mock_hass, mock_entity_registry, mock_states):
         """Test all startup race condition scenarios: None, unavailable, unknown, missing."""
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         def mock_states_get(entity_id):
             """Mock state getter simulating various startup conditions."""

@@ -55,9 +55,7 @@ class TestIdiom2SelfReference:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
@@ -93,9 +91,7 @@ class TestIdiom2SelfReference:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
@@ -132,9 +128,7 @@ class TestIdiom2SelfReference:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
@@ -176,7 +170,7 @@ class TestIdiom2SelfReference:
         )
 
         # Register the external entity
-        sensor_manager.register_data_provider_entities({"sensor.current_power"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.current_power"})
 
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
@@ -212,9 +206,7 @@ class TestIdiom2SelfReference:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"power_analyzer": "sensor.span_panel_instantaneous_power"}

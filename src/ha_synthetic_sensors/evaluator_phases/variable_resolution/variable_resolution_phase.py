@@ -37,9 +37,11 @@ class VariableResolutionPhase:
         self,
         sensor_to_backing_mapping: dict[str, str] | None = None,
         data_provider_callback: Callable[[str], DataProviderResult] | None = None,
+        hass: Any = None,
     ) -> None:
         """Initialize the variable resolution phase."""
-        self._resolver_factory = VariableResolverFactory(sensor_to_backing_mapping, data_provider_callback)
+        self._hass = hass  # Store HA instance for factory recreation
+        self._resolver_factory = VariableResolverFactory(sensor_to_backing_mapping, data_provider_callback, hass)
         self._sensor_registry_phase: Any = None
         self._formula_preprocessor: Any = None
 
@@ -84,9 +86,9 @@ class VariableResolutionPhase:
         # Update the resolver factory with the current data provider callback for StateResolver
         if hasattr(dependency_handler, "data_provider_callback"):
             current_data_provider = dependency_handler.data_provider_callback
-            # Update existing resolver factory with current data provider
+            # Update existing resolver factory with current data provider (preserve HA instance)
             self._resolver_factory = VariableResolverFactory(
-                self._resolver_factory.sensor_to_backing_mapping, current_data_provider
+                self._resolver_factory.sensor_to_backing_mapping, current_data_provider, self._hass
             )
             if self._sensor_registry_phase is not None:
                 self._resolver_factory.set_sensor_registry_phase(self._sensor_registry_phase)
@@ -95,9 +97,9 @@ class VariableResolutionPhase:
 
     def update_data_provider_callback(self, data_provider_callback: Callable[[str], DataProviderResult] | None) -> None:
         """Update the data provider callback for the StateResolver."""
-        # Recreate the resolver factory with the updated data provider
+        # Recreate the resolver factory with the updated data provider (preserve HA instance)
         self._resolver_factory = VariableResolverFactory(
-            self._resolver_factory.sensor_to_backing_mapping, data_provider_callback
+            self._resolver_factory.sensor_to_backing_mapping, data_provider_callback, self._hass
         )
         if self._sensor_registry_phase is not None:
             self._resolver_factory.set_sensor_registry_phase(self._sensor_registry_phase)

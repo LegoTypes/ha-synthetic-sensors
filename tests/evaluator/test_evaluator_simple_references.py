@@ -13,11 +13,7 @@ def test_simple_variable_evaluator(mock_hass, mock_entity_registry, mock_states)
     evaluator = Evaluator(mock_hass)
 
     # Test simple variable reference
-    config = FormulaConfig(
-        id="test_formula",
-        formula="power_reading",
-        variables={"power_reading": "sensor.power_meter"},
-    )
+    config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
 
     # Create context with the variable value
     context = {"power_reading": 25.5}
@@ -35,7 +31,7 @@ def test_simple_variable_evaluator(mock_hass, mock_entity_registry, mock_states)
 def test_direct_entity_reference(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test direct entity reference without variables."""
     # Create evaluator with HA lookups enabled
-    evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+    evaluator = Evaluator(mock_hass)
 
     # Test direct entity reference (no variables needed)
     config = FormulaConfig(id="test_formula", formula="sensor.temperature", variables={})

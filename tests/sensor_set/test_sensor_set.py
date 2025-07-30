@@ -184,9 +184,7 @@ class TestSensorSetCRUDOperations:
         await sensor_set.async_add_sensor(sample_sensor_config)
 
         storage_manager.async_store_sensor.assert_called_once_with(
-            sensor_config=sample_sensor_config,
-            sensor_set_id="test_sensor_set",
-            device_identifier="test-device-123",
+            sensor_config=sample_sensor_config, sensor_set_id="test_sensor_set", device_identifier="test-device-123"
         )
 
     @pytest.mark.asyncio
@@ -375,9 +373,7 @@ class TestSensorSetBulkOperations:
         await sensor_set.async_replace_sensors(sensor_configs)
 
         storage_manager.async_store_sensors_bulk.assert_called_once_with(
-            sensor_configs=sensor_configs,
-            sensor_set_id="test_sensor_set",
-            device_identifier="test-device-123",
+            sensor_configs=sensor_configs, sensor_set_id="test_sensor_set", device_identifier="test-device-123"
         )
 
     @pytest.mark.asyncio
@@ -401,9 +397,7 @@ class TestSensorSetBulkOperations:
         await sensor_set.async_replace_sensors([])
 
         storage_manager.async_store_sensors_bulk.assert_called_once_with(
-            sensor_configs=[],
-            sensor_set_id="test_sensor_set",
-            device_identifier="test-device-123",
+            sensor_configs=[], sensor_set_id="test_sensor_set", device_identifier="test-device-123"
         )
 
 
@@ -422,9 +416,7 @@ class TestSensorSetYAMLOperations:
         await sensor_set.async_import_yaml(yaml_content)
 
         storage_manager.async_from_yaml.assert_called_once_with(
-            yaml_content=yaml_content,
-            sensor_set_id="test_sensor_set",
-            device_identifier="test-device-123",
+            yaml_content=yaml_content, sensor_set_id="test_sensor_set", device_identifier="test-device-123"
         )
 
     @pytest.mark.asyncio
@@ -439,9 +431,7 @@ class TestSensorSetYAMLOperations:
         await sensor_set.async_import_yaml(yaml_content)
 
         storage_manager.async_from_yaml.assert_called_once_with(
-            yaml_content=yaml_content,
-            sensor_set_id="test_sensor_set",
-            device_identifier=None,
+            yaml_content=yaml_content, sensor_set_id="test_sensor_set", device_identifier=None
         )
 
     def test_export_yaml_success(self, storage_manager, sensor_set_metadata):
@@ -943,11 +933,7 @@ class TestSensorSetIntegration:
                     unique_id="temp_sensor",
                     name="Temporary Sensor",
                     formulas=[
-                        FormulaConfig(
-                            id="temp_sensor",
-                            formula="temp_value",
-                            variables={"temp_value": "sensor.temp_source"},
-                        )
+                        FormulaConfig(id="temp_sensor", formula="temp_value", variables={"temp_value": "sensor.temp_source"})
                     ],
                     enabled=True,
                     device_identifier="test-device-123",
@@ -1001,11 +987,7 @@ class TestSensorSetIntegration:
     async def test_bulk_operations_with_yaml_fixtures(self, storage_manager, yaml_fixtures):
         """Test bulk operations using YAML fixtures."""
         # Create metadata for bulk operations
-        metadata = SensorSetMetadata(
-            sensor_set_id="bulk_sensor_set",
-            device_identifier="bulk-device-456",
-            name="Bulk Test Set",
-        )
+        metadata = SensorSetMetadata(sensor_set_id="bulk_sensor_set", device_identifier="bulk-device-456", name="Bulk Test Set")
 
         storage_manager.get_sensor_set_metadata = MagicMock(return_value=metadata)
         storage_manager.async_from_yaml = AsyncMock()

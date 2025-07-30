@@ -374,7 +374,6 @@ class TestCollectionUserTypes:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             # Verify sensor manager was created

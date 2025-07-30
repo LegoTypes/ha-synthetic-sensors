@@ -148,10 +148,9 @@ class TestSensorManagerDataProviderManagement:
         entity_ids = {"sensor.test1", "sensor.test2"}
         change_notifier = MagicMock()
 
-        manager.register_data_provider_entities(entity_ids, allow_ha_lookups=True, change_notifier=change_notifier)
+        manager.register_data_provider_entities(entity_ids, change_notifier)
 
         assert manager._registered_entities == entity_ids
-        assert manager._allow_ha_lookups is True
         assert manager._change_notifier == change_notifier
 
     def test_update_data_provider_entities(self, mock_hass, mock_entity_registry, mock_states) -> None:
@@ -164,14 +163,13 @@ class TestSensorManagerDataProviderManagement:
 
         # Initial registration
         initial_entities = {"sensor.test1"}
-        manager.register_data_provider_entities(initial_entities, allow_ha_lookups=False)
+        manager.register_data_provider_entities(initial_entities)
 
         # Update with new entities
         updated_entities = {"sensor.test2", "sensor.test3"}
-        manager.update_data_provider_entities(updated_entities, allow_ha_lookups=True)
+        manager.update_data_provider_entities(updated_entities)
 
         assert manager._registered_entities == updated_entities
-        assert manager._allow_ha_lookups is True
 
     def test_get_registered_entities(self, mock_hass, mock_entity_registry, mock_states) -> None:
         """Test get_registered_entities method."""

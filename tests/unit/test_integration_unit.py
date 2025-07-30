@@ -40,9 +40,7 @@ class TestIntegration:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mappings
         sensor_to_backing_mapping = {
@@ -99,9 +97,7 @@ class TestIntegration:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mappings
         sensor_to_backing_mapping = {"multi_ref_sensor": "sensor.span_panel_instantaneous_power"}
@@ -141,9 +137,7 @@ class TestIntegration:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mappings
         sensor_to_backing_mapping = {"deep_chain_sensor": "sensor.span_panel_instantaneous_power"}
@@ -183,9 +177,7 @@ class TestIntegration:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mappings
         sensor_to_backing_mapping = {"attr_cross_ref_sensor": "sensor.span_panel_instantaneous_power"}

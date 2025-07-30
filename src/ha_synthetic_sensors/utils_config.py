@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 from .config_models import FormulaConfig
-from .exceptions import MissingDependencyError
+from .exceptions import DataValidationError, MissingDependencyError
 from .type_definitions import ContextValue
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,5 +50,8 @@ def resolve_config_variables(
                 raise MissingDependencyError(
                     f"Config variable '{var_name}' in formula '{config.name or config.id}' resolved to None"
                 )
+        except DataValidationError:
+            # Re-raise DataValidationError without wrapping - it's a fatal implementation error
+            raise
         except Exception as err:
             raise MissingDependencyError(f"Error resolving config variable '{var_name}': {err}") from err

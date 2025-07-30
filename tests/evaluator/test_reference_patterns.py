@@ -108,7 +108,7 @@ class TestReferencePatterns:
 
         # Set the data provider callback and enable HA lookups
         evaluator.data_provider_callback = mock_data_provider
-        evaluator.update_allow_ha_lookups(True)
+        evaluator
 
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 
@@ -171,7 +171,7 @@ class TestReferencePatterns:
 
         # Set the data provider callback and enable HA lookups
         evaluator.data_provider_callback = mock_data_provider
-        evaluator.update_allow_ha_lookups(True)
+        evaluator
 
         config = config_manager._parse_yaml_config(reference_patterns_yaml)
 

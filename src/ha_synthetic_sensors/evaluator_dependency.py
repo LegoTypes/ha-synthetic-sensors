@@ -22,22 +22,19 @@ _LOGGER = logging.getLogger(__name__)
 class EvaluatorDependency:
     """Handles dependency parsing, validation, and resolution for formula evaluation."""
 
-    def __init__(
-        self, hass: HomeAssistant, data_provider_callback: DataProviderCallback | None = None, allow_ha_lookups: bool = False
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, data_provider_callback: DataProviderCallback | None = None) -> None:
         """Initialize dependency manager.
 
         Args:
             hass: Home Assistant instance
             data_provider_callback: Optional callback for getting data directly from integrations
-            allow_ha_lookups: Whether to allow fallback to HA state lookups for backing entities
+                                   Variables automatically try backing entities first, then HA fallback.
         """
         self._hass = hass
         self._dependency_parser = DependencyParser()
         self._collection_resolver = CollectionResolver(hass)
         self._data_provider_callback = data_provider_callback
         self._registered_integration_entities: set[str] | None = None
-        self._allow_ha_lookups = allow_ha_lookups
 
     def update_integration_entities(self, entity_ids: set[str]) -> None:
         """Update the set of entities that the integration can provide (push-based pattern).
@@ -67,11 +64,6 @@ class EvaluatorDependency:
     def data_provider_callback(self, value: DataProviderCallback | None) -> None:
         """Set the data provider callback."""
         self._data_provider_callback = value
-
-    @property
-    def allow_ha_lookups(self) -> bool:
-        """Get the allow_ha_lookups setting."""
-        return self._allow_ha_lookups
 
     @property
     def hass(self) -> HomeAssistant:
@@ -224,14 +216,9 @@ class EvaluatorDependency:
         if self._should_use_data_provider(entity_id):
             return self._check_data_provider_entity(entity_id)
 
-        # Check Home Assistant entity only if allow_ha_lookups is True
-        # This implements the user's architecture for registration validation
-        if self._allow_ha_lookups:
-            return self._check_home_assistant_entity(entity_id, collection_pattern_entities)
-
-        # If allow_ha_lookups is False and entity is not in data provider, it's missing
-        # This prevents hiding registration errors by falling back to HA lookups
-        return "missing"
+        # Check Home Assistant entity via natural fallback
+        # Variables always try backing entities first, then HA entities
+        return self._check_home_assistant_entity(entity_id, collection_pattern_entities)
 
     def validate_dependencies(self, dependencies: set[str]) -> DependencyValidation:
         """Validate dependencies and return validation result."""

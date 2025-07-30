@@ -38,13 +38,7 @@ class TestCollectionNegationIntegration:
         return Mock()
 
     async def test_collection_negation_comprehensive(
-        self,
-        mock_hass,
-        mock_entity_registry,
-        mock_states,
-        negation_test_yaml_path,
-        mock_config_entry,
-        mock_async_add_entities,
+        self, mock_hass, mock_entity_registry, mock_states, negation_test_yaml_path, mock_config_entry, mock_async_add_entities
     ):
         """Test comprehensive collection function negation scenarios."""
 
@@ -109,7 +103,6 @@ class TestCollectionNegationIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping={},  # Empty since sensors use literal values
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             assert sensor_manager is not None

@@ -73,9 +73,7 @@ class TestIdiom3AttributeAccess:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power", "sensor.backup_device"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power", "sensor.backup_device"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"battery_efficiency": "sensor.span_panel_instantaneous_power"}
@@ -122,9 +120,7 @@ class TestIdiom3AttributeAccess:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power", "sensor.power_meter"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power", "sensor.power_meter"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"comprehensive_analysis": "sensor.span_panel_instantaneous_power"}
@@ -170,9 +166,7 @@ class TestIdiom3AttributeAccess:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"nested_attribute_test": "sensor.span_panel_instantaneous_power"}
@@ -227,9 +221,7 @@ class TestIdiom3AttributeAccess:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power", "sensor.power_meter"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power", "sensor.power_meter"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"missing_attr_test": "sensor.span_panel_instantaneous_power"}
@@ -272,9 +264,7 @@ class TestIdiom3AttributeAccess:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"nested_variable_test": "sensor.span_panel_instantaneous_power"}
@@ -323,9 +313,7 @@ class TestIdiom3AttributeAccess:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"nested_attribute_formula": "sensor.span_panel_instantaneous_power"}
@@ -373,9 +361,7 @@ class TestIdiom3AttributeAccess:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"simple_power": "sensor.span_panel_instantaneous_power"}

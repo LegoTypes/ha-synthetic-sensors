@@ -33,7 +33,7 @@ class TestNumericLiterals:
     ):
         """Test basic integer and float literals in variables."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Set the state for the entity
         mock_states.register_state("sensor.test_value", state_value="100", attributes={"device_class": "power"})
@@ -76,7 +76,7 @@ class TestNumericLiterals:
     ):
         """Test mixing entity references with numeric literals."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Mock the entity references
         def mock_get_state(entity_id):
@@ -105,7 +105,7 @@ class TestNumericLiterals:
     ):
         """Test numeric literals in attribute formulas."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Set the state for the entity
         mock_states.register_state("sensor.power_meter", state_value="500", attributes={"device_class": "power"})
@@ -162,7 +162,7 @@ class TestNumericLiterals:
     ):
         """Test boolean-like numeric literals (0 and 1)."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Set the state for the entity
         mock_states.register_state("sensor.some_value", state_value="100", attributes={"device_class": "power"})
@@ -187,7 +187,7 @@ class TestNumericLiterals:
     ):
         """Test complex mathematical expressions with literals."""
         config_manager, config = numeric_literals_config_manager
-        evaluator = Evaluator(mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(mock_hass)
 
         # Mock the entity references
         def mock_get_state(entity_id):
@@ -219,11 +219,7 @@ class TestNumericLiterals:
         evaluator = Evaluator(mock_hass)
 
         # Test with valid numeric context
-        config = FormulaConfig(
-            id="test_numeric",
-            formula="a + b + c",
-            variables={"a": 10, "b": 20.5, "c": -5},
-        )
+        config = FormulaConfig(id="test_numeric", formula="a + b + c", variables={"a": 10, "b": 20.5, "c": -5})
 
         # Test evaluation
         result = evaluator.evaluate_formula(config)

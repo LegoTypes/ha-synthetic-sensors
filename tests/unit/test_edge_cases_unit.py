@@ -62,9 +62,7 @@ class TestEdgeCases:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"deep_chain_test": "sensor.span_panel_instantaneous_power"}
@@ -107,9 +105,7 @@ class TestEdgeCases:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"multiple_circular_test": "sensor.span_panel_instantaneous_power"}
@@ -152,9 +148,7 @@ class TestEdgeCases:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"variable_conflict_test": "sensor.span_panel_instantaneous_power"}
@@ -198,9 +192,7 @@ class TestEdgeCases:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"complex_inheritance_test": "sensor.span_panel_instantaneous_power"}
@@ -248,9 +240,7 @@ class TestEdgeCases:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"deep_chain_test": "sensor.span_panel_instantaneous_power"}
@@ -294,9 +284,7 @@ class TestEdgeCases:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"complex_deep_chain": "sensor.span_panel_instantaneous_power"}

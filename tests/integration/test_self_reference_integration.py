@@ -5,11 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 # Use public API imports as shown in integration guide
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 
 
 class TestSelfReferenceIntegration:
@@ -124,7 +120,6 @@ class TestSelfReferenceIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             # Verify setup
@@ -214,7 +209,6 @@ class TestSelfReferenceIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             # Verify setup
@@ -302,7 +296,6 @@ class TestSelfReferenceIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             # Verify setup

@@ -62,24 +62,11 @@ class TestServiceLayer:
         return evaluator
 
     @pytest.fixture
-    def service_layer(
-        self,
-        mock_hass,
-        mock_config_manager,
-        mock_sensor_manager,
-        mock_name_resolver,
-        mock_evaluator,
-    ):
+    def service_layer(self, mock_hass, mock_config_manager, mock_sensor_manager, mock_name_resolver, mock_evaluator):
         """Create a service layer instance with mocked dependencies."""
         from ha_synthetic_sensors.service_layer import ServiceLayer
 
-        return ServiceLayer(
-            mock_hass,
-            mock_config_manager,
-            mock_sensor_manager,
-            mock_name_resolver,
-            mock_evaluator,
-        )
+        return ServiceLayer(mock_hass, mock_config_manager, mock_sensor_manager, mock_name_resolver, mock_evaluator)
 
     def test_service_registration(self, service_layer, mock_hass):
         """Test that services are registered correctly."""
@@ -139,12 +126,7 @@ class TestServiceLayer:
         assert mock_hass.services.async_remove.call_count == len(expected_services)
 
     async def test_reload_config_service(
-        self,
-        service_layer,
-        mock_config_manager,
-        mock_name_resolver,
-        mock_sensor_manager,
-        mock_evaluator,
+        self, service_layer, mock_config_manager, mock_name_resolver, mock_sensor_manager, mock_evaluator
     ):
         """Test reload config service functionality."""
         # Mock service call
@@ -348,12 +330,7 @@ class TestServiceLayer:
         assert mock_hass.services.async_remove.called
 
     def test_service_domain_configuration(
-        self,
-        mock_hass,
-        mock_config_manager,
-        mock_sensor_manager,
-        mock_name_resolver,
-        mock_evaluator,
+        self, mock_hass, mock_config_manager, mock_sensor_manager, mock_name_resolver, mock_evaluator
     ):
         """Test service layer with custom domain."""
         from ha_synthetic_sensors.service_layer import ServiceLayer
