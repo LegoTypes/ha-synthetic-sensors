@@ -44,21 +44,30 @@ class TestTypeAnalyzer:
 
     def test_categorize_version_strings(self):
         """Test version string categorization."""
-        # Semantic versions (must be n.n.n format)
-        assert TypeAnalyzer.categorize_type("1.0.0") == TypeCategory.VERSION
+        # Semantic versions (must have 'v' prefix and n.n.n format)
+        assert TypeAnalyzer.categorize_type("v1.0.0") == TypeCategory.VERSION
         assert TypeAnalyzer.categorize_type("v2.1.3") == TypeCategory.VERSION
-        assert TypeAnalyzer.categorize_type("10.15.2-beta") == TypeCategory.VERSION
+        assert TypeAnalyzer.categorize_type("v10.15.2-beta") == TypeCategory.VERSION
+        # Version strings without 'v' prefix should be STRING
+        assert TypeAnalyzer.categorize_type("1.0.0") == TypeCategory.STRING
+        assert TypeAnalyzer.categorize_type("2.1.3") == TypeCategory.STRING
         # Two-part versions are not valid versions, should be STRING
+        assert TypeAnalyzer.categorize_type("v1.2") == TypeCategory.STRING
         assert TypeAnalyzer.categorize_type("1.2") == TypeCategory.STRING
 
     def test_categorize_conflict_resolution(self):
         """Test handling of ambiguous strings."""
-        # 2024.01.01 is a valid 3-part version
-        assert TypeAnalyzer.categorize_type("2024.01.01") == TypeCategory.VERSION
+        # 2024.01.01 is a valid 3-part version with 'v' prefix
+        assert TypeAnalyzer.categorize_type("v2024.01.01") == TypeCategory.VERSION
+        # Without 'v' prefix, it's not a version
+        assert TypeAnalyzer.categorize_type("2024.01.01") == TypeCategory.STRING
         # 2023.12 is not valid version (only 2 parts), becomes string
+        assert TypeAnalyzer.categorize_type("v2023.12") == TypeCategory.STRING
         assert TypeAnalyzer.categorize_type("2023.12") == TypeCategory.STRING
-        # Clear version format (3 parts)
-        assert TypeAnalyzer.categorize_type("1.2.3") == TypeCategory.VERSION
+        # Clear version format (3 parts with 'v' prefix)
+        assert TypeAnalyzer.categorize_type("v1.2.3") == TypeCategory.VERSION
+        # Without 'v' prefix, it's not a version
+        assert TypeAnalyzer.categorize_type("1.2.3") == TypeCategory.STRING
 
     def test_categorize_none_values(self):
         """Test that None values raise appropriate error."""
@@ -116,13 +125,13 @@ class TestSeparateComparisonHandlers:
 
     def test_can_handle_version_comparisons(self):
         """Test version comparison capability detection."""
-        # Same-type version comparisons
-        assert self.version_handler.can_handle("1.0.0", "2.0.0", "<")
+        # Same-type version comparisons (require 'v' prefix)
+        assert self.version_handler.can_handle("v1.0.0", "v2.0.0", "<")
         assert self.version_handler.can_handle("v2.1.0", "v1.0.0", ">")
 
-        # Cross-type version/string comparisons
-        assert self.version_handler.can_handle("2.1.0", "1.0.0", ">=")
-        assert self.version_handler.can_handle("v1.0.0", "2.0.0", "<=")
+        # Cross-type version/string comparisons (require 'v' prefix)
+        assert self.version_handler.can_handle("v2.1.0", "v1.0.0", ">=")
+        assert self.version_handler.can_handle("v1.0.0", "v2.0.0", "<=")
 
     def test_can_handle_string_comparisons(self):
         """Test string comparison capability detection."""
@@ -210,18 +219,18 @@ class TestSeparateComparisonHandlers:
 
     def test_compare_version_operations(self):
         """Test version comparison operations."""
-        # Basic semantic version comparisons
-        assert self.version_handler.compare("2.0.0", "1.0.0", ">") is True
-        assert self.version_handler.compare("1.0.0", "2.0.0", "<") is True
-        assert self.version_handler.compare("1.0.0", "1.0.0", ">=") is True
+        # Basic semantic version comparisons (require 'v' prefix)
+        assert self.version_handler.compare("v2.0.0", "v1.0.0", ">") is True
+        assert self.version_handler.compare("v1.0.0", "v2.0.0", "<") is True
+        assert self.version_handler.compare("v1.0.0", "v1.0.0", ">=") is True
 
         # Version prefixes
         assert self.version_handler.compare("v2.1.0", "v1.0.0", ">") is True
-        assert self.version_handler.compare("v1.0.0", "2.0.0", "<") is True
+        assert self.version_handler.compare("v1.0.0", "v2.0.0", "<") is True
 
         # Complex versions
-        assert self.version_handler.compare("2.1.3", "2.1.2", ">") is True
-        assert self.version_handler.compare("1.15.0", "1.2.0", ">") is True  # 15 > 2
+        assert self.version_handler.compare("v2.1.3", "v2.1.2", ">") is True
+        assert self.version_handler.compare("v1.15.0", "v1.2.0", ">") is True  # 15 > 2
 
     def test_compare_unsupported_operations(self):
         """Test that unsupported operations raise appropriate errors."""
@@ -236,9 +245,23 @@ class TestSeparateComparisonHandlers:
         with pytest.raises(UnsupportedComparisonError):
             self.datetime_handler.compare("not-a-date", "2024-01-01", ">")
 
-        # Invalid version strings for version handler
+        # Invalid version strings for version handler (no 'v' prefix)
         with pytest.raises(UnsupportedComparisonError):
-            self.version_handler.compare("not-a-version", "1.0.0", ">")
+            self.version_handler.compare("not-a-version", "v1.0.0", ">")
+
+        # Version strings without 'v' prefix should fail
+        with pytest.raises(UnsupportedComparisonError):
+            self.version_handler.compare("1.0.0", "v1.0.0", ">")
+
+        with pytest.raises(UnsupportedComparisonError):
+            self.version_handler.compare("v1.0.0", "1.0.0", ">")
+
+        # Mixed version/string comparisons should fail (strict 'v' requirement)
+        with pytest.raises(UnsupportedComparisonError):
+            self.version_handler.compare("v1.0.0", "2.0.0", ">")
+
+        with pytest.raises(UnsupportedComparisonError):
+            self.version_handler.compare("1.0.0", "v2.0.0", ">")
 
     def test_datetime_conversion_edge_cases(self):
         """Test datetime conversion edge cases."""
@@ -254,13 +277,13 @@ class TestSeparateComparisonHandlers:
     def test_version_parsing_edge_cases(self):
         """Test version parsing edge cases."""
         # Version with 'v' prefix
-        assert self.version_handler.compare("v1.2.3", "1.2.2", ">") is True
+        assert self.version_handler.compare("v1.2.3", "v1.2.2", ">") is True
 
-        # Three-part versions (required format)
-        assert self.version_handler.compare("2.1.0", "2.0.0", ">") is True
+        # Three-part versions (required format with 'v' prefix)
+        assert self.version_handler.compare("v2.1.0", "v2.0.0", ">") is True
 
         # Version with pre-release info
-        assert self.version_handler.compare("2.0.0-beta", "1.9.9", ">") is True
+        assert self.version_handler.compare("v2.0.0-beta", "v1.9.9", ">") is True
 
 
 class TestConditionParserIntegration:
@@ -286,13 +309,13 @@ class TestConditionParserIntegration:
 
     def test_compare_values_version(self):
         """Test version comparisons through ConditionParser."""
-        # New version functionality
-        assert ConditionParser.compare_values("2.0.0", ">", "1.0.0") is True
-        assert ConditionParser.compare_values("v1.2.0", ">=", "1.1.0") is True
+        # New version functionality (require 'v' prefix)
+        assert ConditionParser.compare_values("v2.0.0", ">", "v1.0.0") is True
+        assert ConditionParser.compare_values("v1.2.0", ">=", "v1.1.0") is True
 
         # Version equality
-        assert ConditionParser.compare_values("1.0.0", "==", "1.0.0") is True
-        assert ConditionParser.compare_values("1.0.0", "!=", "2.0.0") is True
+        assert ConditionParser.compare_values("v1.0.0", "==", "v1.0.0") is True
+        assert ConditionParser.compare_values("v1.0.0", "!=", "v2.0.0") is True
 
     def test_compare_values_error_handling(self):
         """Test error handling in ConditionParser."""
@@ -308,6 +331,13 @@ class TestConditionParserIntegration:
         # String vs numeric also converts to numeric if string is numeric
         result = ConditionParser.compare_values("10", ">", 5)
         assert result is True  # "10" (10.0) > 5 (5.0)
+
+        # Mixed version/string comparisons should be rejected (strict 'v' requirement)
+        with pytest.raises(UnsupportedComparisonError):
+            ConditionParser.compare_values("v1.0.0", ">", "2.0.0")
+
+        with pytest.raises(UnsupportedComparisonError):
+            ConditionParser.compare_values("1.0.0", ">", "v2.0.0")
 
     def test_compare_values_equality_fallback(self):
         """Test that equality operations work with improved normalization."""
@@ -357,9 +387,9 @@ class TestFormulaBasedEvaluation:
 
     def test_version_reduction_when_datetime_fails(self):
         """Test that version reduction works when higher priorities fail."""
-        # Version string comparisons
-        assert ConditionParser.compare_values("2.0.0", ">", "1.0.0") is True
-        assert ConditionParser.compare_values("v1.2.0", ">=", "1.1.0") is True
+        # Version string comparisons (require 'v' prefix)
+        assert ConditionParser.compare_values("v2.0.0", ">", "v1.0.0") is True
+        assert ConditionParser.compare_values("v1.2.0", ">=", "v1.1.0") is True
 
     def test_string_fallback_when_all_reductions_fail(self):
         """Test that string fallback works when no reductions possible."""
@@ -417,7 +447,7 @@ class TestTypeReductionHierarchy:
         assert common_type == TypeCategory.DATETIME
 
         # Test version fallback when datetime fails
-        reduced_left, reduced_right, common_type = type_reducer.reduce_pair_for_comparison("2.1.0", "1.0.0")
+        reduced_left, reduced_right, common_type = type_reducer.reduce_pair_for_comparison("v2.1.0", "v1.0.0")
         assert common_type == TypeCategory.VERSION
 
         # Test string fallback when all else fails

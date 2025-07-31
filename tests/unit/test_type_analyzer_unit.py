@@ -396,9 +396,13 @@ class TestStringCategorizer:
 
     def test_categorize_string_version(self):
         """Test categorizing version strings."""
-        assert StringCategorizer.categorize_string("1.2.3") == TypeCategory.VERSION
-        assert StringCategorizer.categorize_string("2.0.1") == TypeCategory.VERSION
-        assert StringCategorizer.categorize_string("10.5.2") == TypeCategory.VERSION
+        assert StringCategorizer.categorize_string("v1.2.3") == TypeCategory.VERSION
+        assert StringCategorizer.categorize_string("v2.0.1") == TypeCategory.VERSION
+        assert StringCategorizer.categorize_string("v10.5.2") == TypeCategory.VERSION
+        # Version strings without 'v' prefix should be STRING
+        assert StringCategorizer.categorize_string("1.2.3") == TypeCategory.STRING
+        assert StringCategorizer.categorize_string("2.0.1") == TypeCategory.STRING
+        assert StringCategorizer.categorize_string("10.5.2") == TypeCategory.STRING
 
     def test_categorize_string_text(self):
         """Test categorizing regular text strings."""
@@ -623,7 +627,8 @@ class TestTypeAnalyzerCategorizeType:
         """Test categorizing different string types."""
         assert TypeAnalyzer.categorize_type("42") == TypeCategory.STRING
         assert TypeAnalyzer.categorize_type("2023-12-25") == TypeCategory.DATETIME
-        assert TypeAnalyzer.categorize_type("1.2.3") == TypeCategory.VERSION
+        assert TypeAnalyzer.categorize_type("v1.2.3") == TypeCategory.VERSION
+        assert TypeAnalyzer.categorize_type("1.2.3") == TypeCategory.STRING  # No 'v' prefix
         assert TypeAnalyzer.categorize_type("hello world") == TypeCategory.STRING
 
     def test_categorize_user_type(self):

@@ -741,7 +741,7 @@ sensors:
   # Version-based filtering
   updated_firmware:
     name: "Updated Firmware Devices"
-    formula: count("attribute:firmware_version>='2.1.0'")
+    formula: count("attribute:firmware_version>='v2.1.0'")
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:update"
@@ -771,8 +771,8 @@ sensors:
 - **Numeric**: Standard comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`) for integers and floats
 - **String**: Equality (`==`, `!=`) and containment (`in`, `not in`) operations
 - **DateTime**: Full comparisons with ISO datetime strings and datetime objects
-- **Version**: Semantic version comparisons (e.g., `"2.1.0" > "1.5.3"`)
-- **Type-safe**: Explicit errors for unsupported type combinations
+- **Version**: Semantic version comparisons (e.g., `"v2.1.0" > "v1.5.3"` where both sides are `vN.N.N`)
+- **User Defined**: Comparison operators can be defined [Comparison Handlers](docs/User_Defined_Comparison_Handlers.md)
 
 **Collection Patterns:**
 
@@ -783,7 +783,7 @@ sensors:
 - `"attribute:battery_level>=50"` - Entities with attribute conditions (supports `==`, `!=`, `<`, `<=`, `>`, `>=`)
 - `"state:>=100|on"` - Entities with state conditions (supports all comparison operators and OR with `|`)
 - `"attribute:name in 'Living'"` - String containment matching (supports `in`, `not in`)
-- `"attribute:firmware_version>='2.1.0'"` - Semantic version comparisons
+- `"attribute:firmware_version>='v2.1.0'"` - Semantic version comparisons where version is in the form `vN.N.N`
 - `"attribute:last_seen>='2024-01-01'"` - Datetime comparisons (ISO format)
 
 **Exclusion Syntax:**
@@ -842,7 +842,7 @@ remember the the main sensor state is evaluated before attributes.
 
 **Attribute Patterns:**
 
-- **Explicit operators**: `"battery_level>=50|status==active|firmware_version>='2.1.0'"`
+- **Explicit operators**: `"battery_level>=50|status==active|firmware_version>='v2.1.0'"`
 - **Shorthand with colon**: `"battery_level>=50|status:active|mode:!inactive"`
 - **String containment**: `"name in 'Living'|manufacturer not in 'Corp'"`
 - **Negation**: `"device_class:!humidity|battery_level:!<20"`
@@ -855,16 +855,16 @@ remember the the main sensor state is evaluated before attributes.
 
 **Syntax Reference:**
 
-| Pattern Type     | Explicit Syntax                                    | Shorthand Syntax                       | Negation Syntax              |
-| ---------------- | -------------------------------------------------- | -------------------------------------- | ---------------------------- |
-| **State**        | `"state:==on \| !=off \| >=50"`                    | `"state:on \| !off \| >=50"`           | `"state:!off \| !inactive"`  |
-| **Attribute**    | `"battery_level>=50 \| status==active"`            | `"battery_level>=50 \| status:active"` | `"battery_level:!<20"`       |
-| **String**       | `"name in 'Living' \| manufacturer not in 'Test'"` | `"name:Living \| manufacturer:!Test"`  | `"name:!'Kitchen'"`          |
-| **Version**      | `"firmware_version>='2.1.0' \| app_version<'3.0'"` | `"firmware_version:>=2.1.0"`           | `"version:!<1.0"`            |
-| **DateTime**     | `"last_seen>='2024-01-01T00:00:00Z'"`              | `"last_seen:>=2024-01-01"`             | `"updated_at:!<yesterday"`   |
-| **Device Class** | `"device_class:power \| device_class:energy"`      | `"device_class:power \| energy"`       | `"device_class:!diagnostic"` |
-| **Area**         | `"area:kitchen \| area:living_room"`               | `"area:kitchen \| living_room"`        | `"area:!basement"`           |
-| **Label**        | `"label:critical \| label:important"`              | `"label:critical \| important"`        | `"label:!deprecated"`        |
+| Pattern Type     | Explicit Syntax                                        | Shorthand Syntax                       | Negation Syntax              |
+| ---------------- | ------------------------------------------------------ | -------------------------------------- | ---------------------------- |
+| **State**        | `"state:==on \| !=off \| >=50"`                        | `"state:on \| !off \| >=50"`           | `"state:!off \| !inactive"`  |
+| **Attribute**    | `"battery_level>=50 \| status==active"`                | `"battery_level>=50 \| status:active"` | `"battery_level:!<20"`       |
+| **String**       | `"name in 'Living' \| manufacturer not in 'Test'"`     | `"name:Living \| manufacturer:!Test"`  | `"name:!'Kitchen'"`          |
+| **Version**      | `"firmware_version>='v2.1.0' \| app_version<'v3.0.1'"` | `"firmware_version:>=v2.1.0"`          | `"version:!<v1.0.1"`         |
+| **DateTime**     | `"last_seen>='2024-01-01T00:00:00Z'"`                  | `"last_seen:>=2024-01-01"`             | `"updated_at:!<yesterday"`   |
+| **Device Class** | `"device_class:power \| device_class:energy"`          | `"device_class:power \| energy"`       | `"device_class:!diagnostic"` |
+| **Area**         | `"area:kitchen \| area:living_room"`                   | `"area:kitchen \| living_room"`        | `"area:!basement"`           |
+| **Label**        | `"label:critical \| label:important"`                  | `"label:critical \| important"`        | `"label:!deprecated"`        |
 
 **Important:** For regex patterns, the variable _must_ reference an `input_text` entity containing the regex pattern:
 
