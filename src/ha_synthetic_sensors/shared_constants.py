@@ -60,6 +60,20 @@ BOOLEAN_LITERALS: frozenset[str] = frozenset(
     }
 )
 
+# Datetime functions
+DATETIME_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "now",
+        "local_now",
+        "utc_now",
+        "today",
+        "yesterday",
+        "tomorrow",
+        "utc_today",
+        "utc_yesterday",
+    }
+)
+
 # Mathematical and aggregation functions
 MATH_FUNCTIONS: frozenset[str] = frozenset(
     {
@@ -69,6 +83,7 @@ MATH_FUNCTIONS: frozenset[str] = frozenset(
         "min",
         "count",
     }
+    | DATETIME_FUNCTIONS
 )
 
 # State-related keywords

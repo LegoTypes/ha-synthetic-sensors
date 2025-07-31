@@ -7,8 +7,11 @@ that can be used in formula evaluation, making them easily testable and maintain
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from datetime import datetime, timedelta
 import math
 from typing import Any
+
+import pytz  # type: ignore[import-untyped]
 
 # Type alias for numeric values (excluding complex since it doesn't work with float())
 NumericValue = int | float
@@ -245,6 +248,83 @@ class MathFunctions:
         return max(float(v) for v in values)
 
     @staticmethod
+    def now() -> str:
+        """Get current datetime as ISO string (local timezone).
+
+        Returns:
+            Current datetime in ISO 8601 format (local timezone)
+        """
+        return datetime.now().isoformat()
+
+    @staticmethod
+    def local_now() -> str:
+        """Get current datetime as ISO string (local timezone).
+
+        Returns:
+            Current datetime in ISO 8601 format (local timezone)
+        """
+        return datetime.now().isoformat()
+
+    @staticmethod
+    def utc_now() -> str:
+        """Get current datetime as ISO string (UTC).
+
+        Returns:
+            Current datetime in ISO 8601 format (UTC)
+        """
+        return datetime.now(pytz.UTC).isoformat()
+
+    @staticmethod
+    def today() -> str:
+        """Get today's date as ISO string (midnight local time).
+
+        Returns:
+            Today's date at midnight in ISO format
+        """
+        today = datetime.now().date()
+        return datetime.combine(today, datetime.min.time()).isoformat()
+
+    @staticmethod
+    def yesterday() -> str:
+        """Get yesterday's date as ISO string (midnight local time).
+
+        Returns:
+            Yesterday's date at midnight in ISO format
+        """
+        yesterday = datetime.now().date() - timedelta(days=1)
+        return datetime.combine(yesterday, datetime.min.time()).isoformat()
+
+    @staticmethod
+    def tomorrow() -> str:
+        """Get tomorrow's date as ISO string (midnight local time).
+
+        Returns:
+            Tomorrow's date at midnight in ISO format
+        """
+        tomorrow = datetime.now().date() + timedelta(days=1)
+        return datetime.combine(tomorrow, datetime.min.time()).isoformat()
+
+    @staticmethod
+    def utc_today() -> str:
+        """Get today's date as ISO string (midnight UTC).
+
+        Returns:
+            Today's date at midnight UTC in ISO format
+        """
+        today = datetime.now(pytz.UTC).date()
+        return datetime.combine(today, datetime.min.time(), pytz.UTC).isoformat()
+
+    @staticmethod
+    def utc_yesterday() -> str:
+        """Get yesterday's date as ISO string (midnight UTC).
+
+        Returns:
+            Yesterday's date at midnight UTC in ISO format
+        """
+        yesterday = datetime.now(pytz.UTC).date() - timedelta(days=1)
+        return datetime.combine(yesterday, datetime.min.time(), pytz.UTC).isoformat()
+
+    @staticmethod
     def get_builtin_functions() -> dict[str, Callable[..., Any]]:
         """Get all mathematical functions available for formula evaluation.
 
@@ -293,6 +373,15 @@ class MathFunctions:
             "percent": MathFunctions.percent,
             "avg": MathFunctions.avg,
             "safe_divide": MathFunctions.safe_divide,
+            # Datetime functions (return ISO strings for transparent integration)
+            "now": MathFunctions.now,
+            "local_now": MathFunctions.local_now,
+            "utc_now": MathFunctions.utc_now,
+            "today": MathFunctions.today,
+            "yesterday": MathFunctions.yesterday,
+            "tomorrow": MathFunctions.tomorrow,
+            "utc_today": MathFunctions.utc_today,
+            "utc_yesterday": MathFunctions.utc_yesterday,
         }
 
     @staticmethod

@@ -20,7 +20,7 @@ from typing import ClassVar
 from homeassistant.core import HomeAssistant
 
 from .math_functions import MathFunctions
-from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, PYTHON_KEYWORDS, get_ha_domains
+from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, DATETIME_FUNCTIONS, PYTHON_KEYWORDS, get_ha_domains
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,9 +93,43 @@ class DependencyParser:
         )
 
     # Pattern for variable references (simple identifiers that aren't keywords)
-    VARIABLE_PATTERN = re.compile(
-        r"\b(?!(?:if|else|and|or|not|in|is|sum|avg|count|min|max|std|var|abs|round|floor|ceil|sqrt|sin|cos|tan|log|exp|pow|state)\b)[a-zA-Z_][a-zA-Z0-9_]*\b"
-    )
+    @staticmethod
+    def _build_variable_pattern() -> re.Pattern[str]:
+        """Build the variable pattern excluding keywords and built-in functions."""
+        excluded_keywords = [
+            "if",
+            "else",
+            "and",
+            "or",
+            "not",
+            "in",
+            "is",
+            "sum",
+            "avg",
+            "count",
+            "min",
+            "max",
+            "std",
+            "var",
+            "abs",
+            "round",
+            "floor",
+            "ceil",
+            "sqrt",
+            "sin",
+            "cos",
+            "tan",
+            "log",
+            "exp",
+            "pow",
+            "state",
+        ]
+        # Add datetime functions from shared constants
+        excluded_keywords.extend(DATETIME_FUNCTIONS)
+        excluded_pattern = "|".join(excluded_keywords)
+        return re.compile(rf"\b(?!(?:{excluded_pattern})\b)[a-zA-Z_][a-zA-Z0-9_]*\b")
+
+    VARIABLE_PATTERN = _build_variable_pattern()
 
     # Query type patterns
     QUERY_PATTERNS: ClassVar[dict[str, re.Pattern[str]]] = {

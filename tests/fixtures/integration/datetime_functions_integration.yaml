@@ -1,0 +1,95 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_datetime_functions"
+  variables:
+    # Global variable literals with datetime functions
+    session_start: now()
+    daily_boundary: today()
+    utc_session: utc_now()
+  metadata:
+    attribution: "DateTime Functions Integration Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # Test 1: Basic datetime function in formula (boolean result)
+  datetime_comparison_sensor:
+    name: "DateTime Comparison Test"
+    formula: "session_start >= yesterday() ? 1 : 0"
+    metadata:
+      unit_of_measurement: "binary"
+      device_class: "connectivity"
+      state_class: "measurement"
+
+  # Test 2: Attribute literals with datetime functions
+  datetime_literals_sensor:
+    name: "DateTime Literals Test"
+    formula: "power_reading"
+    variables:
+      power_reading: 1000
+      # Variable literal with datetime function
+      last_reset: yesterday()
+    attributes:
+      # Attribute literals with datetime functions
+      calculation_time: now()
+      reset_date: today()
+      utc_timestamp: utc_now()
+      session_boundary: yesterday()
+      next_reset: tomorrow()
+
+      # Attribute formula with datetime comparison
+      is_fresh_data:
+        formula: "last_reset >= yesterday() ? 1 : 0"
+        metadata:
+          device_class: "connectivity"
+
+      # Complex datetime logic
+      time_status:
+        formula: "calculation_time >= daily_boundary ? 1 : 0"
+        metadata:
+          unit_of_measurement: "binary"
+          icon: "mdi:clock-check"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  # Test 3: Cross-timezone datetime operations
+  timezone_comparison_sensor:
+    name: "Timezone Comparison Test"
+    formula: "utc_now() >= utc_yesterday() ? 1 : 0"
+    attributes:
+      local_vs_utc:
+        formula: "now() >= utc_today() ? 1 : 0"
+        metadata:
+          device_class: "connectivity"
+
+      # Test all datetime functions in attributes
+      all_datetime_functions:
+        formula: "tomorrow() >= today() ? 1 : 0"
+        metadata:
+          unit_of_measurement: "binary"
+    metadata:
+      unit_of_measurement: "binary"
+      device_class: "connectivity"
+
+  # Test 4: Entity datetime comparison (mixed datetime sources)
+  entity_datetime_comparison:
+    name: "Entity DateTime Comparison"
+    formula: "entity_timestamp >= today() ? 1 : 0"
+    variables:
+      entity_timestamp: "sensor.external_datetime_entity"
+    attributes:
+      vs_session_start:
+        formula: "entity_timestamp >= session_start ? 1 : 0"
+        metadata:
+          device_class: "connectivity"
+
+      vs_literal_datetime:
+        formula: "entity_timestamp >= yesterday() ? 1 : 0"
+        metadata:
+          device_class: "connectivity"
+    metadata:
+      unit_of_measurement: "binary"
+      device_class: "connectivity"
+      state_class: "measurement"
