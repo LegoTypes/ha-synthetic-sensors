@@ -1,7 +1,7 @@
 """Tests for evaluator_dependency module."""
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -101,34 +101,55 @@ class TestEvaluatorDependency:
     def test_extract_formula_dependencies(
         self, mock_hass, mock_entity_registry, mock_states, evaluator_dependency_config_manager
     ):
-        """Test extracting dependencies from formula configuration."""
+        """Test extracting dependencies from formula configuration with direct entity references."""
         config_manager, config = evaluator_dependency_config_manager
-        dependency = EvaluatorDependency(mock_hass)
 
-        # Get the basic dependency test sensor
-        sensor_config = next(s for s in config.sensors if s.name == "Basic Dependency Test")
-        formula_config = sensor_config.formulas[0]
+        # Patch get_ha_domains to work with our mock setup
+        with patch("ha_synthetic_sensors.dependency_parser.get_ha_domains") as mock_get_domains:
+            # Return domains that include 'sensor' which is what the test formula uses
+            mock_get_domains.return_value = {"sensor", "binary_sensor", "switch", "light"}
 
-        deps = dependency.extract_formula_dependencies(formula_config)
-        # The formula contains entity references that should be extracted
-        assert len(deps) > 0
+            dependency = EvaluatorDependency(mock_hass)
+
+            # Get the basic dependency test sensor
+            sensor_config = next(s for s in config.sensors if s.name == "Basic Dependency Test")
+            formula_config = sensor_config.formulas[0]
+
+            # The formula is "sensor.test_sensor_a + sensor.test_sensor_b" with no variables
+            # This should extract both entity references directly
+            deps = dependency.extract_formula_dependencies(formula_config)
+
+            # Should extract both direct entity references
+            assert len(deps) == 2
+            assert "sensor.test_sensor_a" in deps
+            assert "sensor.test_sensor_b" in deps
 
     def test_extract_and_prepare_dependencies(
         self, mock_hass, mock_entity_registry, mock_states, evaluator_dependency_config_manager
     ):
-        """Test extracting and preparing dependencies."""
+        """Test extracting and preparing dependencies with mixed entity and collection patterns."""
         config_manager, config = evaluator_dependency_config_manager
-        dependency = EvaluatorDependency(mock_hass)
 
-        # Get the mixed dependency test sensor
-        sensor_config = next(s for s in config.sensors if s.name == "Mixed Dependency Test")
-        formula_config = sensor_config.formulas[0]
+        # Patch get_ha_domains to work with our mock setup
+        with patch("ha_synthetic_sensors.dependency_parser.get_ha_domains") as mock_get_domains:
+            # Return domains that include 'sensor' which is used in the test formula
+            mock_get_domains.return_value = {"sensor", "binary_sensor", "switch", "light"}
 
-        # Create a context for the method call
-        context = {}
-        deps, collection_patterns = dependency.extract_and_prepare_dependencies(formula_config, context)
-        assert len(deps) > 0  # Should extract some dependencies
-        assert isinstance(collection_patterns, set)  # Should return a set
+            dependency = EvaluatorDependency(mock_hass)
+
+            # Get the mixed dependency test sensor
+            sensor_config = next(s for s in config.sensors if s.name == "Mixed Dependency Test")
+            formula_config = sensor_config.formulas[0]
+
+            # The formula is "sensor.base_power_meter + sum('device_class:energy')"
+            # This should extract the direct entity reference
+            context = {}
+            deps, collection_patterns = dependency.extract_and_prepare_dependencies(formula_config, context)
+
+            # Should extract the direct entity reference
+            assert len(deps) >= 1  # At least the direct entity reference
+            assert "sensor.base_power_meter" in deps
+            assert isinstance(collection_patterns, set)  # Should return a set
 
     def test_check_dependencies(self, mock_hass, mock_entity_registry, mock_states):
         """Test checking dependencies."""

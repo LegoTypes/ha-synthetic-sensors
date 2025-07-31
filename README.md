@@ -891,16 +891,16 @@ remember the the main sensor state is evaluated before attributes.
 
 **Syntax Reference:**
 
-| Pattern Type     | Explicit Syntax                       | Shorthand Syntax             | Negation Syntax              |
-| ---------------- | ------------------------------------- | ---------------------------- | ---------------------------- |
-| **State**        | `"state:==on \| !=off \| >=50"`       | `"state:on \| !off \| >=50"` | `"state:!off \| !inactive"` |
-| **Attribute**    | `"battery_level>=50 \| status==active"` | `"battery_level>=50 \| status:active"` | `"battery_level:!<20"` |
-| **String**       | `"name in 'Living' \| manufacturer not in 'Test'"` | `"name:Living \| manufacturer:!Test"` | `"name:!'Kitchen'"` |
-| **Version**      | `"firmware_version>='2.1.0' \| app_version<'3.0'"` | `"firmware_version:>=2.1.0"` | `"version:!<1.0"` |
-| **DateTime**     | `"last_seen>='2024-01-01T00:00:00Z'"` | `"last_seen:>=2024-01-01"`   | `"updated_at:!<yesterday"`   |
-| **Device Class** | `"device_class:power \| device_class:energy"` | `"device_class:power \| energy"` | `"device_class:!diagnostic"` |
-| **Area**         | `"area:kitchen \| area:living_room"`   | `"area:kitchen \| living_room"` | `"area:!basement"`           |
-| **Label**        | `"label:critical \| label:important"`  | `"label:critical \| important"` | `"label:!deprecated"`        |
+| Pattern Type     | Explicit Syntax                                    | Shorthand Syntax                       | Negation Syntax              |
+| ---------------- | -------------------------------------------------- | -------------------------------------- | ---------------------------- |
+| **State**        | `"state:==on \| !=off \| >=50"`                    | `"state:on \| !off \| >=50"`           | `"state:!off \| !inactive"`  |
+| **Attribute**    | `"battery_level>=50 \| status==active"`            | `"battery_level>=50 \| status:active"` | `"battery_level:!<20"`       |
+| **String**       | `"name in 'Living' \| manufacturer not in 'Test'"` | `"name:Living \| manufacturer:!Test"`  | `"name:!'Kitchen'"`          |
+| **Version**      | `"firmware_version>='2.1.0' \| app_version<'3.0'"` | `"firmware_version:>=2.1.0"`           | `"version:!<1.0"`            |
+| **DateTime**     | `"last_seen>='2024-01-01T00:00:00Z'"`              | `"last_seen:>=2024-01-01"`             | `"updated_at:!<yesterday"`   |
+| **Device Class** | `"device_class:power \| device_class:energy"`      | `"device_class:power \| energy"`       | `"device_class:!diagnostic"` |
+| **Area**         | `"area:kitchen \| area:living_room"`               | `"area:kitchen \| living_room"`        | `"area:!basement"`           |
+| **Label**        | `"label:critical \| label:important"`              | `"label:critical \| important"`        | `"label:!deprecated"`        |
 
 **Key Features:**
 

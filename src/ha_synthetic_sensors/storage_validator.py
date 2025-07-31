@@ -97,19 +97,24 @@ class ValidationHandler:
 
             for var_name in formula.variables:
                 if var_name in global_variables:
-                    # Determine formula type based on ID pattern
-                    if formula.id == sensor.unique_id:
-                        formula_desc = "main formula"
-                    elif formula.id.startswith(f"{sensor.unique_id}_"):
-                        attribute_name = formula.id[len(sensor.unique_id) + 1 :]
-                        formula_desc = f"formula for attribute '{attribute_name}'"
-                    else:
-                        formula_desc = f"formula '{formula.id}'"
+                    # Only flag as conflict if values are different (per README conflict rules)
+                    formula_value = formula.variables[var_name]
+                    global_value = global_variables[var_name]
 
-                    raise SyntheticSensorsConfigError(
-                        f"Sensor '{sensor.unique_id}' {formula_desc} defines variable '{var_name}' "
-                        f"which conflicts with global variable"
-                    )
+                    if formula_value != global_value:
+                        # Determine formula type based on ID pattern
+                        if formula.id == sensor.unique_id:
+                            formula_desc = "main formula"
+                        elif formula.id.startswith(f"{sensor.unique_id}_"):
+                            attribute_name = formula.id[len(sensor.unique_id) + 1 :]
+                            formula_desc = f"formula for attribute '{attribute_name}'"
+                        else:
+                            formula_desc = f"formula '{formula.id}'"
+
+                        raise SyntheticSensorsConfigError(
+                            f"Sensor '{sensor.unique_id}' {formula_desc} defines variable '{var_name}' "
+                            f"with value '{formula_value}' which conflicts with global variable value '{global_value}'"
+                        )
 
     def _check_attribute_formula_conflicts(self, sensor: SensorConfig) -> None:
         """Check for variable conflicts between attribute formulas within a sensor."""

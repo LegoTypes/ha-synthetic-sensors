@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .config_manager import ConfigManager
 from .config_models import Config, FormulaConfig
@@ -244,6 +244,12 @@ class SensorSetOpsHandler:
         # Step 2: Resolve cross-sensor references (entity registration + collision handling)
         resolved_config = await self._resolve_cross_sensor_references(
             config_with_state_tokens, sensor_set_id, device_identifier
+        )
+
+        # Step 3: Update global settings on all evaluators after cross-reference resolution
+        # This ensures evaluators have access to current global variables for inheritance
+        self.storage_manager.entity_change_handler.update_global_settings(
+            cast(dict[str, Any], resolved_config.global_settings) if resolved_config.global_settings else None
         )
 
         # Use the existing async_from_config method to avoid code duplication

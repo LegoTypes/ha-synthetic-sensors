@@ -7,7 +7,7 @@ This module tests the new features including:
 - Complex aggregation functions
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -116,7 +116,11 @@ class TestVariableInheritance:
         return ConfigManager(mock_hass)
 
     def test_attribute_inherits_parent_variables(self, config_manager):
-        """Test that attribute formulas inherit parent sensor variables."""
+        """Test that attribute formulas do NOT inherit parent variables during YAML parsing.
+
+        Variable inheritance now happens during evaluation phase after cross-reference resolution.
+        This prevents global variables from being incorrectly converted to 'state' tokens.
+        """
         sensor_data = {
             "name": "Test Sensor",
             "formula": "power_a + power_b",
@@ -128,18 +132,22 @@ class TestVariableInheritance:
         attr_config = sensor_data["attributes"]["daily_total"]
         formula_config = config_manager._parse_attribute_formula("test_sensor", "daily_total", attr_config, sensor_data)
 
-        # Should inherit parent variables
-        assert "power_a" in formula_config.variables
-        assert "power_b" in formula_config.variables
-        assert formula_config.variables["power_a"] == "sensor.meter_a"
-        assert formula_config.variables["power_b"] == "sensor.meter_b"
+        # Should NOT inherit parent variables during YAML parsing (new architecture)
+        # This ensures cross-reference resolution operates on original YAML structure
+        assert "power_a" not in formula_config.variables
+        assert "power_b" not in formula_config.variables
 
-        # Should NOT auto-inject sensor key references (removed for safety)
-        # The formula should use explicit entity ID or state token instead
-        assert "test_sensor" not in formula_config.variables
+        # Variables should be empty since no attribute-specific variables were defined
+        assert formula_config.variables == {}
+
+        # Formula should still contain the direct reference
+        assert "test_sensor * 24" == formula_config.formula
 
     def test_attribute_variable_override(self, config_manager):
-        """Test that attribute-specific variables override parent variables."""
+        """Test that attribute-specific variables are correctly stored during YAML parsing.
+
+        Inheritance and override logic now happens during evaluation phase.
+        """
         sensor_data = {
             "name": "Test Sensor",
             "formula": "power_a + power_b",
@@ -158,12 +166,14 @@ class TestVariableInheritance:
         attr_config = sensor_data["attributes"]["custom_calc"]
         formula_config = config_manager._parse_attribute_formula("test_sensor", "custom_calc", attr_config, sensor_data)
 
-        # Should use overridden value
+        # Should only contain attribute-specific variables during YAML parsing
         assert formula_config.variables["power_a"] == "sensor.custom_meter"
-        # Should keep non-overridden parent variable
-        assert formula_config.variables["power_b"] == "sensor.meter_b"
-        # Should include new attribute-specific variable
         assert formula_config.variables["factor"] == "input_number.factor"
+        # Should NOT contain parent variables (inheritance happens during evaluation)
+        assert "power_b" not in formula_config.variables
+
+        # Only 2 variables (the attribute-specific ones)
+        assert len(formula_config.variables) == 2
 
     def test_attribute_references_main_sensor(self, config_manager):
         """Test that attributes can reference the main sensor by key."""
@@ -252,6 +262,11 @@ def sample_config_with_attributes():
 class TestIntegrationScenarios:
     """Test integration scenarios with enhanced features."""
 
+    @pytest.fixture
+    def mock_async_add_entities(self):
+        """Create a mock async_add_entities callback."""
+        return Mock()
+
     def test_config_parsing_with_enhanced_features(
         self, mock_hass, mock_entity_registry, mock_states, sample_config_with_attributes
     ):
@@ -276,8 +291,10 @@ class TestIntegrationScenarios:
 
         # Check attribute formulas inherit variables
         daily_proj = next(f for f in sensor.formulas if f.id == "energy_analysis_daily_projection")
-        assert "grid_power" in daily_proj.variables  # Inherited
-        assert "solar_power" in daily_proj.variables  # Inherited
+        # Variables should NOT include inherited variables since inheritance is a runtime function
+        # The YAML parsing should only include variables explicitly defined in the attribute
+        assert "grid_power" not in daily_proj.variables  # Not inherited during YAML parsing
+        assert "solar_power" not in daily_proj.variables  # Not inherited during YAML parsing
         # Should NOT auto-inject main sensor reference (removed for safety)
         assert "energy_analysis" not in daily_proj.variables
 
@@ -285,4 +302,183 @@ class TestIntegrationScenarios:
         custom_calc = next(f for f in sensor.formulas if f.id == "energy_analysis_custom_calc")
         assert "power_total" in custom_calc.variables  # Attribute-specific
         assert "efficiency_factor" in custom_calc.variables  # Attribute-specific
-        assert "grid_power" in custom_calc.variables  # Still inherited
+        # Variables should NOT include inherited variables since inheritance is a runtime function
+        assert "grid_power" not in custom_calc.variables  # Not inherited during YAML parsing
+
+    async def test_runtime_inheritance_with_enhanced_features(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities
+    ):
+        """Test that attribute formulas inherit variables at runtime using the public API."""
+        from unittest.mock import AsyncMock, Mock, patch
+        from ha_synthetic_sensors import (
+            async_setup_synthetic_sensors,
+            StorageManager,
+            DataProviderCallback,
+        )
+
+        # Set up virtual backing entity data
+        backing_data = {
+            "sensor.grid_meter": 1000.0,
+            "sensor.solar_inverter": 500.0,
+            "sensor.total_power": 1500.0,
+            "input_number.factor": 0.85,
+            "sensor.global_efficiency": 0.95,  # Global variable entity
+            "sensor.global_tax_rate": 0.08,  # Global variable entity
+        }
+
+        # Create data provider for virtual backing entities
+        def create_data_provider_callback(backing_data: dict[str, any]) -> DataProviderCallback:
+            def data_provider(entity_id: str):
+                return {"value": backing_data.get(entity_id), "exists": entity_id in backing_data}
+
+            return data_provider
+
+        data_provider = create_data_provider_callback(backing_data)
+
+        # Create change notifier callback for selective updates
+        def change_notifier_callback(changed_entity_ids: set[str]) -> None:
+            pass
+
+        # Create sensor-to-backing mapping for 'state' token resolution
+        sensor_to_backing_mapping = {"energy_analysis": "sensor.energy_analysis"}
+
+        # Set up storage manager with proper mocking
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            # Mock setup
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            # Create mock device registry
+            mock_device_registry = Mock()
+            mock_device_registry.devices = Mock()
+            mock_device_registry.async_get_device.return_value = None
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            # Create storage manager
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            # Create sensor set
+            sensor_set_id = "test_enhanced_inheritance"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="Test Enhanced Inheritance"
+            )
+
+            # Load YAML configuration with BOTH global variables and sensor variables
+            yaml_content = """
+version: "1.0"
+global_settings:
+  device_identifier: "test_device_123"
+  variables:
+    # Global variables that should be inherited by all attribute formulas
+    global_efficiency: "sensor.global_efficiency"
+    global_tax_rate: "sensor.global_tax_rate"
+
+sensors:
+  energy_analysis:
+    name: "Energy Analysis"
+    formula: "grid_power + solar_power"
+    variables:
+      # Sensor-level variables that should be inherited by attribute formulas
+      grid_power: "sensor.grid_meter"
+      solar_power: "sensor.solar_inverter"
+    attributes:
+      # This attribute should inherit: grid_power, solar_power, global_efficiency, global_tax_rate
+      efficiency_with_inheritance:
+        formula: "solar_power / (grid_power + solar_power) * global_efficiency * 100"
+        metadata:
+          unit_of_measurement: "%"
+      # This attribute should inherit all parent variables AND have its own
+      custom_calc_with_inheritance:
+        formula: "power_total * efficiency_factor * global_efficiency * (1 + global_tax_rate)"
+        variables:
+          # Attribute-specific variables
+          power_total: "sensor.total_power"
+          efficiency_factor: "input_number.factor"
+        metadata:
+          unit_of_measurement: "W"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+"""
+
+            # Import YAML with dependency resolution
+            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            assert result["sensors_imported"] == 1
+
+            # Set up synthetic sensors via public API
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_123",
+                data_provider_callback=data_provider,
+                change_notifier=change_notifier_callback,
+                sensor_to_backing_mapping=sensor_to_backing_mapping,
+            )
+
+            # Test that the sensor was created
+            assert sensor_manager is not None
+            assert mock_async_add_entities.called
+
+            # Test formula evaluation with inheritance - update all entities
+            await sensor_manager.async_update_sensors_for_entities(
+                {
+                    "sensor.grid_meter",
+                    "sensor.solar_inverter",
+                    "sensor.total_power",
+                    "input_number.factor",
+                    "sensor.global_efficiency",
+                    "sensor.global_tax_rate",
+                }
+            )
+
+            # Verify the sensor was created and inheritance works at runtime
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 1
+
+            # Get the sensor configuration to verify inheritance behavior
+            config = storage_manager.to_config(device_identifier="test_device_123")
+            assert len(config.sensors) == 1
+            sensor_config = config.sensors[0]
+
+            # Verify the sensor has the expected formulas (main + 2 attributes)
+            assert len(sensor_config.formulas) == 3
+
+            # Find the attribute formulas that should demonstrate inheritance
+            efficiency_formula = next(
+                f for f in sensor_config.formulas if f.id == "energy_analysis_efficiency_with_inheritance"
+            )
+            custom_calc_formula = next(
+                f for f in sensor_config.formulas if f.id == "energy_analysis_custom_calc_with_inheritance"
+            )
+
+            # CRITICAL TEST: The attribute formulas should reference inherited variables in their formulas
+            # even though these variables are not in their own variables dict (inheritance is runtime)
+
+            # efficiency_with_inheritance should reference: solar_power, grid_power (from parent), global_efficiency (from global)
+            assert "solar_power" in efficiency_formula.formula
+            assert "grid_power" in efficiency_formula.formula
+            assert "global_efficiency" in efficiency_formula.formula
+            # But variables should be empty since inheritance is runtime
+            assert efficiency_formula.variables == {}
+
+            # custom_calc_with_inheritance should reference inherited + own variables
+            assert "power_total" in custom_calc_formula.formula
+            assert "efficiency_factor" in custom_calc_formula.formula
+            assert "global_efficiency" in custom_calc_formula.formula
+            assert "global_tax_rate" in custom_calc_formula.formula
+            # Should have its own variables but not inherited ones
+            assert "power_total" in custom_calc_formula.variables
+            assert "efficiency_factor" in custom_calc_formula.variables
+            assert "global_efficiency" not in custom_calc_formula.variables  # Inherited at runtime
+            assert "grid_power" not in custom_calc_formula.variables  # Inherited at runtime
+
+            # Clean up
+            await storage_manager.async_delete_sensor_set(sensor_set_id)

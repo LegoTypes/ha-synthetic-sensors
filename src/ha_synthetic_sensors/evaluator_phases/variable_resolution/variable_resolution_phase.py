@@ -44,10 +44,19 @@ class VariableResolutionPhase:
         self._resolver_factory = VariableResolverFactory(sensor_to_backing_mapping, data_provider_callback, hass)
         self._sensor_registry_phase: Any = None
         self._formula_preprocessor: Any = None
+        self._global_settings: dict[str, Any] | None = None  # Store reference to current global settings
 
     def set_formula_preprocessor(self, formula_preprocessor: Any) -> None:
         """Set the formula preprocessor for collection function resolution."""
         self._formula_preprocessor = formula_preprocessor
+
+    def set_global_settings(self, global_settings: dict[str, Any] | None) -> None:
+        """Set global settings for variable inheritance.
+
+        This should be called after cross-reference resolution to ensure
+        global variables reflect current entity IDs.
+        """
+        self._global_settings = global_settings
 
     @property
     def formula_preprocessor(self) -> Any:
@@ -139,7 +148,7 @@ class VariableResolutionPhase:
         # STEP 3: Resolve config variables with special handling for attribute access variables
         if formula_config:
             self._resolve_config_variables_with_attribute_preservation(
-                eval_context, formula_config, variables_needing_entity_ids
+                eval_context, formula_config, variables_needing_entity_ids, sensor_config
             )
 
         # STEP 4: Resolve variable.attribute references (e.g., device.battery_level)
@@ -823,11 +832,58 @@ class VariableResolutionPhase:
 
         return variables_needing_entity_ids
 
+    def _is_attribute_formula(self, formula_config: FormulaConfig) -> bool:
+        """Check if this formula represents an attribute (contains underscore in ID)."""
+        return "_" in formula_config.id
+
+    def _get_main_formula(self, sensor_config: SensorConfig) -> FormulaConfig | None:
+        """Get the main formula (the one with ID matching sensor unique_id)."""
+        for formula in sensor_config.formulas:
+            if formula.id == sensor_config.unique_id:
+                return formula
+        return None
+
     def _resolve_config_variables_with_attribute_preservation(
-        self, eval_context: dict[str, ContextValue], formula_config: FormulaConfig, variables_needing_entity_ids: set[str]
+        self,
+        eval_context: dict[str, ContextValue],
+        formula_config: FormulaConfig,
+        variables_needing_entity_ids: set[str],
+        sensor_config: SensorConfig | None = None,
     ) -> None:
-        """Resolve config variables with special handling for variables used in .attribute patterns."""
-        for var_name, var_value in formula_config.variables.items():
+        """Resolve config variables with special handling for variables used in .attribute patterns.
+
+        Also implements variable inheritance for attribute formulas:
+        - Global variables (if available)
+        - Parent sensor variables (from main sensor formula)
+        - Attribute-specific variables (highest precedence)
+        """
+
+        # Implement variable inheritance for attribute formulas
+        inherited_variables: dict[str, str | int | float] = {}
+
+        if sensor_config and self._is_attribute_formula(formula_config):
+            # Step 1: Inherit global variables first (if available)
+            if self._global_settings:
+                global_vars = self._global_settings.get("variables", {})
+                if global_vars:
+                    inherited_variables.update(global_vars)
+                    _LOGGER.debug("Inherited %d global variables for attribute '%s'", len(global_vars), formula_config.id)
+
+            # Step 2: Inherit from parent sensor variables (override globals)
+            main_formula = self._get_main_formula(sensor_config)
+            if main_formula:
+                inherited_variables.update(main_formula.variables)
+                _LOGGER.debug(
+                    "Inherited %d variables from parent sensor for attribute '%s'",
+                    len(main_formula.variables),
+                    formula_config.id,
+                )
+
+        # Add formula-specific variables (these override inherited ones)
+        inherited_variables.update(formula_config.variables)
+
+        # Process all variables (inherited + formula-specific)
+        for var_name, var_value in inherited_variables.items():
             # If this variable is used in .attribute patterns, override with entity ID
             if var_name in variables_needing_entity_ids:
                 _LOGGER.debug("Overriding variable '%s' with entity ID (used in .attribute pattern): %s", var_name, var_value)

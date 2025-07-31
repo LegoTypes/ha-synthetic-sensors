@@ -43,6 +43,34 @@ class EntityChangeHandler:
             self._evaluators.append(evaluator)
             self._logger.debug("Registered evaluator for entity change handling")
 
+    def update_global_settings(self, global_settings: dict[str, Any] | None) -> None:
+        """
+        Update global settings on all registered evaluators.
+
+        This should be called after cross-reference resolution to ensure
+        evaluators have access to current global variables.
+
+        Args:
+            global_settings: Updated global settings dictionary
+        """
+        for evaluator in self._evaluators:
+            variable_resolution_phase = self.get_variable_resolution_phase(evaluator)
+            if variable_resolution_phase is not None:
+                variable_resolution_phase.set_global_settings(global_settings)
+                self._logger.debug("Updated global settings on evaluator")
+
+    def get_variable_resolution_phase(self, evaluator: Evaluator) -> Any | None:
+        """
+        Get the variable resolution phase from an evaluator.
+
+        Args:
+            evaluator: Evaluator instance
+
+        Returns:
+            Variable resolution phase object or None if not available
+        """
+        return getattr(evaluator, "_variable_resolution_phase", None)
+
     def unregister_evaluator(self, evaluator: Evaluator) -> None:
         """
         Unregister an evaluator.

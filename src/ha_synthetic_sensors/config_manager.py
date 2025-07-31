@@ -20,7 +20,6 @@ from .config_models import Config, FormulaConfig, SensorConfig
 from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .config_yaml_converter import ConfigYamlConverter
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector
-from .dependency_parser import DependencyParser
 from .schema_validator import validate_yaml_config
 from .validation_utils import load_yaml_file
 from .yaml_config_parser import YAMLConfigParser, trim_yaml_keys
@@ -373,7 +372,7 @@ class ConfigManager:
         for attr_name, attr_config in attributes_data.items():
             # Only create separate formula entries for attributes that have an explicit formula structure
             if isinstance(attr_config, dict) and "formula" in attr_config:
-                attr_formula = self._parse_attribute_formula(sensor_key, attr_name, attr_config, sensor_data)
+                attr_formula = self._parse_attribute_formula(sensor_key, attr_name, attr_config, sensor_data, global_settings)
                 sensor.formulas.append(attr_formula)
             # Literal values (str, int, float) are already handled in _parse_single_formula
             # and added to the main formula's attributes dict
@@ -397,9 +396,8 @@ class ConfigManager:
         # Get explicit variables from config
         variables = sensor_data.get("variables", {}).copy()
 
-        # AUTO-INJECT MISSING ENTITY REFERENCES AS VARIABLES
-        # Parse formula to find entity references that aren't explicitly defined as variables
-        variables = self._auto_inject_entity_variables(formula_str, variables)
+        # Variables are now optional aliases - no auto-detection needed
+        # Entity IDs in formulas will be resolved directly during evaluation
 
         # Convert AttributeConfig to AttributeValue for FormulaConfig
         attributes: dict[str, AttributeValue] = {}
@@ -429,6 +427,7 @@ class ConfigManager:
         attr_name: str,
         attr_config: AttributeConfig,
         sensor_data: SensorConfigDict,
+        global_settings: GlobalSettingsDict | None = None,
     ) -> FormulaConfig:
         """Parse a calculated attribute formula (v1.0 format).
 
@@ -437,6 +436,7 @@ class ConfigManager:
             attr_name: Attribute name
             attr_config: Attribute configuration dictionary or literal value
             sensor_data: Parent sensor configuration dictionary
+            global_settings: Global settings to inherit variables from
 
         Returns:
             FormulaConfig: Parsed attribute formula configuration
@@ -458,22 +458,24 @@ class ConfigManager:
         if not attr_formula:
             raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have 'formula' field")
 
-        # Merge parent sensor variables with attribute-specific variables
-        # Attribute variables take precedence for overrides
-        merged_variables = sensor_data.get("variables", {}).copy()
+        # Only use attribute-specific variables during YAML parsing
+        # Global and parent variable inheritance will happen later during evaluation
+        # This prevents global variables from being processed by cross-reference resolution
         attr_variables = attr_config.get("variables", {})
-        merged_variables.update(attr_variables)
+        formula_variables: dict[str, Any] = {}
+        if isinstance(attr_variables, dict):
+            formula_variables = attr_variables.copy()
 
-        # AUTO-INJECT MISSING ENTITY REFERENCES AS VARIABLES
-        # Parse formula to find entity references that aren't explicitly defined as variables
-        merged_variables = self._auto_inject_entity_variables(attr_formula, merged_variables)
+        # Variables are now optional aliases - no auto-detection needed
+        # Entity IDs in attribute formulas will be resolved directly during evaluation
+        # Global and parent variables will be inherited during evaluation phase
 
         return FormulaConfig(
             id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
             name=f"{sensor_data.get('name', sensor_key)} - {attr_name}",
             formula=attr_formula,
             attributes={},
-            variables=merged_variables,
+            variables=formula_variables,
             metadata=attr_config.get("metadata", {}),
         )
 
@@ -906,47 +908,3 @@ class ConfigManager:
             error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
             self._logger.error(error_msg)
             raise ConfigEntryError(error_msg)
-
-    def _auto_inject_entity_variables(
-        self, formula: str, variables: dict[str, str | int | float]
-    ) -> dict[str, str | int | float]:
-        """Auto-inject missing entity references as variables.
-
-        Args:
-            formula: Formula string to analyze
-            variables: Existing variables dict (can contain entity IDs or numeric literals)
-
-        Returns:
-            Updated variables dict with auto-injected entity references
-        """
-        parser = DependencyParser()
-
-        # Only extract direct entity references from the formula itself,
-        # not from variable values (which may contain collection queries)
-        entity_matches = parser.ENTITY_PATTERN.findall(formula)
-        full_entity_matches = parser.direct_entity_pattern.findall(formula)
-
-        direct_entities = set(entity_matches + full_entity_matches)
-
-        # Filter out dot notation references where the base is already a variable
-        # e.g., if variables contains "temp_sensors", don't auto-inject "temp_sensors.temperature"
-        # Also filter out state.attribute patterns which should be resolved by state attribute resolver
-        filtered_entities = set()
-        for entity_id in direct_entities:
-            # Skip state.attribute patterns - these should be resolved by state attribute resolver
-            if entity_id.startswith("state."):
-                continue
-            # Check if this looks like a dot notation reference
-            if "." in entity_id:
-                base_part = entity_id.split(".")[0]
-                # If the base part is already a variable, don't auto-inject the full reference
-                if base_part in variables:
-                    continue
-            filtered_entities.add(entity_id)
-
-        # Add missing entity_ids as self-referencing variables
-        for entity_id in filtered_entities:
-            if entity_id not in variables:
-                variables[entity_id] = entity_id
-
-        return variables
