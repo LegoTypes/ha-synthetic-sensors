@@ -318,7 +318,7 @@ class StringCategorizer:
 
     @staticmethod
     def categorize_string(value: str) -> TypeCategory:
-        """Categorize string types with conflict resolution."""
+        """Categorize string types."""
         # Default to string category
         category = TypeCategory.STRING
 
@@ -329,14 +329,8 @@ class StringCategorizer:
         is_datetime = StringCategorizer._is_datetime_string(value)
         is_version = StringCategorizer._is_version_string(value)
 
-        # Handle conflicts: A string that matches both patterns
-        if is_datetime and is_version:
-            # Prioritize datetime over version for ambiguous cases
-            if StringCategorizer._is_strict_datetime_string(value):
-                category = TypeCategory.DATETIME
-            elif StringCategorizer._is_strict_version_string(value):
-                category = TypeCategory.VERSION
-        elif is_datetime:
+        # No ambiguity between datetime and version patterns
+        if is_datetime:
             category = TypeCategory.DATETIME
         elif is_version:
             category = TypeCategory.VERSION
@@ -364,13 +358,8 @@ class StringCategorizer:
 
     @staticmethod
     def _is_version_string(value: str) -> bool:
-        """Check if string represents a semantic version (permissive)."""
-        return bool(re.match(r"^v?\d+\.\d+\.\d+", value))
-
-    @staticmethod
-    def _is_strict_version_string(value: str) -> bool:
-        """Check if string is definitely a version (strict validation)."""
-        strict_pattern = r"^v?\d+\.\d+\.\d+(?:[-+].+)?$"
+        """Check if string is definitely a version (requires 'v' prefix)."""
+        strict_pattern = r"^v\d+\.\d+\.\d+(?:[-+].+)?$"
         return bool(re.match(strict_pattern, value))
 
 

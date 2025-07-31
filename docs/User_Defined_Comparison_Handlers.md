@@ -503,7 +503,7 @@ sensors:
   # Version-aware filtering with custom version handler
   updated_firmware:
     name: "Updated Firmware Devices"
-    formula: count("attribute:firmware_version>='2.1.0'") # Uses version handler
+    formula: count("attribute:firmware_version>='v2.1.0'") # Uses version handler
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:update"

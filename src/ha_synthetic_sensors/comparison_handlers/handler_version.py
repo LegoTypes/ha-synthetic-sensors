@@ -53,29 +53,11 @@ class VersionComparisonHandler(BaseComparisonHandler):
             actual_type = self.type_analyzer.categorize_type(actual_val)
             expected_type = self.type_analyzer.categorize_type(expected_val)
 
-            # Handle pure version comparisons
-            if actual_type == expected_type == TypeCategory.VERSION:
-                return True
-
-            # Handle cross-type version/string comparisons
-            return self._can_handle_version_string_cross_type(actual_type, expected_type, actual_val, expected_val)
+            # Only handle pure version comparisons (both sides must be versions)
+            return actual_type == expected_type == TypeCategory.VERSION
 
         except ValueError:
             return False
-
-    def _can_handle_version_string_cross_type(
-        self, actual_type: TypeCategory, expected_type: TypeCategory, actual_val: OperandType, expected_val: OperandType
-    ) -> bool:
-        """Check if we can handle version/string cross-type comparisons."""
-        # Version to string comparison
-        if actual_type == TypeCategory.VERSION and expected_type == TypeCategory.STRING:
-            return self._can_parse_as_version(expected_val)
-
-        # String to version comparison
-        if actual_type == TypeCategory.STRING and expected_type == TypeCategory.VERSION:
-            return self._can_parse_as_version(actual_val)
-
-        return False
 
     def _can_parse_as_version(self, value: OperandType) -> bool:
         """Check if a value can be parsed as a version."""
@@ -124,21 +106,25 @@ class VersionComparisonHandler(BaseComparisonHandler):
     def _parse_version(self, version: str) -> tuple[int, ...]:
         """Parse version string into comparable tuple.
 
-        Requires proper version format: x.y.z or vx.y.z (exactly 3 parts)
+        Requires proper version format: vx.y.z (exactly 3 parts with 'v' prefix)
         """
-        # Remove 'v' prefix if present
+        # Require 'v' prefix for version strings
+        if not version.lower().startswith("v"):
+            raise ValueError(f"Invalid version string: {version} (must start with 'v' prefix, e.g., v1.2.3)")
+
+        # Remove 'v' prefix
         clean_version = version.lower().lstrip("v")
 
         # Validate it follows version pattern (exactly 3 numbers separated by dots)
         if not re.match(r"^\d+\.\d+\.\d+([.-].*)?$", clean_version):
-            raise ValueError(f"Invalid version string: {version} (must be x.y.z format with exactly 3 parts)")
+            raise ValueError(f"Invalid version string: {version} (must be vx.y.z format with exactly 3 parts)")
 
         # Extract numeric parts separated by dots (take first 3 parts before any pre-release info)
         base_version = clean_version.split("-")[0].split("+")[0]  # Remove pre-release/build info
         parts = base_version.split(".")
 
         if len(parts) != 3:
-            raise ValueError(f"Invalid version string: {version} (must have exactly 3 parts: x.y.z)")
+            raise ValueError(f"Invalid version string: {version} (must have exactly 3 parts: vx.y.z)")
 
         try:
             # Each part should be a valid integer

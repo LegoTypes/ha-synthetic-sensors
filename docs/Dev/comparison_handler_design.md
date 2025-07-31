@@ -144,7 +144,7 @@ Add support for semantic version comparisons:
 
 **Use Cases:**
 
-- Firmware filtering: `"attribute:firmware_version>='2.1.0'"`
+- Firmware filtering: `"attribute:firmware_version>='v2.1.0'"`
 - Software compatibility: `"attribute:app_version<'3.0.0'"`
 
 ## Handler Selection Algorithm
@@ -348,7 +348,7 @@ All these patterns work with Phase 1:
 - Numeric thresholds: `count("attribute:battery_level>=80")`
 - State matching: `count("state:=='on'")`
 - Time-based filtering: `count("attribute:last_seen>='2024-01-01'")`
-- Version constraints: `count("attribute:firmware_version>='2.1.0'")`
+- Version constraints: `count("attribute:firmware_version>='v2.1.0'")`
 
 ### What Phase 1 Defers
 
@@ -662,7 +662,7 @@ sensors:
 
   # Version comparisons
   compatible_firmware:
-    formula: count("attribute:firmware_version>='2.1.0'") # Semantic version comparison
+    formula: count("attribute:firmware_version>='v2.1.0'") # Semantic version comparison
 ```
 
 ## Modularity and Extensibility
