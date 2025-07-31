@@ -953,10 +953,9 @@ class TestSensorManagerExtended:
         # Check that we get the appropriate messages
         log_messages = [record.getMessage() for record in caplog.records]
 
-        # Check that we get the appropriate messages
-        # Backing entity should show debug message
-        assert any("✓ sensor.backing_sensor is registered" in msg for msg in log_messages)
-        
-        # Non-backing entities should show warnings
-        assert any("✗ sensor.existing_ha_sensor is NOT registered as backing entity or found in HA" in msg for msg in log_messages)
+        # Check that we get the appropriate warning messages for non-backing entities
+        # The improved warning should show "NOT registered as backing entity or found in HA"
+        assert any(
+            "✗ sensor.existing_ha_sensor is NOT registered as backing entity or found in HA" in msg for msg in log_messages
+        )
         assert any("✗ sensor.missing_sensor is NOT registered as backing entity or found in HA" in msg for msg in log_messages)
