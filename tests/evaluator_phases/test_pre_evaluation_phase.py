@@ -27,7 +27,6 @@ class TestPreEvaluationPhase:
             "cache_handler": Mock(),
             "error_handler": Mock(),
             "sensor_to_backing_mapping": {},
-            "allow_ha_lookups": False,
             "variable_resolution_phase": Mock(),
             "dependency_management_phase": Mock(),
             "context_building_phase": Mock(),
@@ -50,13 +49,7 @@ class TestPreEvaluationPhase:
             unique_id="test_sensor",
             entity_id="sensor.test_sensor",
             name="Test Sensor",
-            formulas=[
-                FormulaConfig(
-                    id="test_sensor",
-                    formula="state * 2",
-                    variables={},
-                )
-            ],
+            formulas=[FormulaConfig(id="test_sensor", formula="state * 2", variables={})],
         )
 
     def test_initialization(self, phase: PreEvaluationPhase, mock_hass, mock_entity_registry, mock_states) -> None:
@@ -66,8 +59,7 @@ class TestPreEvaluationPhase:
         assert phase._dependency_handler is None
         assert phase._cache_handler is None
         assert phase._error_handler is None
-        assert phase._sensor_to_backing_mapping is None
-        assert phase._allow_ha_lookups is False
+        # allow_ha_lookups attribute removed
 
     def test_set_evaluator_dependencies(
         self, phase: PreEvaluationPhase, mock_dependencies: dict, mock_hass, mock_entity_registry, mock_states
@@ -80,8 +72,7 @@ class TestPreEvaluationPhase:
         assert phase._dependency_handler == mock_dependencies["dependency_handler"]
         assert phase._cache_handler == mock_dependencies["cache_handler"]
         assert phase._error_handler == mock_dependencies["error_handler"]
-        assert phase._sensor_to_backing_mapping == mock_dependencies["sensor_to_backing_mapping"]
-        assert phase._allow_ha_lookups == mock_dependencies["allow_ha_lookups"]
+        # allow_ha_lookups attribute removed
 
     def test_perform_pre_evaluation_checks_circuit_breaker(
         self,
@@ -173,19 +164,14 @@ class TestPreEvaluationPhase:
     ) -> None:
         """Test state token validation for attribute formulas."""
         # Create attribute formula (has underscore in ID)
-        attribute_config = FormulaConfig(
-            id="test_sensor_voltage",
-            name="Test Attribute",
-            formula="state * 1.1",
-            variables={},
-        )
+        attribute_config = FormulaConfig(id="test_sensor_voltage", name="Test Attribute", formula="state * 1.1", variables={})
 
         result = phase._validate_state_token_resolution(basic_sensor_config, attribute_config)
 
         # Attribute formulas should not validate backing entity
         assert result is None
 
-    def test_validate_state_token_resolution_no_backing_entity_mapping(
+    def test_validate_state_token_resolution_with_natural_fallback(
         self,
         phase: PreEvaluationPhase,
         basic_config: FormulaConfig,
@@ -194,18 +180,17 @@ class TestPreEvaluationPhase:
         mock_entity_registry,
         mock_states,
     ) -> None:
-        """Test state token validation when no backing entity mapping exists."""
+        """Test state token validation with natural fallback behavior."""
         # Setup phase with empty mapping
         phase._sensor_to_backing_mapping = {}  # Empty mapping
         phase._dependency_handler = Mock()
         phase._dependency_handler.get_integration_entities.return_value = set()
-        phase._allow_ha_lookups = False
 
-        # This should raise SensorMappingError (fatal error) because sensor has entity_id but no mapping
-        with pytest.raises(SensorMappingError):
-            phase._validate_state_token_resolution(basic_sensor_config, basic_config)
+        # With natural fallback, this should pass validation since HA entities can be used
+        result = phase._validate_state_token_resolution(basic_sensor_config, basic_config)
+        assert result is None  # Should pass with natural fallback
 
-    def test_validate_state_token_resolution_backing_entity_not_registered(
+    def test_validate_state_token_resolution_backing_entity_not_registered_with_fallback(
         self,
         phase: PreEvaluationPhase,
         basic_config: FormulaConfig,
@@ -214,16 +199,15 @@ class TestPreEvaluationPhase:
         mock_entity_registry,
         mock_states,
     ) -> None:
-        """Test state token validation when backing entity is not registered."""
+        """Test state token validation when backing entity is not registered but HA fallback is available."""
         # Setup phase with backing entity mapping but not registered
         phase._sensor_to_backing_mapping = {"test_sensor": "sensor.backing_entity"}  # Mapping exists but entity not registered
         phase._dependency_handler = Mock()
-        phase._dependency_handler.get_integration_entities.return_value = set()  # Empty set = not registered
-        phase._allow_ha_lookups = False
+        phase._dependency_handler.get_integration_entities.return_value = set()
 
-        # This should raise BackingEntityResolutionError (fatal error) because backing entity is not registered
-        with pytest.raises(BackingEntityResolutionError):
-            phase._validate_state_token_resolution(basic_sensor_config, basic_config)
+        # With natural fallback, this should pass validation since HA entities can be used as fallback
+        result = phase._validate_state_token_resolution(basic_sensor_config, basic_config)
+        assert result is None  # Should pass with natural fallback
 
     def test_validate_state_token_resolution_backing_entity_registered(
         self,
@@ -254,16 +238,14 @@ class TestPreEvaluationPhase:
         mock_entity_registry,
         mock_states,
     ) -> None:
-        """Test state token validation when allow_ha_lookups is enabled."""
-        # Setup phase with backing entity mapping but not registered, but allow_ha_lookups enabled
+        """Test state token validation with natural fallback behavior."""
         phase._sensor_to_backing_mapping = {"test_sensor": "sensor.backing_entity"}
         phase._dependency_handler = Mock()
         phase._dependency_handler.get_integration_entities.return_value = set()
-        phase._allow_ha_lookups = True
 
         result = phase._validate_state_token_resolution(basic_sensor_config, basic_config)
 
-        # Should pass validation when allow_ha_lookups is enabled
+        # Should pass validation with natural fallback
         assert result is None
 
     def test_validate_state_token_resolution_self_reference(
@@ -275,13 +257,7 @@ class TestPreEvaluationPhase:
             unique_id="test_sensor",
             entity_id=None,  # No entity_id = self-reference
             name="Test Sensor",
-            formulas=[
-                FormulaConfig(
-                    id="test_sensor",
-                    formula="state * 2",
-                    variables={},
-                )
-            ],
+            formulas=[FormulaConfig(id="test_sensor", formula="state * 2", variables={})],
         )
 
         # Setup phase with no backing entity mapping

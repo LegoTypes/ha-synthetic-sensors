@@ -5,10 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 # Use public API imports
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager
 
 
 class TestCoverageImprovementIntegration:
@@ -73,7 +70,6 @@ class TestCoverageImprovementIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="async_test_device",
-                allow_ha_lookups=True,
             )
 
             assert sensor_manager is not None
@@ -194,7 +190,6 @@ class TestCoverageImprovementIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="attr_resolution_device",
-                allow_ha_lookups=True,
             )
 
             assert sensor_manager is not None
@@ -293,7 +288,6 @@ class TestCoverageImprovementIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="variable_resolver_device",
-                allow_ha_lookups=True,
             )
 
             assert sensor_manager is not None

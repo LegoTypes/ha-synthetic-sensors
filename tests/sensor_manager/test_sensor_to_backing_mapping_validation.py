@@ -164,8 +164,7 @@ class TestDataProviderEntitiesValidation:
         """Test that empty entity IDs set raises error in virtual-only mode."""
         empty_entities = set()
 
-        # Should raise configuration error in virtual-only mode (default allow_ha_lookups=False)
-        with pytest.raises(SyntheticSensorsConfigError, match="No backing entities provided in virtual-only mode"):
+        with pytest.raises(SyntheticSensorsConfigError, match="Empty backing entity set provided explicitly"):
             sensor_manager.register_data_provider_entities(empty_entities)
 
     def test_empty_entity_ids_raises_error_ha_mode(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
@@ -174,7 +173,7 @@ class TestDataProviderEntitiesValidation:
 
         # Should raise configuration error even with HA lookups (explicit empty set is wrong)
         with pytest.raises(SyntheticSensorsConfigError, match="Empty backing entity set provided explicitly"):
-            sensor_manager.register_data_provider_entities(empty_entities, allow_ha_lookups=True)
+            sensor_manager.register_data_provider_entities(empty_entities)
 
     def test_none_entity_id_raises_error(self, mock_hass, mock_entity_registry, mock_states, sensor_manager):
         """Test that None entity ID raises ValueError."""

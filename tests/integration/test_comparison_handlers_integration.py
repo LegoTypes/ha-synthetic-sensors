@@ -7,11 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime
 from pathlib import Path
 
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 from ha_synthetic_sensors.exceptions import ComparisonHandlerError
 
 
@@ -167,7 +163,6 @@ class TestComparisonHandlersIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             # Test sensor manager creation
@@ -300,7 +295,6 @@ class TestComparisonHandlersIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             # Test sensor manager creation
@@ -439,7 +433,6 @@ class TestComparisonHandlersIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             # Test sensor manager creation
@@ -577,7 +570,6 @@ class TestComparisonHandlersIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             # Test sensor manager creation
@@ -696,7 +688,6 @@ class TestComparisonHandlersIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             # Test sensor manager creation
@@ -819,7 +810,6 @@ class TestComparisonHandlersIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             # Test sensor manager creation

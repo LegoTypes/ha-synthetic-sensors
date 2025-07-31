@@ -4,11 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
 # Use public API imports as shown in integration guide
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 
 
 class TestDependencyResolverIntegration:
@@ -125,7 +121,6 @@ class TestDependencyResolverIntegration:
                 storage_manager=storage_manager,
                 device_identifier="test_device_123",
                 data_provider_callback=data_provider,
-                allow_ha_lookups=True,  # Allow HA lookups for external entities
             )
 
             # Verify sensors were created successfully
@@ -216,7 +211,6 @@ class TestDependencyResolverIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="test_device_123",
-                allow_ha_lookups=True,  # Collection functions need HA entity lookups
             )
 
             # Verify sensors were created
@@ -327,7 +321,6 @@ sensors:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             assert sensor_manager is not None
@@ -387,7 +380,6 @@ sensors:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,
             )
 
             # Verify sensor manager was created successfully despite missing dependency
@@ -477,7 +469,6 @@ sensors:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=False,
             )
 
             assert sensor_manager is not None
@@ -633,7 +624,6 @@ sensors:
                 data_provider_callback=data_provider,
                 change_notifier=lambda x: None,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,  # Allow HA entity resolution
             )
 
             # Verify sensors were created
@@ -702,7 +692,6 @@ sensors:
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
                     device_identifier="test_device_123",
-                    allow_ha_lookups=True,  # Allow HA entity lookups for cross-references
                 )
 
             # Clean up
@@ -765,7 +754,6 @@ sensors:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,  # Allow HA entity lookups for external references
             )
 
             assert sensor_manager is not None
@@ -854,7 +842,6 @@ sensors:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,  # Enable HA lookups for complex dependencies
             )
 
             assert sensor_manager is not None

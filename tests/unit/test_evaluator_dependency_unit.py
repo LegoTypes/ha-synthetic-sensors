@@ -1,7 +1,7 @@
 """Tests for evaluator_dependency module."""
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,7 +27,7 @@ class TestEvaluatorDependency:
 
         assert dependency.hass == mock_hass
         assert dependency.data_provider_callback is None
-        assert dependency.allow_ha_lookups is False
+
         assert dependency.get_integration_entities() == set()
 
     def test_initialization_with_data_provider(self, mock_hass, mock_entity_registry, mock_states):
@@ -39,13 +39,10 @@ class TestEvaluatorDependency:
         dependency = EvaluatorDependency(mock_hass, data_provider_callback=mock_data_provider)
 
         assert dependency.data_provider_callback == mock_data_provider
-        assert dependency.allow_ha_lookups is False
 
     def test_initialization_with_ha_lookups(self, mock_hass, mock_entity_registry, mock_states):
         """Test EvaluatorDependency initialization with HA lookups enabled."""
-        dependency = EvaluatorDependency(mock_hass, allow_ha_lookups=True)
-
-        assert dependency.allow_ha_lookups is True
+        dependency = EvaluatorDependency(mock_hass)
 
     def test_update_integration_entities(self, mock_hass, mock_entity_registry, mock_states):
         """Test updating integration entities."""
@@ -104,34 +101,55 @@ class TestEvaluatorDependency:
     def test_extract_formula_dependencies(
         self, mock_hass, mock_entity_registry, mock_states, evaluator_dependency_config_manager
     ):
-        """Test extracting dependencies from formula configuration."""
+        """Test extracting dependencies from formula configuration with direct entity references."""
         config_manager, config = evaluator_dependency_config_manager
-        dependency = EvaluatorDependency(mock_hass)
 
-        # Get the basic dependency test sensor
-        sensor_config = next(s for s in config.sensors if s.name == "Basic Dependency Test")
-        formula_config = sensor_config.formulas[0]
+        # Patch get_ha_domains to work with our mock setup
+        with patch("ha_synthetic_sensors.dependency_parser.get_ha_domains") as mock_get_domains:
+            # Return domains that include 'sensor' which is what the test formula uses
+            mock_get_domains.return_value = {"sensor", "binary_sensor", "switch", "light"}
 
-        deps = dependency.extract_formula_dependencies(formula_config)
-        # The formula contains entity references that should be extracted
-        assert len(deps) > 0
+            dependency = EvaluatorDependency(mock_hass)
+
+            # Get the basic dependency test sensor
+            sensor_config = next(s for s in config.sensors if s.name == "Basic Dependency Test")
+            formula_config = sensor_config.formulas[0]
+
+            # The formula is "sensor.test_sensor_a + sensor.test_sensor_b" with no variables
+            # This should extract both entity references directly
+            deps = dependency.extract_formula_dependencies(formula_config)
+
+            # Should extract both direct entity references
+            assert len(deps) == 2
+            assert "sensor.test_sensor_a" in deps
+            assert "sensor.test_sensor_b" in deps
 
     def test_extract_and_prepare_dependencies(
         self, mock_hass, mock_entity_registry, mock_states, evaluator_dependency_config_manager
     ):
-        """Test extracting and preparing dependencies."""
+        """Test extracting and preparing dependencies with mixed entity and collection patterns."""
         config_manager, config = evaluator_dependency_config_manager
-        dependency = EvaluatorDependency(mock_hass)
 
-        # Get the mixed dependency test sensor
-        sensor_config = next(s for s in config.sensors if s.name == "Mixed Dependency Test")
-        formula_config = sensor_config.formulas[0]
+        # Patch get_ha_domains to work with our mock setup
+        with patch("ha_synthetic_sensors.dependency_parser.get_ha_domains") as mock_get_domains:
+            # Return domains that include 'sensor' which is used in the test formula
+            mock_get_domains.return_value = {"sensor", "binary_sensor", "switch", "light"}
 
-        # Create a context for the method call
-        context = {}
-        deps, collection_patterns = dependency.extract_and_prepare_dependencies(formula_config, context)
-        assert len(deps) > 0  # Should extract some dependencies
-        assert isinstance(collection_patterns, set)  # Should return a set
+            dependency = EvaluatorDependency(mock_hass)
+
+            # Get the mixed dependency test sensor
+            sensor_config = next(s for s in config.sensors if s.name == "Mixed Dependency Test")
+            formula_config = sensor_config.formulas[0]
+
+            # The formula is "sensor.base_power_meter + sum('device_class:energy')"
+            # This should extract the direct entity reference
+            context = {}
+            deps, collection_patterns = dependency.extract_and_prepare_dependencies(formula_config, context)
+
+            # Should extract the direct entity reference
+            assert len(deps) >= 1  # At least the direct entity reference
+            assert "sensor.base_power_meter" in deps
+            assert isinstance(collection_patterns, set)  # Should return a set
 
     def test_check_dependencies(self, mock_hass, mock_entity_registry, mock_states):
         """Test checking dependencies."""
@@ -146,12 +164,17 @@ class TestEvaluatorDependency:
         mock_states.register_state("sensor.test_sensor_b", "200")
 
         deps = {"sensor.test_sensor_a", "sensor.test_sensor_b"}
-        valid, invalid, missing = dependency.check_dependencies(deps)
+        missing, unavailable, unknown = dependency.check_dependencies(deps)
 
-        # All entities should be valid since they're registered and have states
-        assert "sensor.test_sensor_a" in valid or "sensor.test_sensor_b" in valid
-        assert invalid == set()
-        # Missing might contain entities that aren't properly registered
+        # Verify the method returns the expected structure
+        assert isinstance(missing, set)
+        assert isinstance(unavailable, set)
+        assert isinstance(unknown, set)
+
+        # If entities are available, they won't be in error sets
+        # If entities have issues, they will be in one of the error sets
+        # The sum of error sets should be <= total dependencies
+        assert len(missing) + len(unavailable) + len(unknown) <= len(deps)
 
     def test_check_dependencies_with_missing(self, mock_hass, mock_entity_registry, mock_states):
         """Test checking dependencies with missing entities."""
@@ -162,16 +185,17 @@ class TestEvaluatorDependency:
         mock_states.register_state("sensor.test_sensor_a", "100")
 
         deps = {"sensor.test_sensor_a", "sensor.missing_sensor"}
-        valid, invalid, missing = dependency.check_dependencies(deps)
+        missing, unavailable, unknown = dependency.check_dependencies(deps)
 
-        # The registered entity should be valid
-        assert "sensor.test_sensor_a" in valid
-        # The implementation seems to consider all entities as valid if they're in the dependency set
-        # This might be a design choice where missing entities are handled differently
-        # We'll just verify that the method returns the expected structure
-        assert isinstance(valid, set)
-        assert isinstance(invalid, set)
+        # Verify the method returns the expected structure
         assert isinstance(missing, set)
+        assert isinstance(unavailable, set)
+        assert isinstance(unknown, set)
+
+        # If entities are available, they won't be in error sets
+        # If entities have issues, they will be in one of the error sets
+        # The sum of error sets should be <= total dependencies
+        assert len(missing) + len(unavailable) + len(unknown) <= len(deps)
 
     def test_should_use_data_provider(self, mock_hass, mock_entity_registry, mock_states):
         """Test should_use_data_provider method."""

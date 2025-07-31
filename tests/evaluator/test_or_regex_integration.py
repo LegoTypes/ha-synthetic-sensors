@@ -96,11 +96,7 @@ class TestOrRegexIntegration:
         from ha_synthetic_sensors.dependency_parser import DynamicQuery
 
         # Test three-way OR pattern with existing entities from shared registry
-        query = DynamicQuery(
-            query_type="regex",
-            pattern="bedroom.*|kitchen.*|living_room.*",
-            function="count",
-        )
+        query = DynamicQuery(query_type="regex", pattern="bedroom.*|kitchen.*|living_room.*", function="count")
         entities = collection_resolver.resolve_collection(query)
 
         # Expected entities from shared registry that match the patterns
@@ -125,11 +121,7 @@ class TestOrRegexIntegration:
         from ha_synthetic_sensors.dependency_parser import DynamicQuery
 
         # Test domain-specific OR pattern with existing entities from shared registry
-        query = DynamicQuery(
-            query_type="regex",
-            pattern="sensor\\.circuit.*|binary_sensor\\.door.*",
-            function="count",
-        )
+        query = DynamicQuery(query_type="regex", pattern="sensor\\.circuit.*|binary_sensor\\.door.*", function="count")
         entities = collection_resolver.resolve_collection(query)
 
         # Expected entities from shared registry that match the patterns
@@ -152,11 +144,7 @@ class TestOrRegexIntegration:
         from ha_synthetic_sensors.dependency_parser import DynamicQuery
 
         # Test edge case with trailing pipe - should handle gracefully
-        query = DynamicQuery(
-            query_type="regex",
-            pattern="circuit.*|kitchen.*|",
-            function="count",
-        )
+        query = DynamicQuery(query_type="regex", pattern="circuit.*|kitchen.*|", function="count")
         entities = collection_resolver.resolve_collection(query)
 
         # Should still find entities matching the valid patterns

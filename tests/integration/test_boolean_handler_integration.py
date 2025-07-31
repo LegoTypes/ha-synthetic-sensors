@@ -4,10 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager
 
 
 class TestBooleanHandlerIntegration:
@@ -84,7 +81,6 @@ class TestBooleanHandlerIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="test_device_123",
-                allow_ha_lookups=True,  # Enable HA lookups for boolean handler tests
             )
 
             assert sensor_manager is not None

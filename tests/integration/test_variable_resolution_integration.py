@@ -5,11 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 # Use public API imports as shown in integration guide
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 
 
 class TestVariableResolutionIntegration:
@@ -96,7 +92,6 @@ class TestVariableResolutionIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,
-                allow_ha_lookups=True,  # Allow HA entity lookups for global variables
             )
 
             assert sensor_manager is not None
@@ -163,7 +158,6 @@ class TestVariableResolutionIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="test_device_123",
-                allow_ha_lookups=True,  # Enable HA lookups for entity attribute access
             )
 
             assert sensor_manager is not None
@@ -224,7 +218,6 @@ class TestVariableResolutionIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="test_device_123",
-                allow_ha_lookups=True,  # Enable HA lookups for variable resolution
             )
 
             assert sensor_manager is not None
@@ -306,7 +299,6 @@ class TestVariableResolutionIntegration:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="test_device_123",
-                allow_ha_lookups=True,  # Enable HA lookups for type analysis
             )
 
             assert sensor_manager is not None

@@ -160,18 +160,10 @@ class TestEvaluator:
         """Test that circuit breaker configuration is customizable."""
         # Test with custom configuration
         cb_config = CircuitBreakerConfig(
-            max_fatal_errors=3,
-            max_transitory_errors=10,
-            track_transitory_errors=True,
-            reset_on_success=True,
+            max_fatal_errors=3, max_transitory_errors=10, track_transitory_errors=True, reset_on_success=True
         )
 
-        retry_config = RetryConfig(
-            enabled=True,
-            max_attempts=5,
-            retry_on_unknown=True,
-            retry_on_unavailable=False,
-        )
+        retry_config = RetryConfig(enabled=True, max_attempts=5, retry_on_unknown=True, retry_on_unavailable=False)
 
         evaluator = Evaluator(mock_hass, circuit_breaker_config=cb_config, retry_config=retry_config)
 
@@ -361,10 +353,7 @@ class TestEvaluator:
         evaluator = Evaluator(mock_hass)
 
         config = FormulaConfig(
-            id="cache_test",
-            name="Cache Test",
-            formula="test_var * 2",
-            variables={"test_var": "sensor.test_entity"},
+            id="cache_test", name="Cache Test", formula="test_var * 2", variables={"test_var": "sensor.test_entity"}
         )
 
         # First evaluation

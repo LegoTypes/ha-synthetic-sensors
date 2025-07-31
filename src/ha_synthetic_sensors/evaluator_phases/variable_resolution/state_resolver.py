@@ -26,10 +26,12 @@ class StateResolver(VariableResolver):
         self,
         sensor_to_backing_mapping: dict[str, str] | None = None,
         data_provider_callback: Callable[[str], DataProviderResult] | None = None,
+        hass: Any = None,
     ) -> None:
-        """Initialize the StateResolver with backing entity mapping and data provider."""
+        """Initialize the StateResolver with backing entity mapping, data provider, and HA instance."""
         self._sensor_to_backing_mapping = sensor_to_backing_mapping or {}
         self._data_provider_callback = data_provider_callback
+        self._hass = hass
 
     def can_resolve(self, variable_name: str, variable_value: str | Any) -> bool:
         """Determine if this resolver can handle standalone state token references."""
@@ -73,11 +75,17 @@ class StateResolver(VariableResolver):
                 reason="State token cannot be resolved: invalid sensor configuration",
             )
 
+        # No backing entity mapping - try to fall back to sensor's own HA state
+        if sensor_config and sensor_config.entity_id and self._should_resolve_sensor_own_state(sensor_config, formula_config):
+            return self._resolve_sensor_own_state(sensor_config)
+
         # State token cannot be resolved - this is a fatal error
-        _LOGGER.debug("State resolver: 'state' token cannot be resolved - no context value and no backing entity")
+        _LOGGER.debug(
+            "State resolver: 'state' token cannot be resolved - no context value, no backing entity, and no sensor entity_id"
+        )
         raise BackingEntityResolutionError(
             entity_id="state",
-            reason="State token cannot be resolved: no backing entity mapping and no previous value available",
+            reason="State token cannot be resolved: no backing entity mapping, no sensor entity_id, and no previous value available",
         )
 
     def _should_resolve_backing_entity(self, sensor_config: SensorConfig | None, formula_config: FormulaConfig | None) -> bool:
@@ -131,3 +139,77 @@ class StateResolver(VariableResolver):
             state_value,
         )
         return state_value
+
+    def _should_resolve_sensor_own_state(
+        self, sensor_config: SensorConfig | None, formula_config: FormulaConfig | None
+    ) -> bool:
+        """Determine if sensor's own HA state resolution should be attempted."""
+        if not sensor_config or not formula_config:
+            return False
+
+        # Only resolve sensor's own state for main formulas
+        # Main formulas have either id="main" or id=sensor.unique_id (for implicit main formulas)
+        is_main_formula = formula_config.id in ("main", sensor_config.unique_id)
+
+        # Only resolve if this is a main formula and sensor has entity_id
+        return is_main_formula and sensor_config.entity_id is not None
+
+    def _resolve_sensor_own_state(self, sensor_config: SensorConfig) -> Any:
+        """Resolve the sensor's own HA state for recursive/self-reference calculations."""
+        entity_id = sensor_config.entity_id
+
+        _LOGGER.debug(
+            "State resolver: Resolving sensor's own HA state for sensor '%s' -> entity_id '%s'",
+            sensor_config.unique_id,
+            entity_id,
+        )
+
+        if not self._hass or not hasattr(self._hass, "states"):
+            raise BackingEntityResolutionError(
+                entity_id=entity_id or "unknown",
+                reason=f"Cannot resolve sensor's own state for '{sensor_config.unique_id}': Home Assistant instance not available",
+            )
+
+        # Get the current HA state for the sensor's entity_id
+        hass_state = self._hass.states.get(entity_id)
+        if hass_state is None:
+            # If sensor doesn't exist in HA yet, treat as initial state
+            _LOGGER.debug(
+                "State resolver: Sensor '%s' not found in HA, treating as initial state (value: 0)",
+                entity_id,
+            )
+            return 0  # Default initial state for new sensors
+
+        # Extract numeric value from the state
+        state_value = hass_state.state
+        if state_value in ["unknown", "unavailable", "None", None]:
+            _LOGGER.debug(
+                "State resolver: Sensor '%s' has unknown/unavailable state, treating as 0",
+                entity_id,
+            )
+            return 0
+
+        # Try to convert to numeric value
+        try:
+            numeric_value = float(state_value)
+            _LOGGER.debug(
+                "State resolver: Successfully resolved sensor's own HA state '%s' -> %s",
+                entity_id,
+                numeric_value,
+            )
+            return numeric_value
+        except (ValueError, TypeError):
+            # Handle boolean-like states (on/off, true/false, etc.)
+            if isinstance(state_value, str):
+                state_lower = state_value.lower()
+                if state_lower in ("on", "true", "open", "locked", "home", "detected"):
+                    return 1.0
+                if state_lower in ("off", "false", "closed", "unlocked", "away", "clear"):
+                    return 0.0
+
+            _LOGGER.warning(
+                "State resolver: Cannot convert sensor's own state '%s' (value: '%s') to numeric, defaulting to 0",
+                entity_id,
+                state_value,
+            )
+            return 0

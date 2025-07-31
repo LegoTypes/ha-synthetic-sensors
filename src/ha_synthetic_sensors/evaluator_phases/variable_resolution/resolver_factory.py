@@ -25,6 +25,7 @@ class VariableResolverFactory:
         self,
         sensor_to_backing_mapping: dict[str, str] | None = None,
         data_provider_callback: Callable[[str], DataProviderResult] | None = None,
+        hass: Any = None,
     ) -> None:
         """Initialize the variable resolver factory with default resolvers."""
         self._resolvers: list[VariableResolver] = []
@@ -33,6 +34,7 @@ class VariableResolverFactory:
         self._entity_attribute_resolver: EntityAttributeResolver | None = None
         self._sensor_to_backing_mapping = sensor_to_backing_mapping or {}
         self._data_provider_callback = data_provider_callback
+        self._hass = hass
         self._state_resolver: StateResolver | None = None
         self._register_default_resolvers()
 
@@ -51,8 +53,8 @@ class VariableResolverFactory:
         # Register specific resolvers first (higher priority)
         self.register_resolver(StateAttributeResolver(self._sensor_to_backing_mapping, self._data_provider_callback))
 
-        # Create and store state resolver with backing entity support
-        self._state_resolver = StateResolver(self._sensor_to_backing_mapping, self._data_provider_callback)
+        # Create and store state resolver with backing entity support and HA instance
+        self._state_resolver = StateResolver(self._sensor_to_backing_mapping, self._data_provider_callback, self._hass)
         self.register_resolver(self._state_resolver)
 
         # Create and store self-reference resolver for entity ID self-references

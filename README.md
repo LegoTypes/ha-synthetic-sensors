@@ -64,59 +64,23 @@ The data sources for the evaluated formulas can be:
 - Automatically tracked via HA state change events
 - Enables cross-integration calculations and combinations
 
-### Process Flow for Each Pattern
-
 #### Pattern A: Virtual Entity Extension (Device Integrations)
 
 ```text
-Your Integration Data → Virtual Backing Entity → Synthetic Sensor Extension
+Your Integration Data →    Backing Entity →         Synthetic Sensor Extension
         ↓                        ↓                           ↓
    Device API Data        coordinator.register()     Formula calculates new state
-   coordinator.update()   virtual_entity.value      from virtual entity value
-   notify_changes()       (not in HA registry)      (appears in HA as sensor)
+   coordinator.update()   entity.value      from virtual entity value
+   notify_changes()       (memory or HA sensor)      (appears in HA as sensor)
 ```
 
 **Steps:**
 
-1. **Set up virtual backing entities** in your coordinator's memory
-2. **Register entities** with synthetic sensor package via mapping
-3. **Update virtual values** when your device data changes
+1. **Set up any backing entities** in your coordinator's memory or integration
+2. **Register any backing entities** with synthetic sensor package via mapping
+3. **Update virtual and integration sensor values** when your device data changes
 4. **Notify changes** to trigger selective synthetic sensor updates
-5. **Synthetic sensors calculate** new states from virtual entity values
-
-#### Pattern B: Native HA Entity Extension (Integration Sensors)
-
-```text
-Your Integration → Native HA Sensor → Synthetic Sensor Extension
-        ↓                ↓                      ↓
-   Create real sensor   HA entity lifecycle    Formula extends existing
-   via async_add_entities   state updates      sensor with new calculations
-```
-
-**Steps:**
-
-1. **Create native HA sensors** via `async_add_entities`
-2. **Set up synthetic sensors** to reference native sensor entity IDs
-3. **Update native sensors** through normal HA mechanisms
-4. **Synthetic sensors automatically update** via HA state change tracking
-5. **Extended sensors provide** calculated values based on native sensor states
-
-#### Pattern C: External HA Entity Extension (Cross-Integration)
-
-```text
-Other Integration → HA Entity → Synthetic Sensor Extension
-        ↓              ↓              ↓
-   External sensor    HA state      Formula combines/transforms
-   updates normally   changes       external entity values
-```
-
-**Steps:**
-
-1. **Identify external HA entities** you want to extend or combine
-2. **Reference entity IDs** directly in synthetic sensor YAML variables
-3. **Set up synthetic sensors** with `allow_ha_lookups=True`
-4. **External entities update** independently via their own integrations
-5. **Synthetic sensors automatically recalculate** when referenced entities change
+5. **Synthetic sensors calculate** new states from entity refernces by entity_id
 
 ### Synthetic Benefits
 
@@ -139,12 +103,15 @@ Other Integration → HA Entity → Synthetic Sensor Extension
 
 ## Key Features
 
-- **Variable reuse**: Define variables globally or per sensor for use across multiple formulas
-- **Dependency tracking**: Automatic sensor update ordering and hierarchical dependencies
+- **Sensor Definition and Modification**: Without code modification change the sensor or attribute state with YAML
+- **Bulk Load/Modify and Per-Sensor CRUD**: Load complete sensor sets or make granular changes
+- **Rich Formuala Based States**: Formulas with natural syntax and powerful evaluation and collection patterns
+- **Variable reuse**: Define variables globally or per sensor and use those vairables in formulas or attributes
+- **Dot notation**: Easy access to entity attributes in formulas
+- **Automatic Entity-ID Tracking**: Updates the definitions based on external HA entity renaming
 - **Type safety**: Complete TypedDict interfaces for better IDE support and validation
 - **Storage-first architecture**: Runtime configuration changes without file modifications
-- **Dot notation**: Easy access to entity attributes in formulas
-- **Collection functions**: Support for aggregating multiple entities with filtering
+- **Built for Performance**: AST caching and evaluation of formulas and bulk modification event storm avoidance
 
 ## Installation
 
@@ -282,7 +249,8 @@ maintainable.
 
 ### Variable Purpose and Scope
 
-A variable serves as a short alias for an entity ID, collection pattern, or numeric literal that it references.
+A variable serves as a short alias for an entity ID, collection pattern, or numeric literal that it references. They can be
+used in any formula in the main sensor or attribute.
 
 Variables can be:
 
@@ -347,84 +315,16 @@ sensors:
 - **Formula attributes**: Calculated values that depend on sensor state or other entities
 - **Mixed usage**: Both literal and formula attributes can be used together in the same sensor
 
-### Device Association
-
-Associate sensors with Home Assistant devices for better organization and device-centric management:
-
-```yaml
-sensors:
-  # Sensor associated with a new device
-  solar_inverter_efficiency:
-    name: "Solar Inverter Efficiency"
-    formula: "solar_output / solar_capacity * 100"
-    variables:
-      solar_output: "sensor.solar_current_power"
-      solar_capacity: "sensor.solar_max_capacity"
-    metadata:
-      unit_of_measurement: "%"
-      device_class: "power_factor"
-      state_class: "measurement"
-      suggested_display_precision: 1
-      icon: "mdi:solar-panel"
-    # Device association fields
-    device_identifier: "solar_inverter_001"
-    device_name: "Solar Inverter"
-    device_manufacturer: "SolarTech"
-    device_model: "ST-5000"
-    device_sw_version: "2.1.0"
-    device_hw_version: "1.0"
-    suggested_area: "Garage"
-```
-
-**Device Association Fields:**
-
-- **`device_identifier`** _(required)_: Unique identifier for the device
-- **`device_name`** _(optional)_: Human-readable device name
-- **`device_manufacturer`** _(optional)_: Device manufacturer
-- **`device_model`** _(optional)_: Device model
-- **`device_sw_version`** _(optional)_: Software version
-- **`device_hw_version`** _(optional)_: Hardware version
-- **`suggested_area`** _(optional)_: Suggested Home Assistant area
-
-**Device Behavior:**
-
-- **New devices**: If a device with the `device_identifier` doesn't exist, it will be created with the provided information
-- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are
-  ignored)
-- **No device association**: Sensors without `device_identifier` behave as standalone entities (default behavior)
-- **Entity ID generation**: When using device association, entity IDs automatically include the device name prefix (e.g.,
-  `sensor.span_panel_main_power`)
-
-**Integration Domain:**
-
-Device association requires specifying the integration domain. See the
-[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for implementation details.
-
-**Device-Aware Entity Naming:**
-
-When sensors are associated with devices, entity IDs are automatically generated using the device's name as a prefix:
-
-- **device_identifier** is used to look up the device in Home Assistant's device registry
-- **Device name** (from the device registry) is "slugified" (converted to lowercase, spaces become underscores, special
-  characters removed)
-- Entity ID pattern: `sensor.{slugified_device_name}_{sensor_key}`
-- Examples:
-  - device_identifier "njs-abc-123" → Device "SPAN Panel House" → `sensor.span_panel_house_current_power`
-  - device_identifier "solar_inv_01" → Device "Solar Inverter" → `sensor.solar_inverter_efficiency`
-  - device_identifier "circuit_a1" → Device "Circuit - Phase A" → `sensor.circuit_phase_a_current`
-
-This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to, while
-avoiding conflicts between sensors from different devices.
-
 ## How attributes work
 
-- Main sensor state is calculated first using the `formula`
-- Attributes are calculated second and have access to the `state` variable
-- `state` always refers to the fresh main sensor calculation
-- Attributes can define their own `variables` section for attribute-specific entity references
-- Attributes inherit all variables from their parent sensor and can add their own
-- Attributes can also reference other entities directly (like `sensor.max_power_capacity` above)
-- Each attribute shows up as `sensor.energy_cost_analysis.daily_projected` etc. in HA
+- Main sensor state is calculated _first_ using the `formula`
+- Attributes are calculated _second_ and have access to the sensor `state` variable
+- Attribute `state` tokens refers to the _caclulated_ main sensor state
+- Attributres can reference other attributes
+- Attributes can define their own `variables` section for attribute-specific entity references or use the main sensors
+  variables
+- Attributes can define their onw `formula` section
+- Attributes can also reference other entities (like `sensor.max_power_capacity` above)
 
 **Example:**
 
@@ -445,7 +345,8 @@ sensors:
 
 In this example:
 
-- The main sensor state is set to the value of the backing entity (accessed via the `state` token).
+- The main sensor state is set to the value of the backing entity or the previous HA sensor state (accessed via the `state`
+  token).
 - The `daily_total` attribute is calculated as the main state times 24.
 - The `with_multiplier` attribute is calculated as the main state times a custom multiplier (2.5).
 - Both attribute formulas use the `state` variable, which is the freshly calculated main sensor value.
@@ -645,7 +546,7 @@ sensors:
 
 **Metadata Architecture:**
 
-- **Global metadata**: Applied to all sensors in the YAML file
+- **Global metadata**: Applied to all sensors in the YAML file at runtime
 - **Sensor metadata**: Overrides global metadata for specific sensors
 - **Attribute metadata**: Independent of global and sensor metadata
 - **Validation**: Entity-only properties rejected in attribute metadata
@@ -923,21 +824,17 @@ sensors:
 
 **Sensor State Token:**
 
-The `state` of the sensor is referenced by this special token and can be used anywhere a formula is used either in the main
-sensor or in attribute formulas. When `state` is referenced in the main formula the reference is to the senosr state before
-the formula is evaluated since the calculation is based on the prior state and the result then sets the state of the sensor.
-When `state` is used in an attribute formula the token refers to the main sensor's formula result (post-eval). This
-disctinction makes sense because the main sensor state is evaluated _before_ attributes. The state flow is always logically
-evaluated in order.
+The `state` of the sensor is referenced by this special token. When `state` is referenced in the main formula the reference
+is to the sensor state before the formula is evaluated. When `state` is used in an attribute formula the token refers to the
+main sensor's formula result (post-eval). This disctinction makes sense because the main sensor state is evaluated _before_
+attributes. The state flow is always logically evaluated in order.
 
-References to attributes can also be made from the state like `state.my_sensor_attribute` which evaluates beased on where
-this reference is used consistent with the evaluation order of main sensor first and then attributes. So if
-`state.my_attribute *10` is used in the main formula the result is the state of the main sensor's `my_attribute` prior to the
-formula being evaluated.
+References to attributes can also be made from the state like `state.my_sensor_attribute`. So if `state.my_attribute *10`is
+used in the main formula the result is the state of the main sensor's`my_attribute` prior to the formula being evaluated.
 
-If that same `state.my_attribute` is used in the attribute formula the reference is to the main formula's state after the
-main sensor is evaluted. This ordering matters if the attribute was influcened by the main sensor state. The key is to always
-remember the the main sensor state is evaluated first before attributes are calculated.
+If `state.my_attribute` is used in the attribute formula the `state` reference is to the main formula's state after the main
+sensor is evaluted. This ordering matters if the attribute was influcened by the main sensor state. The key is to always
+remember the the main sensor state is evaluated before attributes.
 
 - **Explicit operators**: `"state:==on|!=off|>50"`
 - **Shorthand boolean**: `"state:on|!off|>50"` (implicit equality for simple values)
@@ -958,25 +855,18 @@ remember the the main sensor state is evaluated first before attributes are calc
 
 **Syntax Reference:**
 
-| Pattern Type     | Explicit Syntax                                  | Shorthand Syntax                     | Negation Syntax              |
-| ---------------- | ------------------------------------------------ | ------------------------------------ | ---------------------------- |
-| **State**        | `"state:==on\|!=off\|>=50"`                      | `"state:on\|!off\|>=50"`             | `"state:!off\|!inactive"`    |
-| **Attribute**    | `"battery_level>=50\|status==active"`            | `"battery_level>=50\|status:active"` | `"battery_level:!<20"`       |
-| **String**       | `"name in 'Living'\|manufacturer not in 'Test'"` | `"name:Living\|manufacturer:!Test"`  | `"name:!'Kitchen'"`          |
-| **Version**      | `"firmware_version>='2.1.0'\|app_version<'3.0'"` | `"firmware_version:>=2.1.0"`         | `"version:!<1.0"`            |
-| **DateTime**     | `"last_seen>='2024-01-01T00:00:00Z'"`            | `"last_seen:>=2024-01-01"`           | `"updated_at:!<yesterday"`   |
-| **Device Class** | `"device_class:power\|device_class:energy"`      | `"device_class:power\|energy"`       | `"device_class:!diagnostic"` |
-| **Area**         | `"area:kitchen\|area:living_room"`               | `"area:kitchen\|living_room"`        | `"area:!basement"`           |
-| **Label**        | `"label:critical\|label:important"`              | `"label:critical\|important"`        | `"label:!deprecated"`        |
+| Pattern Type     | Explicit Syntax                                    | Shorthand Syntax                       | Negation Syntax              |
+| ---------------- | -------------------------------------------------- | -------------------------------------- | ---------------------------- |
+| **State**        | `"state:==on \| !=off \| >=50"`                    | `"state:on \| !off \| >=50"`           | `"state:!off \| !inactive"`  |
+| **Attribute**    | `"battery_level>=50 \| status==active"`            | `"battery_level>=50 \| status:active"` | `"battery_level:!<20"`       |
+| **String**       | `"name in 'Living' \| manufacturer not in 'Test'"` | `"name:Living \| manufacturer:!Test"`  | `"name:!'Kitchen'"`          |
+| **Version**      | `"firmware_version>='2.1.0' \| app_version<'3.0'"` | `"firmware_version:>=2.1.0"`           | `"version:!<1.0"`            |
+| **DateTime**     | `"last_seen>='2024-01-01T00:00:00Z'"`              | `"last_seen:>=2024-01-01"`             | `"updated_at:!<yesterday"`   |
+| **Device Class** | `"device_class:power \| device_class:energy"`      | `"device_class:power \| energy"`       | `"device_class:!diagnostic"` |
+| **Area**         | `"area:kitchen \| area:living_room"`               | `"area:kitchen \| living_room"`        | `"area:!basement"`           |
+| **Label**        | `"label:critical \| label:important"`              | `"label:critical \| important"`        | `"label:!deprecated"`        |
 
-**Key Features:**
-
-- **Pipe-only OR logic**: All patterns use `\|` for OR conditions (no comma support)
-- **Shorthand evaluation**: Simple values like `on`, `active`, `connected` are automatically evaluated as boolean
-- **Negation support**: `!` prefix excludes specific values or patterns
-- **Mixed patterns**: Combine inclusion and exclusion in the same pattern
-
-**Important:** For regex patterns, the variable must reference an `input_text` entity containing the regex pattern:
+**Important:** For regex patterns, the variable _must_ reference an `input_text` entity containing the regex pattern:
 
 ```yaml
 # Correct: Variable references input_text entity
@@ -1166,33 +1056,74 @@ sensors:
 - Statistics: `min()`, `max()`, `avg()`, `mean()`, `sum()`
 - Utilities: `clamp(value, min, max)`, `map(value, in_min, in_max, out_min, out_max)`, `percent(part, whole)`
 
-## Why use this instead of templates?
+## Device Association
 
-This package provides cleaner syntax for mathematical operations and better sensor management compared to Home Assistant
-templates.
-
-**This package:** Clean mathematical expressions with variable mapping
+Associate sensors with Home Assistant devices for better organization and device-centric management:
 
 ```yaml
-formula: "net_power * buy_rate / 1000 if net_power > 0 else abs(net_power) * sell_rate / 1000"
-variables:
-  net_power: "sensor.span_panel_net_power"
-  buy_rate: "input_number.electricity_buy_rate"
-  sell_rate: "input_number.electricity_sell_rate"
+sensors:
+  # Sensor associated with a new device
+  solar_inverter_efficiency:
+    name: "Solar Inverter Efficiency"
+    formula: "solar_output / solar_capacity * 100"
+    variables:
+      solar_output: "sensor.solar_current_power"
+      solar_capacity: "sensor.solar_max_capacity"
+    metadata:
+      unit_of_measurement: "%"
+      device_class: "power_factor"
+      state_class: "measurement"
+      suggested_display_precision: 1
+      icon: "mdi:solar-panel"
+    # Device association fields
+    device_identifier: "solar_inverter_001"
+    device_name: "Solar Inverter"
+    device_manufacturer: "SolarTech"
+    device_model: "ST-5000"
+    device_sw_version: "2.1.0"
+    device_hw_version: "1.0"
+    suggested_area: "Garage"
 ```
 
-**Template equivalent:** Verbose Jinja2 syntax with manual state conversion
+**Device Association Fields:**
 
-```yaml
-value_template: >
-  {% set net_power = states('sensor.span_panel_net_power')|float %} {% set buy_rate =
-  states('input_number.electricity_buy_rate')|float %} {% set sell_rate = states('input_number.electricity_sell_rate')|float
-  %} {% if net_power > 0 %}
-    {{ net_power * buy_rate / 1000 }}
-  {% else %}
-    {{ (net_power|abs) * sell_rate / 1000 }}
-  {% endif %}
-```
+- **`device_identifier`** _(required)_: Unique identifier for the device
+- **`device_name`** _(optional)_: Human-readable device name
+- **`device_manufacturer`** _(optional)_: Device manufacturer
+- **`device_model`** _(optional)_: Device model
+- **`device_sw_version`** _(optional)_: Software version
+- **`device_hw_version`** _(optional)_: Hardware version
+- **`suggested_area`** _(optional)_: Suggested Home Assistant area
+
+**Device Behavior:**
+
+- **New devices**: If a device with the `device_identifier` doesn't exist, it will be created with the provided information
+- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are
+  ignored)
+- **No device association**: Sensors without `device_identifier` behave as standalone entities (default behavior)
+- **Entity ID generation**: When using device association, entity IDs automatically include the device name prefix (e.g.,
+  `sensor.span_panel_main_power`)
+
+**Integration Domain:**
+
+Device association requires specifying the integration domain. See the
+[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for implementation details.
+
+**Device-Aware Entity Naming:**
+
+When sensors are associated with devices, entity IDs are automatically generated using the device's name as a prefix:
+
+- **device_identifier** is used to look up the device in Home Assistant's device registry
+- **Device name** (from the device registry) is "slugified" (converted to lowercase, spaces become underscores, special
+  characters removed)
+- Entity ID pattern: `sensor.{slugified_device_name}_{sensor_key}`
+- Examples:
+  - device_identifier "njs-abc-123" → Device "SPAN Panel House" → `sensor.span_panel_house_current_power`
+  - device_identifier "solar_inv_01" → Device "Solar Inverter" → `sensor.solar_inverter_efficiency`
+  - device_identifier "circuit_a1" → Device "Circuit - Phase A" → `sensor.circuit_phase_a_current`
+
+This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to, while
+avoiding conflicts between sensors from different devices.
 
 ## Home Assistant services
 

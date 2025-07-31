@@ -165,11 +165,7 @@ class TestEntityIndex:
             name="Test Sensor",
             entity_id="sensor.my_power",
             formulas=[
-                FormulaConfig(
-                    id="test_sensor",
-                    formula='state("power_var")',
-                    variables={"power_var": "sensor.power_meter"},
-                )
+                FormulaConfig(id="test_sensor", formula='state("power_var")', variables={"power_var": "sensor.power_meter"})
             ],
         )
 

@@ -4,11 +4,7 @@ import pytest
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 
 
 class TestGlobalsYamlCrudIntegration:

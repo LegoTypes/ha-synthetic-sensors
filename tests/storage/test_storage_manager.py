@@ -87,10 +87,7 @@ def sample_sensor_config() -> SensorConfig:
     )
 
     return SensorConfig(
-        unique_id="test_sensor_power",
-        name="Test Sensor Power",
-        formulas=[formula],
-        device_identifier="test_device:123",
+        unique_id="test_sensor_power", name="Test Sensor Power", formulas=[formula], device_identifier="test_device:123"
     )
 
 
@@ -203,17 +200,11 @@ class TestStorageManager:
 
             # Create sensor set first
             sensor_set_metadata = await storage_manager.async_create_sensor_set(
-                sensor_set_id="test_sensor_set",
-                device_identifier="test_device:123",
-                name="Test Device",
+                sensor_set_id="test_sensor_set", device_identifier="test_device:123", name="Test Device"
             )
 
             # Store sensor
-            await storage_manager.async_store_sensor(
-                sample_sensor_config,
-                sensor_set_metadata.sensor_set_id,
-                "test_device:123",
-            )
+            await storage_manager.async_store_sensor(sample_sensor_config, sensor_set_metadata.sensor_set_id, "test_device:123")
 
             # Verify sensor was stored
             assert sample_sensor_config.unique_id in storage_manager._data["sensors"]
@@ -236,18 +227,14 @@ class TestStorageManager:
             # Create sensor set
             sensor_set_id = "test_bulk_sensor_set"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Device",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Device"
             )
 
             # Create multiple sensor configs
             sensor_configs = []
             for i in range(3):
                 formula = FormulaConfig(
-                    id="main",
-                    formula="source_value",
-                    variables={"source_value": f"sensor.test_source_{i}"},
+                    id="main", formula="source_value", variables={"source_value": f"sensor.test_source_{i}"}
                 )
                 config = SensorConfig(
                     unique_id=f"test_sensor_{i}",
@@ -258,11 +245,7 @@ class TestStorageManager:
                 sensor_configs.append(config)
 
             # Store sensors in bulk
-            await storage_manager.async_store_sensors_bulk(
-                sensor_configs,
-                sensor_set_id,
-                "test_device:123",
-            )
+            await storage_manager.async_store_sensors_bulk(sensor_configs, sensor_set_id, "test_device:123")
 
             # Verify all sensors were stored
             for config in sensor_configs:
@@ -283,16 +266,10 @@ class TestStorageManager:
             # Create sensor set and store sensor
             sensor_set_id = "test_get_sensor_set"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Device",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Device"
             )
 
-            await storage_manager.async_store_sensor(
-                sample_sensor_config,
-                sensor_set_id,
-                "test_device:123",
-            )
+            await storage_manager.async_store_sensor(sample_sensor_config, sensor_set_id, "test_device:123")
 
             # Retrieve sensor
             retrieved_sensor = storage_manager.get_sensor(sample_sensor_config.unique_id)
@@ -313,16 +290,12 @@ class TestStorageManager:
             # Create sensor sets for different devices
             device1_set = "device1_sensor_set"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=device1_set,
-                device_identifier="device1:123",
-                name="Device 1",
+                sensor_set_id=device1_set, device_identifier="device1:123", name="Device 1"
             )
 
             device2_set = "device2_sensor_set"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=device2_set,
-                device_identifier="device2:456",
-                name="Device 2",
+                sensor_set_id=device2_set, device_identifier="device2:456", name="Device 2"
             )
 
             # Create sensors for each device
@@ -369,16 +342,10 @@ class TestStorageManager:
 
             # Create sensor set and add sensor
             sensor_set_metadata = await storage_manager.async_create_sensor_set(
-                sensor_set_id="test_update_set",
-                device_identifier="test_device:123",
-                name="Test Device",
+                sensor_set_id="test_update_set", device_identifier="test_device:123", name="Test Device"
             )
 
-            await storage_manager.async_store_sensor(
-                sample_sensor_config,
-                sensor_set_metadata.sensor_set_id,
-                "test_device:123",
-            )
+            await storage_manager.async_store_sensor(sample_sensor_config, sensor_set_metadata.sensor_set_id, "test_device:123")
 
             # Get original timestamp
             original_stored = storage_manager._data["sensors"][sample_sensor_config.unique_id]
@@ -411,11 +378,7 @@ class TestStorageManager:
             await storage_manager.async_load()
 
             # Try to update non-existent sensor
-            non_existent_config = SensorConfig(
-                unique_id="non_existent_sensor",
-                name="Non-existent Sensor",
-                formulas=[],
-            )
+            non_existent_config = SensorConfig(unique_id="non_existent_sensor", name="Non-existent Sensor", formulas=[])
 
             with pytest.raises(SensorUpdateError) as exc_info:
                 await storage_manager.async_update_sensor(non_existent_config)
@@ -434,16 +397,10 @@ class TestStorageManager:
             # Create sensor set and store sensor
             sensor_set_id = "test_delete_sensor_set"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Device",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Device"
             )
 
-            await storage_manager.async_store_sensor(
-                sample_sensor_config,
-                sensor_set_id,
-                "test_device:123",
-            )
+            await storage_manager.async_store_sensor(sample_sensor_config, sensor_set_id, "test_device:123")
 
             # Verify sensor exists
             assert sample_sensor_config.unique_id in storage_manager._data["sensors"]
@@ -468,16 +425,10 @@ class TestStorageManager:
             # Store some test data
             sensor_set_id = "test_config_conversion_set"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Device",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Device"
             )
 
-            await storage_manager.async_store_sensor(
-                sample_sensor_config,
-                sensor_set_id,
-                "test_device:123",
-            )
+            await storage_manager.async_store_sensor(sample_sensor_config, sensor_set_id, "test_device:123")
 
             # Convert to Config
             config = storage_manager.to_config(device_identifier="test_device:123")
@@ -523,23 +474,17 @@ class TestStorageManager:
             # Create sensor sets for different devices
             device1_set1 = "device1_set1"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=device1_set1,
-                device_identifier="device1:123",
-                name="Device 1 Set 1",
+                sensor_set_id=device1_set1, device_identifier="device1:123", name="Device 1 Set 1"
             )
 
             device1_set2 = "device1_set2"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=device1_set2,
-                device_identifier="device1:123",
-                name="Device 1 Set 2",
+                sensor_set_id=device1_set2, device_identifier="device1:123", name="Device 1 Set 2"
             )
 
             device2_set = "device2_set1"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=device2_set,
-                device_identifier="device2:456",
-                name="Device 2 Set",
+                sensor_set_id=device2_set, device_identifier="device2:456", name="Device 2 Set"
             )
 
             # List sensor sets for device 1
@@ -570,16 +515,10 @@ class TestStorageManager:
             # Create sensor set and store sensor
             sensor_set_id = "test_delete_individual_sensor"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Device",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Device"
             )
 
-            await storage_manager.async_store_sensor(
-                sample_sensor_config,
-                sensor_set_id,
-                "test_device:123",
-            )
+            await storage_manager.async_store_sensor(sample_sensor_config, sensor_set_id, "test_device:123")
 
             # Verify sensor exists
             assert sample_sensor_config.unique_id in storage_manager._data["sensors"]
@@ -782,9 +721,7 @@ class TestStorageManager:
             # Create sensor set with global settings
             sensor_set_id = "test_validation_conflicts"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Validation",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Validation"
             )
 
             # Set global settings for this sensor set
@@ -832,9 +769,7 @@ class TestStorageManager:
             # Create sensor set
             sensor_set_id = "test_validation_standard"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Standard Validation",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Standard Validation"
             )
 
             # Try to add sensor with missing unique_id
@@ -868,9 +803,7 @@ class TestStorageManager:
             # Create sensor set with global settings
             sensor_set_id = "test_validation_valid"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id,
-                device_identifier="test_device:123",
-                name="Test Valid Validation",
+                sensor_set_id=sensor_set_id, device_identifier="test_device:123", name="Test Valid Validation"
             )
 
             # Set global settings

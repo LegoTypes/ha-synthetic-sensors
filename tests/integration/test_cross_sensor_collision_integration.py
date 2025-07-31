@@ -5,11 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 import yaml
 
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 
 
 class TestCrossSensorCollisionIntegration:
@@ -134,7 +130,6 @@ class TestCrossSensorCollisionIntegration:
                 device_identifier="test_device_123",
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             assert sensor_manager is not None
@@ -210,7 +205,6 @@ class TestCrossSensorCollisionIntegration:
                 device_identifier="test_device_123",
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
-                allow_ha_lookups=False,
             )
 
             assert sensor_manager is not None
@@ -226,18 +220,15 @@ class TestCrossSensorCollisionIntegration:
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)
 
-    async def test_complex_collision_scenarios(self, mock_hass, mock_entity_registry, mock_states, clean_entity_registry):
+    async def test_complex_collision_scenarios(self, mock_hass, mock_entity_registry, mock_states):
         """Test complex collision scenarios with mixed reference types."""
-        # Pre-register the collision entity to force collision
-        await clean_entity_registry.async_get_or_create(
+        # Pre-register the collision entity to force collision using common fixtures
+        mock_entity_registry.async_get_or_create(
             domain="sensor",
             platform="test_collision",
             unique_id="existing_collision_sensor",
             suggested_object_id="circuit_a_power",  # This creates sensor.circuit_a_power
         )
-
-        # Update mock_hass to use the clean entity registry
-        mock_hass.entity_registry = clean_entity_registry
 
         # Create storage manager with mocked Store
         with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:

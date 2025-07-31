@@ -353,7 +353,7 @@ class TestValidationHandler:
 
         with pytest.raises(
             SyntheticSensorsConfigError,
-            match="Sensor 'test_sensor' main formula defines variable 'pressure' which conflicts with global variable",
+            match="Sensor 'test_sensor' main formula defines variable 'pressure' with value 'mock_value_pressure' which conflicts with global variable value '1013.25'",
         ):
             self.validator._check_formula_variable_conflicts(sensor, global_variables)
 
@@ -369,7 +369,7 @@ class TestValidationHandler:
 
         with pytest.raises(
             SyntheticSensorsConfigError,
-            match="Sensor 'sensor1' formula for attribute 'power' defines variable 'voltage' which conflicts with global variable",
+            match="Sensor 'sensor1' formula for attribute 'power' defines variable 'voltage' with value 'mock_value_voltage' which conflicts with global variable value '12.0'",
         ):
             self.validator._check_formula_variable_conflicts(sensor, global_variables)
 
@@ -385,7 +385,7 @@ class TestValidationHandler:
 
         with pytest.raises(
             SyntheticSensorsConfigError,
-            match="Sensor 'sensor1' formula 'custom_calculation' defines variable 'altitude' which conflicts with global variable",
+            match="Sensor 'sensor1' formula 'custom_calculation' defines variable 'altitude' with value 'mock_value_altitude' which conflicts with global variable value '1000'",
         ):
             self.validator._check_formula_variable_conflicts(sensor, global_variables)
 
@@ -489,7 +489,11 @@ class TestValidationHandler:
         """Create a mock formula configuration."""
         formula = Mock(spec=FormulaConfig)
         formula.id = formula_id
-        formula.variables = variables if variables is not None else []
+        # Convert list of variable names to dict with placeholder values
+        if variables is not None:
+            formula.variables = {var: f"mock_value_{var}" for var in variables}
+        else:
+            formula.variables = {}
 
         return formula
 

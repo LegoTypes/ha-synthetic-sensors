@@ -4,11 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 
 
 class TestIdiom1BackingEntityIntegration:
@@ -100,7 +96,6 @@ class TestIdiom1BackingEntityIntegration:
                 data_provider_callback=data_provider,  # For virtual entities
                 change_notifier=change_notifier_callback,  # Enable selective updates
                 sensor_to_backing_mapping=sensor_to_backing_mapping,  # Map 'state' token
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             assert sensor_manager is not None
@@ -168,7 +163,6 @@ class TestIdiom1BackingEntityIntegration:
                 device_identifier="test_device_123",
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
-                allow_ha_lookups=False,  # Virtual entities only
             )
 
             assert sensor_manager is not None

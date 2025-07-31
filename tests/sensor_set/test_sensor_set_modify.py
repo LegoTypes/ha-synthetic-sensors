@@ -715,14 +715,7 @@ sensors:
 
         # Add sensor with global variable reference
         test_sensor = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[
-                FormulaConfig(
-                    id="test_sensor",
-                    formula="global_var * 2",
-                )
-            ],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="test_sensor", formula="global_var * 2")]
         )
 
         # First modification: Add sensor and set global variable
@@ -885,13 +878,7 @@ class TestSensorSetFormulaEvaluationAfterModify:
         simple_sensor = SensorConfig(
             unique_id="simple_math_test",
             name="Simple Math Test",
-            formulas=[
-                FormulaConfig(
-                    id="simple_math_test",
-                    formula="10 + 5 * 2",
-                    metadata={"unit_of_measurement": "units"},
-                )
-            ],
+            formulas=[FormulaConfig(id="simple_math_test", formula="10 + 5 * 2", metadata={"unit_of_measurement": "units"})],
         )
 
         await sensor_set.async_add_sensor(simple_sensor)

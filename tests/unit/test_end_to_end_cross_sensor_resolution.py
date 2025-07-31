@@ -59,9 +59,7 @@ sensors:
         )
 
         # Register backing entities and mappings
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
         sensor_to_backing_mapping = {"simple_parent_reference": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
 
@@ -117,14 +115,10 @@ sensors:
         mock_states.register_state("sensor.simple_parent_reference_2", "2000.0", {"device_class": "power"})
 
         # Register the resolved entity in the sensor manager data provider so it can be evaluated
-        sensor_manager.register_data_provider_entities(
-            {"sensor.simple_parent_reference_2"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.simple_parent_reference_2"})
 
         # Re-register backing entity since it might have been lost during config updates
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
         sensor_to_backing_mapping = {"simple_parent_reference": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
 
@@ -189,10 +183,7 @@ sensors:
             return {"value": None, "exists": False}
 
         sensor_manager = SensorManager(
-            mock_hass,
-            MagicMock(),
-            MagicMock(),
-            SensorManagerConfig(data_provider_callback=mock_data_provider),
+            mock_hass, MagicMock(), MagicMock(), SensorManagerConfig(data_provider_callback=mock_data_provider)
         )
 
         # Create sensors - should work normally

@@ -130,9 +130,7 @@ class TestConfigManager:
         config = Config()
 
         sensor_config = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="x + y")],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="main", formula="x + y")]
         )
 
         # Add sensor to the config's sensors list
@@ -146,9 +144,7 @@ class TestConfigManager:
         config = Config()
 
         sensor_config = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="x + y")],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="main", formula="x + y")]
         )
 
         config.sensors.append(sensor_config)
@@ -172,18 +168,14 @@ class TestConfigManager:
         config = Config()
 
         sensor_config = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="x + y")],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="main", formula="x + y")]
         )
 
         config.sensors.append(sensor_config)
 
         # Update sensor by replacing it in the list
         updated_sensor = SensorConfig(
-            unique_id="test_sensor",
-            name="Updated Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="x * y")],
+            unique_id="test_sensor", name="Updated Test Sensor", formulas=[FormulaConfig(id="main", formula="x * y")]
         )
 
         # Find and replace the sensor
@@ -200,9 +192,7 @@ class TestConfigManager:
         config = Config()
 
         sensor_config = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="x + y")],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="main", formula="x + y")]
         )
 
         config.sensors.append(sensor_config)
@@ -247,9 +237,7 @@ class TestConfigManager:
 
         # Valid configuration
         sensor_config = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="x + y")],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="main", formula="x + y")]
         )
         config.sensors.append(sensor_config)
 
@@ -366,10 +354,7 @@ class TestConfigManagerExtended:
 
     def test_load_config_empty_file(self, config_manager):
         """Test loading config from empty file."""
-        with (
-            patch("builtins.open", mock_open(read_data="")),
-            patch("pathlib.Path.exists", return_value=True),
-        ):
+        with patch("builtins.open", mock_open(read_data="")), patch("pathlib.Path.exists", return_value=True):
             config = config_manager.load_config("/test/config.yaml")
             assert isinstance(config, Config)
 
@@ -560,10 +545,7 @@ class TestConfigManagerExtended:
 
     def test_validate_config_file_empty_file(self, config_manager):
         """Test validating empty config file."""
-        with (
-            patch("builtins.open", mock_open(read_data="")),
-            patch("pathlib.Path.exists", return_value=True),
-        ):
+        with patch("builtins.open", mock_open(read_data="")), patch("pathlib.Path.exists", return_value=True):
             result = config_manager.validate_config_file("/test/empty.yaml")
 
             assert result["valid"] is False
@@ -574,10 +556,7 @@ class TestConfigManagerExtended:
         """Test validating config file with invalid YAML."""
         invalid_yaml = "invalid: yaml: [structure"
 
-        with (
-            patch("builtins.open", mock_open(read_data=invalid_yaml)),
-            patch("pathlib.Path.exists", return_value=True),
-        ):
+        with patch("builtins.open", mock_open(read_data=invalid_yaml)), patch("pathlib.Path.exists", return_value=True):
             result = config_manager.validate_config_file("/test/invalid.yaml")
 
             assert result["valid"] is False

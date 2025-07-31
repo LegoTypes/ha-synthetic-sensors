@@ -87,10 +87,7 @@ async def test_sensor_with_device_association(mock_hass, mock_entity_registry, m
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain=test_integration_domain)
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # Create the sensor entity
@@ -161,10 +158,7 @@ async def test_sensor_with_existing_device(mock_hass, mock_entity_registry, mock
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain=test_integration_domain)
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # Create the sensor entity
@@ -207,11 +201,7 @@ async def test_sensor_without_device_association(mock_hass, mock_entity_registry
         # Create sensor manager
         variables = {}
         name_resolver = NameResolver(mock_hass, variables)
-        manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-        )
+        manager = SensorManager(hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities)
 
         # Create the sensor entity
         sensor = await manager._create_sensor_entity(sensor_config)
@@ -280,10 +270,7 @@ async def test_sensor_with_explicit_entity_id_and_device_association(mock_hass, 
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain=test_integration_domain)
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # Create the sensor entity
@@ -360,10 +347,7 @@ async def test_sensor_without_entity_id_generates_device_prefix(mock_hass, mock_
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain=test_integration_domain)
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # Create the sensor entity
@@ -423,10 +407,7 @@ async def test_device_lookup_fails_with_explicit_entity_id(mock_hass, mock_entit
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain=test_integration_domain)
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # Create the sensor entity

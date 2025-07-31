@@ -211,9 +211,7 @@ class TestInitFunctions:
 
         # Create test sensor config without backing entity
         sensor_config = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="100")],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="main", formula="100")]
         )
 
         with (
@@ -328,9 +326,7 @@ class TestInitFunctions:
 
         # Create test sensor config with HA lookups
         sensor_config = SensorConfig(
-            unique_id="test_sensor",
-            name="Test Sensor",
-            formulas=[FormulaConfig(id="main", formula="sum(device_class:power)")],
+            unique_id="test_sensor", name="Test Sensor", formulas=[FormulaConfig(id="main", formula="sum(device_class:power)")]
         )
 
         with (
@@ -344,7 +340,6 @@ class TestInitFunctions:
                 integration_domain="test_domain",
                 device_identifier="test_device",
                 sensor_configs=[sensor_config],
-                allow_ha_lookups=True,
             )
 
         # Verify the setup
@@ -462,7 +457,6 @@ class TestInitFunctions:
                 device_identifier="test_device_123",
                 sensor_configs=sensor_configs,
                 data_provider_callback=data_provider,
-                allow_ha_lookups=False,
             )
 
             # Verify integration completed successfully
@@ -565,7 +559,6 @@ class TestInitFunctions:
                 device_identifier="test_device",
                 sensor_configs=[sensor_config],
                 sensor_to_backing_mapping={"test_sensor": "sensor.backing_entity"},
-                allow_ha_lookups=False,
             )
 
         # Verify the function completed successfully
@@ -625,7 +618,6 @@ class TestInitFunctions:
                 device_identifier="test_device",
                 sensor_configs=[sensor_config],
                 sensor_to_backing_mapping={"test_sensor": "sensor.backing_entity"},
-                allow_ha_lookups=True,  # HA lookups enabled
             )
 
         # Verify the function completed successfully
@@ -818,16 +810,15 @@ class TestInitFunctions:
                     storage_manager=storage_manager,
                     device_identifier="test_device_123",
                     backing_entity_ids=set(),  # Explicit empty set
-                    allow_ha_lookups=True,
                 )
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)
 
-    async def test_setup_with_empty_mapping_virtual_only_error(
+    async def test_setup_with_empty_mapping_natural_fallback(
         self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
     ):
-        """Test async_setup_synthetic_sensors_with_entities with empty mapping in virtual-only mode raises error."""
+        """Test async_setup_synthetic_sensors_with_entities with empty mapping uses natural fallback to HA."""
         from ha_synthetic_sensors import (
             async_setup_synthetic_sensors_with_entities,
             StorageManager,
@@ -864,17 +855,18 @@ class TestInitFunctions:
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
             assert result["sensors_imported"] == 1
 
-            # Test with empty mapping in virtual-only mode - should raise error
-            with pytest.raises(SyntheticSensorsConfigError, match="Empty sensor-to-backing mapping in virtual-only mode"):
-                await async_setup_synthetic_sensors_with_entities(
-                    hass=mock_hass,
-                    config_entry=mock_config_entry,
-                    async_add_entities=mock_async_add_entities,
-                    storage_manager=storage_manager,
-                    device_identifier="test_device_123",
-                    sensor_to_backing_mapping={},  # Empty mapping
-                    allow_ha_lookups=False,  # Virtual-only mode
-                )
+            # Test with empty mapping - should work with natural fallback to HA
+            await async_setup_synthetic_sensors_with_entities(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_123",
+                sensor_to_backing_mapping={},  # Empty mapping - will use natural fallback
+            )
+
+            # Verify the sensor was set up successfully
+            mock_async_add_entities.assert_called_once()
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)
@@ -926,7 +918,6 @@ class TestInitFunctions:
                     storage_manager=storage_manager,
                     device_identifier="test_device_123",
                     # No backing_entity_ids, no sensor_to_backing_mapping
-                    allow_ha_lookups=False,  # Virtual-only mode
                 )
 
                 # Verify it succeeded and logged debug message
@@ -1027,7 +1018,6 @@ class TestInitFunctions:
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
                 device_identifier="test_device_123",
-                allow_ha_lookups=True,
             )
 
             # Verify it succeeded

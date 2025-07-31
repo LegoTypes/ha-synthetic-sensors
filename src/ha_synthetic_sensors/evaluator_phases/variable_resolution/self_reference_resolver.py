@@ -215,12 +215,7 @@ class SelfReferenceResolver(VariableResolver):
 
     def _try_ha_state_resolution(self, backing_entity_id: str, original_reference: str) -> Any:
         """Try resolving via HA state lookup."""
-        if not (
-            self._dependency_handler
-            and hasattr(self._dependency_handler, "hass")
-            and hasattr(self._dependency_handler, "allow_ha_lookups")
-            and self._dependency_handler.allow_ha_lookups
-        ):
+        if not (self._dependency_handler and hasattr(self._dependency_handler, "hass")):
             return None
 
         try:

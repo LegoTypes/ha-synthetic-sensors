@@ -8,11 +8,36 @@ learned from implementing `test_dependency_resolution_with_missing_entities`.
 Integration tests for synthetic sensors should test the complete flow from YAML configuration through formula evaluation
 using the public API methods. This guide covers the essential patterns and common pitfalls.
 
+## 🏆 GOLDEN RULE: Use Common Registry Fixtures
+
+**CRITICAL:** Always use the common registry fixtures from `conftest.py`. The most common test failures occur when developers
+try to create custom registry mocks instead of using the established fixtures.
+
+**✅ DO:**
+
+```python
+async def test_your_integration_test(
+    self, mock_hass, mock_entity_registry, mock_states,  # Use common fixtures
+    your_yaml_fixture_path, mock_config_entry, mock_async_add_entities
+):
+```
+
+**❌ DON'T:**
+
+```python
+# Never create custom registry mocks
+mock_entity_registry = Mock()  # This will cause failures
+mock_states = {}  # This will cause failures
+```
+
+**Why:** The common fixtures provide a complete, tested HA environment. Custom mocks are incomplete and cause dependency
+resolution failures.
+
 ## Required Fixtures and Setup
 
-### 1. Use the Common Registry Fixtures
+### 1. Use the Common Registry Fixtures (GOLDEN RULE)
 
-Always use these standard fixtures from `conftest.py`:
+**ALWAYS use these standard fixtures from `conftest.py` - DO NOT create your own registry mocks:**
 
 ```python
 async def test_your_integration_test(
@@ -26,6 +51,8 @@ async def test_your_integration_test(
 - `mock_entity_registry` contains all the domain data (`sensor`, `binary_sensor`, etc.) needed for entity ID recognition
 - `mock_states` provides the HA state lookup mechanism
 - `mock_hass` provides the core HA instance mock
+- **NEVER create custom registry mocks** - the common fixtures provide the complete HA environment
+- **ONLY add what's missing** - if you need additional entities, add them to the existing fixtures, don't replace them
 
 ### 2. Common Device Registry Fixture
 
@@ -48,6 +75,8 @@ def mock_device_registry(self, mock_device_entry):
     mock_registry.async_get_device.return_value = mock_device_entry
     return mock_registry
 ```
+
+**Important:** This device registry fixture is **additional** to the common registry fixtures - it doesn't replace them.
 
 ### 3. Essential Imports
 
@@ -294,7 +323,17 @@ with patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegis
     MockDeviceRegistry.return_value = mock_device_registry
 ```
 
-### 3. "Storage failed to load"
+### 3. "Entity registry or state lookup failures"
+
+**Problem:** Not using the common registry fixtures or trying to create custom mocks.
+
+**Solution:**
+
+- **ALWAYS use the common fixtures** (`mock_hass`, `mock_entity_registry`, `mock_states`)
+- **NEVER create custom entity registry mocks** - the common fixtures provide complete HA environment
+- **ONLY add missing entities** to the existing fixtures, don't replace them
+
+### 4. "Storage failed to load"
 
 **Problem:** StorageManager trying to access file system.
 
@@ -308,7 +347,7 @@ with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
     storage_manager._store = mock_store
 ```
 
-### 4. Missing Entity Warnings
+### 5. Missing Entity Warnings
 
 **Expected Behavior:** When testing missing entities, you should see warnings like:
 
@@ -402,15 +441,18 @@ async def test_your_feature(
 
 ## Best Practices
 
-1. **Always use the common fixtures** - Don't create your own registry mocks
-2. **Patch both Store and DeviceRegistry** - These are the two main sources of test failures
-3. **Match device identifiers** - YAML, sensor set, and public API must all use the same identifier
-4. **Use appropriate patterns** - Choose Pattern 1, 2, or 3 based on your test needs
-5. **Test both update mechanisms** - Exercise both selective and general updates
-6. **Write tests without warnings** - Properly configured tests should not generate warnings
-7. **Clean up after tests** - Delete sensor sets to avoid test pollution
-8. **Use Mock(), not AsyncMock() for async_add_entities** - Home Assistant's AddEntitiesCallback is synchronous, not a
-   coroutine
+1. **ALWAYS use the common fixtures** - The golden rule: use `mock_hass`, `mock_entity_registry`, `mock_states` from
+   `conftest.py`
+2. **NEVER create custom registry mocks** - The common fixtures provide the complete HA environment
+3. **ONLY add what's missing** - If you need additional entities, add them to existing fixtures, don't replace them
+4. **Patch both Store and DeviceRegistry** - These are the two main sources of test failures
+5. **Match device identifiers** - YAML, sensor set, and public API must all use the same identifier
+6. **Use appropriate patterns** - Choose Pattern 1, 2, or 3 based on your test needs
+7. **Test both update mechanisms** - Exercise both selective and general updates
+8. **Write tests without warnings** - Properly configured tests should not generate warnings
+9. **Clean up after tests** - Delete sensor sets to avoid test pollution
+10. **Use Mock(), not AsyncMock() for async_add_entities** - Home Assistant's AddEntitiesCallback is synchronous, not a
+    coroutine
 
 This guide provides the foundation for writing robust integration tests that properly exercise the synthetic sensors public
 API while avoiding common pitfalls.

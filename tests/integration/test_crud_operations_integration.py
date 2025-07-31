@@ -4,11 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 import yaml as yaml_lib
 
-from ha_synthetic_sensors import (
-    async_setup_synthetic_sensors,
-    StorageManager,
-    DataProviderCallback,
-)
+from ha_synthetic_sensors import async_setup_synthetic_sensors, StorageManager, DataProviderCallback
 from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
 
 
@@ -127,7 +123,6 @@ class TestCrudOperationsIntegration:
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
                 sensor_to_backing_mapping=sensor_to_backing_mapping,  # Package resolves 'state' via this mapping
-                allow_ha_lookups=True,  # Allow cross-sensor references to HA entities
             )
 
             # 6. Verify initial setup

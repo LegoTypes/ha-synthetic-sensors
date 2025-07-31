@@ -187,10 +187,7 @@ async def test_end_to_end_sensor_creation_with_device_prefix(mock_hass, mock_ent
         )
 
         sensor_config = SensorConfig(
-            unique_id="main_power",
-            name="Main Power",
-            formulas=[formula],
-            device_identifier="main_panel",
+            unique_id="main_power", name="Main Power", formulas=[formula], device_identifier="main_panel"
         )
 
         # Mock add entities callback
@@ -204,10 +201,7 @@ async def test_end_to_end_sensor_creation_with_device_prefix(mock_hass, mock_ent
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain="span_panel")
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # Create sensor
@@ -259,10 +253,7 @@ async def test_device_resolution_wrong_domain_fails(mock_hass, mock_entity_regis
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain=test_integration_domain)
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # This should fail - device not found with our domain
@@ -277,17 +268,10 @@ async def test_error_message_includes_integration_domain(mock_hass, mock_entity_
     test_integration_domain = "span_panel"
 
     # Create sensor config with non-existent device
-    formula = FormulaConfig(
-        id="main",
-        formula="10 + 5",
-        metadata={"unit_of_measurement": "W"},
-    )
+    formula = FormulaConfig(id="main", formula="10 + 5", metadata={"unit_of_measurement": "W"})
 
     sensor_config = SensorConfig(
-        unique_id="test_sensor",
-        name="Test Sensor",
-        formulas=[formula],
-        device_identifier="nonexistent_device",
+        unique_id="test_sensor", name="Test Sensor", formulas=[formula], device_identifier="nonexistent_device"
     )
 
     # Mock add entities callback
@@ -305,10 +289,7 @@ async def test_error_message_includes_integration_domain(mock_hass, mock_entity_
         name_resolver = NameResolver(mock_hass, variables)
         manager_config = SensorManagerConfig(integration_domain=test_integration_domain)
         manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=mock_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=mock_add_entities, manager_config=manager_config
         )
 
         # This should raise ValueError with integration domain in message

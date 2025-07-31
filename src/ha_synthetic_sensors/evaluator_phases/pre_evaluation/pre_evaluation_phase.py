@@ -15,7 +15,6 @@ from ...evaluator_phases.context_building import ContextBuildingPhase
 from ...evaluator_phases.dependency_management import DependencyManagementPhase
 from ...evaluator_phases.variable_resolution import VariableResolutionPhase
 from ...evaluator_results import EvaluatorResults
-from ...exceptions import BackingEntityResolutionError, SensorMappingError
 from ...type_definitions import ContextValue, DataProviderCallback, EvaluationResult
 from .circular_reference_validator import CircularReferenceValidator
 
@@ -43,7 +42,6 @@ class PreEvaluationPhase:
         self._cache_handler: EvaluatorCache | None = None
         self._error_handler: EvaluatorErrorHandler | None = None
         self._sensor_to_backing_mapping: dict[str, str] | None = None
-        self._allow_ha_lookups: bool = False
 
         # Phase dependencies
         self._variable_resolution_phase: VariableResolutionPhase | None = None
@@ -61,7 +59,6 @@ class PreEvaluationPhase:
         cache_handler: EvaluatorCache,
         error_handler: EvaluatorErrorHandler,
         sensor_to_backing_mapping: dict[str, str],
-        allow_ha_lookups: bool,
         variable_resolution_phase: VariableResolutionPhase,
         dependency_management_phase: DependencyManagementPhase,
         context_building_phase: ContextBuildingPhase,
@@ -73,7 +70,6 @@ class PreEvaluationPhase:
         self._cache_handler = cache_handler
         self._error_handler = error_handler
         self._sensor_to_backing_mapping = sensor_to_backing_mapping
-        self._allow_ha_lookups = allow_ha_lookups
         self._variable_resolution_phase = variable_resolution_phase
         self._dependency_management_phase = dependency_management_phase
         self._context_building_phase = context_building_phase
@@ -156,9 +152,7 @@ class PreEvaluationPhase:
         if not self._context_building_phase:
             return None, {}
 
-        final_context = self._context_building_phase.build_evaluation_context(
-            dependencies, context, config, sensor_config, allow_ha_lookups=self._allow_ha_lookups
-        )
+        final_context = self._context_building_phase.build_evaluation_context(dependencies, context, config, sensor_config)
 
         context_result = self._validate_evaluation_context(final_context, formula_name)
         if context_result:
@@ -171,7 +165,7 @@ class PreEvaluationPhase:
         """Validate that state token can be resolved for the given sensor configuration.
 
         Implements the new backing entity behavior rules:
-        - Fatal errors: No mapping exists for backing entity
+        - Fatal errors: No mapping exists for backing entity and previous state cannot be resolved in HA
         - Transient conditions: Mapping exists but value is None (treated as Unknown)
         """
         if not sensor_config:
@@ -182,38 +176,32 @@ class PreEvaluationPhase:
 
         # Only validate backing entity for main formulas, not attributes
         # Attributes get their state token from context (main sensor result)
-        if not is_attribute_formula and self._sensor_to_backing_mapping is not None:
-            # Look up the backing entity ID using the sensor key
-            backing_entity_id = self._sensor_to_backing_mapping.get(sensor_config.unique_id)
+        if not is_attribute_formula:
+            # For main formulas, state token resolution follows this priority:
+            # 1. Explicit backing entity mapping (if exists)
+            # 2. Sensor's own HA state (if sensor has entity_id)
+            # 3. Previous calculated value (for recursive calculations)
+            backing_entity_id = None
+            if self._sensor_to_backing_mapping is not None:
+                backing_entity_id = self._sensor_to_backing_mapping.get(sensor_config.unique_id)
 
             if backing_entity_id:
-                # This sensor has a backing entity mapping - validate it
-                if self._dependency_handler and backing_entity_id not in self._dependency_handler.get_integration_entities():
-                    # If allow_ha_lookups is enabled, we can try to resolve from HA state machine
-                    if self._allow_ha_lookups:
-                        # Allow the validation to pass - the actual resolution will happen later
-                        return None
-
-                    # Raise BackingEntityResolutionError for missing backing entities (state token resolution)
-                    # This is a FATAL ERROR - no mapping exists
-                    raise BackingEntityResolutionError(
-                        backing_entity_id,
-                        f"Backing entity '{backing_entity_id}' is not registered as a virtual entity. "
-                        f"Register it with register_data_provider_entities() or enable allow_ha_lookups.",
-                    )
-            elif sensor_config.entity_id:
-                # Sensor has entity_id but no backing entity mapping - this is an error
-                # This is a FATAL ERROR - no mapping exists
-                raise SensorMappingError(
-                    sensor_config.unique_id,
-                    f"Backing entity for sensor '{sensor_config.unique_id}' is not registered. "
-                    f"Register it with register_sensor_to_backing_mapping() or enable allow_ha_lookups.",
-                )
-            else:
-                # No backing entity mapping and no entity_id - this is a self-reference/recursive calculation
-                # The state token will resolve to the sensor's previous calculated value
-                # No validation needed for this case
-                _LOGGER.debug("Sensor '%s' uses state token for self-reference (no backing entity)", sensor_config.unique_id)
+                # This sensor has explicit backing entity mapping - validate it's registered
+                if self._dependency_handler and hasattr(self._dependency_handler, "get_integration_entities"):
+                    integration_entities = self._dependency_handler.get_integration_entities()
+                    if integration_entities and backing_entity_id not in integration_entities:
+                        return EvaluatorResults.create_error_result(
+                            f"Backing entity '{backing_entity_id}' for sensor '{sensor_config.unique_id}' is not registered with integration",
+                            state="unavailable",
+                        )
+                return None
+            if sensor_config.entity_id:
+                # No explicit backing entity mapping, but sensor has entity_id
+                # State token will fall back to sensor's own HA state - this is valid
+                return None
+            # No backing entity mapping and no entity_id - this is self-reference/recursive calculation
+            # The state token will resolve to the sensor's previous calculated value
+            return None
 
         return None
 
@@ -259,7 +247,6 @@ class PreEvaluationPhase:
 
         if result is None:
             return None
-
         # Convert the phase result to an EvaluationResult and handle error counting
         if "error" in result:
             if self._error_handler:

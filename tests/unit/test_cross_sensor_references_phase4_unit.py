@@ -7,11 +7,7 @@ from unittest.mock import MagicMock
 from ha_synthetic_sensors.config_models import Config, SensorConfig, FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.evaluator_phases.sensor_registry.sensor_registry_phase import SensorRegistryPhase
-from ha_synthetic_sensors.exceptions import (
-    CrossSensorResolutionError,
-    DependencyValidationError,
-    MissingDependencyError,
-)
+from ha_synthetic_sensors.exceptions import CrossSensorResolutionError, DependencyValidationError, MissingDependencyError
 from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
 from ha_synthetic_sensors.type_definitions import ContextValue
 
@@ -51,9 +47,7 @@ class TestCrossSensorReferencesPhase4:
         """Test enhanced sensor registration with cross-sensor registry integration."""
         # Create test sensor configurations
         base_sensor = SensorConfig(
-            unique_id="base_sensor",
-            formulas=[FormulaConfig(id="main", formula="100", dependencies=set())],
-            enabled=True,
+            unique_id="base_sensor", formulas=[FormulaConfig(id="main", formula="100", dependencies=set())], enabled=True
         )
 
         derived_sensor = SensorConfig(
@@ -96,9 +90,7 @@ class TestCrossSensorReferencesPhase4:
         )
 
         sensor2 = SensorConfig(
-            unique_id="sensor2",
-            formulas=[FormulaConfig(id="main", formula="100", dependencies=set())],
-            enabled=True,
+            unique_id="sensor2", formulas=[FormulaConfig(id="main", formula="100", dependencies=set())], enabled=True
         )
 
         sensor_configs = [sensor1, sensor2]
@@ -273,9 +265,7 @@ class TestCrossSensorReferencesPhase4:
 
         # Create test sensor configuration
         test_sensor = SensorConfig(
-            unique_id="test_sensor",
-            formulas=[FormulaConfig(id="main", formula="100", dependencies=set())],
-            enabled=True,
+            unique_id="test_sensor", formulas=[FormulaConfig(id="main", formula="100", dependencies=set())], enabled=True
         )
 
         # Test methods should handle missing dependency management gracefully
@@ -296,9 +286,7 @@ class TestCrossSensorReferencesPhase4:
 
         # Create test sensor configuration
         test_sensor = SensorConfig(
-            unique_id="test_sensor",
-            formulas=[FormulaConfig(id="main", formula="100", dependencies=set())],
-            enabled=True,
+            unique_id="test_sensor", formulas=[FormulaConfig(id="main", formula="100", dependencies=set())], enabled=True
         )
 
         # Test methods should handle missing evaluator gracefully

@@ -75,9 +75,7 @@ class TestIdiom1BackingEntity:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"power_analyzer": "sensor.span_panel_instantaneous_power"}
@@ -113,9 +111,7 @@ class TestIdiom1BackingEntity:
         )
 
         # Register the dependency entity so the test can focus on state token behavior
-        sensor_manager.register_data_provider_entities(
-            {"sensor.current_power_reading"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.current_power_reading"})
 
         # Provide data for the dependency
         def mock_data_provider(entity_id: str):
@@ -137,7 +133,7 @@ class TestIdiom1BackingEntity:
     def test_missing_backing_entity_error(
         self, config_manager, missing_backing_entity_yaml, mock_hass, mock_entity_registry, mock_states
     ):
-        """Test that BackingEntityResolutionError is raised when backing entity doesn't exist."""
+        """Test that state token self-reference works when backing entity doesn't exist."""
         config = config_manager.load_from_yaml(missing_backing_entity_yaml)
         sensor = config.sensors[0]
 
@@ -150,19 +146,27 @@ class TestIdiom1BackingEntity:
             SensorManagerConfig(),
         )
 
+        # Set up mock state for the sensor's own entity_id
+        sensor_entity_id = sensor.entity_id  # Should be "sensor.nonexistent_entity"
+        mock_states[sensor_entity_id] = type(
+            "MockState",
+            (),
+            {
+                "state": "300",  # Initial state value
+                "attributes": {},
+            },
+        )()
+
         # Test main formula evaluation without backing entity registration
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        # Should raise SensorMappingError for missing backing entity
-        with pytest.raises(SensorMappingError) as exc_info:
-            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Should succeed with state token self-reference behavior
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
 
-        # Check the error message
-        error_msg = str(exc_info.value)
-        assert "sensor key" in error_msg.lower()
-        assert "problematic_sensor" in error_msg
-        assert "not registered" in error_msg.lower()
+        # Verify success and correct calculation (300 * 2 = 600)
+        assert result["success"] is True
+        assert abs(result["value"] - 600.0) < 0.001  # Handle floating point precision
 
     def test_backing_entity_with_attributes(
         self, config_manager, backing_entity_yaml, mock_hass, mock_entity_registry, mock_states
@@ -189,9 +193,7 @@ class TestIdiom1BackingEntity:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"power_analyzer": "sensor.span_panel_instantaneous_power"}

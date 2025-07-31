@@ -60,7 +60,7 @@ sensors:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities({"sensor.backing_entity"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.backing_entity"})
 
         # Register the sensor-to-backing mappings
         sensor_to_backing_mapping = {
@@ -110,7 +110,7 @@ sensors:
         )
 
         # Register the backing entity
-        sensor_manager.register_data_provider_entities({"sensor.backing_entity"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.backing_entity"})
 
         # Register the sensor-to-backing mappings
         sensor_to_backing_mapping = {

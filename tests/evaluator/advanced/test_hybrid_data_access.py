@@ -69,7 +69,7 @@ class TestHybridDataAccess:
     def evaluator_with_registration(self, mock_hass: MagicMock, mock_integration_data_provider: Any):
         """Create an evaluator with push-based registration."""
         # Create evaluator with HA lookups enabled
-        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(hass=mock_hass)
 
         # Register integration entities directly with all available entities
         all_entities = set(mock_integration_data_provider._data.keys())
@@ -205,11 +205,7 @@ class TestHybridDataAccess:
         # Add the same entity to HA with a different value
         mock_hass.states.get.return_value = Mock(state="999", attributes={})
 
-        formula_config = FormulaConfig(
-            id="test_formula",
-            formula="test_entity",
-            variables={"test_entity": "span.meter_001"},
-        )
+        formula_config = FormulaConfig(id="test_formula", formula="test_entity", variables={"test_entity": "span.meter_001"})
 
         result = evaluator.evaluate_formula(formula_config, {})
 
@@ -237,9 +233,7 @@ class TestHybridDataAccess:
         evaluator.data_provider_callback = failing_data_provider
 
         formula_config = FormulaConfig(
-            id="test_formula_error",
-            formula="test_entity",
-            variables={"test_entity": "sensor.meter_001"},
+            id="test_formula_error", formula="test_entity", variables={"test_entity": "sensor.meter_001"}
         )
 
         result = evaluator.evaluate_formula(formula_config, {})
@@ -263,10 +257,7 @@ class TestHybridDataAccess:
         # Create name resolver and sensor manager
         name_resolver = NameResolver(mock_hass, variables={})
         sensor_manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=async_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=async_add_entities, manager_config=manager_config
         )
 
         # Register integration entities with sensor manager
@@ -283,7 +274,7 @@ class TestHybridDataAccess:
 
     def test_no_registration_defaults_to_ha_only(self, mock_hass, mock_entity_registry, mock_states):
         """Test that evaluator without registration uses only HA state queries."""
-        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(hass=mock_hass)
 
         # Should not have registered entities or callbacks
         assert evaluator.get_integration_entities() == set()
@@ -297,11 +288,7 @@ class TestHybridDataAccess:
 
         mock_hass.states.get.side_effect = mock_get_state
 
-        formula_config = FormulaConfig(
-            id="test_formula_3",
-            formula="test_var",
-            variables={"test_var": "sensor.test"},
-        )
+        formula_config = FormulaConfig(id="test_formula_3", formula="test_var", variables={"test_var": "sensor.test"})
 
         result = evaluator.evaluate_formula(formula_config, {})
 
@@ -315,7 +302,7 @@ class TestHybridDataAccess:
         """Test that registration correctly determines which entities use integration data."""
 
         # Create evaluator and register only subset of integration entities
-        evaluator = Evaluator(hass=mock_hass, allow_ha_lookups=True)
+        evaluator = Evaluator(hass=mock_hass)
 
         # Only register subset of integration entities
         registered_entities = {"span.meter_001", "span.local_sensor"}
@@ -338,20 +325,14 @@ class TestHybridDataAccess:
         mock_hass.states.get.side_effect = mock_get_state
 
         # Test entity in registration - should use integration data
-        formula_config1 = FormulaConfig(
-            id="test_formula_4",
-            formula="test_var",
-            variables={"test_var": "span.meter_001"},
-        )
+        formula_config1 = FormulaConfig(id="test_formula_4", formula="test_var", variables={"test_var": "span.meter_001"})
         result1 = evaluator.evaluate_formula(formula_config1, {})
         assert result1["success"] is True
         assert result1["value"] == 1250.0  # Integration value
 
         # Test entity not in registration - should use HA
         formula_config2 = FormulaConfig(
-            id="test_formula_5",
-            formula="test_var",
-            variables={"test_var": "span.efficiency_input"},
+            id="test_formula_5", formula="test_var", variables={"test_var": "span.efficiency_input"}
         )
         result2 = evaluator.evaluate_formula(formula_config2, {})
         assert result2["success"] is True
@@ -394,10 +375,7 @@ class TestHybridDataAccess:
         async_add_entities = Mock()
         manager_config = SensorManagerConfig(lifecycle_managed_externally=True)
         sensor_manager = SensorManager(
-            hass=mock_hass,
-            name_resolver=name_resolver,
-            add_entities_callback=async_add_entities,
-            manager_config=manager_config,
+            hass=mock_hass, name_resolver=name_resolver, add_entities_callback=async_add_entities, manager_config=manager_config
         )
 
         # Test initial state

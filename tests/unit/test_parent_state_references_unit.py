@@ -61,9 +61,7 @@ sensors:
         )
 
         # Register the backing entity from common fixture
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"simple_parent_reference": "sensor.span_panel_instantaneous_power"}
@@ -125,9 +123,7 @@ sensors:
         )
 
         # Register the backing entity and mapping
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
         sensor_to_backing_mapping = {"multi_attribute_parent": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
 

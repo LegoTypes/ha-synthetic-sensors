@@ -67,9 +67,7 @@ class TestErrors:
         )
 
         # Register the backing entity from common fixture
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"missing_entity_main": "sensor.span_panel_instantaneous_power"}
@@ -148,9 +146,7 @@ class TestErrors:
         )
 
         # Register the backing entity from common fixture
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"simple_self_reference": "sensor.span_panel_instantaneous_power"}
@@ -171,7 +167,7 @@ class TestErrors:
     def test_self_reference_without_backing_entity(
         self, config_manager, self_reference_yaml, mock_hass, mock_entity_registry, mock_states
     ):
-        """Test that self-reference without backing entity raises SensorMappingError."""
+        """Test that self-reference without backing entity succeeds with state token self-reference."""
         config = config_manager.load_from_yaml(self_reference_yaml)
         sensor = config.sensors[0]
 
@@ -193,17 +189,27 @@ class TestErrors:
             SensorManagerConfig(data_provider_callback=mock_data_provider),
         )
 
+        # Set up mock state for the sensor's own entity_id
+        sensor_entity_id = sensor.entity_id  # Should be "sensor.span_panel_instantaneous_power"
+        mock_states[sensor_entity_id] = type(
+            "MockState",
+            (),
+            {
+                "state": "1000",  # Initial state value
+                "attributes": {},
+            },
+        )()
+
         # Test main formula evaluation without backing entity registration
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        # Should fail with SensorMappingError because no backing entity is registered
-        with pytest.raises(SensorMappingError) as exc_info:
-            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Should succeed with state token self-reference behavior
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
 
-        # Check that the error message indicates missing backing entity
-        error_msg = str(exc_info.value)
-        assert "not registered" in error_msg.lower() and "simple_self_reference" in error_msg
+        # Verify success and correct calculation (1000 * 0.25 = 250)
+        assert result["success"] is True
+        assert abs(result["value"] - 250.0) < 0.001  # Handle floating point precision
 
     def test_invalid_data_provider(self, config_manager, invalid_data_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test data provider returns invalid data."""
@@ -232,7 +238,7 @@ class TestErrors:
         )
 
         # Register the backing entity from common fixture
-        sensor_manager.register_data_provider_entities({"sensor.invalid_entity"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.invalid_entity"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"invalid_backing_entity": "sensor.invalid_entity"}
@@ -277,9 +283,7 @@ class TestErrors:
         )
 
         # Register the backing entity from common fixture
-        sensor_manager.register_data_provider_entities(
-            {"sensor.span_panel_instantaneous_power", "sensor.invalid_entity"}, allow_ha_lookups=False, change_notifier=None
-        )
+        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power", "sensor.invalid_entity"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"invalid_variable": "sensor.span_panel_instantaneous_power"}
@@ -296,7 +300,7 @@ class TestErrors:
         assert result["state"] == "unknown" or result["value"] is None
 
     def test_complex_error_scenario(self, config_manager, invalid_data_yaml, mock_hass, mock_entity_registry, mock_states):
-        """Test complex error scenario with multiple issues."""
+        """Test complex error scenario with state token self-reference."""
         config = config_manager.load_from_yaml(invalid_data_yaml)
         sensor = config.sensors[0]
 
@@ -318,14 +322,24 @@ class TestErrors:
             SensorManagerConfig(data_provider_callback=mock_data_provider),
         )
 
+        # Set up mock state for the sensor's own entity_id
+        sensor_entity_id = sensor.entity_id  # Should be "sensor.invalid_entity"
+        mock_states[sensor_entity_id] = type(
+            "MockState",
+            (),
+            {
+                "state": "500",  # Initial state value
+                "attributes": {},
+            },
+        )()
+
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        # Should fail with SensorMappingError because no backing entity is registered
-        with pytest.raises(SensorMappingError) as exc_info:
-            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Should succeed with state token self-reference behavior
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
 
-        # Check that the error message contains the sensor reference
-        error_msg = str(exc_info.value)
-        assert "invalid_backing_entity" in error_msg and "not registered" in error_msg.lower()
+        # Verify success and correct calculation (500 * 2 = 1000)
+        assert result["success"] is True
+        assert abs(result["value"] - 1000.0) < 0.001  # Handle floating point precision

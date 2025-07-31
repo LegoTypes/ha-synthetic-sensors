@@ -98,7 +98,7 @@ Other Integration → HA Entity → Synthetic Sensor Extension
 
 1. **Identify external HA entities** you want to extend or combine
 2. **Reference entity IDs** directly in synthetic sensor YAML variables
-3. **Set up synthetic sensors** with `allow_ha_lookups=True`
+3. **Set up synthetic sensors** with natural fallback behavior
 4. **External entities update** independently via their own integrations
 5. **Synthetic sensors automatically recalculate** when referenced entities change
 
@@ -137,7 +137,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         device_identifier=coordinator.device_id,
         data_provider_callback=create_data_provider_callback(coordinator),
         change_notifier=create_change_notifier_callback(sensor_manager),
-        allow_ha_lookups=False,  # Use virtual entities only (recommended)
     )
 ```
 
@@ -216,7 +215,6 @@ async def async_setup_synthetic_sensors(
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
     sensor_to_backing_mapping: dict[str, str] | None = None,    # Synthetic Sensor Key -> Backing entity_id
-    allow_ha_lookups: bool = False,
 ) -> SensorManager
 ```
 
@@ -232,7 +230,6 @@ async def async_setup_synthetic_sensors_with_entities(
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,
     backing_entity_ids: set[str] | None = None,
-    allow_ha_lookups: bool = False,
 ) -> SensorManager
 ```
 
@@ -250,7 +247,6 @@ async def async_setup_synthetic_integration(
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
     sensor_set_name: str | None = None,
-    allow_ha_lookups: bool = False,
 ) -> tuple[StorageManager, SensorManager]
 ```
 
@@ -267,7 +263,6 @@ async def async_setup_synthetic_integration_with_auto_backing(
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
     sensor_set_name: str | None = None,
-    allow_ha_lookups: bool = False,
 ) -> tuple[StorageManager, SensorManager]
 ```
 
@@ -361,11 +356,8 @@ backing_entity_ids = {
 **Examples that will raise `SyntheticSensorsConfigError`:**
 
 ```python
-# Invalid - Direct registration with empty set in virtual-only mode
-register_data_provider_entities(set(), allow_ha_lookups=False)
-
-# Invalid - Direct registration with empty set (even with HA lookups)
-register_data_provider_entities(set(), allow_ha_lookups=True)
+# Invalid - Direct registration with empty set
+register_data_provider_entities(set())
 
 # Invalid - None values in entity set
 {None, "sensor.backing_entity"}
@@ -385,14 +377,14 @@ register_data_provider_entities(set(), allow_ha_lookups=True)
 ```python
 # Valid - Populated entity set
 backing_entity_ids = {"sensor.virtual_power", "sensor.virtual_energy"}
-register_data_provider_entities(backing_entity_ids, allow_ha_lookups=False)
+register_data_provider_entities(backing_entity_ids)
 
 # Valid - HA-only mode (no direct registration needed)
-# Use convenience methods with sensor_to_backing_mapping=None and allow_ha_lookups=True
+# Use convenience methods with sensor_to_backing_mapping=None
 
-# Valid - Empty mapping in convenience method with HA lookups
+# Valid - Empty mapping in convenience method
 sensor_to_backing_mapping = {}  # Empty dict is allowed in convenience methods
-async_setup_synthetic_sensors(..., sensor_to_backing_mapping=sensor_to_backing_mapping, allow_ha_lookups=True)
+async_setup_synthetic_sensors(..., sensor_to_backing_mapping=sensor_to_backing_mapping)
 ```
 
 ### API Design Logic
@@ -402,16 +394,14 @@ The library distinguishes between **convenience methods** and **direct API calls
 #### Convenience Methods (Lenient)
 
 ```python
-# Empty mapping in convenience methods = HA-only mode (when allow_ha_lookups=True)
+# Empty mapping in convenience methods = HA-only mode
 async_setup_synthetic_sensors(
     sensor_to_backing_mapping={},  # Empty dict is OK
-    allow_ha_lookups=True,  # Will use HA entities only
 )
 
 # No mapping in convenience methods = valid for pure calculation sensors
 async_setup_synthetic_sensors(
     sensor_to_backing_mapping=None,  # No mapping is OK
-    allow_ha_lookups=False,  # Sensors cannot use 'state' token
 )
 
 ```
@@ -430,8 +420,8 @@ sensor_manager.register_data_provider_entities(set())  # ERROR: Empty set is exp
 
 #### Validation Context
 
-- **`allow_ha_lookups=False`**: Virtual entities required, empty/None backing entities is error
-- **`allow_ha_lookups=True`**: HA fallback allowed, but explicit empty set still error (use None instead)
+- **Natural fallback behavior**: Virtual entities are prioritized, with automatic fallback to HA entities
+- **Explicit empty set**: Always an error as it indicates confusion about intent (use None instead)
 
 ### Error Handling
 
@@ -442,19 +432,17 @@ try:
     sensor_manager = await async_setup_synthetic_sensors(
         # ... other parameters ...
         sensor_to_backing_mapping=invalid_mapping,
-        allow_ha_lookups=False,
     )
 except SyntheticSensorsConfigError as e:
     # Error message will explain the validation issue
     print(f"Configuration error: {e}")
-    # Example: "Empty sensor-to-backing mapping in virtual-only mode (allow_ha_lookups=False)"
+    # Example: "Empty sensor-to-backing mapping provided"
 
 try:
-    sensor_manager.register_data_provider_entities(set(), allow_ha_lookups=False)
+    sensor_manager.register_data_provider_entities(set())
 except SyntheticSensorsConfigError as e:
     print(f"Direct API error: {e}")
-    # Example: "No backing entities provided in virtual-only mode (allow_ha_lookups=False).
-    # Either provide backing entities or enable HA lookups."
+    # Example: "No backing entities provided. Either provide backing entities or use natural fallback behavior."
 ```
 
 ## Real-Time Update Patterns
@@ -476,7 +464,6 @@ sensor_manager = await async_setup_synthetic_sensors(
     data_provider_callback=create_data_provider_callback(coordinator),
     change_notifier=change_notifier_callback,  # Enable real-time selective updates
     sensor_to_backing_mapping=sensor_to_backing_mapping,  # Register your virtual entities
-    allow_ha_lookups=False,  # Virtual entities only
 )
 ```
 
@@ -495,7 +482,6 @@ sensor_manager = await async_setup_synthetic_sensors(
     # No data_provider_callback - uses HA entity state lookups
     # No change_notifier - automatic via async_track_state_change_event
     # No sensor_to_backing_mapping - entities resolved from YAML variable references
-    allow_ha_lookups=True,  # Use real HA entities
 )
 ```
 
@@ -514,43 +500,42 @@ sensor_manager = await async_setup_synthetic_sensors(
     data_provider_callback=create_data_provider_callback(coordinator),  # For virtual entities
     change_notifier=change_notifier_callback,  # For virtual entity updates
     sensor_to_backing_mapping=virtual_backing_mapping,  # Only virtual entities registered
-    allow_ha_lookups=True,  # Allow fallback to HA entity lookups
 )
 ```
 
-## Virtual Entity Resolution with `allow_ha_lookups`
+## Natural Fallback Behavior
 
-The `allow_ha_lookups` parameter controls how backing entities are resolved (through virtual backing or actual HA sensors):
+The synthetic sensors package uses natural fallback behavior for entity resolution, prioritizing backing entities and
+automatically falling back to HA entities when needed:
 
-### Virtual-Only Mode (Recommended): `allow_ha_lookups=False`
+### Virtual Backing Mode (Recommended)
 
 ```python
-# Default behavior - virtual entities only with real-time updates
+# Default behavior - virtual entities with natural fallback to HA
 sensor_manager = await async_setup_synthetic_sensors(
     # ... other parameters ...
     data_provider_callback=create_data_provider_callback(coordinator),
     change_notifier=create_change_notifier_callback(sensor_manager),
-    allow_ha_lookups=False,  # Default
 )
 ```
 
-**Advantges of Virtual Backing Approach:**
+**Advantages of Virtual Backing Approach:**
 
 - No entity registry pollution
-- Better performance (no HA state lookups)
+- Better performance (no HA state lookups for registered entities)
 - Clean architecture with virtual backing entities
 - Variables can reference entities that don't exist in HA
 - **Real-time selective updates** when using change notifier
+- **Natural fallback** to HA entities for unregistered references
 
-### Hybrid Mode: `allow_ha_lookups=True`
+### Hybrid Mode: Mixed Virtual and HA Entities
 
 ```python
-# Allow fallback to HA state lookups
+# Allow natural fallback to HA state lookups
 sensor_manager = await async_setup_synthetic_sensors(
     # ... other parameters ...
     data_provider_callback=create_data_provider_callback(coordinator),
     change_notifier=create_change_notifier_callback(sensor_manager),
-    allow_ha_lookups=True,
 )
 ```
 
@@ -568,7 +553,6 @@ sensor_manager = await async_setup_synthetic_sensors(
     # ... other parameters ...
     data_provider_callback=None,  # No data provider
     change_notifier=None,  # No change notifier
-    # allow_ha_lookups setting ignored when no data provider
 )
 ```
 
@@ -657,16 +641,16 @@ for sensor_unique_id, backing_entity_id in sensor_to_backing_mapping.items():
     if is_virtual_entity(backing_entity_id):  # Your logic to identify virtual entities
         api_key = get_api_key_for_sensor(sensor_unique_id)
         synthetic_coord.register_backing_entity(backing_entity_id, api_key)
-# HA entities are automatically resolved via allow_ha_lookups=True
+# HA entities are automatically resolved via natural fallback
 ```
 
 ## Pattern Selection Guide
 
-| Integration Type    | Backing Entity Source | Pattern   | `allow_ha_lookups` | Registration Required  |
-| ------------------- | --------------------- | --------- | ------------------ | ---------------------- |
-| Device Integration  | Custom device data    | Pattern 1 | `False`            | Yes - Virtual entities |
-| Cross-Integration   | Existing HA entities  | Pattern 2 | `True`             | No                     |
-| Utility Integration | Mix of both           | Pattern 3 | `True`             | Partial - Virtual only |
+| Integration Type    | Backing Entity Source | Pattern   | Registration Required  |
+| ------------------- | --------------------- | --------- | ---------------------- |
+| Device Integration  | Custom device data    | Pattern 1 | Yes - Virtual entities |
+| Cross-Integration   | Existing HA entities  | Pattern 2 | No                     |
+| Utility Integration | Mix of both           | Pattern 3 | Partial - Virtual only |
 
 ### Complete Implementation Example - Pattern 1 (Custom Virtual Backing)
 
@@ -1201,7 +1185,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         data_provider_callback=data_provider,
         change_notifier=change_notifier,  # Enable real-time selective updates
         sensor_to_backing_mapping=sensor_to_backing_mapping,  # Provide mapping
-        allow_ha_lookups=False,
     )
 
     # Store references for configuration management

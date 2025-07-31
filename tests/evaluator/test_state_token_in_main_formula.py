@@ -49,7 +49,7 @@ class TestStateTokenInMainFormula:
             return {"value": None, "exists": False}
 
         # Register the backing entity with the sensor manager
-        sensor_manager.register_data_provider_entities({"sensor.current_power"}, allow_ha_lookups=False, change_notifier=None)
+        sensor_manager.register_data_provider_entities({"sensor.current_power"})
 
         # Register the sensor-to-backing mapping
         sensor_to_backing_mapping = {"span_span_panel_current_power": "sensor.current_power"}

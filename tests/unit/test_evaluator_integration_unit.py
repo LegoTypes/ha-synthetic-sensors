@@ -234,7 +234,7 @@ class TestEvaluationWorkflow:
     def test_evaluation_workflow_global_literal_reference(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test evaluation workflow where A references a global literal value."""
         # Enable HA lookups for this test
-        evaluator.update_allow_ha_lookups(True)
+        evaluator
 
         # Create a formula config where A is a global literal and B is a variable
         formula_config = FormulaConfig(
@@ -382,7 +382,7 @@ class TestErrorHandling:
     def test_evaluation_context_building(self, evaluator, sample_formula_config, mock_hass, mock_entity_registry, mock_states):
         """Test that evaluation context is built correctly."""
         # Enable HA lookups for context building
-        evaluator.update_allow_ha_lookups(True)
+        evaluator
 
         # Mock states for context building
         def mock_states_get(entity_id):
