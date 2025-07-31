@@ -46,6 +46,8 @@ repos:
           - typing-extensions
           - types-PyYAML
           - types-jsonschema
+          - types-pytz
+          - types-aiofiles
           - homeassistant-stubs
         args: ['--config-file=pyproject.toml']
         exclude: '^tests/.*|docs/.*|scripts/.*|examples/.*|\..*_cache/.*|dist/.*|venv/.*|vulture_whitelist\.py$'
@@ -88,7 +90,7 @@ repos:
       - id: bandit
         args: ['-c', 'pyproject.toml']
         additional_dependencies: ['bandit[toml]']
-        exclude: '^tests/.*|\..*_cache/.*|dist/.*|venv/.*'
+        exclude: '^tests/.*|^scripts/.*|^docs/.*|^examples/.*|\..*_cache/.*|dist/.*|venv/.*'
 
   # Poetry check for pyproject.toml validation and lock file consistency
   - repo: https://github.com/python-poetry/poetry

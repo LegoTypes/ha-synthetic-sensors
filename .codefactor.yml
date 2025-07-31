@@ -39,6 +39,8 @@ exclude_patterns:
   - "examples/**"          # Don't analyze example code
   - "docs/**"              # Don't analyze documentation
   - "scripts/**"           # Don't analyze utility scripts
+  - "scripts/*"            # Don't analyze utility scripts (alternative pattern)
+  - "**/scripts/**"        # Don't analyze utility scripts (globstar pattern)
   - "**/__pycache__/**"    # Python cache files
   - "**/.venv/**"          # Virtual environment
   - "**/venv/**"           # Virtual environment

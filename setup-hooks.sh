@@ -22,6 +22,11 @@ if [[ ! -f ".deps-installed" ]] || [[ "pyproject.toml" -nt ".deps-installed" ]] 
             exit 1
         fi
     fi
+
+    # Ensure type stubs are properly installed
+    echo "Ensuring type stubs are installed..."
+    poetry run pip install types-pytz types-PyYAML types-jsonschema types-aiofiles
+
     touch .deps-installed
 fi
 

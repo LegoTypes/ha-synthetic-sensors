@@ -70,7 +70,7 @@ The data sources for the evaluated formulas can be:
 Your Integration Data →    Backing Entity →         Synthetic Sensor Extension
         ↓                        ↓                           ↓
    Device API Data        coordinator.register()     Formula calculates new state
-   coordinator.update()   entity.value      from virtual entity value
+   coordinator.update()   entity.value               from entity references
    notify_changes()       (memory or HA sensor)      (appears in HA as sensor)
 ```
 
@@ -130,19 +130,10 @@ poetry install --with dev
 ./setup-hooks.sh
 ```
 
-**Note**: The `setup-hooks.sh` script ensures pre-commit hooks are installed correctly to avoid migration mode issues.
+**Note**: The `setup-hooks.sh` script ensures pre-commit hooks are installed correctly to avoid migration mode issues and
+automatically installs required type stubs for mypy.
 
-## Getting Started
-
-For detailed implementation examples, API documentation, and integration patterns, see the
-[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
-
-The package provides a public API:
-
-- **StorageManager** - Manages sensor set storage and configuration
-- **SensorSet** - Handle for individual sensor set operations
-- **FormulaConfig/SensorConfig** - Configuration classes for sensors and formulas
-- **DataProviderResult** - Type definition for data provider callbacks
+**Verification**: After setup, you can verify your development environment with:
 
 ## YAML Configuration Introduction
 
@@ -242,6 +233,49 @@ sensors:
       attribution: "Calculated from SPAN Panel data"
 ```
 
+### Datetime Sensors
+
+```yaml
+sensors:
+  # Sensor using datetime functions in formulas
+  power_analysis:
+    name: "Power Analysis"
+    formula: "now() > yesterday() ? current_power : 0"
+    variables:
+      current_power: "sensor.span_panel_instantaneous_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  # Sensor with datetime variables and attributes
+  energy_tracking:
+    name: "Energy Tracking"
+    formula: "daily_energy * efficiency_factor"
+    variables:
+      daily_energy: "sensor.daily_energy_consumption"
+      efficiency_factor: 0.95
+      start_date: "today()"
+      last_updated: "now()"
+    attributes:
+      tracking_since:
+        formula: "start_date"
+        metadata:
+          device_class: "timestamp"
+      last_calculation:
+        formula: "last_updated"
+        metadata:
+          device_class: "timestamp"
+      is_active_today:
+        formula: "now() >= today() and now() < tomorrow()"
+        metadata:
+          device_class: "timestamp"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+      state_class: "total"
+```
+
 ## Variables and Configuration
 
 Variables serve as aliases for entity IDs, collection patterns, or numeric literals, making formulas more readable and
@@ -289,6 +323,8 @@ sensors:
       warranty_years: 5
       is_active: True
       firmware_version: "2.1.0"
+      last_updated: "now()"
+      tracking_since: "today()"
 
       # Mixed literal and calculated attributes
       calculated_power:
@@ -308,6 +344,7 @@ sensors:
 - **String values**: `"test_string"`, `"Hello World"`, `""` (empty string)
 - **Boolean values**: `True`, `False`
 - **Special characters**: `"test@#$%^&*()"`, `"测试"` (Unicode)
+- **Datetime functions**: `now()`, `today()`, `yesterday()`, `tomorrow()`, `utc_now()`, `utc_today()`, `utc_yesterday()`
 
 **Literal vs Formula Attributes:**
 
@@ -766,6 +803,20 @@ sensors:
 
 **Available Functions:** `sum()`, `avg()`/`mean()`, `count()`, `min()`/`max()`, `std()`/`var()`
 
+**Datetime Functions:**
+
+- `now()` - Current datetime in local timezone (ISO format)
+- `local_now()` - Current datetime in local timezone (ISO format)
+- `utc_now()` - Current datetime in UTC timezone (ISO format)
+- `today()` - Today's date at midnight in local timezone (ISO format)
+- `yesterday()` - Yesterday's date at midnight in local timezone (ISO format)
+- `tomorrow()` - Tomorrow's date at midnight in local timezone (ISO format)
+- `utc_today()` - Today's date at midnight in UTC timezone (ISO format)
+- `utc_yesterday()` - Yesterday's date at midnight in UTC timezone (ISO format)
+
+Datetime functions return ISO 8601 formatted strings and can be used in formulas and variable assignments. They integrate
+seamlessly with existing datetime comparison operators.
+
 **Comparison Capabilities:**
 
 - **Numeric**: Standard comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`) for integers and floats
@@ -1169,17 +1220,31 @@ The package provides a clean, stable public API:
 The package uses a modular architecture with clear separation between configuration management, formula evaluation, and Home
 Assistant integration. All internal implementation details are encapsulated behind the public API.
 
-## Contributing
+## Troubleshooting
+
+### Development Setup Issues
+
+**Type Stub Errors (mypy)**
+
+If you encounter mypy errors about missing type stubs like:
+
+error: Library stubs not installed for "pytz" [import-untyped]
+
+```bash
+./setup-hooks.sh
+```
+
+**Pre-commit Hook Issues**
+
+```bash
+poetry install --with dev --sync
+```
+
+This script will verify all dependencies, type stubs, and tools are correctly installed.
+
+- Check that all referenced entities exist in Home Assistant
 
 Contributions are welcome! Please see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for development
 setup and contribution guidelines.
 
-## License
-
-MIT License
-
-## Repository
-
 - GitHub: [https://github.com/SpanPanel/ha-synthetic-sensors](https://github.com/SpanPanel/ha-synthetic-sensors)
-- Issues:
-  [https://github.com/SpanPanel/ha-synthetic-sensors/issues](https://github.com/SpanPanel/ha-synthetic-sensors/issues)

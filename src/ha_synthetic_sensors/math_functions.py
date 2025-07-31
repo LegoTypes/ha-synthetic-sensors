@@ -10,6 +10,8 @@ from collections.abc import Callable, Iterable
 import math
 from typing import Any
 
+from .datetime_functions import get_datetime_functions
+
 # Type alias for numeric values (excluding complex since it doesn't work with float())
 NumericValue = int | float
 IterableOrValues = NumericValue | Iterable[NumericValue]
@@ -251,7 +253,8 @@ class MathFunctions:
         Returns:
             Dictionary mapping function names to callable functions
         """
-        return {
+        # Base mathematical functions
+        math_functions: dict[str, Callable[..., Any]] = {
             # Basic math
             "abs": abs,
             "min": MathFunctions.safe_min,
@@ -294,6 +297,11 @@ class MathFunctions:
             "avg": MathFunctions.avg,
             "safe_divide": MathFunctions.safe_divide,
         }
+
+        datetime_functions = get_datetime_functions()
+        math_functions.update(datetime_functions)
+
+        return math_functions
 
     @staticmethod
     def get_function_names() -> set[str]:

@@ -25,6 +25,7 @@ except ImportError:
 from .constants_formula import FORMULA_RESERVED_WORDS
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
+from .shared_constants import DATETIME_FUNCTIONS
 
 try:
     from jsonschema import Draft7Validator
@@ -568,11 +569,14 @@ class SchemaValidator:
             # 2. Local sensor variables (accessible within same sensor)
             # 3. Local attribute variables (accessible within same attribute)
             # 4. Sensor keys (for cross-sensor references)
+            # 5. Datetime function names (now, today, yesterday, etc.)
+            datetime_functions = DATETIME_FUNCTIONS
             is_valid = (
                 token in sensor_keys
                 or (global_vars and token in global_vars)
                 or (sensor_vars and token in sensor_vars)
                 or (attr_vars and token in attr_vars)
+                or token in datetime_functions
             )
 
             if not is_valid:
@@ -624,6 +628,10 @@ class SchemaValidator:
 
         # Check if it's a simple literal (dates, versions, numbers)
         if self._is_datetime_literal(var_value) or self._is_version_literal(var_value):
+            return True
+
+        # Check if it's a datetime function call (e.g., now(), today(), yesterday())
+        if self._is_datetime_function_call(var_value):
             return True
 
         # Check if it's a simple number
@@ -1463,6 +1471,29 @@ class SchemaValidator:
                 },
             ]
         }
+
+    def _is_datetime_function_call(self, var_value: str) -> bool:
+        """Check if a variable value is a datetime function call.
+
+        Args:
+            var_value: Variable value to check
+
+        Returns:
+            True if the value is a datetime function call like now(), today(), etc.
+        """
+        # Import here to avoid circular imports
+
+        # Strip whitespace
+        var_value = var_value.strip()
+
+        # Check if it matches the pattern: function_name()
+        if not (var_value.endswith("()") and len(var_value) > 2):
+            return False
+
+        function_name = var_value[:-2]  # Remove the "()"
+
+        # Check if it's one of our datetime functions
+        return function_name in DATETIME_FUNCTIONS
 
 
 class SchemaValidationError(Exception):

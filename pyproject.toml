@@ -1,6 +1,6 @@
 [project]
 name = "ha-synthetic-sensors"
-version = "1.1.6"
+version = "1.1.7"
 description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
 authors = [
     {name = "SpanPanel"}
@@ -39,6 +39,8 @@ types-PyYAML = "^6.0.0"
 types-jsonschema = "^4.0.0"
 types-aiofiles = "^24.1.0.20250606"
 homeassistant-stubs = "*"
+types-pytz = "^2025.2.0.20250516"
+pytz = "^2025.2"
 
 [tool.poetry.group.test.dependencies]
 # homeassistant is now in runtime dependencies, so no need here
