@@ -644,9 +644,9 @@ class SensorManager:
             # Check if this variable references a registered entity
             if isinstance(var_value, str) and var_value.startswith("sensor."):
                 if var_value in self._registered_entities:
-                    _LOGGER.debug("        ✓ %s is registered as backing entity", var_value)
+                    _LOGGER.debug("        ✓ %s is registered", var_value)
                 else:
-                    _LOGGER.warning("        ✗ %s is NOT registered as backing entity", var_value)
+                    _LOGGER.warning("        ✗ %s is NOT registered as backing entity or found in HA", var_value)
 
     def _log_sensor_configuration_details(self, config: Config) -> None:
         """Log detailed sensor configuration information."""

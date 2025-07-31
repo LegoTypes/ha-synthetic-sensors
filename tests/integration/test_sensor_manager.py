@@ -921,3 +921,42 @@ class TestSensorManagerExtended:
             assert called_sensor_config.formulas == [main_formula, attr_formula]
 
             assert result == mock_sensor
+
+    def test_log_sensor_variables_improved_warning(self, mock_hass, mock_entity_registry, mock_states, caplog):
+        """Test that the improved warning correctly identifies entities in HA vs missing entities."""
+        # Create a sensor manager
+        name_resolver = NameResolver(mock_hass, {})
+        add_entities_callback = MagicMock()
+        sensor_manager = SensorManager(mock_hass, name_resolver, add_entities_callback)
+
+        # Create a formula with variables that reference entities
+        formula = FormulaConfig(
+            id="test_formula",
+            formula="backing_entity + ha_entity + missing_entity",
+            variables={
+                "backing_entity": "sensor.backing_sensor",
+                "ha_entity": "sensor.existing_ha_sensor",
+                "missing_entity": "sensor.missing_sensor",
+            },
+        )
+
+        # Register backing entity
+        sensor_manager.register_data_provider_entities({"sensor.backing_sensor"})
+
+        # Mock HA state for existing entity
+        mock_hass.states.async_set("sensor.existing_ha_sensor", "100")
+
+        # Capture log messages
+        with caplog.at_level("DEBUG"):
+            sensor_manager._log_sensor_variables(formula)
+
+        # Check that we get the appropriate messages
+        log_messages = [record.getMessage() for record in caplog.records]
+
+        # Check that we get the appropriate messages
+        # Backing entity should show debug message
+        assert any("✓ sensor.backing_sensor is registered" in msg for msg in log_messages)
+        
+        # Non-backing entities should show warnings
+        assert any("✗ sensor.existing_ha_sensor is NOT registered as backing entity or found in HA" in msg for msg in log_messages)
+        assert any("✗ sensor.missing_sensor is NOT registered as backing entity or found in HA" in msg for msg in log_messages)
