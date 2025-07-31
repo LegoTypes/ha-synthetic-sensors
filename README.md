@@ -64,59 +64,23 @@ The data sources for the evaluated formulas can be:
 - Automatically tracked via HA state change events
 - Enables cross-integration calculations and combinations
 
-### Process Flow for Each Pattern
-
 #### Pattern A: Virtual Entity Extension (Device Integrations)
 
 ```text
-Your Integration Data → Virtual Backing Entity → Synthetic Sensor Extension
+Your Integration Data →    Backing Entity →         Synthetic Sensor Extension
         ↓                        ↓                           ↓
    Device API Data        coordinator.register()     Formula calculates new state
-   coordinator.update()   virtual_entity.value      from virtual entity value
-   notify_changes()       (not in HA registry)      (appears in HA as sensor)
+   coordinator.update()   entity.value      from virtual entity value
+   notify_changes()       (memory or HA sensor)      (appears in HA as sensor)
 ```
 
 **Steps:**
 
-1. **Set up virtual backing entities** in your coordinator's memory
-2. **Register entities** with synthetic sensor package via mapping
-3. **Update virtual values** when your device data changes
+1. **Set up any backing entities** in your coordinator's memory or integration
+2. **Register any backing entities** with synthetic sensor package via mapping
+3. **Update virtual and integration sensor values** when your device data changes
 4. **Notify changes** to trigger selective synthetic sensor updates
-5. **Synthetic sensors calculate** new states from virtual entity values
-
-#### Pattern B: Native HA Entity Extension (Integration Sensors)
-
-```text
-Your Integration → Native HA Sensor → Synthetic Sensor Extension
-        ↓                ↓                      ↓
-   Create real sensor   HA entity lifecycle    Formula extends existing
-   via async_add_entities   state updates      sensor with new calculations
-```
-
-**Steps:**
-
-1. **Create native HA sensors** via `async_add_entities`
-2. **Set up synthetic sensors** to reference native sensor entity IDs
-3. **Update native sensors** through normal HA mechanisms
-4. **Synthetic sensors automatically update** via HA state change tracking
-5. **Extended sensors provide** calculated values based on native sensor states
-
-#### Pattern C: External HA Entity Extension (Cross-Integration)
-
-```text
-Other Integration → HA Entity → Synthetic Sensor Extension
-        ↓              ↓              ↓
-   External sensor    HA state      Formula combines/transforms
-   updates normally   changes       external entity values
-```
-
-**Steps:**
-
-1. **Identify external HA entities** you want to extend or combine
-2. **Reference entity IDs** directly in synthetic sensor YAML variables
-3. **Set up synthetic sensors** with `allow_ha_lookups=True`
-4. **External entities update** independently via their own integrations
-5. **Synthetic sensors automatically recalculate** when referenced entities change
+5. **Synthetic sensors calculate** new states from entity refernces by entity_id
 
 ### Synthetic Benefits
 
@@ -902,14 +866,7 @@ remember the the main sensor state is evaluated before attributes.
 | **Area**         | `"area:kitchen \| area:living_room"`               | `"area:kitchen \| living_room"`        | `"area:!basement"`           |
 | **Label**        | `"label:critical \| label:important"`              | `"label:critical \| important"`        | `"label:!deprecated"`        |
 
-**Key Features:**
-
-- **Pipe-only OR logic**: All patterns use `\|` for OR conditions (no comma support)
-- **Shorthand evaluation**: Simple values like `on`, `active`, `connected` are automatically evaluated as boolean
-- **Negation support**: `!` prefix excludes specific values or patterns
-- **Mixed patterns**: Combine inclusion and exclusion in the same pattern
-
-**Important:** For regex patterns, the variable must reference an `input_text` entity containing the regex pattern:
+**Important:** For regex patterns, the variable _must_ reference an `input_text` entity containing the regex pattern:
 
 ```yaml
 # Correct: Variable references input_text entity
