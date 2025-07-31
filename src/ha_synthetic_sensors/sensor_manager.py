@@ -641,13 +641,6 @@ class SensorManager:
         for var_name, var_value in formula.variables.items():
             _LOGGER.debug("        %s: %s", var_name, var_value)
 
-            # Check if this variable references a registered entity
-            if isinstance(var_value, str) and var_value.startswith("sensor."):
-                if var_value in self._registered_entities:
-                    _LOGGER.debug("        ✓ %s is registered", var_value)
-                else:
-                    _LOGGER.warning("        ✗ %s is NOT registered as backing entity or found in HA", var_value)
-
     def _log_sensor_configuration_details(self, config: Config) -> None:
         """Log detailed sensor configuration information."""
         if not config.sensors:
@@ -1500,7 +1493,7 @@ class SensorManager:
         for formula in sensor_config.formulas:
             # Check explicit variables for backing entity references
             if formula.variables:
-                for _var_name, var_value in formula.variables.items():
+                for var_value in formula.variables.values():
                     # Check if this looks like an entity ID that would use integration data provider
                     if (
                         isinstance(var_value, str)
