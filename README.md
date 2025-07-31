@@ -70,7 +70,7 @@ The data sources for the evaluated formulas can be:
 Your Integration Data →    Backing Entity →         Synthetic Sensor Extension
         ↓                        ↓                           ↓
    Device API Data        coordinator.register()     Formula calculates new state
-   coordinator.update()   entity.value      from virtual entity value
+   coordinator.update()   entity.value               from entity references
    notify_changes()       (memory or HA sensor)      (appears in HA as sensor)
 ```
 
