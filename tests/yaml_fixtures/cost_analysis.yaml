@@ -9,4 +9,4 @@ sensors:
     metadata:
       unit_of_measurement: $/h
       device_class: monetary
-      state_class: measurement
+      state_class: total

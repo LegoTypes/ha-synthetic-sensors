@@ -49,6 +49,7 @@ sensors:
         variables:
           baseline: 800
           target_efficiency: 0.95
+          input_power: sensor.raw_power  # Inherit sensor-level variable for computed variables
 
           # Computed variables for analysis
           power_vs_baseline:

@@ -23,8 +23,6 @@ sensors:
       # Formula attributes (existing behavior)
       calculated_efficiency:
         formula: "power_source / max_capacity * 100"
-        variables:
-          max_capacity: 5000
         metadata:
           unit_of_measurement: "%"
           suggested_display_precision: 1

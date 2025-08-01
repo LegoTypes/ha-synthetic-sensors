@@ -51,7 +51,7 @@ sensors:
     metadata:
       unit_of_measurement: "¢/h"
       device_class: "monetary"
-      state_class: "measurement"
+      state_class: "total"
       icon: "mdi:currency-usd"
       attribution: "Calculated from SPAN Panel data"
 

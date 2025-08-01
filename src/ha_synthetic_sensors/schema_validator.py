@@ -9,11 +9,14 @@ with detailed error reporting and support for schema versioning.
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from enum import Enum
 import logging
 import re
 from typing import Any, TypedDict
+
+from homeassistant.exceptions import ConfigEntryError
 
 try:
     import jsonschema
@@ -62,7 +65,6 @@ class ValidationResult(TypedDict):
 
     valid: bool
     errors: list[ValidationError]
-    warnings: list[ValidationError]
 
 
 class SchemaValidator:
@@ -94,14 +96,12 @@ class SchemaValidator:
             config_data: Raw configuration dictionary from YAML
 
         Returns:
-            ValidationResult with validation status and any errors/warnings
+            ValidationResult with validation status and any errors
         """
         if not JSONSCHEMA_AVAILABLE:
-            self._logger.warning("jsonschema not available, skipping schema validation")
-            return ValidationResult(valid=True, errors=[], warnings=[])
+            raise ConfigEntryError("jsonschema not available, schema validation required")
 
         errors: list[ValidationError] = []
-        warnings: list[ValidationError] = []
 
         # Determine schema version
         version = config_data.get("version", "1.0")
@@ -114,7 +114,7 @@ class SchemaValidator:
                     suggested_fix=(f"Use supported version: {', '.join(self.schemas.keys())}"),
                 )
             )
-            return ValidationResult(valid=False, errors=errors, warnings=warnings)
+            return ValidationResult(valid=False, errors=errors)
 
         schema = self.schemas[version]
 
@@ -127,15 +127,12 @@ class SchemaValidator:
             # Validate against schema
             for error in validator.iter_errors(config_data):
                 validation_error = self._format_validation_error(error)
-                if validation_error.severity == ValidationSeverity.ERROR:
-                    errors.append(validation_error)
-                else:
-                    warnings.append(validation_error)
+                errors.append(validation_error)
 
             # Additional semantic validations
             semantic_errors, semantic_warnings = self._perform_semantic_validation(config_data)
             errors.extend(semantic_errors)
-            warnings.extend(semantic_warnings)
+            errors.extend(semantic_warnings)  # Treat all semantic issues as errors
 
         except Exception as exc:
             self._logger.exception("Schema validation failed")
@@ -147,7 +144,7 @@ class SchemaValidator:
                 )
             )
 
-        return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
+        return ValidationResult(valid=len(errors) == 0, errors=errors)
 
     def _format_validation_error(self, error: Any) -> ValidationError:
         """Format a jsonschema validation error into our ValidationError format."""
@@ -179,7 +176,7 @@ class SchemaValidator:
     def _perform_semantic_validation(self, config_data: dict[str, Any]) -> tuple[list[ValidationError], list[ValidationError]]:
         """Perform additional semantic validation beyond JSON schema."""
         errors: list[ValidationError] = []
-        warnings: list[ValidationError] = []
+        warnings: list[ValidationError] = []  # Empty list for compatibility
 
         # Validate version compatibility
         version = config_data.get("version", "1.0")
@@ -204,19 +201,19 @@ class SchemaValidator:
                 metadata = sensor_config.get("metadata", {})
                 device_class = metadata.get("device_class")
                 if device_class:
-                    self._validate_device_class(sensor_key, device_class, warnings)
+                    self._validate_device_class(sensor_key, device_class, errors)
 
-                self._validate_sensor_config(sensor_key, sensor_config, warnings)
-                self._validate_state_class_compatibility(sensor_key, sensor_config, warnings)
+                self._validate_sensor_config(sensor_key, sensor_config, errors, config_data)
+                self._validate_state_class_compatibility(sensor_key, sensor_config, errors)
                 self._validate_unit_compatibility(sensor_key, sensor_config, errors)
 
-        return errors, warnings
+        return errors, warnings  # warnings will always be empty now
 
     def _validate_state_class_compatibility(
         self,
         sensor_key: str,
         sensor_config: dict[str, Any],
-        warnings: list[ValidationError],
+        errors: list[ValidationError],
     ) -> None:
         """Validate state_class compatibility with device_class using HA's mappings."""
         metadata = sensor_config.get("metadata", {})
@@ -239,11 +236,11 @@ class SchemaValidator:
                 try:
                     sensor_state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
                     if state_class not in sensor_state_classes:
-                        warnings.append(
+                        errors.append(
                             ValidationError(
                                 message=f"Invalid state_class '{state_class}'. Valid options: {sensor_state_classes}",
                                 path=f"sensors.{sensor_key}.state_class",
-                                severity=ValidationSeverity.WARNING,
+                                severity=ValidationSeverity.ERROR,
                             )
                         )
                 except ValueError:
@@ -256,14 +253,14 @@ class SchemaValidator:
                 allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
 
                 if allowed_state_classes and state_class_enum not in allowed_state_classes:
-                    warnings.append(
+                    errors.append(
                         ValidationError(
                             message=(
                                 f"Invalid state_class '{state_class}' for device_class '{device_class}'. "
                                 f"Valid options: {[sc.value for sc in allowed_state_classes]}"
                             ),
                             path=f"sensors.{sensor_key}.state_class",
-                            severity=ValidationSeverity.WARNING,
+                            severity=ValidationSeverity.ERROR,
                         )
                     )
             except ValueError:
@@ -279,7 +276,7 @@ class SchemaValidator:
         sensor_config: dict[str, Any],
         device_class: str,
         state_class: str,
-        warnings: list[ValidationError],
+        errors: list[ValidationError],
     ) -> None:
         """Fallback validation when HA constants are not available."""
         # Basic validation for obvious mismatches
@@ -291,14 +288,14 @@ class SchemaValidator:
                 "signal_strength",
             ]
             if any(pattern in device_class for pattern in problematic_classes):
-                warnings.append(
+                errors.append(
                     ValidationError(
                         message=(
                             f"Sensor '{sensor_key}' uses state_class 'total_increasing' with "
                             f"device_class '{device_class}' which typically doesn't increase monotonically."
                         ),
                         path=f"sensors.{sensor_key}.state_class",
-                        severity=ValidationSeverity.WARNING,
+                        severity=ValidationSeverity.ERROR,
                         suggested_fix="Consider using 'measurement' instead",
                     )
                 )
@@ -307,87 +304,312 @@ class SchemaValidator:
         self,
         sensor_key: str,
         sensor_config: dict[str, Any],
-        warnings: list[ValidationError],
+        errors: list[ValidationError],
+        config_data: dict[str, Any] | None = None,
     ) -> None:
         """Validate a single sensor configuration."""
         # Single formula sensor validation
         if "formula" in sensor_config:
-            formula_text = sensor_config.get("formula", "")
-            variables = sensor_config.get("variables", {})
-
-            # Skip validation if formula_text is not a string (schema validation will catch this)
-            if isinstance(formula_text, str):
-                validation_result = self._validate_formula_variables(formula_text, variables)
-                for error_msg in validation_result:
-                    warnings.append(
-                        ValidationError(
-                            message=error_msg,
-                            path=f"sensors.{sensor_key}.formula",
-                            severity=ValidationSeverity.WARNING,
-                            suggested_fix="Define all variables used in the formula",
-                        )
-                    )
+            self._validate_sensor_formula(sensor_key, sensor_config, errors, config_data)
 
         # Validate calculated attributes (if present)
         attributes = sensor_config.get("attributes", {})
         if attributes:
-            variables = sensor_config.get("variables", {})
-            for attr_name, attr_config in attributes.items():
-                # Skip validation if attr_config is not a dict (schema validation will catch this)
-                if not isinstance(attr_config, dict):
-                    continue
-                attr_formula = attr_config.get("formula", "")
+            self._validate_sensor_attributes(sensor_key, sensor_config, attributes, errors, config_data)
 
-                # Allow 'state' variable in attribute formulas
-                extended_variables = variables.copy()
-                extended_variables["state"] = "main_sensor_state"
+    def _validate_sensor_formula(
+        self,
+        sensor_key: str,
+        sensor_config: dict[str, Any],
+        errors: list[ValidationError],
+        config_data: dict[str, Any] | None = None,
+    ) -> None:
+        """Validate a sensor's main formula."""
+        formula_text = sensor_config.get("formula", "")
+        variables = sensor_config.get("variables", {})
 
-                # Skip validation if attr_formula is not a string (schema validation will catch this)
-                if isinstance(attr_formula, str):
-                    validation_result = self._validate_formula_variables(attr_formula, extended_variables)
-                    for error_msg in validation_result:
-                        warnings.append(
-                            ValidationError(
-                                message=error_msg,
-                                path=f"sensors.{sensor_key}.attributes.{attr_name}.formula",
-                                severity=ValidationSeverity.WARNING,
-                                suggested_fix=(
-                                    "Define all variables used in attribute formulas (or use 'state' for main sensor value)"
-                                ),
-                            )
+        # Skip validation if formula_text is not a string (schema validation will catch this)
+        if not isinstance(formula_text, str):
+            return
+
+        # Extract context from config_data for comprehensive validation
+        global_vars, sensor_keys = self._extract_validation_context(config_data)
+        sensor_vars = set(variables.keys())
+
+        # Use _validate_formula_tokens for comprehensive validation
+        self._validate_formula_tokens(
+            formula_text,
+            sensor_keys,
+            f"sensors.{sensor_key}.formula",
+            errors,
+            global_vars=global_vars,
+            sensor_vars=sensor_vars,
+        )
+
+    def _validate_sensor_attributes(
+        self,
+        sensor_key: str,
+        sensor_config: dict[str, Any],
+        attributes: dict[str, Any],
+        errors: list[ValidationError],
+        config_data: dict[str, Any] | None = None,
+    ) -> None:
+        """Validate sensor attributes."""
+        variables = sensor_config.get("variables", {})
+
+        # Check for variable shadowing (scoping validation)
+        self._validate_attribute_scoping(sensor_key, attributes, errors)
+
+        # Check for attribute dependency cycles and build evaluation order
+        self._validate_attribute_dependencies(sensor_key, attributes, errors)
+
+        for attr_name, attr_config in attributes.items():
+            self._validate_single_attribute(sensor_key, attr_name, attr_config, variables, attributes, errors, config_data)
+
+    def _validate_single_attribute(
+        self,
+        sensor_key: str,
+        attr_name: str,
+        attr_config: dict[str, Any],
+        variables: dict[str, Any],
+        all_attributes: dict[str, Any],
+        errors: list[ValidationError],
+        config_data: dict[str, Any] | None = None,
+    ) -> None:
+        """Validate a single attribute."""
+        # Skip validation if attr_config is not a dict (schema validation will catch this)
+        if not isinstance(attr_config, dict):
+            return
+
+        attr_formula = attr_config.get("formula", "")
+
+        # Allow 'state' variable in attribute formulas
+        extended_variables = variables.copy()
+        extended_variables["state"] = "main_sensor_state"
+
+        # Include the current attribute's own variables
+        attr_own_variables = attr_config.get("variables", {})
+        extended_variables.update(attr_own_variables)
+
+        # Skip validation if attr_formula is not a string (schema validation will catch this)
+        if not isinstance(attr_formula, str):
+            return
+
+        # Extract context from config_data for comprehensive validation
+        global_vars, sensor_keys = self._extract_validation_context(config_data)
+        sensor_vars = set(variables.keys())
+        attr_vars = set(extended_variables.keys())
+
+        # Identify literal attributes and other formula attributes for cross-references
+        literal_attrs, other_attr_names = self._categorize_attributes(all_attributes, attr_name)
+
+        # Use _validate_formula_tokens for comprehensive validation
+        self._validate_formula_tokens(
+            attr_formula,
+            sensor_keys,
+            f"sensors.{sensor_key}.attributes.{attr_name}.formula",
+            errors,
+            global_vars=global_vars,
+            sensor_vars=sensor_vars,
+            attr_vars=attr_vars,
+            literal_attrs=literal_attrs,
+            other_attr_names=other_attr_names,
+        )
+
+    def _extract_validation_context(self, config_data: dict[str, Any] | None) -> tuple[set[str], set[str]]:
+        """Extract global variables and sensor keys from config data."""
+        if config_data:
+            # Get global variables
+            global_settings = config_data.get("global_settings", {})
+            global_variables = global_settings.get("variables", {})
+            global_vars = set(global_variables.keys())
+
+            # Get all sensor keys for cross-sensor references
+            sensors = config_data.get("sensors", {})
+            sensor_keys = set(sensors.keys())
+        else:
+            global_vars = set()
+            sensor_keys = set()
+
+        return global_vars, sensor_keys
+
+    def _categorize_attributes(self, attributes: dict[str, Any], current_attr_name: str) -> tuple[set[str], set[str]]:
+        """Categorize attributes into literal and formula attributes."""
+        literal_attrs = set()
+        other_attr_names = set()
+
+        for other_attr_name, other_attr_config in attributes.items():
+            if other_attr_name == current_attr_name:  # Don't include self
+                continue
+
+            if isinstance(other_attr_config, dict) and "formula" in other_attr_config:
+                # This is another formula attribute
+                other_attr_names.add(other_attr_name)
+            else:
+                # This is a literal attribute
+                literal_attrs.add(other_attr_name)
+
+        return literal_attrs, other_attr_names
+
+    def _validate_attribute_scoping(
+        self,
+        sensor_key: str,
+        attributes: dict[str, Any],
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate attribute scoping to detect variable shadowing.
+
+        Checks for variables in formula attributes that shadow literal attributes,
+        similar to Python variable shadowing in inner scopes.
+
+        Args:
+            sensor_key: The sensor key being validated
+            attributes: The attributes dictionary for the sensor
+            errors: List to append validation errors to
+        """
+        # First, identify literal attributes (non-dict values)
+        literal_attributes: set[str] = set()
+        formula_attributes: dict[str, dict[str, Any]] = {}
+
+        for attr_name, attr_config in attributes.items():
+            if isinstance(attr_config, dict) and "formula" in attr_config:
+                # This is a formula attribute
+                formula_attributes[attr_name] = attr_config
+            else:
+                # This is a literal attribute
+                literal_attributes.add(attr_name)
+
+        # Check each formula attribute for variable shadowing
+        for attr_name, attr_config in formula_attributes.items():
+            formula_variables = attr_config.get("variables", {})
+
+            for var_name in formula_variables:
+                if var_name in literal_attributes:
+                    errors.append(
+                        ValidationError(
+                            message=f"Variable '{var_name}' in formula '{attr_name}' has a naming collision with literal attribute '{var_name}'",
+                            path=f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                            severity=ValidationSeverity.ERROR,
                         )
+                    )
 
-    def _validate_formula_variables(self, formula: str, variables: dict[str, str]) -> list[str]:
-        """Validate that formula variables are properly defined.
+    def _validate_attribute_dependencies(
+        self,
+        sensor_key: str,
+        attributes: dict[str, Any],
+        errors: list[ValidationError],
+    ) -> list[str]:
+        """Validate attribute dependencies and return evaluation order.
+
+        Uses topological sort to determine evaluation order and detect circular dependencies.
+
+        Args:
+            sensor_key: The sensor key being validated
+            attributes: The attributes dictionary for the sensor
+            errors: List to append validation errors to
 
         Returns:
-            List of validation warning messages
+            List of attribute names in evaluation order (dependencies first)
         """
-        warnings = []
+        # Build dependency graph
+        dependencies, _ = self._build_dependency_graph(attributes)
 
-        # Find potential variable references (simple heuristic)
-        potential_vars = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", formula)
+        # Perform topological sort to detect cycles and determine evaluation order
+        all_attr_names = set(attributes.keys())
+        evaluation_order = self._perform_topological_sort(dependencies, all_attr_names)
 
-        # Use the centralized formula reserved words that includes 'state' token
-        for var in potential_vars:
-            if var not in variables and var not in FORMULA_RESERVED_WORDS and not var.isdigit():
-                # Check if it looks like it could be a variable
-                warnings.append(f"Potential undefined variable '{var}' in formula")
+        # Check for circular dependencies
+        if len(evaluation_order) != len(attributes):
+            self._handle_circular_dependencies(sensor_key, evaluation_order, all_attr_names, errors)
+            # Return partial order for continued validation
+            return evaluation_order + sorted(set(attributes.keys()) - set(evaluation_order))
 
-        return warnings
+        return evaluation_order
+
+    def _build_dependency_graph(self, attributes: dict[str, Any]) -> tuple[dict[str, set[str]], dict[str, str]]:
+        """Build the dependency graph for attributes."""
+        dependencies: dict[str, set[str]] = defaultdict(set)  # attr -> set of attrs it depends on
+        formula_attrs: dict[str, str] = {}  # attr -> formula
+
+        # First pass: identify all attributes and their types
+        all_attr_names = set(attributes.keys())
+
+        for attr_name, attr_config in attributes.items():
+            if isinstance(attr_config, dict) and "formula" in attr_config:
+                formula = attr_config.get("formula", "")
+                if isinstance(formula, str):
+                    formula_attrs[attr_name] = formula
+
+        # Second pass: build dependency graph by analyzing formulas
+        for attr_name, formula in formula_attrs.items():
+            if self._is_formula_expression(formula):
+                tokens = tokenize_formula(formula)
+                for token in tokens:
+                    # Check if token refers to another attribute
+                    if token in all_attr_names and token != attr_name:
+                        dependencies[attr_name].add(token)
+
+        return dependencies, formula_attrs
+
+    def _perform_topological_sort(self, dependencies: dict[str, set[str]], all_attr_names: set[str]) -> list[str]:
+        """Perform topological sort using Kahn's algorithm."""
+        evaluation_order = []
+        in_degree = dict.fromkeys(all_attr_names, 0)
+
+        # Calculate in-degrees
+        for attr_name, deps in dependencies.items():
+            for dep in deps:
+                if dep in in_degree:  # Only count dependencies that are actual attributes
+                    in_degree[attr_name] += 1
+
+        # Kahn's algorithm for topological sort
+        queue = deque([attr for attr, degree in in_degree.items() if degree == 0])
+
+        while queue:
+            current = queue.popleft()
+            evaluation_order.append(current)
+
+            # Remove edges from current node
+            for attr_name, deps in dependencies.items():
+                if current in deps:
+                    deps.remove(current)
+                    in_degree[attr_name] -= 1
+                    if in_degree[attr_name] == 0:
+                        queue.append(attr_name)
+
+        return evaluation_order
+
+    def _handle_circular_dependencies(
+        self,
+        sensor_key: str,
+        evaluation_order: list[str],
+        all_attr_names: set[str],
+        errors: list[ValidationError],
+    ) -> None:
+        """Handle circular dependencies by adding validation errors."""
+        remaining_attrs = all_attr_names - set(evaluation_order)
+        cycle_attrs = sorted(remaining_attrs)
+
+        errors.append(
+            ValidationError(
+                message=f"Circular dependency detected in attributes: {', '.join(cycle_attrs)}",
+                path=f"sensors.{sensor_key}.attributes",
+                severity=ValidationSeverity.ERROR,
+            )
+        )
 
     def _validate_device_class(
         self,
         sensor_key: str,
         device_class: str,
-        warnings: list[ValidationError],
+        errors: list[ValidationError],
     ) -> None:
         """Validate device class using Home Assistant's built-in validation.
 
         Args:
             sensor_key: The sensor key being validated
             device_class: The device class to validate
-            warnings: List to append validation warnings to
+            errors: List to append validation errors to
         """
         try:
             # Try to validate against sensor device classes first
@@ -411,14 +633,14 @@ class SchemaValidator:
                 _LOGGER.debug("Could not check binary sensor device classes: %s", e)
 
             # If we get here, the device class is not valid
-            warnings.append(
+            errors.append(
                 ValidationError(
                     message=(
                         f"Sensor '{sensor_key}' uses invalid device_class '{device_class}'. "
                         f"This is not a recognized Home Assistant device class."
                     ),
                     path=f"sensors.{sensor_key}.metadata.device_class",
-                    severity=ValidationSeverity.WARNING,
+                    severity=ValidationSeverity.ERROR,
                     suggested_fix="Use a valid Home Assistant device class",
                 )
             )
@@ -557,6 +779,8 @@ class SchemaValidator:
         global_vars: set[str] | None = None,
         sensor_vars: set[str] | None = None,
         attr_vars: set[str] | None = None,
+        literal_attrs: set[str] | None = None,
+        other_attr_names: set[str] | None = None,
     ) -> None:
         """Validate that all tokens in a formula expression are valid references."""
         if not self._is_formula_expression(formula):
@@ -570,13 +794,18 @@ class SchemaValidator:
             # 3. Local attribute variables (accessible within same attribute)
             # 4. Sensor keys (for cross-sensor references)
             # 5. Datetime function names (now, today, yesterday, etc.)
+            # 6. Entity references (domain.entity format)
             datetime_functions = DATETIME_FUNCTIONS
             is_valid = (
                 token in sensor_keys
                 or (global_vars and token in global_vars)
                 or (sensor_vars and token in sensor_vars)
                 or (attr_vars and token in attr_vars)
+                or (literal_attrs and token in literal_attrs)
+                or (other_attr_names and token in other_attr_names)
                 or token in datetime_functions
+                or token in FORMULA_RESERVED_WORDS
+                or self._is_entity_id(token)
             )
 
             if not is_valid:
@@ -587,14 +816,18 @@ class SchemaValidator:
                     available_refs.extend(f"local:{var}" for var in sorted(sensor_vars))
                 if attr_vars:
                     available_refs.extend(f"attr:{var}" for var in sorted(attr_vars))
+                if literal_attrs:
+                    available_refs.extend(f"literal:{attr}" for attr in sorted(literal_attrs))
+                if other_attr_names:
+                    available_refs.extend(f"attribute:{attr}" for attr in sorted(other_attr_names))
                 available_refs.extend(f"sensor:{key}" for key in sorted(sensor_keys))
 
                 errors.append(
                     ValidationError(
-                        message=f"Formula token '{token}' in '{formula}' references unknown variable or sensor key",
+                        message=f"Potential undefined variable '{token}' in formula",
                         path=path,
                         severity=ValidationSeverity.ERROR,
-                        suggested_fix=f"Available references: {', '.join(available_refs[:10])}{'...' if len(available_refs) > 10 else ''}",
+                        suggested_fix="Define all variables used in the formula",
                     )
                 )
 
@@ -1672,7 +1905,7 @@ def validate_yaml_config(config_data: dict[str, Any]) -> ValidationResult:
         config_data: Raw configuration dictionary from YAML
 
     Returns:
-        ValidationResult with validation status and any errors/warnings
+        ValidationResult with validation status and any errors
     """
     validator = SchemaValidator()
     return validator.validate_config(config_data)
@@ -1688,12 +1921,12 @@ def validate_global_settings_only(global_settings_data: dict[str, Any]) -> Valid
         global_settings_data: Global settings dictionary to validate
 
     Returns:
-        ValidationResult with validation status and any errors/warnings
+        ValidationResult with validation status and any errors
     """
     validator = SchemaValidator()
 
     if not JSONSCHEMA_AVAILABLE:
-        return ValidationResult(valid=True, errors=[], warnings=[])
+        return ValidationResult(valid=True, errors=[])
 
     errors: list[ValidationError] = []
     warnings: list[ValidationError] = []
@@ -1704,7 +1937,7 @@ def validate_global_settings_only(global_settings_data: dict[str, Any]) -> Valid
         errors.append(
             ValidationError(message="Schema version 1.0 not found", path="version", severity=ValidationSeverity.ERROR)
         )
-        return ValidationResult(valid=False, errors=errors, warnings=warnings)
+        return ValidationResult(valid=False, errors=errors)
 
     # Extract just the global_settings schema portion
     global_settings_schema = schema["properties"].get("global_settings", {})
@@ -1714,7 +1947,7 @@ def validate_global_settings_only(global_settings_data: dict[str, Any]) -> Valid
                 message="Global settings schema not found", path="global_settings", severity=ValidationSeverity.ERROR
             )
         )
-        return ValidationResult(valid=False, errors=errors, warnings=warnings)
+        return ValidationResult(valid=False, errors=errors)
 
     # Validate against JSON schema first
     if HAS_JSONSCHEMA:
@@ -1737,7 +1970,7 @@ def validate_global_settings_only(global_settings_data: dict[str, Any]) -> Valid
     # Pass None for sensor_keys since we're validating in isolation
     validator.validate_global_settings(global_settings_data, None, errors, warnings)
 
-    return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
+    return ValidationResult(valid=len(errors) == 0, errors=errors)
 
 
 def get_schema_for_version(version: str) -> dict[str, Any] | None:

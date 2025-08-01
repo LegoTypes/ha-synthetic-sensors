@@ -98,8 +98,6 @@ Your Integration Data →    Backing Entity →         Synthetic Sensor Extensi
 - **Storage-based configuration** with runtime modification capabilities
 - **Variable support** for reusable calculations and shared configuration
 - **Dynamic entity aggregation** using regex, label, areas, and device class patterns
-- **Comprehensive caching** with AST compilation for optimal performance
-- **Integration with Home Assistant** device and entity registries
 
 ## Key Features
 
@@ -112,6 +110,8 @@ Your Integration Data →    Backing Entity →         Synthetic Sensor Extensi
 - **Type safety**: Complete TypedDict interfaces for better IDE support and validation
 - **Storage-first architecture**: Runtime configuration changes without file modifications
 - **Built for Performance**: AST caching and evaluation of formulas and bulk modification event storm avoidance
+- **Cross-Attribute References**: Formulas can reference other attributes with proper evaluation order
+- **Dependency Validation**: Automatic detection of circular dependencies and variable conflicts
 
 ## Installation
 
@@ -155,7 +155,7 @@ sensors:
       conversion_factor: 1000 # Literal: watts to kilowatts
     metadata:
       unit_of_measurement: "¢/h"
-      state_class: "measurement"
+      state_class: "total"
       device_class: "monetary"
       icon: "mdi:currency-usd"
 
@@ -228,7 +228,7 @@ sensors:
     metadata:
       unit_of_measurement: "¢/h"
       device_class: "monetary"
-      state_class: "measurement"
+      state_class: "total"
       icon: "mdi:currency-usd"
       attribution: "Calculated from SPAN Panel data"
 ```
@@ -1172,6 +1172,49 @@ sensors:
 - Statistics: `min()`, `max()`, `avg()`, `mean()`, `sum()`
 - Utilities: `clamp(value, min, max)`, `map(value, in_min, in_max, out_min, out_max)`, `percent(part, whole)`
 
+### Attribute Dependency Validation
+
+The system validates attribute dependencies to ensure proper evaluation order and prevent configuration errors.
+
+**Cross-Attribute References (Valid):**
+
+```yaml
+sensors:
+  power_analysis:
+    name: "Power Analysis"
+    formula: "sensor.main_power"
+    attributes:
+      voltage: 240 # literal attribute
+      current:
+        formula: "state / voltage" # references literal attribute
+      power_factor:
+        formula: "current * voltage" # references other attributes
+      efficiency:
+        formula: "power_factor / max_capacity * 100"
+        variables:
+          max_capacity: "sensor.max_capacity"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+```
+
+**Circular Dependency Prevention (Invalid):**
+
+```yaml
+# This will fail validation - circular dependency
+sensors:
+  test_sensor:
+    formula: "sensor.power"
+    attributes:
+      attr_a:
+        formula: "attr_b + 10" # depends on attr_b
+      attr_b:
+        formula: "attr_c * 2" # depends on attr_c
+      attr_c:
+        formula: "attr_a / 3" # depends on attr_a - CIRCULAR!
+```
+
 ## Exception Handling
 
 Synthetic sensors support graceful handling of `UNKNOWN` and `UNAVAILABLE` states through exception handling formulas. When a
@@ -1356,6 +1399,146 @@ Assistant integration. All internal implementation details are encapsulated behi
 
 ## Troubleshooting
 
+### Configuration Validation Issues
+
+**Attribute Dependency Validation**
+
+The system now performs strict validation of attribute dependencies to ensure proper evaluation order and prevent
+configuration errors.
+
+**Variable Shadowing (Naming Collisions)**
+
+If you see an error like:
+
+```text
+Variable 'voltage' in formula 'calculated' has a naming collision with literal attribute 'voltage'
+```
+
+This occurs when a formula's `variables` section defines a variable with the same name as a literal attribute in the same
+sensor.
+
+**Solution:** Remove the duplicate variable definition from the formula's `variables` section. The formula can reference the
+literal attribute directly.
+
+```yaml
+# Invalid - variable shadows literal attribute
+sensors:
+  test_sensor:
+    formula: "power * 2"
+    attributes:
+      voltage: 240  # literal attribute
+      calculated:
+        formula: "voltage * current"
+        variables:
+          current: "sensor.test_current"
+          voltage: 240  # SHADOWS literal attribute - remove this
+
+# Valid - formula references literal attribute directly
+sensors:
+  test_sensor:
+    formula: "power * 2"
+    attributes:
+      voltage: 240  # literal attribute
+      calculated:
+        formula: "voltage * current"  # references literal attribute
+        variables:
+          current: "sensor.test_current"  # only define what's needed
+```
+
+**Circular Dependencies**
+
+If you see an error like:
+
+```text
+Circular dependency detected in attributes: attr_a, attr_b, attr_c
+```
+
+This occurs when formula attributes reference each other in a loop, preventing a clear evaluation order.
+
+**Solution:** Restructure your formulas to create a linear dependency chain.
+
+```yaml
+# Invalid - circular dependency
+sensors:
+  test_sensor:
+    formula: "sensor.power"
+    attributes:
+      attr_a:
+        formula: "attr_b + 10"  # depends on attr_b
+      attr_b:
+        formula: "attr_c * 2"   # depends on attr_c
+      attr_c:
+        formula: "attr_a / 3"   # depends on attr_a - CIRCULAR!
+
+# Valid - linear dependency chain
+sensors:
+  test_sensor:
+    formula: "sensor.power"
+    attributes:
+      base_value:
+        formula: "state * 2"    # depends only on main sensor
+      derived_value:
+        formula: "base_value + 10"  # depends on base_value
+      final_value:
+        formula: "derived_value * 1.5"  # depends on derived_value
+```
+
+**Cross-Attribute References**
+
+Formulas can reference other attributes within the same sensor, but must follow dependency rules:
+
+```yaml
+# Valid - attributes can reference other attributes
+sensors:
+  test_sensor:
+    formula: "sensor.power"
+    attributes:
+      voltage: 240 # literal attribute
+      current:
+        formula: "state / voltage" # references literal attribute
+      power_factor:
+        formula: "current * voltage" # references other attributes
+```
+
+**Attribute Evaluation Order**
+
+The system automatically determines the correct evaluation order:
+
+1. **Literal attributes** are always available first
+2. **Formula attributes** are evaluated in dependency order
+3. **Circular dependencies** are detected and rejected
+4. **Cross-references** between attributes are supported
+
+**State Class and Device Class Compatibility**
+
+If you see an error like:
+
+```text
+Invalid state_class 'measurement' for device_class 'monetary'. Valid options: ['total']
+```
+
+This occurs when the state class is incompatible with the device class.
+
+**Common Compatibility Rules:**
+
+- `monetary` device class requires `state_class: total`
+- `power` device class requires `state_class: measurement`
+- `energy` device class requires `state_class: total_increasing`
+
+**Solution:** Update the state class to match the device class requirements.
+
+```yaml
+# Invalid - incompatible state class
+metadata:
+  device_class: "monetary"
+  state_class: "measurement"  # Wrong for monetary
+
+# Valid - compatible state class
+metadata:
+  device_class: "monetary"
+  state_class: "total"  # Correct for monetary
+```
+
 ### Development Setup Issues
 
 **Type Stub Errors (mypy)**
@@ -1375,6 +1558,8 @@ poetry install --with dev --sync
 ```
 
 This script will verify all dependencies, type stubs, and tools are correctly installed.
+
+### General Issues
 
 - Check that all referenced entities exist in Home Assistant
 

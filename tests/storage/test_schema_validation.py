@@ -209,7 +209,7 @@ class TestSchemaValidation:
         assert result["valid"] is True
 
     def test_invalid_device_class(self):
-        """Test validation allows any device class values in metadata (device_class is just metadata)."""
+        """Test validation catches invalid device class values in metadata."""
         config_data = {
             "version": "1.0",
             "sensors": {
@@ -223,7 +223,11 @@ class TestSchemaValidation:
         }
 
         result = validate_yaml_config(config_data)
-        assert result["valid"] is True  # Device class is just metadata, any string is allowed
+        assert result["valid"] is False  # Should be invalid due to invalid device class
+        assert len(result["errors"]) > 0
+
+        error_messages = [str(e.message) for e in result["errors"]]
+        assert any("invalid device_class" in msg.lower() for msg in error_messages)
 
     def test_invalid_state_class(self):
         """Test validation catches invalid state class values in metadata."""
@@ -242,8 +246,8 @@ class TestSchemaValidation:
         result = validate_yaml_config(config_data)
         assert result["valid"] is False
 
-    def test_formula_variable_validation_warnings(self):
-        """Test that formula variable validation produces warnings."""
+    def test_formula_variable_validation_errors(self):
+        """Test that formula variable validation produces errors."""
         config_data = {
             "version": "1.0",
             "sensors": {
@@ -257,8 +261,8 @@ class TestSchemaValidation:
         }
 
         result = validate_yaml_config(config_data)
-        assert result["valid"] is True  # Should still be valid but with warnings
-        assert len(result.get("warnings", [])) > 0
+        assert result["valid"] is False  # Should be invalid due to undefined variable
+        assert len(result["errors"]) > 0
 
     def test_unsupported_version(self):
         """Test validation fails for unsupported version."""
@@ -410,8 +414,8 @@ class TestSchemaValidation:
         assert result["valid"] is True
         assert len(result["errors"]) == 0
 
-    def test_state_class_device_class_compatibility_warning(self):
-        """Test validation warns about incompatible state_class + device_class combinations."""
+    def test_state_class_device_class_compatibility_error(self):
+        """Test validation errors for incompatible state_class + device_class combinations."""
         config_data = {
             "version": "1.0",
             "sensors": {
@@ -428,12 +432,12 @@ class TestSchemaValidation:
         }
 
         result = validate_yaml_config(config_data)
-        assert result["valid"] is True  # Should be valid but with warnings
-        assert len(result.get("warnings", [])) > 0
+        assert result["valid"] is False  # Should be invalid due to incompatible combination
+        assert len(result["errors"]) > 0
 
-        warnings = result["warnings"]
-        warning_messages = [str(w.message) for w in warnings]
-        assert any("total_increasing" in msg and "battery" in msg for msg in warning_messages)
+        errors = result["errors"]
+        error_messages = [str(e.message) for e in errors]
+        assert any("total_increasing" in msg and "battery" in msg for msg in error_messages)
 
     def test_unit_device_class_compatibility_error(self):
         """Test validation errors for incompatible unit_of_measurement + device_class."""
@@ -471,7 +475,7 @@ class TestSchemaValidation:
                     "metadata": {
                         "device_class": "monetary",
                         "unit_of_measurement": "JPY",  # Should be allowed (currency code)
-                        "state_class": "measurement",
+                        "state_class": "total",  # Monetary device class uses 'total' state class
                     },
                 }
             },
@@ -531,8 +535,8 @@ class TestSchemaValidation:
             assert result["valid"] is True, f"Valid combination {unit} + {device_class} should pass"
             assert len(result["errors"]) == 0
 
-    def test_invalid_device_class_warning(self):
-        """Test that invalid device classes generate warnings."""
+    def test_invalid_device_class_error(self):
+        """Test that invalid device classes generate errors."""
         config_data = {
             "version": "1.0",
             "sensors": {
@@ -547,14 +551,14 @@ class TestSchemaValidation:
         }
 
         result = validate_yaml_config(config_data)
-        assert result["valid"] is True  # Should still be valid (just a warning)
-        assert len(result["warnings"]) > 0
+        assert result["valid"] is False  # Should be invalid due to invalid device class
+        assert len(result["errors"]) > 0
 
-        warning_messages = [str(w.message) for w in result["warnings"]]
-        assert any("invalid device_class" in msg.lower() for msg in warning_messages)
+        error_messages = [str(e.message) for e in result["errors"]]
+        assert any("invalid device_class" in msg.lower() for msg in error_messages)
 
-    def test_valid_device_classes_no_warnings(self):
-        """Test that valid device classes don't generate warnings."""
+    def test_valid_device_classes_no_errors(self):
+        """Test that valid device classes don't generate errors."""
         # Test sensor device class (should work in both real and test environments)
         config_data = {
             "version": "1.0",
@@ -579,14 +583,14 @@ class TestSchemaValidation:
         result = validate_yaml_config(config_data)
         assert result["valid"] is True
 
-        # Check that no device class warnings are generated
-        device_class_warnings = [
-            w for w in result["warnings"] if "device_class" in str(w.message).lower() and "invalid" in str(w.message).lower()
+        # Check that no device class errors are generated
+        device_class_errors = [
+            e for e in result["errors"] if "device_class" in str(e.message).lower() and "invalid" in str(e.message).lower()
         ]
-        assert len(device_class_warnings) == 0
+        assert len(device_class_errors) == 0
 
-    def test_invalid_device_class_generates_warning(self):
-        """Test that invalid device classes generate warnings."""
+    def test_invalid_device_class_generates_error(self):
+        """Test that invalid device classes generate errors."""
         config_data = {
             "version": "1.0",
             "sensors": {
@@ -601,8 +605,8 @@ class TestSchemaValidation:
         }
 
         result = validate_yaml_config(config_data)
-        assert result["valid"] is True  # Should still be valid (just a warning)
-        assert len(result["warnings"]) > 0
+        assert result["valid"] is False  # Should be invalid due to invalid device class
+        assert len(result["errors"]) > 0
 
-        warning_messages = [str(w.message) for w in result["warnings"]]
-        assert any("invalid device_class" in msg.lower() for msg in warning_messages)
+        error_messages = [str(e.message) for e in result["errors"]]
+        assert any("invalid device_class" in msg.lower() for msg in error_messages)

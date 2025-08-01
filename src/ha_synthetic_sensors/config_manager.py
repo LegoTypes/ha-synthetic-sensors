@@ -64,20 +64,26 @@ class ConfigManager:
         """
         path = Path(config_path) if config_path else self._config_path
 
-        if not path or not path.exists():
-            self._logger.warning("No configuration file found, using empty config")
-            self._config = Config()
-            return self._config
+        if not path:
+            error_msg = "No configuration path provided"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
+
+        if not path.exists():
+            error_msg = f"Configuration file not found: {path}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         try:
             with open(path, encoding="utf-8") as file:
                 yaml_data_raw = yaml.safe_load(file)
                 yaml_data = trim_yaml_keys(yaml_data_raw)
 
+            # Check for empty YAML data early
             if not yaml_data:
-                self._logger.warning("Empty configuration file, using empty config")
-                self._config = Config()
-                return self._config
+                error_msg = "Empty configuration file"
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
 
             # Perform schema validation using shared method
             self._validate_yaml_data_with_schema(yaml_data)
@@ -118,10 +124,15 @@ class ConfigManager:
         """
         path = Path(config_path) if config_path else self._config_path
 
-        if not path or not path.exists():
-            self._logger.warning("No configuration file found, using empty config")
-            self._config = Config()
-            return self._config
+        if not path:
+            error_msg = "No configuration path provided"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
+
+        if not path.exists():
+            error_msg = f"Configuration file not found: {path}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         try:
             async with aiofiles.open(path, encoding="utf-8") as file:
@@ -133,32 +144,14 @@ class ConfigManager:
                 else:
                     yaml_data = cast(dict[str, Any], yaml_data_trimmed)
 
+            # Check for empty YAML data early
             if not yaml_data:
-                self._logger.warning("Empty configuration file, using empty config")
-                self._config = Config()
-                return self._config
-
-            # Perform schema validation first
-            schema_result = validate_yaml_config(yaml_data)
-
-            # Log warnings
-            for warning in schema_result["warnings"]:
-                self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
-                if warning.suggested_fix:
-                    self._logger.warning("Suggested fix: %s", warning.suggested_fix)
-
-            # Check for schema errors
-            if not schema_result["valid"]:
-                error_messages: list[str] = []
-                for error in schema_result["errors"]:
-                    msg = f"{error.path}: {error.message}"
-                    if error.suggested_fix:
-                        msg += f" (Suggested fix: {error.suggested_fix})"
-                    error_messages.append(msg)
-
-                error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
+                error_msg = "Empty configuration file"
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
+
+            # Perform schema validation using shared method
+            self._validate_yaml_data_with_schema(yaml_data)
 
             self._config = self._parse_yaml_config(cast(ConfigDict, yaml_data))
 
@@ -462,9 +455,11 @@ class ConfigManager:
         variables = self._parse_variables(sensor_data.get("variables", {}))
 
         # Validate computed variable references
-        validation_warnings = validate_computed_variable_references(variables, sensor_key)
-        for warning in validation_warnings:
-            self._logger.warning(warning)
+        validation_errors = validate_computed_variable_references(variables, sensor_key)
+        if validation_errors:
+            error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         # Variables are now optional aliases - no auto-detection needed
         # Entity IDs in formulas will be resolved directly during evaluation
@@ -539,9 +534,11 @@ class ConfigManager:
         formula_variables = self._parse_variables(attr_variables if isinstance(attr_variables, dict) else {})
 
         # Validate computed variable references in attribute variables
-        validation_warnings = validate_computed_variable_references(formula_variables, f"{sensor_key}.{attr_name}")
-        for warning in validation_warnings:
-            self._logger.warning(warning)
+        validation_errors = validate_computed_variable_references(formula_variables, f"{sensor_key}.{attr_name}")
+        if validation_errors:
+            error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         # Variables are now optional aliases - no auto-detection needed
         # Entity IDs in attribute formulas will be resolved directly during evaluation
@@ -671,9 +668,9 @@ class ConfigManager:
             yaml_data = self._yaml_parser.parse_yaml_content(yaml_content)
 
             if not yaml_data:
-                self._logger.warning("Empty YAML content, using empty config")
-                self._config = Config()
-                return self._config
+                error_msg = "Empty YAML content"
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
 
             # Validate YAML data using the same validation logic as file-based loading
             self._validate_yaml_data_with_schema(yaml_data)
@@ -868,11 +865,10 @@ class ConfigManager:
         """Validate the current configuration and return structured results.
 
         Returns:
-            dict: Dictionary with 'errors' and 'warnings' keys containing lists
+            dict: Dictionary with 'errors' key containing list of error messages
         """
         errors = self.validate_config()
-        # For now, we don't have separate warnings, but structure it properly
-        return {"errors": errors, "warnings": []}
+        return {"errors": errors}
 
     def is_config_modified(self) -> bool:
         """Check if configuration file has been modified since last load.
@@ -901,7 +897,6 @@ class ConfigManager:
             {
                 "valid": bool,
                 "errors": list of error dictionaries,
-                "warnings": list of warning dictionaries,
                 "schema_version": str
             }
         """
@@ -920,21 +915,9 @@ class ConfigManager:
             for error in schema_result["errors"]
         ]
 
-        warnings = [
-            {
-                "message": warning.message,
-                "path": warning.path,
-                "severity": warning.severity.value,
-                "schema_path": warning.schema_path,
-                "suggested_fix": warning.suggested_fix,
-            }
-            for warning in schema_result["warnings"]
-        ]
-
         return {
             "valid": schema_result["valid"],
             "errors": errors,
-            "warnings": warnings,
             "schema_version": yaml_data.get("version", "1.0"),
         }
 
@@ -971,15 +954,11 @@ class ConfigManager:
         """
         schema_result = validate_yaml_config(cast(dict[str, Any], yaml_data))
 
-        # Log warnings
-        for warning in schema_result["warnings"]:
-            self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
-            if warning.suggested_fix:
-                self._logger.warning("Suggested fix: %s", warning.suggested_fix)
-
         # Check for schema errors
         if not schema_result["valid"]:
             error_messages: list[str] = []
+
+            # Add errors
             for error in schema_result["errors"]:
                 msg = f"{error.path}: {error.message}"
                 if error.suggested_fix:

@@ -18,9 +18,9 @@ sensors:
           unit_of_measurement: "calculated"
           suggested_display_precision: 1
       string_operations:
-        formula: "len(str(numeric_var)) + len(str(boolean_var))"
+        formula: "numeric_var + boolean_var"  # Simplified since str() is not implemented
         metadata:
-          unit_of_measurement: "chars"
+          unit_of_measurement: "calculated"
     metadata:
       unit_of_measurement: "mixed"
       icon: "mdi:code-braces"

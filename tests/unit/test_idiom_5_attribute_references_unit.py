@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
+from homeassistant.exceptions import ConfigEntryError
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
 from ha_synthetic_sensors.exceptions import CircularDependencyError
@@ -137,75 +138,25 @@ class TestIdiom5AttributeReferences:
         self, mock_hass, mock_entity_registry, mock_states, config_manager, circular_reference_yaml
     ):
         """Test attributes reference each other circularly."""
-        config = config_manager.load_from_yaml(circular_reference_yaml)
-        sensor = config.sensors[0]
+        # Circular dependencies should be caught during configuration validation
+        with pytest.raises(ConfigEntryError) as exc_info:
+            config_manager.load_from_yaml(circular_reference_yaml)
 
-        # Create sensor manager with data provider
-        def mock_data_provider(entity_id: str):
-            if entity_id == "sensor.span_panel_instantaneous_power":
-                return {"value": 1000.0, "exists": True}
-            return {"value": None, "exists": False}
-
-        mock_add_entities = MagicMock()
-        sensor_manager = SensorManager(
-            config_manager._hass,
-            MagicMock(),  # name_resolver
-            mock_add_entities,  # add_entities_callback
-            SensorManagerConfig(data_provider_callback=mock_data_provider),
-        )
-
-        # Register the backing entity
-        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
-
-        # Register the sensor-to-backing mapping
-        sensor_to_backing_mapping = {"problematic_sensor": "sensor.span_panel_instantaneous_power"}
-        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
-
-        # Test main formula evaluation first
-        evaluator = sensor_manager._evaluator
-        main_formula = sensor.formulas[0]
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
-        assert main_result["success"] is True
-
-        # Test that circular reference detection works
-        # This should be handled by the dependency resolution system
-        # The exact behavior depends on the implementation
+        # Verify the error message indicates circular dependencies
+        error_msg = str(exc_info.value)
+        assert "Circular dependency detected" in error_msg
+        return  # Test passes - circular dependencies correctly caught during validation
 
     def test_self_reference_detection(self, mock_hass, mock_entity_registry, mock_states, config_manager, self_reference_yaml):
         """Test attribute references itself."""
-        config = config_manager.load_from_yaml(self_reference_yaml)
-        sensor = config.sensors[0]
+        # Self-references should be caught during configuration validation
+        with pytest.raises(ConfigEntryError) as exc_info:
+            config_manager.load_from_yaml(self_reference_yaml)
 
-        # Create sensor manager with data provider
-        def mock_data_provider(entity_id: str):
-            if entity_id == "sensor.span_panel_instantaneous_power":
-                return {"value": 1000.0, "exists": True}
-            return {"value": None, "exists": False}
-
-        mock_add_entities = MagicMock()
-        sensor_manager = SensorManager(
-            config_manager._hass,
-            MagicMock(),  # name_resolver
-            mock_add_entities,  # add_entities_callback
-            SensorManagerConfig(data_provider_callback=mock_data_provider),
-        )
-
-        # Register the backing entity
-        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
-
-        # Register the sensor-to-backing mapping
-        sensor_to_backing_mapping = {"self_reference_test": "sensor.span_panel_instantaneous_power"}
-        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
-
-        # Test main formula evaluation first
-        evaluator = sensor_manager._evaluator
-        main_formula = sensor.formulas[0]
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
-        assert main_result["success"] is True
-
-        # Test that self-reference detection works
-        # This should be handled by the dependency resolution system
-        # The exact behavior depends on the implementation
+        # Verify the error message indicates undefined variables (self-references)
+        error_msg = str(exc_info.value)
+        assert "undefined variable" in error_msg
+        return  # Test passes - self-references correctly caught during validation
 
     def test_complex_dependency_graph(self, mock_hass, mock_entity_registry, mock_states, config_manager, multiple_deps_yaml):
         """Test complex dependency graphs work correctly."""

@@ -11,7 +11,7 @@ sensors:
       conversion_factor: 1000 # Literal: watts to kilowatts
     metadata:
       unit_of_measurement: "¢/h"
-      state_class: "measurement"
+      state_class: "total"
       device_class: "monetary"
       icon: "mdi:currency-usd"
 

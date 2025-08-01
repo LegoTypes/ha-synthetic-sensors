@@ -29,7 +29,7 @@ sensors:
     metadata:
       unit_of_measurement: cents/h
       device_class: monetary
-      state_class: measurement
+      state_class: total
       icon: mdi:currency-usd
 
   power_efficiency:

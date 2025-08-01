@@ -1,0 +1,74 @@
+# Integration test fixture for negative attribute dependency validation cases
+# Tests circular dependencies, variable shadowing, and undefined references
+# Used by: test_attribute_dependency_validation_integration.py
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  # Test circular dependency detection
+  circular_dependency_sensor:
+    name: "Circular Dependency Test"
+    formula: "sensor.test_power"
+    variables: {}
+    attributes:
+      # Creates a cycle: attr_a -> attr_b -> attr_c -> attr_a
+      attr_a:
+        formula: "attr_b + 10"  # depends on attr_b
+        metadata:
+          unit_of_measurement: "W"
+
+      attr_b:
+        formula: "attr_c * 2"  # depends on attr_c
+        metadata:
+          unit_of_measurement: "W"
+
+      attr_c:
+        formula: "attr_a / 3"  # depends on attr_a - CIRCULAR!
+        metadata:
+          unit_of_measurement: "W"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Test variable shadowing detection
+  variable_shadowing_sensor:
+    name: "Variable Shadowing Test"
+    formula: "sensor.test_power"
+    variables: {}
+    attributes:
+      # Literal attribute
+      voltage: 240
+
+      # Formula attribute that shadows literal attribute
+      power_calculation:
+        formula: "voltage * current"  # uses voltage variable
+        variables:
+          voltage: 230  # SHADOWS literal attribute 'voltage'
+          current: "sensor.current_meter"
+        metadata:
+          unit_of_measurement: "W"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Test undefined variable references
+  undefined_reference_sensor:
+    name: "Undefined Reference Test"
+    formula: "sensor.test_power"
+    variables: {}
+    attributes:
+      broken_calculation:
+        formula: "undefined_var * 2 + missing_attr"  # Both undefined
+        variables:
+          defined_var: 100  # This is defined
+        metadata:
+          unit_of_measurement: "W"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

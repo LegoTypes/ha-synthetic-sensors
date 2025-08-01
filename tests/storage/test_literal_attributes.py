@@ -27,7 +27,10 @@ class TestLiteralAttributes:
                     "attributes": {
                         "voltage": 240,
                         "manufacturer": "TestCorp",
-                        "calculated": {"formula": "voltage * current", "variables": {"current": "sensor.test_current"}},
+                        "calculated": {
+                            "formula": "voltage * current",
+                            "variables": {"current": "sensor.test_current"},
+                        },
                     },
                 }
             },

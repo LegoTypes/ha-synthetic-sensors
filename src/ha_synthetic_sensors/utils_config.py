@@ -109,10 +109,10 @@ def validate_computed_variable_references(variables: dict[str, Any], config_id: 
         config_id: Optional config ID for error context
 
     Returns:
-        List of validation warning messages
+        List of validation error messages
     """
 
-    warnings = []
+    errors = []
     context_prefix = f"In {config_id}: " if config_id else ""
 
     # Get all available variable names (simple variables and computed variable names)
@@ -132,21 +132,21 @@ def validate_computed_variable_references(variables: dict[str, Any], config_id: 
             undefined_refs = [ref for ref in potential_refs if ref not in available_vars]
 
             if undefined_refs:
-                warning_msg = (
+                error_msg = (
                     f"{context_prefix}Computed variable '{var_name}' references "
                     f"undefined variables: {undefined_refs}. "
                     f"Available variables: {sorted(available_vars - always_available)}"
                 )
-                warnings.append(warning_msg)
+                errors.append(error_msg)
 
             # Check for self-reference
             if var_name in potential_refs:
-                warnings.append(
+                errors.append(
                     f"{context_prefix}Computed variable '{var_name}' references itself, "
                     f"which may cause circular dependency issues"
                 )
 
-    return warnings
+    return errors
 
 
 def _try_exception_handler(

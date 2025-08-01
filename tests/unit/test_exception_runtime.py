@@ -8,6 +8,7 @@ import sys
 # Add the src directory to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
+from homeassistant.exceptions import ConfigEntryError
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.cache import CacheConfig
@@ -40,41 +41,15 @@ sensors:
 
     # Parse the config using the properly mocked hass from fixtures
     config_manager = ConfigManager(mock_hass)
-    config = config_manager.load_from_yaml(test_yaml)
 
-    sensor = config.sensors[0]
-    main_formula = sensor.formulas[0]
+    # The YAML contains undefined variables which should be caught during validation
+    with pytest.raises(ConfigEntryError) as exc_info:
+        config_manager.load_from_yaml(test_yaml)
 
-    print(f"Testing formula: {main_formula.formula}")
-    print(f"Exception handler: {main_formula.exception_handler}")
-    if main_formula.exception_handler:
-        print(f"  UNAVAILABLE: {main_formula.exception_handler.unavailable}")
-        print(f"  UNKNOWN: {main_formula.exception_handler.unknown}")
-
-    # Create evaluator
-    evaluator = Evaluator(mock_hass, cache_config=CacheConfig())
-
-    # Test 1: Empty context (should trigger exception handling)
-    print(f"\nTest 1: Empty context (should trigger UNAVAILABLE handler)")
-    context = {}
-    result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
-
-    print(f"Result: {result}")
-    print(f"  success: {result.get('success')}")
-    print(f"  value: {result.get('value')}")
-    print(f"  error: {result.get('error')}")
-    print(f"  state: {result.get('state')}")
-
-    # Test 2: Context with variables resolved (should work)
-    print(f"\nTest 2: Context with variables resolved")
-    context_with_vars = {"fallback_main_value": 50, "estimated_main_value": 25}
-    result2 = evaluator.evaluate_formula_with_sensor_config(main_formula, context_with_vars, sensor)
-
-    print(f"Result: {result2}")
-    print(f"  success: {result2.get('success')}")
-    print(f"  value: {result2.get('value')}")
-    print(f"  error: {result2.get('error')}")
-    print(f"  state: {result2.get('state')}")
+    # Verify the error message indicates undefined variables
+    error_msg = str(exc_info.value)
+    assert "undefined variable" in error_msg
+    return  # Test passes - undefined variables correctly caught during validation
 
 
 if __name__ == "__main__":

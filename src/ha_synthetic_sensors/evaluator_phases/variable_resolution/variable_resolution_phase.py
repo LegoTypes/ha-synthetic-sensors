@@ -256,8 +256,7 @@ class VariableResolutionPhase:
                 resolved_formula = attr_resolver.resolve_references_in_formula(formula, eval_context)
                 return str(resolved_formula)
             except Exception as e:
-                _LOGGER.warning("Error resolving attribute references in formula '%s': %s", formula, e)
-                return formula
+                raise MissingDependencyError(f"Error resolving attribute references in formula '{formula}': {e}") from e
         else:
             # No attribute resolver available, return formula unchanged
             return formula
@@ -291,8 +290,7 @@ class VariableResolutionPhase:
                 return str(resolved_formula)
             return formula
         except Exception as e:
-            _LOGGER.warning("Error resolving collection functions in formula '%s': %s", formula, e)
-            return formula
+            raise MissingDependencyError(f"Error resolving collection functions in formula '{formula}': {e}") from e
 
     def resolve_config_variables(
         self,
@@ -326,9 +324,7 @@ class VariableResolutionPhase:
                 if isinstance(resolved_value, str):
                     return f'"{resolved_value}"'  # Wrap strings in quotes for proper evaluation
                 return str(resolved_value)
-            _LOGGER.warning("Failed to resolve attribute reference '%s' in formula", attr_ref)
-            # Return None instead of "unknown" to indicate resolution failure
-            return "None"
+            raise MissingDependencyError(f"Failed to resolve attribute reference '{attr_ref}' in formula")
 
         return attr_pattern.sub(replace_attr_ref, formula)
 
@@ -350,8 +346,7 @@ class VariableResolutionPhase:
             if resolved_value is not None:
                 return str(resolved_value)
             # This should not happen if StateResolver is working correctly
-            _LOGGER.warning("State token resolution returned None unexpectedly")
-            return "0.0"
+            raise MissingDependencyError("State token resolution returned None unexpectedly")
 
         return state_pattern.sub(replace_state_ref, formula)
 
@@ -378,7 +373,6 @@ class VariableResolutionPhase:
             if resolved_value is not None:
                 return str(resolved_value)
 
-            _LOGGER.warning("Failed to resolve entity reference '%s' in formula", entity_id)
             raise MissingDependencyError(f"Failed to resolve entity reference '{entity_id}' in formula")
 
         return entity_pattern.sub(replace_entity_ref, formula)
@@ -598,8 +592,7 @@ class VariableResolutionPhase:
                             _LOGGER.debug("Resolved %s to value: %s", full_reference, resolved_value)
                             return str(resolved_value)
 
-                        _LOGGER.warning("Failed to resolve variable attribute reference '%s'", full_reference)
-                        return full_reference  # Return original if resolution fails
+                        raise MissingDependencyError(f"Failed to resolve variable attribute reference '{full_reference}'")
 
                     _LOGGER.debug(
                         "Variable '%s' value '%s' is not an entity ID (wrong type or domain)", variable_name, entity_id
@@ -654,14 +647,10 @@ class VariableResolutionPhase:
                     "Entity resolution cannot proceed safely without domain validation."
                 ) from e
         else:
-            # No hass available - only acceptable in testing scenarios
-            # Use fallback pattern that explicitly prevents matching decimals
-            _LOGGER.warning(
+            # No hass available - this is a critical configuration error
+            raise MissingDependencyError(
                 "No Home Assistant instance available for domain validation. "
-                "Using fallback entity pattern - this should only occur in testing scenarios."
-            )
-            entity_pattern = re.compile(
-                r"(?:^|(?<=\s)|(?<=\()|(?<=[+\-*/]))([a-zA-Z_][a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)(?=\s|$|[+\-*/)])"
+                "Entity resolution cannot proceed safely without domain validation."
             )
 
         entity_mappings: dict[str, str] = {}
@@ -709,7 +698,6 @@ class VariableResolutionPhase:
 
                 return str(resolved_value)
 
-            _LOGGER.warning("Failed to resolve entity reference '%s' in formula", entity_id)
             raise MissingDependencyError(f"Failed to resolve entity reference '{entity_id}' in formula")
 
         _LOGGER.debug("Resolving entity references in formula: '%s'", formula)
@@ -761,7 +749,7 @@ class VariableResolutionPhase:
                         entity_id = entity_mappings.get(var_name, var_value if isinstance(var_value, str) else "unknown")
                         ha_dependencies.append(f"{var_name} ({entity_id}) is {resolved_value}")
                 else:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Config variable '%s' in formula '%s' resolved to None",
                         var_name,
                         config.name or config.id,
@@ -773,7 +761,7 @@ class VariableResolutionPhase:
                 # Propagate DataValidationError according to the reference guide's error propagation idiom
                 raise
             except Exception as err:
-                _LOGGER.warning("Error resolving config variable %s: %s", var_name, err)
+                raise MissingDependencyError(f"Error resolving config variable {var_name}: {err}") from err
 
         return entity_mappings, ha_dependencies
 

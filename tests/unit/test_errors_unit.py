@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
+from homeassistant.exceptions import ConfigEntryError
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
 from ha_synthetic_sensors.exceptions import (
@@ -32,6 +33,13 @@ class TestErrors:
     def self_reference_yaml(self):
         """Load the self reference YAML file."""
         yaml_path = "examples/error_self_reference.yaml"
+        with open(yaml_path, "r", encoding="utf-8") as file:
+            return file.read()
+
+    @pytest.fixture
+    def state_token_yaml(self):
+        """Load the state token reference YAML file."""
+        yaml_path = "examples/state_token_reference.yaml"
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
@@ -124,51 +132,21 @@ class TestErrors:
 
     def test_self_reference_detection(self, config_manager, self_reference_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test self-reference detection in formulas."""
-        config = config_manager.load_from_yaml(self_reference_yaml)
-        sensor = config.sensors[0]
+        # Self-references are circular dependencies and should be caught during configuration validation
+        # The YAML contains formulas like: self_ref_attr: formula: "self_ref_attr * 1.1"
+        with pytest.raises(ConfigEntryError) as exc_info:
+            config_manager.load_from_yaml(self_reference_yaml)
 
-        # Create sensor manager with data provider that uses common fixture
-        def mock_data_provider(entity_id: str):
-            if entity_id in mock_states:
-                state = mock_states[entity_id]
-                return {
-                    "value": float(state.state) if state.state.replace(".", "").replace("-", "").isdigit() else state.state,
-                    "exists": True,
-                }
-            return {"value": None, "exists": False}
-
-        mock_add_entities = MagicMock()
-        sensor_manager = SensorManager(
-            mock_hass,
-            MagicMock(),  # name_resolver
-            mock_add_entities,  # add_entities_callback
-            SensorManagerConfig(data_provider_callback=mock_data_provider),
-        )
-
-        # Register the backing entity from common fixture
-        sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
-
-        # Register the sensor-to-backing mapping
-        sensor_to_backing_mapping = {"simple_self_reference": "sensor.span_panel_instantaneous_power"}
-        sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
-
-        # Test the attribute formula which contains the actual circular reference
-        evaluator = sensor_manager._evaluator
-        attribute_formula = sensor.formulas[1]  # This is the self_ref_attr formula with circular reference
-
-        # Should fail during dependency analysis phase with CircularDependencyError
-        with pytest.raises(CircularDependencyError) as exc_info:
-            evaluator.evaluate_formula_with_sensor_config(attribute_formula, None, sensor)
-
-        # Check that the error message indicates self-reference
+        # Check that the error message indicates undefined variables (self-references)
         error_msg = str(exc_info.value)
         assert "self_ref_attr" in error_msg
+        assert "undefined variable" in error_msg
 
     def test_self_reference_without_backing_entity(
-        self, config_manager, self_reference_yaml, mock_hass, mock_entity_registry, mock_states
+        self, config_manager, state_token_yaml, mock_hass, mock_entity_registry, mock_states
     ):
-        """Test that self-reference without backing entity succeeds with state token self-reference."""
-        config = config_manager.load_from_yaml(self_reference_yaml)
+        """Test that state token reference works without explicit backing entity registration."""
+        config = config_manager.load_from_yaml(state_token_yaml)
         sensor = config.sensors[0]
 
         # Create sensor manager with data provider that uses common fixture
@@ -196,7 +174,7 @@ class TestErrors:
             (),
             {
                 "state": "1000",  # Initial state value
-                "attributes": {},
+                "attributes": {"voltage": "240"},
             },
         )()
 
