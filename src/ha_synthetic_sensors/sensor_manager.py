@@ -18,7 +18,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util, slugify
 
-from .config_models import Config, FormulaConfig, SensorConfig
+from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
 from .cross_sensor_reference_manager import CrossSensorReferenceManager
 from .evaluator import Evaluator
@@ -279,6 +279,13 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # let the evaluator handle variable resolution through natural fallback
         if self._evaluator.data_provider_callback:
             return None
+
+        # If any computed variables are present, let the evaluator handle all variable resolution
+        # This ensures computed variables with exception handlers are processed correctly
+        for var_value in formula_config.variables.values():
+            if isinstance(var_value, ComputedVariable):
+                _LOGGER.debug("Found computed variables, delegating variable resolution to evaluator")
+                return None
 
         context: dict[str, Any] = {}
         for var_name, var_value in formula_config.variables.items():

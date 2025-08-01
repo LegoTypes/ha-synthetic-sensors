@@ -283,14 +283,15 @@ maintainable.
 
 ### Variable Purpose and Scope
 
-A variable serves as a short alias for an entity ID, collection pattern, or numeric literal that it references. They can be
-used in any formula in the main sensor or attribute.
+A variable serves as a short alias for an entity ID, collection pattern, numeric literal, or computed formula that it
+references. They can be used in any formula in the main sensor or attribute.
 
 Variables can be:
 
 - **Entity IDs**: `"sensor.power_meter"` - References Home Assistant entities
 - **Numeric Literals**: `42`, `3.14`, `-5.0` - Direct numeric values for constants
 - **Collection Patterns**: `"device_class:temperature"` - Dynamic entity aggregation
+- **Computed Variables**: Formulas that calculate values dynamically with dependency ordering
 
 **Variable Scope**: Variables can be defined at both the sensor level and attribute level:
 
@@ -565,7 +566,7 @@ sensors:
 **Supported Global Settings:**
 
 - **`device_identifier`**: Applied to sensors that don't specify their own device_identifier
-- **`variables`**: Available to all sensors in the YAML file
+- **`variables`**: Available to all sensors in the YAML file (cannot contain formulas)
 - **`metadata`**: Applied to all sensors, with sensor-level metadata taking precedence
 
 **Global Metadata Inheritance:**
@@ -580,6 +581,7 @@ sensors:
 - Global and sensor variables with the same name **must have identical values**
 - Different values for the same variable name cause validation errors
 - Use different variable names to avoid conflicts
+- Global variables cannot contain formulas (computed variables are sensor-level only)
 
 **Metadata Architecture:**
 
@@ -623,6 +625,31 @@ sensors:
       base_power: "sensor.base_power" # Alias to base_power sensor
 ```
 
+**Computed Variables in Attributes**:
+
+Computed variables in attributes can reference the main sensor's calculated state using the `state` token. The `state` token
+refers to the main sensor's formula result:
+
+```yaml
+sensors:
+  power_sensor:
+    name: "Power Sensor"
+    formula: "input_power * efficiency"
+    variables:
+      input_power: "sensor.raw_power"
+      efficiency: 0.9
+    attributes:
+      power_percentage:
+        formula: "computed_percent"
+        variables:
+          max_power: 2000
+          computed_percent:
+            formula: "round((state / max_power) * 100, 1)"
+        metadata:
+          unit_of_measurement: "%"
+          suggested_display_precision: 1
+```
+
 **Device prefix examples:**
 
 - Device "SPAN Panel Main" → entity `sensor.span_panel_main_power`
@@ -647,31 +674,37 @@ Variables can be:
 
 Once defined, variables can be used in any formula whether in the main sensor state formula or attribute formulas.
 
-Attribute formulas inherit all variables from their parent sensor and can define additional ones:
+**Computed Variables**: Variables can contain formulas that calculate values dynamically:
 
 ```yaml
 sensors:
   energy_analysis:
     name: "Energy Analysis"
-    formula: "grid_power + solar_power"
+    formula: "final_total"
     variables:
+      # Simple variables
       grid_power: "sensor.grid_meter"
       solar_power: "sensor.solar_inverter"
-      efficiency_factor: 0.85 # Numeric literal: efficiency constant
-      tax_rate: 0.095 # Numeric literal: tax percentage
+      efficiency_factor: 0.85
+
+      # Computed variables with dependency ordering
+      total_power:
+        formula: "grid_power + solar_power"
+      efficiency_percent:
+        formula: "solar_power / total_power * 100"
+      final_total:
+        formula: "total_power * efficiency_factor"
+
     attributes:
       daily_projection:
-        formula: "energy_analysis * 24" # References main sensor by key
+        formula: "state * 24" # Uses main sensor result
         metadata:
           unit_of_measurement: "Wh"
           device_class: "energy"
-      efficiency_percent:
-        formula: "solar_power / (grid_power + solar_power) * efficiency_factor * 100"
-        metadata:
-          unit_of_measurement: "%"
-          suggested_display_precision: 1
-      cost_with_tax:
-        formula: "energy_analysis * (1 + tax_rate)" # Uses sensor-level variable
+      cost_analysis:
+        formula: "state * rate"
+        variables:
+          rate: 0.12
         metadata:
           unit_of_measurement: "¢"
           suggested_display_precision: 2
@@ -680,6 +713,38 @@ sensors:
       device_class: "power"
       state_class: "measurement"
 ```
+
+Attribute formulas inherit all variables from their parent sensor and can define additional ones:
+
+**Dependency Ordering**: Computed variables are evaluated in dependency order, allowing complex calculations:
+
+```yaml
+sensors:
+  complex_calculation:
+    name: "Complex Calculation"
+    formula: "final_result"
+    variables:
+      # Simple inputs
+      base_value: "sensor.input_sensor"
+      factor: 2.5
+
+      # Computed variables with dependencies
+      step1:
+        formula: "base_value * factor"
+      step2:
+        formula: "step1 + 100"
+      step3:
+        formula: "step2 / 2"
+      final_result:
+        formula: "round(step3, 2)"
+
+    metadata:
+      unit_of_measurement: "units"
+      device_class: "power"
+      state_class: "measurement"
+```
+
+**Simple Variable Example**:
 
 ```yaml
 sensors:
@@ -1106,6 +1171,75 @@ sensors:
 - Math: `sqrt()`, `pow()`, `sin()`, `cos()`, `tan()`, `log()`, `exp()`
 - Statistics: `min()`, `max()`, `avg()`, `mean()`, `sum()`
 - Utilities: `clamp(value, min, max)`, `map(value, in_min, in_max, out_min, out_max)`, `percent(part, whole)`
+
+## Exception Handling
+
+Synthetic sensors support graceful handling of `UNKNOWN` and `UNAVAILABLE` states through exception handling formulas. When a
+formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead.
+
+- **UNAVAILABLE**: Triggered when an entity is unavailable or doesn't exist
+- **UNKNOWN**: Triggered when an entity exists but has an unknown state
+- **Fallback chains**: Exception formulas can reference other entities that may also have exceptions
+- **Nested handling**: Exception formulas can themselves include exception handling
+- **Variable scope**: Exception formulas inherit the same variable scope as the main formula
+- **Metadata**: Exception formulas use the same metadata as the main formula
+
+### Exception Handling Examples
+
+**Exception Handling Example:**
+
+```yaml
+version: "1.0"
+
+global_settings:
+  variables: # Global variables cannot have formulas
+    global_factor: 0
+
+sensors:
+  power_analysis:
+    name: "Power Analysis"
+    formula: "missing_main_entity + 100"
+    UNAVAILABLE: "fallback_main_value"
+    UNKNOWN: "estimated_main_value * 2"
+    variables:
+      fallback_main_value: "50"
+      estimated_main_value: "25"
+      computed_adjustment:
+        formula: "missing_sensor_a + missing_sensor_b"
+        UNAVAILABLE: "backup_calculation"
+        UNKNOWN: "conservative_estimate"
+      backup_calculation:
+        formula: "sensor.backup_entity * 0.8"
+        UNAVAILABLE: "10"
+      conservative_estimate: "5"
+    attributes:
+      efficiency:
+        formula: "undefined_efficiency_sensor * 100"
+        UNAVAILABLE: "estimated_efficiency"
+        variables:
+          estimated_efficiency: "82.5"
+        metadata:
+          unit_of_measurement: "%"
+      health_score:
+        formula: "undefined_health_metric"
+        UNAVAILABLE: "calculated_health"
+        UNKNOWN: "default_health"
+        variables:
+          calculated_health:
+            formula: "state / 100 * 100"
+            UNAVAILABLE: "baseline_health"
+          baseline_health: "85"
+          default_health: "75"
+```
+
+This example shows exception handling in:
+
+- **Main sensor formulas** with alternative calculations
+- **Computed variables** with nested exception handling
+- **Attribute formulas** with independent fallback logic
+
+Exception handling ensures your synthetic sensors remain functional even when dependencies are unavailable, providing robust
+fallback mechanisms for critical calculations.
 
 ## Device Association
 

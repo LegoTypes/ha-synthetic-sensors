@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Any
 
-from .config_models import Config, FormulaConfig, SensorConfig
+from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
 from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, MATH_FUNCTIONS, PYTHON_KEYWORDS, STATE_KEYWORDS
 
@@ -360,6 +360,7 @@ class FormulaReferenceResolver:
             attributes=resolved_attributes,
             dependencies=resolved_dependencies,
             variables=resolved_variables,
+            exception_handler=formula.exception_handler,  # Preserve exception handler
         )
 
         return resolved_formula
@@ -381,8 +382,11 @@ class FormulaReferenceResolver:
         return var_value in entity_mappings and entity_mappings[var_value] == entity_mappings.get(current_sensor_key)
 
     def _resolve_references_in_variables(
-        self, variables: dict[str, str | int | float], entity_mappings: dict[str, str], current_sensor_key: str | None = None
-    ) -> dict[str, str | int | float]:
+        self,
+        variables: dict[str, str | int | float | ComputedVariable],
+        entity_mappings: dict[str, str],
+        current_sensor_key: str | None = None,
+    ) -> dict[str, str | int | float | ComputedVariable]:
         """Resolve sensor key references in variables.
 
         Variables can have string values that reference sensor keys:
@@ -398,10 +402,14 @@ class FormulaReferenceResolver:
         if not variables or not entity_mappings:
             return variables.copy()
 
-        resolved_variables: dict[str, str | int | float] = {}
+        resolved_variables: dict[str, str | int | float | ComputedVariable] = {}
         replacements_made = {}
 
         for var_name, var_value in variables.items():
+            # Preserve ComputedVariable instances as-is - they are handled separately
+            if isinstance(var_value, ComputedVariable):
+                resolved_variables[var_name] = var_value
+                continue
             if isinstance(var_value, str):
                 # Check if this is a self-reference (either sensor key or entity ID format)
                 is_self_reference = self._is_self_reference(var_value, current_sensor_key, entity_mappings)

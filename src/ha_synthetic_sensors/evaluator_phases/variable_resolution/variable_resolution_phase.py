@@ -16,6 +16,7 @@ from ha_synthetic_sensors.utils_resolvers import resolve_via_data_provider_attri
 
 from .attribute_reference_resolver import AttributeReferenceResolver
 from .resolver_factory import VariableResolverFactory
+from .variable_inheritance import VariableInheritanceHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +46,9 @@ class VariableResolutionPhase:
         self._sensor_registry_phase: Any = None
         self._formula_preprocessor: Any = None
         self._global_settings: dict[str, Any] | None = None  # Store reference to current global settings
+        # Initialize inheritance handler with no global settings by default
+        # This ensures variable inheritance works even when set_global_settings is never called
+        self._inheritance_handler: VariableInheritanceHandler = VariableInheritanceHandler(None)
 
     def set_formula_preprocessor(self, formula_preprocessor: Any) -> None:
         """Set the formula preprocessor for collection function resolution."""
@@ -57,6 +61,7 @@ class VariableResolutionPhase:
         global variables reflect current entity IDs.
         """
         self._global_settings = global_settings
+        self._inheritance_handler = VariableInheritanceHandler(global_settings)
 
     @property
     def formula_preprocessor(self) -> Any:
@@ -809,39 +814,24 @@ class VariableResolutionPhase:
         return resolved_formula, entity_mappings, ha_dependencies
 
     def _identify_variables_for_attribute_access(self, formula: str, formula_config: FormulaConfig | None) -> set[str]:
-        """Identify variables that are used in .attribute patterns and need entity ID preservation."""
+        """Identify variables that need entity IDs for .attribute access patterns."""
+        if not formula_config:
+            return set()
+
         variables_needing_entity_ids: set[str] = set()
 
-        if not formula_config:
-            return variables_needing_entity_ids
+        # Look for patterns like variable.attribute in the formula
+        # This is a simplified pattern - in practice, you might want more sophisticated parsing
+        attr_pattern = r"\b(\w+)\.(\w+)\b"
+        matches = re.finditer(attr_pattern, formula)
 
-        # Pattern to match variable.attribute where variable might be defined in config
-        var_attr_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_.]*)\b")
-
-        for match in var_attr_pattern.finditer(formula):
+        for match in matches:
             variable_name = match.group(1)
-            # Check if this variable is defined in the formula config
-            if variable_name in formula_config.variables:
-                var_value = formula_config.variables[variable_name]
-                # Only preserve entity IDs (strings starting with known domains)
-                if isinstance(var_value, str) and any(var_value.startswith(f"{domain}.") for domain in get_ha_domains()):
-                    variables_needing_entity_ids.add(variable_name)
-                    _LOGGER.debug(
-                        "Identified variable '%s' for entity ID preservation (used in .attribute pattern)", variable_name
-                    )
+            # Skip if it's a known entity ID pattern or reserved word
+            if not is_reserved_word(variable_name) and "." not in variable_name:
+                variables_needing_entity_ids.add(variable_name)
 
         return variables_needing_entity_ids
-
-    def _is_attribute_formula(self, formula_config: FormulaConfig) -> bool:
-        """Check if this formula represents an attribute (contains underscore in ID)."""
-        return "_" in formula_config.id
-
-    def _get_main_formula(self, sensor_config: SensorConfig) -> FormulaConfig | None:
-        """Get the main formula (the one with ID matching sensor unique_id)."""
-        for formula in sensor_config.formulas:
-            if formula.id == sensor_config.unique_id:
-                return formula
-        return None
 
     def _resolve_config_variables_with_attribute_preservation(
         self,
@@ -858,63 +848,16 @@ class VariableResolutionPhase:
         - Attribute-specific variables (highest precedence)
         """
 
-        # Implement variable inheritance for attribute formulas
-        inherited_variables: dict[str, str | int | float] = {}
+        # Inheritance handler is now always initialized, no need to check for None
 
-        if sensor_config and self._is_attribute_formula(formula_config):
-            # Step 1: Inherit global variables first (if available)
-            if self._global_settings:
-                global_vars = self._global_settings.get("variables", {})
-                if global_vars:
-                    inherited_variables.update(global_vars)
-                    _LOGGER.debug("Inherited %d global variables for attribute '%s'", len(global_vars), formula_config.id)
+        # Get all variables to process (inherited + formula-specific)
+        inherited_variables = self._inheritance_handler.build_inherited_variables(formula_config, sensor_config)
 
-            # Step 2: Inherit from parent sensor variables (override globals)
-            main_formula = self._get_main_formula(sensor_config)
-            if main_formula:
-                inherited_variables.update(main_formula.variables)
-                _LOGGER.debug(
-                    "Inherited %d variables from parent sensor for attribute '%s'",
-                    len(main_formula.variables),
-                    formula_config.id,
-                )
-
-        # Add formula-specific variables (these override inherited ones)
-        inherited_variables.update(formula_config.variables)
-
-        # Process all variables (inherited + formula-specific)
+        # Process each variable
         for var_name, var_value in inherited_variables.items():
-            # If this variable is used in .attribute patterns, override with entity ID
-            if var_name in variables_needing_entity_ids:
-                _LOGGER.debug("Overriding variable '%s' with entity ID (used in .attribute pattern): %s", var_name, var_value)
-                eval_context[var_name] = var_value
-                continue
-
-            # Skip if this variable is already set in context (context has higher priority)
-            if var_name in eval_context:
-                _LOGGER.debug("Skipping config variable %s (already set in context)", var_name)
-                continue
-
-            # Otherwise, resolve normally
-            try:
-                resolved_value = self._resolver_factory.resolve_variable(var_name, var_value, eval_context)
-                if resolved_value is not None:
-                    eval_context[var_name] = resolved_value
-                    _LOGGER.debug("Added config variable %s=%s", var_name, resolved_value)
-                else:
-                    _LOGGER.warning(
-                        "Config variable '%s' in formula '%s' resolved to None",
-                        var_name,
-                        formula_config.name or formula_config.id,
-                    )
-            except MissingDependencyError:
-                # Propagate MissingDependencyError according to the reference guide's error propagation idiom
-                raise
-            except DataValidationError:
-                # Propagate DataValidationError according to the reference guide's error propagation idiom
-                raise
-            except Exception as err:
-                _LOGGER.warning("Error resolving config variable %s: %s", var_name, err)
+            self._inheritance_handler.process_single_variable(
+                var_name, var_value, eval_context, formula_config, variables_needing_entity_ids, self._resolver_factory
+            )
 
     def _detect_ha_state_in_formula(self, formula: str, unavailable_dependencies: list[str]) -> VariableResolutionResult | None:
         """Detect HA state values in resolved formula and return appropriate result."""

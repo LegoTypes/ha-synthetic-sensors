@@ -15,12 +15,16 @@ import keyword
 import logging
 import re
 from re import Pattern
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from homeassistant.core import HomeAssistant
 
 from .math_functions import MathFunctions
 from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, DATETIME_FUNCTIONS, PYTHON_KEYWORDS, get_ha_domains
+
+if TYPE_CHECKING:
+    from .config_models import ComputedVariable
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -431,22 +435,27 @@ class DependencyParser:
 
         return excluded
 
-    def extract_static_dependencies(self, formula: str, variables: dict[str, str | int | float]) -> set[str]:
+    def extract_static_dependencies(self, formula: str, variables: dict[str, str | int | float | ComputedVariable]) -> set[str]:
         """Extract static entity dependencies from formula and variables.
 
         Args:
             formula: The formula string to parse
-            variables: Variable name to entity_id mappings (or numeric literals)
+            variables: Variable name to entity_id mappings, numeric literals, or computed variables
 
         Returns:
             Set of entity_ids that are static dependencies
         """
         dependencies: set[str] = set()
 
-        # Add only string variable values (entity_ids), skip numeric literals
+        # Add dependencies from variables
         for value in variables.values():
             if isinstance(value, str):
+                # Simple entity_id mapping
                 dependencies.add(value)
+            elif hasattr(value, "dependencies") and hasattr(value, "formula"):
+                # ComputedVariable object - add its dependencies
+                # Note: ComputedVariable dependencies are resolved during parsing
+                dependencies.update(getattr(value, "dependencies", set()))
 
         # Extract direct entity references (sensor.something, etc.)
         entity_matches = self.ENTITY_PATTERN.findall(formula)
@@ -559,7 +568,9 @@ class DependencyParser:
 
         return used_variables
 
-    def parse_formula_dependencies(self, formula: str, variables: dict[str, str | int | float]) -> ParsedDependencies:
+    def parse_formula_dependencies(
+        self, formula: str, variables: dict[str, str | int | float | ComputedVariable]
+    ) -> ParsedDependencies:
         """Parse all types of dependencies from a formula.
 
         Args:

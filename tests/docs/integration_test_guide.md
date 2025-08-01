@@ -213,13 +213,13 @@ sensor_manager = await async_setup_synthetic_sensors(
     data_provider_callback=data_provider,  # For virtual entities
     change_notifier=change_notifier_callback,  # Enable selective updates
     sensor_to_backing_mapping=sensor_to_backing_mapping,  # Map 'state' token
-    allow_ha_lookups=False,  # Virtual entities only
 )
 ```
 
 ### Pattern 2: HA Entity References (For Cross-Integration Tests)
 
-Use when testing with existing HA entities:
+Use when testing with existing HA entities. **Note:** The system automatically falls back to HA entity lookups when entities
+are not found in the data provider or backing mappings.
 
 ```python
 # Add entities to mock_states for HA lookup
@@ -228,7 +228,7 @@ mock_states["sensor.external_entity"] = type("MockState", (), {
     "attributes": {}
 })()
 
-# Use public API with HA entity lookups
+# Use public API with HA entity lookups only
 sensor_manager = await async_setup_synthetic_sensors(
     hass=mock_hass,
     config_entry=mock_config_entry,
@@ -238,13 +238,13 @@ sensor_manager = await async_setup_synthetic_sensors(
     # No data_provider_callback - uses HA entity lookups
     # No change_notifier - automatic via HA state tracking
     # No sensor_to_backing_mapping - entities from YAML variables
-    allow_ha_lookups=True,  # Enable HA entity resolution
 )
 ```
 
 ### Pattern 3: Hybrid (Virtual + HA Entities) - For Complex Tests
 
-Use when you need both virtual backing entities and references to existing HA entities:
+Use when you need both virtual backing entities and references to existing HA entities. **Entity Resolution Order:** The
+system first checks the data provider and backing mappings, then automatically falls back to HA entity lookups if not found.
 
 ```python
 # Set up virtual backing entities
@@ -252,19 +252,19 @@ backing_data = {
     "sensor.virtual_backing": 1000.0
 }
 
-# Set up mock HA entities
+# Set up mock HA entities (for fallback lookup)
 mock_states["sensor.external_entity"] = type("MockState", (), {
     "state": "500.0",
     "attributes": {}
 })()
 
-# Ensure missing entities are NOT in mock_states or mock_entity_registry
+# Ensure missing entities are NOT in mock_states to test missing entity handling
 if "sensor.missing_entity" in mock_states:
     del mock_states["sensor.missing_entity"]
 
 data_provider = create_data_provider_callback(backing_data)
 
-# Hybrid setup - virtual backing + HA entity fallback
+# Hybrid setup - virtual backing with HA entity fallback
 sensor_manager = await async_setup_synthetic_sensors(
     hass=mock_hass,
     config_entry=mock_config_entry,
@@ -274,7 +274,7 @@ sensor_manager = await async_setup_synthetic_sensors(
     data_provider_callback=data_provider,  # For virtual entities
     change_notifier=change_notifier_callback,  # For virtual updates
     sensor_to_backing_mapping=sensor_to_backing_mapping,  # Map virtual entities
-    allow_ha_lookups=True,  # Allow HA entity fallback
+    # System automatically falls back to HA lookups for entities not in data provider
 )
 ```
 
@@ -420,7 +420,7 @@ async def test_your_feature(
             data_provider_callback=data_provider,
             change_notifier=change_notifier_callback,
             sensor_to_backing_mapping=sensor_to_backing_mapping,
-            allow_ha_lookups=True,  # Choose based on your pattern
+            # System automatically falls back to HA lookups for entities not in data provider
         )
 
         # 6. Test the functionality

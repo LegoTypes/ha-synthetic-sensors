@@ -1,0 +1,161 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "computed_vars_test_device"
+
+sensors:
+  power_sensor_with_computed_attributes:
+    name: "Power Sensor with Computed Attributes"
+    formula: "input_power * efficiency"
+    variables:
+      input_power: sensor.raw_power
+      efficiency: 0.9
+
+    # Attributes with computed variables
+    attributes:
+      # Simple computed variable in attribute
+      power_percentage:
+        formula: "computed_percent"
+        variables:
+          max_power: 2000
+          computed_percent:
+            formula: "round((state / max_power) * 100, 1)"
+
+      # Complex computed variable chain in attribute
+      power_category:
+        formula: "final_category"
+        variables:
+          low_threshold: 500
+          medium_threshold: 1200
+          high_threshold: 1800
+
+          # Computed variables with state reference
+          is_low:
+            formula: "state < low_threshold"
+          is_medium:
+            formula: "state >= low_threshold and state < medium_threshold"
+          is_high:
+            formula: "state >= medium_threshold and state < high_threshold"
+          is_very_high:
+            formula: "state >= high_threshold"
+
+          # Final category computation
+          final_category:
+            formula: "'low' if is_low else ('medium' if is_medium else ('high' if is_high else 'very_high'))"
+
+      # Attribute with mixed simple and computed variables
+      power_analysis:
+        formula: "analysis_result"
+        variables:
+          baseline: 800
+          target_efficiency: 0.95
+
+          # Computed variables for analysis
+          power_vs_baseline:
+            formula: "state - baseline"
+          efficiency_gap:
+            formula: "target_efficiency - (state / input_power)"
+          analysis_result:
+            formula: "f'Power: {power_vs_baseline:+.0f}W vs baseline, Efficiency gap: {efficiency_gap:.2f}'"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  temperature_sensor_with_state_dependent_attributes:
+    name: "Temperature with State-Dependent Computed Attributes"
+    formula: "raw_temp + calibration_offset"
+    variables:
+      raw_temp: sensor.raw_temperature
+      calibration_offset: 2.5
+
+    attributes:
+      # Attribute that uses state (post-evaluation main sensor value)
+      temperature_status:
+        formula: "temp_status"
+        variables:
+          freezing_point: 0
+          room_temp: 20
+          hot_temp: 30
+
+          temp_status:
+            formula: "'freezing' if state <= freezing_point else ('cold' if state < room_temp else ('comfortable' if state <= hot_temp else 'hot'))"
+
+      # Multiple computed variables referencing state
+      temperature_metrics:
+        formula: "metrics_summary"
+        variables:
+          # Convert to Fahrenheit
+          temp_fahrenheit:
+            formula: "(state * 9/5) + 32"
+
+          # Calculate deviation from ideal room temperature
+          temp_deviation:
+            formula: "abs(state - 22)"  # 22°C is ideal
+
+          # Create summary
+          metrics_summary:
+            formula: "f'{temp_fahrenheit:.1f}°F, deviation: {temp_deviation:.1f}°C'"
+
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+
+  efficiency_sensor_with_nested_computed_vars:
+    name: "Efficiency Sensor with Nested Computations"
+    formula: "final_efficiency"
+    variables:
+      power_in: sensor.input_power
+      power_out: sensor.output_power
+
+      # Computed main efficiency
+      raw_efficiency:
+        formula: "power_out / power_in if power_in > 0 else 0"
+
+      # Apply correction factor
+      correction_factor: 0.98
+      final_efficiency:
+        formula: "raw_efficiency * correction_factor"
+
+    attributes:
+      # Attribute with computed variables that reference main sensor state
+      efficiency_rating:
+        formula: "rating"
+        variables:
+          excellent_threshold: 0.95
+          good_threshold: 0.85
+          fair_threshold: 0.70
+
+          # These computed variables use 'state' which refers to final_efficiency result
+          is_excellent:
+            formula: "state >= excellent_threshold"
+          is_good:
+            formula: "state >= good_threshold and state < excellent_threshold"
+          is_fair:
+            formula: "state >= fair_threshold and state < good_threshold"
+
+          rating:
+            formula: "'excellent' if is_excellent else ('good' if is_good else ('fair' if is_fair else 'poor'))"
+
+      # Advanced computed variables with mathematical functions
+      efficiency_analysis:
+        formula: "analysis"
+        variables:
+          target_efficiency: 0.90
+
+          # Computed variables using state and mathematical functions
+          efficiency_percent:
+            formula: "round(state * 100, 2)"
+
+          target_gap:
+            formula: "round((target_efficiency - state) * 100, 2)"
+
+          performance_score:
+            formula: "max(0, min(100, (state / target_efficiency) * 100))"
+
+          analysis:
+            formula: "f'{efficiency_percent}% efficient, {target_gap:+.1f}% vs target, score: {performance_score:.0f}/100'"
+
+    metadata:
+      unit_of_measurement: "%"
+      device_class: "power_factor"

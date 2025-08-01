@@ -36,6 +36,7 @@ from .exceptions import (
 )
 from .formula_preprocessor import FormulaPreprocessor
 from .type_definitions import CacheStats, ContextValue, DataProviderCallback, DependencyValidation, EvaluationResult
+from .utils_config import convert_string_to_number_if_possible
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -507,6 +508,88 @@ class Evaluator(FormulaEvaluator):
             return EvaluatorResults.create_success_result(float(result))
         return EvaluatorResults.create_success_result_with_state("ok", value=result)
 
+    def _try_formula_exception_handler(
+        self,
+        config: FormulaConfig,
+        eval_context: dict[str, ContextValue],
+        sensor_config: SensorConfig | None,
+        error: Exception,
+    ) -> bool | str | float | int | None:
+        """Try to resolve a formula using its exception handler.
+
+        Args:
+            config: Formula configuration with potential exception handler
+            eval_context: Current evaluation context
+            sensor_config: Optional sensor configuration for context
+            error: The exception that occurred during main formula evaluation
+
+        Returns:
+            Resolved value from exception handler, or None if no handler or handler failed
+        """
+        if not config.exception_handler:
+            return None
+
+        # Determine which exception handler to use based on error type
+        handler_formula = None
+        error_str = str(error).lower()
+
+        if "unavailable" in error_str or "not defined" in error_str:
+            handler_formula = config.exception_handler.unavailable
+        elif "unknown" in error_str:
+            handler_formula = config.exception_handler.unknown
+        else:
+            # For general errors, try unavailable handler first, then unknown
+            handler_formula = config.exception_handler.unavailable or config.exception_handler.unknown
+
+        if not handler_formula:
+            return None
+
+        try:
+            # Resolve the exception handler formula using the same multi-phase approach
+            resolved_handler_formula = self._resolve_all_references_in_formula(
+                handler_formula, sensor_config, eval_context, config
+            )
+
+            # Use handler factory to evaluate the exception handler formula
+            handler = self._handler_factory.get_handler_for_formula(resolved_handler_formula)
+            if handler:
+                result = handler.evaluate(resolved_handler_formula, eval_context)
+            else:
+                # Fallback to numeric handler
+                numeric_handler = self._handler_factory.get_handler("numeric")
+                if numeric_handler:
+                    result = numeric_handler.evaluate(resolved_handler_formula, eval_context)
+                else:
+                    return None
+
+            _LOGGER.debug("Resolved formula %s using exception handler: %s", config.id, result)
+
+            # Convert result to appropriate type
+            return self._convert_handler_result(result)
+
+        except Exception as handler_err:
+            _LOGGER.debug("Exception handler for formula %s also failed: %s", config.id, handler_err)
+            return None
+
+    def _convert_handler_result(self, result: Any) -> bool | str | float | int:
+        """Convert exception handler result to appropriate type.
+
+        Args:
+            result: Raw result from exception handler
+
+        Returns:
+            Converted result with appropriate type
+        """
+        # For main sensor formulas, convert numeric strings to numbers
+        if isinstance(result, str):
+            return convert_string_to_number_if_possible(result)
+
+        if isinstance(result, (bool | float | int)):
+            return result
+
+        # Handle unexpected types by converting to string
+        return str(result)
+
     def _execute_formula_evaluation(
         self,
         config: FormulaConfig,
@@ -515,25 +598,37 @@ class Evaluator(FormulaEvaluator):
         cache_key_id: str,
         sensor_config: SensorConfig | None = None,
     ) -> float | str | bool:
-        """Execute the actual formula evaluation with proper multi-phase resolution."""
+        """Execute the actual formula evaluation with proper multi-phase resolution and exception handling."""
         # PHASE 1: Clean formula resolution - resolve ALL references to actual values
         resolved_formula = self._resolve_all_references_in_formula(config.formula, sensor_config, eval_context, config)
 
-        # PHASE 2: Determine formula type and delegate to appropriate handler
+        # PHASE 2: Determine formula type and delegate to appropriate handler with exception handling
         # This architecture separates numeric computation from string processing,
         # allowing for future expansion of string manipulation capabilities
 
-        # Use handler factory to route formula to appropriate handler
-        handler = self._handler_factory.get_handler_for_formula(resolved_formula)
-        if handler:
-            result = handler.evaluate(resolved_formula, eval_context)
-        else:
-            # Fallback to numeric handler if no specific handler found
-            numeric_handler = self._handler_factory.get_handler("numeric")
-            if numeric_handler:
-                result = numeric_handler.evaluate(resolved_formula, eval_context)
+        try:
+            # Use handler factory to route formula to appropriate handler
+            handler = self._handler_factory.get_handler_for_formula(resolved_formula)
+            if handler:
+                result = handler.evaluate(resolved_formula, eval_context)
             else:
-                raise ValueError("No handler available for formula evaluation")
+                # Fallback to numeric handler if no specific handler found
+                numeric_handler = self._handler_factory.get_handler("numeric")
+                if numeric_handler:
+                    result = numeric_handler.evaluate(resolved_formula, eval_context)
+                else:
+                    raise ValueError("No handler available for formula evaluation")
+        except Exception as err:
+            # Try exception handler before giving up
+            exception_result = self._try_formula_exception_handler(config, eval_context, sensor_config, err)
+
+            if exception_result is not None:
+                # Exception handler succeeded - use its result
+                result = exception_result
+                _LOGGER.debug("Formula %s resolved using exception handler = %s", config.id, result)
+            else:
+                # Exception handler failed or not available - re-raise original error
+                raise err
 
         # Validate result type based on formula context
         is_main_formula = sensor_config and config.id == sensor_config.unique_id

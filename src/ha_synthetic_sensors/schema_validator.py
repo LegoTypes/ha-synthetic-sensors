@@ -600,7 +600,7 @@ class SchemaValidator:
 
     def _validate_variable_value(
         self,
-        var_value: str,
+        var_value: Any,
         sensor_keys: set[str],
         global_vars: set[str],
         sensor_vars: set[str] | None = None,
@@ -613,41 +613,36 @@ class SchemaValidator:
         - Entity IDs (domain.entity format)
         - Collection patterns (device_class:, area:, etc.)
         - Simple literals (numbers, dates, versions, plain strings)
+        - Computed variables with 'formula:' prefix
 
         They CANNOT be formula expressions or collection functions.
 
         Returns True if valid, False otherwise.
         """
-        # Check if it's a reference to existing variables/sensors
-        if self._is_variable_reference(var_value, sensor_keys, global_vars, sensor_vars, attr_vars):
+        # Handle non-string literals (numbers)
+        if isinstance(var_value, int | float):
             return True
 
-        # Check if it's a valid entity ID or collection pattern
-        if self._is_entity_id(var_value) or self._is_collection_pattern(var_value):
-            return True
+        # Check if it's a computed variable (dict with formula key)
+        if isinstance(var_value, dict) and "formula" in var_value:
+            formula_expr = var_value.get("formula", "")
+            return bool(str(formula_expr).strip())  # Must have non-empty formula expression
 
-        # Check if it's a simple literal (dates, versions, numbers)
-        if self._is_datetime_literal(var_value) or self._is_version_literal(var_value):
-            return True
+        # Only process strings from this point on
+        if not isinstance(var_value, str):
+            return False
 
-        # Check if it's a datetime function call (e.g., now(), today(), yesterday())
-        if self._is_datetime_function_call(var_value):
-            return True
-
-        # Check if it's a simple number
-        try:
-            float(var_value)
-            return True
-        except ValueError:
-            pass
-
-        # Check if it's a simple string literal (no special characters that suggest it's meant to be a reference)
-        # Simple strings should not contain dots, underscores followed by numbers, or start with numbers
-        # These patterns suggest intended references that are malformed
+        # Consolidate all string validation checks into a single return
         return (
-            var_value.isalpha()  # Pure alphabetic strings are OK
-            or (var_value.replace("_", "").replace(" ", "").replace("-", "").isalpha())
-        )  # Strings with basic separators
+            self._is_variable_reference(var_value, sensor_keys, global_vars, sensor_vars, attr_vars)
+            or self._is_entity_id(var_value)
+            or self._is_collection_pattern(var_value)
+            or self._is_datetime_literal(var_value)
+            or self._is_version_literal(var_value)
+            or self._is_datetime_function_call(var_value)
+            or self._is_numeric_string(var_value)
+            or self._is_simple_string_literal(var_value)
+        )
 
     def _is_variable_reference(
         self,
@@ -879,7 +874,7 @@ class SchemaValidator:
                 },
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities, numeric literals, boolean literals, or datetime strings",
+                    "description": "Variable mappings to Home Assistant entities, numeric literals, boolean literals, datetime strings, or computed variables",
                     "patternProperties": {
                         "^[a-zA-Z_][a-zA-Z0-9_]*$": {
                             "oneOf": [
@@ -895,6 +890,29 @@ class SchemaValidator:
                                 {
                                     "type": "boolean",
                                     "description": "Boolean literal value",
+                                },
+                                {
+                                    "type": "object",
+                                    "description": "Computed variable with formula and optional exception handlers",
+                                    "properties": {
+                                        "formula": {
+                                            "type": "string",
+                                            "description": "Mathematical expression to evaluate for this variable",
+                                            "minLength": 1,
+                                        },
+                                        "UNAVAILABLE": {
+                                            "type": "string",
+                                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
+                                            "minLength": 1,
+                                        },
+                                        "UNKNOWN": {
+                                            "type": "string",
+                                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
+                                            "minLength": 1,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
                                 },
                             ]
                         }
@@ -940,6 +958,19 @@ class SchemaValidator:
                                                         },
                                                         {
                                                             "type": "boolean",
+                                                        },
+                                                        {
+                                                            "type": "object",
+                                                            "description": "Computed variable with formula",
+                                                            "properties": {
+                                                                "formula": {
+                                                                    "type": "string",
+                                                                    "description": "Mathematical expression to evaluate for this variable",
+                                                                    "minLength": 1,
+                                                                }
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
                                                         },
                                                     ]
                                                 }
@@ -1035,7 +1066,7 @@ class SchemaValidator:
                 },
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities, collection patterns, or numeric literals",
+                    "description": "Variable mappings to Home Assistant entities, collection patterns, numeric literals, or computed variables",
                     "patternProperties": {
                         var_pattern: {
                             "oneOf": [
@@ -1050,6 +1081,29 @@ class SchemaValidator:
                                 {
                                     "type": "boolean",
                                     "description": "Boolean literal value",
+                                },
+                                {
+                                    "type": "object",
+                                    "description": "Computed variable with formula and optional exception handlers",
+                                    "properties": {
+                                        "formula": {
+                                            "type": "string",
+                                            "description": "Mathematical expression to evaluate for this variable",
+                                            "minLength": 1,
+                                        },
+                                        "UNAVAILABLE": {
+                                            "type": "string",
+                                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
+                                            "minLength": 1,
+                                        },
+                                        "UNKNOWN": {
+                                            "type": "string",
+                                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
+                                            "minLength": 1,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
                                 },
                             ]
                         }
@@ -1209,6 +1263,29 @@ class SchemaValidator:
                                         "type": "boolean",
                                         "description": "Boolean literal value",
                                     },
+                                    {
+                                        "type": "object",
+                                        "description": "Computed variable with formula and optional exception handlers",
+                                        "properties": {
+                                            "formula": {
+                                                "type": "string",
+                                                "description": "Mathematical expression to evaluate for this variable",
+                                                "minLength": 1,
+                                            },
+                                            "UNAVAILABLE": {
+                                                "type": "string",
+                                                "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
+                                                "minLength": 1,
+                                            },
+                                            "UNKNOWN": {
+                                                "type": "string",
+                                                "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
+                                                "minLength": 1,
+                                            },
+                                        },
+                                        "required": ["formula"],
+                                        "additionalProperties": False,
+                                    },
                                 ]
                             }
                         },
@@ -1303,6 +1380,17 @@ class SchemaValidator:
                     "description": "Mathematical expression for sensor calculation",
                     "minLength": 1,
                 },
+                # Exception handlers for main formula
+                "UNAVAILABLE": {
+                    "type": "string",
+                    "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when main formula cannot be resolved",
+                    "minLength": 1,
+                },
+                "UNKNOWN": {
+                    "type": "string",
+                    "description": "Exception handler for UNKNOWN state - formula or literal value to use when main formula is in unknown state",
+                    "minLength": 1,
+                },
                 "attributes": {
                     "type": "object",
                     "description": "Calculated attributes for rich sensor data",
@@ -1312,7 +1400,7 @@ class SchemaValidator:
                 # Common properties for both syntax patterns
                 "variables": {
                     "type": "object",
-                    "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, or boolean literals",
+                    "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, boolean literals, or computed variables",
                     "patternProperties": {
                         var_pattern: {
                             "oneOf": [
@@ -1327,6 +1415,29 @@ class SchemaValidator:
                                 {
                                     "type": "boolean",
                                     "description": "Boolean literal value",
+                                },
+                                {
+                                    "type": "object",
+                                    "description": "Computed variable with formula and optional exception handlers",
+                                    "properties": {
+                                        "formula": {
+                                            "type": "string",
+                                            "description": "Mathematical expression to evaluate for this variable",
+                                            "minLength": 1,
+                                        },
+                                        "UNAVAILABLE": {
+                                            "type": "string",
+                                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
+                                            "minLength": 1,
+                                        },
+                                        "UNKNOWN": {
+                                            "type": "string",
+                                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
+                                            "minLength": 1,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
                                 },
                             ]
                         }
@@ -1405,9 +1516,20 @@ class SchemaValidator:
                             "description": ("Mathematical expression to evaluate for this attribute"),
                             "minLength": 1,
                         },
+                        # Exception handlers for attribute formula
+                        "UNAVAILABLE": {
+                            "type": "string",
+                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when attribute formula cannot be resolved",
+                            "minLength": 1,
+                        },
+                        "UNKNOWN": {
+                            "type": "string",
+                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when attribute formula is in unknown state",
+                            "minLength": 1,
+                        },
                         "variables": {
                             "type": "object",
-                            "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, or boolean literals",
+                            "description": "Variable mappings to Home Assistant entities, sensor keys, numeric literals, boolean literals, or computed variables",
                             "patternProperties": {
                                 var_pattern: {
                                     "oneOf": [
@@ -1422,6 +1544,29 @@ class SchemaValidator:
                                         {
                                             "type": "boolean",
                                             "description": "Boolean literal value",
+                                        },
+                                        {
+                                            "type": "object",
+                                            "description": "Computed variable with formula and optional exception handlers",
+                                            "properties": {
+                                                "formula": {
+                                                    "type": "string",
+                                                    "description": "Mathematical expression to evaluate for this variable",
+                                                    "minLength": 1,
+                                                },
+                                                "UNAVAILABLE": {
+                                                    "type": "string",
+                                                    "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
+                                                    "minLength": 1,
+                                                },
+                                                "UNKNOWN": {
+                                                    "type": "string",
+                                                    "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
+                                                    "minLength": 1,
+                                                },
+                                            },
+                                            "required": ["formula"],
+                                            "additionalProperties": False,
                                         },
                                     ]
                                 }
@@ -1494,6 +1639,21 @@ class SchemaValidator:
 
         # Check if it's one of our datetime functions
         return function_name in DATETIME_FUNCTIONS
+
+    def _is_numeric_string(self, value: str) -> bool:
+        """Check if a string represents a numeric value."""
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
+
+    def _is_simple_string_literal(self, value: str) -> bool:
+        """Check if a string is a simple literal without special characters."""
+        return (
+            value.isalpha()  # Pure alphabetic strings are OK
+            or (value.replace("_", "").replace(" ", "").replace("-", "").isalpha())
+        )  # Strings with basic separators
 
 
 class SchemaValidationError(Exception):

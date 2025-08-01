@@ -11,7 +11,7 @@ from dataclasses import asdict
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .config_models import FormulaConfig, SensorConfig
+from .config_models import ComputedVariable, ExceptionHandler, FormulaConfig, SensorConfig
 from .exceptions import SensorUpdateError, SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -317,14 +317,49 @@ class SensorOpsHandler:
                 return [list_to_set(item) for item in obj]
             return obj
 
+        def deserialize_exception_handler(handler_data: dict[str, Any]) -> ExceptionHandler:
+            """Deserialize exception handler data."""
+            return ExceptionHandler(**handler_data)
+
+        def deserialize_computed_variable(var_data: dict[str, Any]) -> ComputedVariable:
+            """Deserialize computed variable data."""
+            computed_var_data = var_data.copy()
+            if "exception_handler" in computed_var_data and computed_var_data["exception_handler"] is not None:
+                handler_data = computed_var_data["exception_handler"]
+                computed_var_data["exception_handler"] = deserialize_exception_handler(handler_data)
+            return ComputedVariable(**computed_var_data)
+
+        def deserialize_variables(variables_data: dict[str, Any]) -> dict[str, Any]:
+            """Deserialize variables dictionary."""
+            variables = {}
+            for var_name, var_value in variables_data.items():
+                if isinstance(var_value, dict) and "formula" in var_value:
+                    # This is a computed variable
+                    variables[var_name] = deserialize_computed_variable(var_value)
+                else:
+                    # Simple variable
+                    variables[var_name] = var_value
+            return variables
+
+        def deserialize_formula_config(formula_data: dict[str, Any]) -> FormulaConfig:
+            """Deserialize formula configuration."""
+            # Handle exception handler deserialization
+            if "exception_handler" in formula_data and formula_data["exception_handler"] is not None:
+                handler_data = formula_data["exception_handler"]
+                formula_data["exception_handler"] = deserialize_exception_handler(handler_data)
+
+            # Handle computed variables in variables dict
+            if formula_data.get("variables"):
+                formula_data["variables"] = deserialize_variables(formula_data["variables"])
+
+            return FormulaConfig(**formula_data)
+
         # Convert lists back to sets and create SensorConfig
         processed_data = list_to_set(config_data)
 
         # Convert formula dictionaries back to FormulaConfig objects
         if "formulas" in processed_data:
-            formulas = []
-            for formula_data in processed_data["formulas"]:
-                formulas.append(FormulaConfig(**formula_data))
+            formulas = [deserialize_formula_config(formula_data) for formula_data in processed_data["formulas"]]
             processed_data["formulas"] = formulas
 
         return SensorConfig(**processed_data)

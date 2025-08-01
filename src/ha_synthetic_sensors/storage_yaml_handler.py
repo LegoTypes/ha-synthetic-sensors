@@ -147,8 +147,14 @@ class YamlHandler:
         attr_dict: dict[str, Any] = {"formula": formula.formula}
 
         if formula.variables:
-            variables_dict: dict[str, str | int | float] = dict(formula.variables)
-            attr_dict["variables"] = variables_dict
+            # Filter out ComputedVariable instances for YAML serialization
+            variables_dict: dict[str, str | int | float] = {
+                k: v
+                for k, v in formula.variables.items()
+                if not hasattr(v, "formula")  # Skip ComputedVariable instances
+            }
+            if variables_dict:  # Only add if there are simple variables
+                attr_dict["variables"] = variables_dict
 
         # Add metadata if present
         metadata = self._extract_formula_metadata(formula)

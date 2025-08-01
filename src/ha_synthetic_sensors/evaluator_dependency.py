@@ -256,9 +256,11 @@ class EvaluatorDependency:
                 if isinstance(value, str | int | float | bool):
                     context_dict[key] = value
 
-        # Add config variables
+        # Add config variables (skip ComputedVariable instances - they need separate resolution)
         if config.variables:
-            context_dict.update(config.variables)
+            for var_name, var_value in config.variables.items():
+                if not hasattr(var_value, "formula"):  # Skip ComputedVariable instances
+                    context_dict[var_name] = var_value
 
         return context_dict
 
