@@ -11,7 +11,7 @@ import re
 from typing import TYPE_CHECKING, Any, cast
 
 from .config_manager import ConfigManager
-from .config_models import Config, FormulaConfig
+from .config_models import ComputedVariable, Config, FormulaConfig
 from .config_types import AttributeValue, GlobalSettingsDict
 from .cross_sensor_reference_reassignment import BulkYamlReassignment
 from .exceptions import SyntheticSensorsError
@@ -328,6 +328,7 @@ class SensorSetOpsHandler:
             attributes=updated_attributes,
             dependencies=formula_config.dependencies.copy(),  # Dependencies handled separately
             variables=updated_variables,
+            exception_handler=formula_config.exception_handler,  # Preserve exception handler
         )
 
     def _build_self_reference_patterns(self, sensor_key: str, entity_id: str | None) -> set[str]:
@@ -344,10 +345,10 @@ class SensorSetOpsHandler:
         return self_reference_patterns
 
     def _process_variables_for_self_references(
-        self, variables: dict[str, str | int | float], self_reference_patterns: set[str]
-    ) -> dict[str, str | int | float]:
+        self, variables: dict[str, str | int | float | ComputedVariable], self_reference_patterns: set[str]
+    ) -> dict[str, str | int | float | ComputedVariable]:
         """Process variables dictionary to replace self-references."""
-        updated_variables: dict[str, str | int | float] = {}
+        updated_variables: dict[str, str | int | float | ComputedVariable] = {}
         for var_name, var_value in variables.items():
             if isinstance(var_value, str):
                 updated_variables[var_name] = self._replace_self_references_in_text(var_value, self_reference_patterns)

@@ -16,11 +16,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
-from .config_models import Config, FormulaConfig, SensorConfig
+from .config_models import ComputedVariable, Config, ExceptionHandler, FormulaConfig, SensorConfig
 from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .config_yaml_converter import ConfigYamlConverter
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector
 from .schema_validator import validate_yaml_config
+from .utils_config import validate_computed_variable_references
 from .validation_utils import load_yaml_file
 from .yaml_config_parser import YAMLConfigParser, trim_yaml_keys
 
@@ -63,20 +64,26 @@ class ConfigManager:
         """
         path = Path(config_path) if config_path else self._config_path
 
-        if not path or not path.exists():
-            self._logger.warning("No configuration file found, using empty config")
-            self._config = Config()
-            return self._config
+        if not path:
+            error_msg = "No configuration path provided"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
+
+        if not path.exists():
+            error_msg = f"Configuration file not found: {path}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         try:
             with open(path, encoding="utf-8") as file:
                 yaml_data_raw = yaml.safe_load(file)
                 yaml_data = trim_yaml_keys(yaml_data_raw)
 
+            # Check for empty YAML data early
             if not yaml_data:
-                self._logger.warning("Empty configuration file, using empty config")
-                self._config = Config()
-                return self._config
+                error_msg = "Empty configuration file"
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
 
             # Perform schema validation using shared method
             self._validate_yaml_data_with_schema(yaml_data)
@@ -117,10 +124,15 @@ class ConfigManager:
         """
         path = Path(config_path) if config_path else self._config_path
 
-        if not path or not path.exists():
-            self._logger.warning("No configuration file found, using empty config")
-            self._config = Config()
-            return self._config
+        if not path:
+            error_msg = "No configuration path provided"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
+
+        if not path.exists():
+            error_msg = f"Configuration file not found: {path}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         try:
             async with aiofiles.open(path, encoding="utf-8") as file:
@@ -132,32 +144,14 @@ class ConfigManager:
                 else:
                     yaml_data = cast(dict[str, Any], yaml_data_trimmed)
 
+            # Check for empty YAML data early
             if not yaml_data:
-                self._logger.warning("Empty configuration file, using empty config")
-                self._config = Config()
-                return self._config
-
-            # Perform schema validation first
-            schema_result = validate_yaml_config(yaml_data)
-
-            # Log warnings
-            for warning in schema_result["warnings"]:
-                self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
-                if warning.suggested_fix:
-                    self._logger.warning("Suggested fix: %s", warning.suggested_fix)
-
-            # Check for schema errors
-            if not schema_result["valid"]:
-                error_messages: list[str] = []
-                for error in schema_result["errors"]:
-                    msg = f"{error.path}: {error.message}"
-                    if error.suggested_fix:
-                        msg += f" (Suggested fix: {error.suggested_fix})"
-                    error_messages.append(msg)
-
-                error_msg = f"Configuration schema validation failed: {'; '.join(error_messages)}"
+                error_msg = "Empty configuration file"
                 self._logger.error(error_msg)
                 raise ConfigEntryError(error_msg)
+
+            # Perform schema validation using shared method
+            self._validate_yaml_data_with_schema(yaml_data)
 
             self._config = self._parse_yaml_config(cast(ConfigDict, yaml_data))
 
@@ -379,6 +373,70 @@ class ConfigManager:
 
         return sensor
 
+    def _parse_exception_handler(self, handler_data: dict[str, Any]) -> ExceptionHandler | None:
+        """Parse exception handler from YAML data.
+
+        Args:
+            handler_data: Dictionary containing UNAVAILABLE and/or UNKNOWN keys
+
+        Returns:
+            ExceptionHandler object or None if no handlers found
+        """
+        unavailable_handler = handler_data.get("UNAVAILABLE")
+        unknown_handler = handler_data.get("UNKNOWN")
+
+        if not unavailable_handler and not unknown_handler:
+            return None
+
+        return ExceptionHandler(unavailable=unavailable_handler, unknown=unknown_handler)
+
+    def _parse_variables(self, variables_data: dict[str, Any]) -> dict[str, str | int | float | ComputedVariable]:
+        """Parse variables dictionary, handling computed variables with formula key and exception handlers.
+
+        Args:
+            variables_data: Raw variables data from YAML
+
+        Returns:
+            Dictionary with parsed variables including ComputedVariable objects
+        """
+
+        parsed_variables: dict[str, str | int | float | ComputedVariable] = {}
+
+        for var_name, var_value in variables_data.items():
+            if isinstance(var_value, dict):
+                if "formula" in var_value:
+                    # This is a computed variable with formula key
+                    formula_expr = var_value["formula"]
+                    if not formula_expr or not str(formula_expr).strip():
+                        raise ValueError(f"Variable '{var_name}' has empty formula expression")
+
+                    # Parse exception handler if present
+                    exception_handler = self._parse_exception_handler(var_value)
+
+                    # Create ComputedVariable object
+                    # Note: Dependencies will be resolved during context building phase
+                    parsed_variables[var_name] = ComputedVariable(
+                        formula=str(formula_expr).strip(),
+                        dependencies=set(),  # Will be populated during dependency resolution
+                        exception_handler=exception_handler,
+                    )
+                elif "UNAVAILABLE" in var_value or "UNKNOWN" in var_value:
+                    # This appears to be a simple variable with exception handlers
+                    raise ValueError(
+                        f"Variable '{var_name}' has exception handlers but no base value. "
+                        f"Simple variables with exception handlers are not yet supported. "
+                        f"Consider using a computed variable with formula."
+                    )
+                else:
+                    # Complex dict but not a computed variable - might be attribute config
+                    # Cast to str since it's not a computed variable but a complex value
+                    parsed_variables[var_name] = str(var_value)
+            else:
+                # Simple variable (entity_id, literal, etc.)
+                parsed_variables[var_name] = var_value
+
+        return parsed_variables
+
     def _parse_single_formula(self, sensor_key: str, sensor_data: SensorConfigDict) -> FormulaConfig:
         """Parse a single formula sensor configuration (v1.0 format).
 
@@ -393,8 +451,15 @@ class ConfigManager:
         if not formula_str:
             raise ValueError(f"Single formula sensor '{sensor_key}' must have 'formula' field")
 
-        # Get explicit variables from config
-        variables = sensor_data.get("variables", {}).copy()
+        # Parse variables (including computed variables with "formula:" prefix)
+        variables = self._parse_variables(sensor_data.get("variables", {}))
+
+        # Validate computed variable references
+        validation_errors = validate_computed_variable_references(variables, sensor_key)
+        if validation_errors:
+            error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         # Variables are now optional aliases - no auto-detection needed
         # Entity IDs in formulas will be resolved directly during evaluation
@@ -412,6 +477,9 @@ class ConfigManager:
                 # Handle other types by converting to string
                 attributes[attr_name] = str(attr_config)
 
+        # Parse formula-level exception handler if present
+        formula_exception_handler = self._parse_exception_handler(cast(dict[str, Any], sensor_data))
+
         return FormulaConfig(
             id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
             name=sensor_data.get("name"),
@@ -419,6 +487,7 @@ class ConfigManager:
             attributes=attributes,
             variables=variables,
             metadata=sensor_data.get("metadata", {}),
+            exception_handler=formula_exception_handler,
         )
 
     def _parse_attribute_formula(
@@ -462,13 +531,21 @@ class ConfigManager:
         # Global and parent variable inheritance will happen later during evaluation
         # This prevents global variables from being processed by cross-reference resolution
         attr_variables = attr_config.get("variables", {})
-        formula_variables: dict[str, Any] = {}
-        if isinstance(attr_variables, dict):
-            formula_variables = attr_variables.copy()
+        formula_variables = self._parse_variables(attr_variables if isinstance(attr_variables, dict) else {})
+
+        # Validate computed variable references in attribute variables
+        validation_errors = validate_computed_variable_references(formula_variables, f"{sensor_key}.{attr_name}")
+        if validation_errors:
+            error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
+            self._logger.error(error_msg)
+            raise ConfigEntryError(error_msg)
 
         # Variables are now optional aliases - no auto-detection needed
         # Entity IDs in attribute formulas will be resolved directly during evaluation
         # Global and parent variables will be inherited during evaluation phase
+
+        # Parse attribute-level exception handler if present
+        attr_exception_handler = self._parse_exception_handler(cast(dict[str, Any], attr_config))
 
         return FormulaConfig(
             id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
@@ -477,6 +554,7 @@ class ConfigManager:
             attributes={},
             variables=formula_variables,
             metadata=attr_config.get("metadata", {}),
+            exception_handler=attr_exception_handler,
         )
 
     async def async_reload_config(self) -> Config:
@@ -590,9 +668,9 @@ class ConfigManager:
             yaml_data = self._yaml_parser.parse_yaml_content(yaml_content)
 
             if not yaml_data:
-                self._logger.warning("Empty YAML content, using empty config")
-                self._config = Config()
-                return self._config
+                error_msg = "Empty YAML content"
+                self._logger.error(error_msg)
+                raise ConfigEntryError(error_msg)
 
             # Validate YAML data using the same validation logic as file-based loading
             self._validate_yaml_data_with_schema(yaml_data)
@@ -787,11 +865,10 @@ class ConfigManager:
         """Validate the current configuration and return structured results.
 
         Returns:
-            dict: Dictionary with 'errors' and 'warnings' keys containing lists
+            dict: Dictionary with 'errors' key containing list of error messages
         """
         errors = self.validate_config()
-        # For now, we don't have separate warnings, but structure it properly
-        return {"errors": errors, "warnings": []}
+        return {"errors": errors}
 
     def is_config_modified(self) -> bool:
         """Check if configuration file has been modified since last load.
@@ -820,7 +897,6 @@ class ConfigManager:
             {
                 "valid": bool,
                 "errors": list of error dictionaries,
-                "warnings": list of warning dictionaries,
                 "schema_version": str
             }
         """
@@ -839,21 +915,9 @@ class ConfigManager:
             for error in schema_result["errors"]
         ]
 
-        warnings = [
-            {
-                "message": warning.message,
-                "path": warning.path,
-                "severity": warning.severity.value,
-                "schema_path": warning.schema_path,
-                "suggested_fix": warning.suggested_fix,
-            }
-            for warning in schema_result["warnings"]
-        ]
-
         return {
             "valid": schema_result["valid"],
             "errors": errors,
-            "warnings": warnings,
             "schema_version": yaml_data.get("version", "1.0"),
         }
 
@@ -890,15 +954,11 @@ class ConfigManager:
         """
         schema_result = validate_yaml_config(cast(dict[str, Any], yaml_data))
 
-        # Log warnings
-        for warning in schema_result["warnings"]:
-            self._logger.warning("Config warning at %s: %s", warning.path, warning.message)
-            if warning.suggested_fix:
-                self._logger.warning("Suggested fix: %s", warning.suggested_fix)
-
         # Check for schema errors
         if not schema_result["valid"]:
             error_messages: list[str] = []
+
+            # Add errors
             for error in schema_result["errors"]:
                 msg = f"{error.path}: {error.message}"
                 if error.suggested_fix:

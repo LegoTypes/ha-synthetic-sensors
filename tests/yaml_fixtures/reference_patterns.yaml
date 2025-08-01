@@ -22,7 +22,7 @@ sensors:
     metadata:
       unit_of_measurement: ¢/h
       device_class: monetary
-      state_class: measurement
+      state_class: total
   grid_dependency_analysis:
     name: Grid Dependency Analysis
     formula: sensor.span_panel_instantaneous_power + sensor.energy_cost_analysis

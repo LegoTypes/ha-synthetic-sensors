@@ -27,11 +27,12 @@ class CompiledFormula:
         self.parsed_ast = self.evaluator.parse(formula)
         self.hit_count = 0
 
-    def evaluate(self, context: dict[str, Any]) -> float:
+    def evaluate(self, context: dict[str, Any], numeric_only: bool = True) -> float | bool | str | int:
         """Evaluate the compiled formula with given context.
 
         Args:
             context: Variable context for evaluation
+            numeric_only: If True, enforce numeric results (default for backward compatibility)
 
         Returns:
             Evaluation result
@@ -40,9 +41,19 @@ class CompiledFormula:
         self.evaluator.names = context or {}
         # Use the pre-parsed AST for fast evaluation
         result = self.evaluator.eval(self.formula, previously_parsed=self.parsed_ast)
-        if isinstance(result, int | float):
-            return float(result)
-        raise ValueError(f"Expected numeric result, got {type(result).__name__}")
+
+        if numeric_only:
+            if isinstance(result, int | float):
+                return float(result)
+            raise ValueError(f"Expected numeric result, got {type(result).__name__}")
+
+        # Return result as-is for computed variables and other flexible use cases
+        # Validate that the result is one of the expected types
+        if isinstance(result, float | bool | str | int):
+            return result
+
+        # Handle unexpected types by converting to string representation
+        return str(result)
 
 
 class FormulaCompilationCache:

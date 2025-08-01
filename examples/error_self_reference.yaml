@@ -95,7 +95,6 @@ sensors:
     entity_id: sensor.span_panel_instantaneous_power
     formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
     attributes:
-      # Self-reference with mathematical operations instead of string concatenation
       power_factor:
         formula: power_factor * 0.95 + 0.05  # Self-reference with math operations
         metadata:

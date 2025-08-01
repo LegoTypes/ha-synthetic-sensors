@@ -1,0 +1,118 @@
+# Integration test fixture for attribute dependency validation
+# Tests valid attribute dependencies, cross-references, and scoping rules
+# Used by: test_attribute_dependency_validation_integration.py
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+  variables:
+    global_efficiency: "sensor.efficiency_meter"
+    global_tax_rate: "sensor.tax_rate"
+
+sensors:
+  # Test valid attribute dependency chain
+  power_analysis_sensor:
+    name: "Power Analysis with Dependencies"
+    formula: "grid_power + solar_power"
+    variables:
+      grid_power: "sensor.grid_meter"
+      solar_power: "sensor.solar_inverter"
+    attributes:
+      # Literal attributes (available to formulas)
+      voltage: 240
+      max_capacity: 5000.5
+
+      # No dependencies - evaluates first
+      base_consumption:
+        formula: "100 + 50"  # Simple calculation
+        metadata:
+          unit_of_measurement: "W"
+
+      # Depends on literal attribute
+      power_rating:
+        formula: "voltage * 5"  # References literal attribute 'voltage'
+        metadata:
+          unit_of_measurement: "W"
+
+      # Depends on sensor state and other attribute
+      total_consumption:
+        formula: "state + base_consumption"  # state + other attribute
+        metadata:
+          unit_of_measurement: "W"
+
+      # Depends on multiple attributes and global variables
+      efficiency_analysis:
+        formula: "total_consumption / max_capacity * global_efficiency * 100"
+        metadata:
+          unit_of_measurement: "%"
+
+      # Complex dependency chain with sensor-level variables
+      final_report:
+        formula: "f'Power: {total_consumption}W, Efficiency: {efficiency_analysis:.1f}%, Tax: {global_tax_rate}'"
+        metadata:
+          unit_of_measurement: "text"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Test variable inheritance and scoping
+  inheritance_test_sensor:
+    name: "Variable Inheritance Test"
+    formula: "primary_power * 2"
+    variables:
+      primary_power: "sensor.primary_meter"
+      shared_multiplier: 1.5
+    attributes:
+      # Should inherit sensor-level variables
+      inherited_calculation:
+        formula: "primary_power * shared_multiplier"  # Uses inherited variables
+        metadata:
+          unit_of_measurement: "W"
+
+      # Should have access to own variables + inherited
+      mixed_calculation:
+        formula: "primary_power * local_factor + inherited_calculation"
+        variables:
+          local_factor: 2.0  # Local to this attribute
+        metadata:
+          unit_of_measurement: "W"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Test cross-attribute references with proper ordering
+  dependency_chain_sensor:
+    name: "Cross-Attribute Dependency Chain"
+    formula: "sensor.main_power"
+    variables: {}
+    attributes:
+      # Step 1: Base calculation
+      step_one:
+        formula: "state * 2"
+        metadata:
+          unit_of_measurement: "W"
+
+      # Step 2: Depends on step_one
+      step_two:
+        formula: "step_one + 100"
+        metadata:
+          unit_of_measurement: "W"
+
+      # Step 3: Depends on step_two
+      step_three:
+        formula: "step_two * 1.1"
+        metadata:
+          unit_of_measurement: "W"
+
+      # Final: Depends on all previous steps
+      final_result:
+        formula: "step_one + step_two + step_three"
+        metadata:
+          unit_of_measurement: "W"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

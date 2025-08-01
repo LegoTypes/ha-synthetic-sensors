@@ -28,7 +28,7 @@ def _default_dependencies() -> set[str]:
     return set()
 
 
-def _default_variables() -> dict[str, str | int | float]:
+def _default_variables() -> dict[str, str | int | float | ComputedVariable]:
     """Default factory for variables dictionary."""
     return {}
 
@@ -54,6 +54,39 @@ def _default_metadata() -> dict[str, Any]:
 
 
 @dataclass
+class ExceptionHandler:
+    """Exception handler for formulas and variables when entities become unavailable or unknown."""
+
+    unavailable: str | None = None  # Formula to execute when dependencies are unavailable
+    unknown: str | None = None  # Formula to execute when dependencies are unknown
+
+    def __post_init__(self) -> None:
+        """Validate the exception handler after initialization."""
+        if not self.unavailable and not self.unknown:
+            raise ValueError("ExceptionHandler must have at least one handler (unavailable or unknown)")
+        if self.unavailable and not self.unavailable.strip():
+            raise ValueError("ExceptionHandler unavailable formula cannot be whitespace only")
+        if self.unknown and not self.unknown.strip():
+            raise ValueError("ExceptionHandler unknown formula cannot be whitespace only")
+
+
+@dataclass
+class ComputedVariable:
+    """A variable computed from a formula during context building."""
+
+    formula: str
+    dependencies: set[str] = field(default_factory=set)
+    exception_handler: ExceptionHandler | None = None  # Exception handling for this variable
+
+    def __post_init__(self) -> None:
+        """Validate the computed variable after initialization."""
+        if not self.formula:
+            raise ValueError("ComputedVariable formula cannot be empty")
+        if not self.formula.strip():
+            raise ValueError("ComputedVariable formula cannot be whitespace only")
+
+
+@dataclass
 class FormulaConfig:
     """Configuration for a single formula within a synthetic sensor."""
 
@@ -63,9 +96,10 @@ class FormulaConfig:
     metadata: dict[str, Any] = field(default_factory=_default_metadata)
     attributes: dict[str, AttributeValue] = field(default_factory=_default_attributes)
     dependencies: set[str] = field(default_factory=_default_dependencies)
-    variables: dict[str, str | int | float] = field(
+    variables: dict[str, str | int | float | ComputedVariable] = field(
         default_factory=_default_variables
-    )  # Variable name -> entity_id mappings or numeric literals
+    )  # Variable name -> entity_id mappings, numeric literals, or computed variables
+    exception_handler: ExceptionHandler | None = None  # Exception handling for this formula
 
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""

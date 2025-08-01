@@ -15,11 +15,15 @@ def tokenize_formula(formula: str) -> set[str]:
     Returns:
         Set of potential variable/sensor reference tokens
     """
+    # First, remove all string literals (both single and double quoted) to avoid
+    # treating contents of strings as variable references
+    string_removed_formula = re.sub(r"'[^']*'|\"[^\"]*\"", "", formula)
+
     # Pattern to match valid Python identifiers (sensor keys)
     identifier_pattern = re.compile(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b")
 
-    # Find all potential identifiers
-    tokens = set(identifier_pattern.findall(formula))
+    # Find all potential identifiers (excluding those inside strings)
+    tokens = set(identifier_pattern.findall(string_removed_formula))
 
     # Filter out common keywords and operators that aren't sensor references
     excluded_keywords = {

@@ -87,17 +87,14 @@ class TestConfigManager:
     def test_load_nonexistent_file(self, mock_hass, mock_entity_registry, mock_states):
         """Test loading non-existent file."""
         manager = ConfigManager(mock_hass)
-        config = manager.load_config("/nonexistent/path.yaml")
-        # Should return empty config for non-existent files
-        assert isinstance(config, Config)
-        assert len(config.sensors) == 0
+        with pytest.raises(ConfigEntryError, match="Configuration file not found"):
+            manager.load_config("/nonexistent/path.yaml")
 
     def test_load_config_no_path(self, mock_hass, mock_entity_registry, mock_states):
         """Test loading config without path."""
         manager = ConfigManager(mock_hass)
-        config = manager.load_config()
-        assert isinstance(config, Config)
-        assert len(config.sensors) == 0
+        with pytest.raises(ConfigEntryError, match="No configuration path provided"):
+            manager.load_config()
 
     async def test_save_config(self, mock_hass, mock_entity_registry, mock_states, simple_test_yaml):
         """Test saving configuration to YAML file."""
@@ -281,13 +278,12 @@ class TestConfigManagerExtended:
             patch("ha_synthetic_sensors.config_manager.validate_yaml_config") as mock_validate,
         ):
             mock_validate.return_value = {
-                "valid": True,
-                "errors": [],
-                "warnings": [MagicMock(message="Deprecated field used", path="sensors.test_sensor.deprecated_field")],
+                "valid": False,
+                "errors": [MagicMock(message="Deprecated field used", path="sensors.test_sensor.deprecated_field")],
             }
 
-            config = config_manager.load_config("/test/config.yaml")
-            assert isinstance(config, Config)
+            with pytest.raises(ConfigEntryError, match="Configuration schema validation failed"):
+                config_manager.load_config("/test/config.yaml")
 
     def test_load_config_with_schema_errors(self, config_manager):
         """Test loading config with schema validation errors."""
@@ -355,8 +351,8 @@ class TestConfigManagerExtended:
     def test_load_config_empty_file(self, config_manager):
         """Test loading config from empty file."""
         with patch("builtins.open", mock_open(read_data="")), patch("pathlib.Path.exists", return_value=True):
-            config = config_manager.load_config("/test/config.yaml")
-            assert isinstance(config, Config)
+            with pytest.raises(ConfigEntryError, match="Empty configuration file"):
+                config_manager.load_config("/test/config.yaml")
 
     def test_get_sensor_config_none_config(self, config_manager):
         """Test getting sensor config when no config is loaded."""
@@ -402,19 +398,17 @@ class TestConfigManagerExtended:
 
     async def test_load_from_file_success(self, config_manager):
         """Test async loading from file successfully."""
-        # Test when file doesn't exist - this path is easier to test
+        # Test when file doesn't exist - should raise exception
         with patch("pathlib.Path.exists", return_value=False):
-            config = await config_manager.async_load_from_file("/test/config.yaml")
-            assert isinstance(config, Config)
-            assert len(config.sensors) == 0
+            with pytest.raises(ConfigEntryError, match="Configuration file not found"):
+                await config_manager.async_load_from_file("/test/config.yaml")
 
     async def test_load_from_file_with_error(self, config_manager):
         """Test async loading from file with error."""
         # Test when file doesn't exist
         with patch("pathlib.Path.exists", return_value=False):
-            config = await config_manager.async_load_from_file("/test/config.yaml")
-            assert isinstance(config, Config)
-            assert len(config.sensors) == 0
+            with pytest.raises(ConfigEntryError, match="Configuration file not found"):
+                await config_manager.async_load_from_file("/test/config.yaml")
 
     def test_load_from_yaml_empty_content(self, config_manager):
         """Test loading from empty YAML content raises ConfigEntryError."""
@@ -499,12 +493,11 @@ class TestConfigManagerExtended:
         }
 
         with patch("ha_synthetic_sensors.config_manager.validate_yaml_config") as mock_validate:
-            mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+            mock_validate.return_value = {"valid": True, "errors": []}
 
             result = config_manager.validate_yaml_data(yaml_data)
             assert result["valid"] is True
             assert result["errors"] == []
-            assert result["warnings"] == []
             assert result["schema_version"] == "1.0"
 
     def test_validate_yaml_data_with_errors(self, config_manager):
@@ -527,7 +520,7 @@ class TestConfigManagerExtended:
         mock_error.suggested_fix = "Add formula field"
 
         with patch("ha_synthetic_sensors.config_manager.validate_yaml_config") as mock_validate:
-            mock_validate.return_value = {"valid": False, "errors": [mock_error], "warnings": []}
+            mock_validate.return_value = {"valid": False, "errors": [mock_error]}
 
             result = config_manager.validate_yaml_data(yaml_data)
             assert result["valid"] is False
@@ -576,13 +569,12 @@ class TestConfigManagerExtended:
             patch("pathlib.Path.exists", return_value=True),
             patch("ha_synthetic_sensors.config_manager.validate_yaml_config") as mock_validate,
         ):
-            mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+            mock_validate.return_value = {"valid": True, "errors": []}
 
             result = config_manager.validate_config_file("/test/config.yaml")
 
             assert result["valid"] is True
             assert result["errors"] == []
-            assert result["warnings"] == []
 
     def test_parse_yaml_config_basic(self, config_manager):
         """Test parsing basic YAML config."""
@@ -839,11 +831,10 @@ class TestAsyncMethods:
 
     async def test_async_load_config_success(self, config_manager):
         """Test successful async config loading."""
-        # Test when file doesn't exist - this path is easier to test
+        # Test when file doesn't exist - should raise exception
         with patch("pathlib.Path.exists", return_value=False):
-            config = await config_manager.async_load_config("/test/config.yaml")
-            assert isinstance(config, Config)
-            assert len(config.sensors) == 0
+            with pytest.raises(ConfigEntryError, match="Configuration file not found"):
+                await config_manager.async_load_config("/test/config.yaml")
 
     async def test_async_save_config(self, config_manager):
         """Test async save config method exists."""
@@ -989,7 +980,6 @@ class TestAsyncMethods:
 
         result = config_manager.validate_configuration()
         assert "errors" in result
-        assert "warnings" in result
         assert len(result["errors"]) > 0
 
     def test_get_variables_method(self, config_manager):

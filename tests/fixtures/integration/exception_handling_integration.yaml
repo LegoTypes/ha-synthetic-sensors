@@ -1,0 +1,181 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+  variables:
+    # Global variable - numeric value (not quoted)
+    global_factor: 1.2
+
+sensors:
+  # 1. Main formula exception handling
+  main_formula_exceptions:
+    name: "Main Formula Exception Handling"
+    formula: "undefined_main_entity + 100"
+    UNAVAILABLE: "fallback_main_value"
+    UNKNOWN: "estimated_main_value * 2"
+    variables:
+      fallback_main_value: "50"
+      estimated_main_value: "25"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # 2. Complex computed variable exception handling with nested dependencies
+  complex_variable_exceptions:
+    name: "Complex Variable Exception Handling"
+    formula: "base_power + computed_adjustment + global_factor"
+    variables:
+      base_power: "sensor.working_entity"  # This should exist
+      computed_adjustment:
+        formula: "missing_sensor_a + missing_sensor_b"
+        UNAVAILABLE: "backup_calculation"
+        UNKNOWN: "conservative_estimate"
+      backup_calculation:
+        formula: "sensor.backup_entity * 0.8"
+        UNAVAILABLE: "10"
+      conservative_estimate: "5"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # 3. Attribute formulas with exception handling
+  attribute_formula_exceptions:
+    name: "Attribute Formula Exception Handling"
+    formula: "sensor.working_entity"
+    variables:
+      efficiency_base:
+        formula: "undefined_efficiency_sensor"
+        UNAVAILABLE: "0.85"
+        UNKNOWN: "0.80"
+    attributes:
+      efficiency:
+        formula: "efficiency_base * 100"
+        UNAVAILABLE: "estimated_efficiency"
+        variables:
+          estimated_efficiency: "82.5"
+        metadata:
+          unit_of_measurement: "%"
+      complex_attribute:
+        formula: "missing_attr_entity + state + efficiency_base"
+        UNAVAILABLE: "state * 0.9"
+        UNKNOWN: "fallback_attr_calc"
+        variables:
+          fallback_attr_calc:
+            formula: "sensor.working_entity * 0.75"
+            UNAVAILABLE: "default_attr_value"
+          default_attr_value: "15"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # 4. Circular dependency with exception handling
+  circular_dependency_a:
+    name: "Circular Dependency A with Exceptions"
+    formula: "circular_var_a + 10"
+    variables:
+      circular_var_a:
+        formula: "circular_dependency_b + missing_entity"
+        UNAVAILABLE: "safe_fallback_a"
+        UNKNOWN: "estimated_a"
+      safe_fallback_a: "30"
+      estimated_a: "25"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  circular_dependency_b:
+    name: "Circular Dependency B with Exceptions"
+    formula: "circular_var_b + 20"
+    variables:
+      circular_var_b:
+        formula: "circular_dependency_a + another_missing_entity"
+        UNAVAILABLE: "safe_fallback_b"
+        UNKNOWN: "estimated_b"
+      safe_fallback_b: "40"
+      estimated_b: "35"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # 5. Cross-sensor reference with exception handling
+  cross_sensor_exceptions:
+    name: "Cross-Sensor Reference Exceptions"
+    formula: "local_calculation + complex_variable_exceptions"
+    variables:
+      local_calculation:
+        formula: "main_formula_exceptions + undefined_cross_sensor"
+        UNAVAILABLE: "isolated_calculation"
+        UNKNOWN: "estimated_cross_value"
+      isolated_calculation:
+        formula: "known_constant * 2"
+        UNAVAILABLE: "100"
+      estimated_cross_value: "75"
+      known_constant: "50"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # 6. Multi-level nested exception handling
+  nested_exceptions:
+    name: "Multi-Level Nested Exceptions"
+    formula: "level_1"
+    variables:
+      level_1:
+        formula: "level_2 + offset_1"
+        UNAVAILABLE: "fallback_level_1"
+        UNKNOWN: "estimated_level_1"
+      level_2:
+        formula: "level_3 + offset_2"
+        UNAVAILABLE: "fallback_level_2"
+        UNKNOWN: "estimated_level_2"
+      level_3:
+        formula: "missing_deep_entity + offset_3"
+        UNAVAILABLE: "fallback_level_3"
+        UNKNOWN: "estimated_level_3"
+      offset_1: "10"
+      offset_2: "20"
+      offset_3: "30"
+      fallback_level_1: "200"
+      fallback_level_2: "150"
+      fallback_level_3: "100"
+      estimated_level_1: "180"
+      estimated_level_2: "130"
+      estimated_level_3: "80"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # 7. Mixed scenarios with both working and failing references
+  mixed_scenarios:
+    name: "Mixed Working and Failing References"
+    formula: "working_part + failing_part"
+    variables:
+      working_part: "sensor.working_entity"  # This exists
+      failing_part:
+        formula: "missing_entity_1 + missing_entity_2"
+        UNAVAILABLE: "working_backup"
+        UNKNOWN: "estimated_backup"
+      working_backup:
+        formula: "sensor.working_entity * 0.5"
+        UNAVAILABLE: "static_backup"
+      estimated_backup: "25"
+      static_backup: "30"
+    attributes:
+      status:
+        formula: "working_part > failing_part"
+        UNAVAILABLE: "fallback_status"
+        variables:
+          fallback_status: "true"
+      health_score:
+        formula: "undefined_health_metric"
+        UNAVAILABLE: "calculated_health"
+        UNKNOWN: "default_health"
+        variables:
+          calculated_health:
+            formula: "working_part / (working_part + failing_part) * 100"
+            UNAVAILABLE: "baseline_health"
+          baseline_health: "85"
+          default_health: "75"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

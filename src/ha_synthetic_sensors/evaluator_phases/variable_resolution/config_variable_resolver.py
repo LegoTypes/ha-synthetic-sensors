@@ -1,10 +1,13 @@
 """Config variable resolver for handling config variables."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...type_definitions import ContextValue
 from .base_resolver import VariableResolver
+
+if TYPE_CHECKING:
+    pass
 
 _LOGGER = logging.getLogger(__name__)
 

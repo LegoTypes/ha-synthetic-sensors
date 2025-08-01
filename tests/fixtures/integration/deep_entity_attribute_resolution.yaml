@@ -110,7 +110,7 @@ sensors:
     metadata:
       unit_of_measurement: "kWh"
       device_class: "energy"
-      state_class: "measurement"
+      state_class: "total_increasing"
 
   value_extraction_complex_objects:
     name: "Value Extraction from Complex Objects"

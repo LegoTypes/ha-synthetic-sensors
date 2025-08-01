@@ -1,0 +1,39 @@
+# Test Scenario: State Token Reference
+# Purpose: Test that 'state' token works without backing entity registration
+# Expected: Main formula succeeds using state token
+
+sensors:
+  # Test state token reference without backing entity
+  state_token_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 0.25  # Main result = 250 cents/h (assuming 1000W backing entity)
+    attributes:
+      # Valid attribute using state token
+      scaled_state:
+        formula: state * 2  # Uses state token (legitimate)
+        metadata:
+          unit_of_measurement: cents/h
+          friendly_name: "Scaled State"
+      # Valid literal attribute
+      base_multiplier: 0.25
+    metadata:
+      unit_of_measurement: cents/h
+      device_class: monetary
+      friendly_name: "State Token Reference"
+      state_class: total
+
+  # Test state attribute reference
+  state_attr_reference:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: state * 1.1  # Main result = 1100W (assuming 1000W backing entity)
+    attributes:
+      # Valid attribute referencing state.attribute
+      voltage_info:
+        formula: state.voltage if state.voltage else 240  # References state attribute
+        metadata:
+          unit_of_measurement: V
+          friendly_name: "Voltage Info"
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement

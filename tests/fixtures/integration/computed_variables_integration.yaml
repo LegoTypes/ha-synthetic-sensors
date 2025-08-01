@@ -1,0 +1,80 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  energy_sensor_with_computed_variables:
+    name: "Energy Sensor with Computed Variables"
+    formula: "final_total"
+    variables:
+      # Simple variables (entity mappings and literals)
+      input_power: sensor.inverter_input
+      efficiency: 0.85
+      grace_minutes: 15
+
+      # Computed variables with dependency ordering
+      output_power:
+        formula: "input_power * efficiency"
+      power_threshold:
+        formula: "output_power * 0.8"
+
+      # Time-based computed variable (using state token)
+      minutes_since_update:
+        formula: "(42 - 2) / 2"  # Simplified for testing - normally would be datetime calc
+      within_grace:
+        formula: "minutes_since_update < grace_minutes"
+
+      # Final computed result with conditional logic
+      final_total:
+        formula: "output_power if within_grace else power_threshold"
+
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  simple_computed_sensor:
+    name: "Simple Computed Sensor"
+    formula: "doubled_value"
+    variables:
+      base_value: sensor.external_sensor
+      doubled_value:
+        formula: "base_value * 2"
+
+    metadata:
+      unit_of_measurement: "W"
+
+  complex_dependency_chain:
+    name: "Complex Dependency Chain Sensor"
+    formula: "result"
+    variables:
+      # Simple inputs
+      a: 10
+      b: 5
+      c: sensor.factor_sensor
+
+      # Chain of computed variables
+      step1:
+        formula: "a + b"  # 15
+      step2:
+        formula: "step1 * 2"  # 30
+      step3:
+        formula: "step2 + c"  # 30 + c
+      step4:
+        formula: "step3 * 1.1"  # (30 + c) * 1.1
+      result:
+        formula: "round(step4, 2)"
+
+    metadata:
+      unit_of_measurement: "units"
+
+  mathematical_functions_sensor:
+    name: "Mathematical Functions Sensor"
+    formula: "processed_result"
+    variables:
+      raw_value: sensor.raw_sensor
+      processed_result:
+        formula: "abs(round(raw_value * 1.5, 2))"
+
+    metadata:
+      unit_of_measurement: "processed"

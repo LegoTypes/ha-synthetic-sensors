@@ -59,13 +59,13 @@ sensors:
 
   temperature_status:
     name: "Temperature Status"
-    formula: "if_else(temp > 30, 'hot', if_else(temp < 20, 'cold', 'normal'))"
+    formula: "'hot' if temp > 30 else ('cold' if temp < 20 else 'normal')"
     variables:
       temp: "sensor.temperature"
 
   system_health:
     name: "System Health"
-    formula: "if_else(grid_status == 'on' and power < 2000, 'good', 'warning')"
+    formula: "'good' if grid_status == 'on' and power < 2000 else 'warning'"
     variables:
       power: "sensor.power_meter"
     attributes:
