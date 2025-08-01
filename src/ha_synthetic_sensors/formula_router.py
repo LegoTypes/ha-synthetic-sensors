@@ -10,6 +10,25 @@ import re
 _LOGGER = logging.getLogger(__name__)
 
 
+class FormulaSyntaxError(Exception):
+    """Exception raised for malformed formula syntax."""
+
+    def __init__(self, message: str, formula: str, position: int | None = None):
+        self.formula = formula
+        self.position = position
+        if position is not None:
+            super().__init__(f"Syntax error in formula '{formula}' at position {position}: {message}")
+        else:
+            super().__init__(f"Syntax error in formula '{formula}': {message}")
+
+    def __str__(self) -> str:
+        if self.position is not None:
+            # Show the formula with a pointer to the error position
+            pointer = " " * self.position + "^"
+            return f"{super().__str__()}\n{self.formula}\n{pointer}"
+        return super().__str__()
+
+
 class EvaluatorType(Enum):
     """Types of formula evaluators."""
 
@@ -50,8 +69,14 @@ class FormulaRouter:
 
         Returns:
             RoutingResult with evaluator type and caching decision
+
+        Raises:
+            FormulaSyntaxError: If formula contains syntax errors (malformed functions, etc.)
         """
         self._logger.debug("Routing formula: %s", formula)
+
+        # First, validate formula syntax
+        self._validate_formula_syntax(formula)
 
         # Category 1: Check for explicit user functions (highest priority)
         user_function_result = self._check_user_functions(formula)
@@ -178,3 +203,130 @@ class FormulaRouter:
         # If extraction fails, return original formula
         self._logger.warning("Failed to extract inner formula from %s function: %s", user_function, formula)
         return formula
+
+    def _validate_formula_syntax(self, formula: str) -> None:
+        """
+        Validate formula syntax and raise FormulaSyntaxError for malformed syntax.
+
+        Detects:
+        - Malformed function calls: "str(unclosed", "str(invalid syntax +"
+        - Unclosed quotes: "'unclosed string
+        - Mismatched parentheses: "str(nested(unclosed"
+
+        Args:
+            formula: Formula to validate
+
+        Raises:
+            FormulaSyntaxError: If syntax errors are detected
+        """
+        formula = formula.strip()
+
+        # Check for malformed function calls
+        self._validate_function_calls(formula)
+
+        # Check for unclosed quotes
+        self._validate_quotes(formula)
+
+        # Check for mismatched parentheses
+        self._validate_parentheses(formula)
+
+    def _validate_function_calls(self, formula: str) -> None:
+        """Validate function call syntax."""
+        # Pattern to detect potential function calls
+        function_pattern = r"([a-zA-Z_][a-zA-Z0-9_]*)\s*\("
+
+        for match in re.finditer(function_pattern, formula):
+            func_name = match.group(1)
+            func_start = match.start()
+
+            # Find the opening parenthesis
+            paren_start = match.end() - 1
+
+            # Check if this function call is properly closed
+            if not self._is_function_call_closed(formula, paren_start):
+                # Find where the unclosed function call ends
+                remaining = formula[paren_start + 1 :]
+                if "+" in remaining or "-" in remaining or "*" in remaining or "/" in remaining:
+                    # Looks like an incomplete expression
+                    raise FormulaSyntaxError(
+                        f"Malformed function call '{func_name}()' - missing closing parenthesis or incomplete expression",
+                        formula,
+                        func_start,
+                    )
+                # Simple unclosed function
+                raise FormulaSyntaxError(
+                    f"Malformed function call '{func_name}()' - missing closing parenthesis", formula, func_start
+                )
+
+    def _validate_quotes(self, formula: str) -> None:
+        """Validate quote matching."""
+        in_single_quote = False
+        in_double_quote = False
+        i = 0
+
+        while i < len(formula):
+            char = formula[i]
+
+            if char == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+            elif char == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+            elif char == "\\" and (in_single_quote or in_double_quote):
+                # Skip escaped character
+                i += 1
+
+            i += 1
+
+        if in_single_quote:
+            raise FormulaSyntaxError("Unclosed single quote", formula)
+        if in_double_quote:
+            raise FormulaSyntaxError("Unclosed double quote", formula)
+
+    def _validate_parentheses(self, formula: str) -> None:
+        """Validate parentheses matching (basic check)."""
+        paren_count = 0
+        in_quote = False
+        quote_char = None
+
+        for i, char in enumerate(formula):
+            if char in ('"', "'") and not in_quote:
+                in_quote = True
+                quote_char = char
+            elif char == quote_char and in_quote:
+                in_quote = False
+                quote_char = None
+            elif not in_quote:
+                if char == "(":
+                    paren_count += 1
+                elif char == ")":
+                    paren_count -= 1
+                    if paren_count < 0:
+                        raise FormulaSyntaxError("Unexpected closing parenthesis", formula, i)
+
+        if paren_count > 0:
+            raise FormulaSyntaxError("Missing closing parenthesis", formula)
+
+    def _is_function_call_closed(self, formula: str, paren_start: int) -> bool:
+        """Check if a function call starting at paren_start is properly closed."""
+        paren_count = 1  # We start after the opening parenthesis
+        in_quote = False
+        quote_char = None
+
+        for i in range(paren_start + 1, len(formula)):
+            char = formula[i]
+
+            if char in ('"', "'") and not in_quote:
+                in_quote = True
+                quote_char = char
+            elif char == quote_char and in_quote:
+                in_quote = False
+                quote_char = None
+            elif not in_quote:
+                if char == "(":
+                    paren_count += 1
+                elif char == ")":
+                    paren_count -= 1
+                    if paren_count == 0:
+                        return True
+
+        return False
