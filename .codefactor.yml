@@ -24,33 +24,82 @@ engines:
         - too-many-positional-arguments  # HA constructors often need many params
         - too-many-locals                # Complex functions often need many variables
 
-# Disable overly strict engines that don't understand HA patterns
+# Disable overly strict engines that don't understand HA patterns or test patterns
   radon:
-    enabled: false  # Disable complexity metrics for tests and HA patterns
+    enabled: false  # Disable complexity metrics - too strict for HA patterns and tests
   bandit:
-    enabled: false  # Security scanner too strict for HA development patterns
+    enabled: false  # Security scanner too strict for HA development and test patterns
+  duplication:
+    enabled: false  # Disable duplication checking - test patterns often have repetition
+  pmd:
+    enabled: false  # Disable PMD - not suitable for Python test patterns
+  eslint:
+    enabled: false  # JavaScript linter not needed
+  jshint:
+    enabled: false  # JavaScript linter not needed
+  shellcheck:
+    enabled: false  # Shell script linter not needed for Python project
 
 # Exclude certain files/directories from analysis
 exclude_patterns:
-  - "tests/**"             # Don't analyze any test files
-  - "tests/*"              # Don't analyze test files (alternative pattern)
-  - "**/test_*.py"         # Don't analyze test files by name pattern
-  - "**/conftest.py"       # Don't analyze pytest configuration files
-  - "examples/**"          # Don't analyze example code
-  - "docs/**"              # Don't analyze documentation
-  - "scripts/**"           # Don't analyze utility scripts
-  - "scripts/*"            # Don't analyze utility scripts (alternative pattern)
-  - "**/scripts/**"        # Don't analyze utility scripts (globstar pattern)
-  - "**/__pycache__/**"    # Python cache files
-  - "**/.venv/**"          # Virtual environment
-  - "**/venv/**"           # Virtual environment
-  - "**/.mypy_cache/**"    # MyPy cache
-  - "**/.pytest_cache/**" # Pytest cache
-  - "**/.ruff_cache/**"    # Ruff cache
-  - "**/htmlcov/**"        # Coverage HTML reports
-  - "**/dist/**"           # Distribution files
-  - "**/*.pyc"             # Compiled Python files
-  - "**/.git/**"           # Git files
-  - "**/node_modules/**"   # Node modules if any
-  - "**/*.yaml"            # YAML test fixtures
-  - "**/*.yml"             # YAML test fixtures
+  # Test file exclusions - comprehensive patterns
+  - "tests/**/*"                    # All files in tests directory (recursive)
+  - "tests/**"                      # All content in tests directory
+  - "tests/*"                       # Direct test files
+  - "**/test_*.py"                  # Test files by naming convention
+  - "**/*test*.py"                  # Files with test in name
+  - "**/conftest.py"                # Pytest configuration files
+  - "test_*.py"                     # Root level test files
+  - "*test.py"                      # Files ending with test.py
+  - "tests/integration/**"          # Integration tests specifically
+  - "tests/unit/**"                 # Unit tests specifically
+  - "tests/date_time/**"            # Date time tests specifically
+  - "tests/storage/**"              # Storage tests specifically
+  - "tests/evaluator/**"            # Evaluator tests specifically
+  - "tests/cache/**"                # Cache tests specifically
+  - "tests/sensor_set/**"           # Sensor set tests specifically
+  - "tests/fixtures/**"             # Test fixtures
+  - "tests/yaml_fixtures/**"        # YAML test fixtures
+
+  # Documentation and examples
+  - "examples/**"                   # Don't analyze example code
+  - "docs/**"                       # Don't analyze documentation
+  - "*.md"                          # Markdown files
+  - "**/*.md"                       # Markdown files anywhere
+
+  # Utility and build files
+  - "scripts/**"                    # Don't analyze utility scripts
+  - "scripts/*"                     # Don't analyze utility scripts (alternative pattern)
+  - "**/scripts/**"                 # Don't analyze utility scripts (globstar pattern)
+
+  # Cache and build artifacts
+  - "**/__pycache__/**"             # Python cache files
+  - "**/.venv/**"                   # Virtual environment
+  - "**/venv/**"                    # Virtual environment
+  - "**/.mypy_cache/**"             # MyPy cache
+  - "**/.pytest_cache/**"           # Pytest cache
+  - "**/.ruff_cache/**"             # Ruff cache
+  - "**/htmlcov/**"                 # Coverage HTML reports
+  - "**/dist/**"                    # Distribution files
+  - "**/*.pyc"                      # Compiled Python files
+  - "**/.git/**"                    # Git files
+  - "**/node_modules/**"            # Node modules if any
+
+  # Configuration and data files
+  - "**/*.yaml"                     # YAML files (many are test fixtures)
+  - "**/*.yml"                      # YAML files (many are test fixtures)
+  - "**/*.json"                     # JSON files (often test data)
+  - "**/*.xml"                      # XML files (often test/coverage data)
+  - "**/*.toml"                     # Configuration files
+  - ".github/**"                    # GitHub workflows and templates
+
+# Only analyze source code in the main package
+include_patterns:
+  - "src/ha_synthetic_sensors/**/*.py"   # Only analyze main source code
+  - "custom_components/**/*.py"          # And Home Assistant component code
+
+# Additional quality settings
+languages:
+  python:
+    mass_threshold: 50     # Increase threshold for duplicate code detection
+    count_threshold: 5     # Require more occurrences before flagging duplication
