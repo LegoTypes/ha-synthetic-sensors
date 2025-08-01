@@ -1,6 +1,7 @@
 """String formula handler for processing string-based formulas."""
 
 import ast
+from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 import re
@@ -77,6 +78,25 @@ class StringHandler(FormulaHandler):
                 # Evaluate inner formula and convert result to string
                 inner_result = self._evaluate_inner_expression(inner_formula, context)
                 return str(inner_result)
+            if routing_result.user_function in ["trim", "lower", "upper", "title"]:
+                # Extract inner formula from string function wrapper
+                inner_formula = self._formula_router.extract_inner_formula(formula, routing_result.user_function)
+                _LOGGER.debug("Extracted inner formula from %s(): %s", routing_result.user_function, inner_formula)
+
+                # Evaluate inner formula first
+                inner_result = self._evaluate_inner_expression(inner_formula, context)
+                string_value = str(inner_result)
+
+                # Apply the string function
+                string_functions: dict[str, Callable[[str], str]] = {
+                    "trim": lambda s: s.strip(),
+                    "lower": lambda s: s.lower(),
+                    "upper": lambda s: s.upper(),
+                    "title": lambda s: s.title(),
+                }
+                if routing_result.user_function in string_functions:
+                    func = string_functions[routing_result.user_function]
+                    return func(string_value)
 
             # Direct string evaluation (string literals and concatenation)
             return self._evaluate_string_expression(formula, context)
@@ -118,6 +138,12 @@ class StringHandler(FormulaHandler):
         """
         formula = formula.strip()
 
+        # First check if this is itself a function call that should be recursively evaluated
+        if self._is_function_call(formula) and any(
+            formula.startswith(f"{func}(") for func in ["str", "trim", "lower", "upper", "title"]
+        ):
+            # Recursively evaluate this function call using the main evaluate method
+            return self.evaluate(formula, context)
         # Handle simple string literals by evaluating them first
         if self._is_simple_literal(formula):
             try:
@@ -328,17 +354,18 @@ class StringHandler(FormulaHandler):
 
         Currently supports:
         - str(expression): Convert expression to string
+        - trim(expression): Trim whitespace
+        - lower(expression): Convert to lowercase
+        - upper(expression): Convert to uppercase
+        - title(expression): Convert to title case
         """
         operand = operand.strip()
 
-        # Check if it's a str() function call
-        if operand.startswith("str(") and operand.endswith(")"):
-            # Extract inner expression
-            inner_expr = operand[4:-1]  # Remove 'str(' and ')'
-            # Evaluate the inner expression and convert to string
-            inner_result = self._evaluate_inner_expression(inner_expr, context)
-            return str(inner_result)
+        # Use the main evaluate method for all recognized function calls
+        # This ensures consistency and proper nested function handling
+        if any(operand.startswith(f"{func}(") for func in ["str", "trim", "lower", "upper", "title"]) and operand.endswith(")"):
+            # Recursively evaluate using main evaluate method
+            return self.evaluate(operand, context)
 
         # For other function calls, return as-is for now
-        # TODO: Add support for other functions like trim(), lower(), etc.
         return operand

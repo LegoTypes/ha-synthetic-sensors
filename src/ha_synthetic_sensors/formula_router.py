@@ -117,6 +117,15 @@ class FormulaRouter:
                 evaluator_type=EvaluatorType.STRING, should_cache=False, user_function="str", original_formula=formula
             )
 
+        # Check for string manipulation functions
+        string_functions = ["trim(", "lower(", "upper(", "title("]
+        for func_start in string_functions:
+            if formula_stripped.startswith(func_start) and formula_stripped.endswith(")"):
+                func_name = func_start[:-1]  # Remove the '('
+                return RoutingResult(
+                    evaluator_type=EvaluatorType.STRING, should_cache=False, user_function=func_name, original_formula=formula
+                )
+
         # Check for numeric() function
         if formula_stripped.startswith("numeric(") and formula_stripped.endswith(")"):
             return RoutingResult(
