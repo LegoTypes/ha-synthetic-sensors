@@ -145,7 +145,7 @@ class TestStringFunctions:
         test_cases = [
             ("'Device: ' + trim(device_name)", "Device: sensor"),
             ("upper(status) + ' - Status'", "ACTIVE - Status"),
-            # ("title('device') + ': ' + trim(device_name)", "Device: sensor"),  # TODO: Fix complex concatenation
+            ("title('device') + ': ' + trim(device_name)", "Device: sensor"),  # Fixed complex concatenation
         ]
 
         for formula, expected in test_cases:
