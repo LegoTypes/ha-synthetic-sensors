@@ -439,6 +439,374 @@ async def test_your_feature(
         await storage_manager.async_delete_sensor_set(sensor_set_id)
 ```
 
+## Entity Registry Operations for Test Isolation
+
+When writing integration tests that need to verify specific entity counts or behaviors, you may need to modify the entity
+registry to create controlled test environments. The common registry fixtures provide methods for safely adding and removing
+entities.
+
+### 🏆 GOLDEN RULE: Use Registry Operations for Isolation
+
+**CRITICAL:** Always use the provided registry methods for entity manipulation. Never directly modify the internal
+`_entities` dictionary or mock objects.
+
+**✅ DO:**
+
+```python
+# Use the provided methods
+mock_entity_registry.register_entity("sensor.test", "test", "sensor", device_class="power")
+mock_entity_registry.remove_entity("sensor.test")
+```
+
+**❌ DON'T:**
+
+```python
+# Never access internal structures directly
+mock_entity_registry._entities["sensor.test"] = mock_entity  # This breaks encapsulation
+del mock_entity_registry.entities["sensor.test"]  # This fails - entities is a Mock object
+```
+
+### Adding Entities for Test Setup
+
+Use `register_entity()` to add entities that your test needs:
+
+```python
+# Add a power sensor for testing
+mock_entity_registry.register_entity(
+    entity_id="sensor.test_power",
+    unique_id="test_power",
+    domain="sensor",
+    device_class="power"
+)
+
+# Add a temperature sensor
+mock_entity_registry.register_entity(
+    entity_id="sensor.test_temp",
+    unique_id="test_temp",
+    domain="sensor",
+    device_class="temperature"
+)
+```
+
+**Key Points:**
+
+- `entity_id`: The full entity ID (e.g., "sensor.test_power")
+- `unique_id`: The unique identifier (e.g., "test_power")
+- `domain`: The entity domain (e.g., "sensor", "binary_sensor")
+- Additional attributes: Pass as keyword arguments (e.g., `device_class="power"`)
+
+### Removing Entities for Test Isolation
+
+Use `remove_entity()` to remove entities for controlled test environments:
+
+```python
+# Remove all power entities to test count('device_class:power') returning 0
+original_entities = dict(mock_entity_registry._entities)
+original_states = dict(mock_states)
+
+# Identify entities to remove
+entities_to_remove = [
+    entity_id for entity_id, entity_data in original_entities.items()
+    if (hasattr(entity_data, "device_class") and entity_data.device_class == "power")
+    or (isinstance(entity_data, dict) and entity_data.get("device_class") == "power")
+    or (hasattr(entity_data, "attributes") and entity_data.attributes.get("device_class") == "power")
+]
+
+# Remove entities safely
+for entity_id in entities_to_remove:
+    mock_entity_registry.remove_entity(entity_id)
+    if entity_id in mock_states:
+        del mock_states[entity_id]
+
+try:
+    # Your test code here
+    pass
+finally:
+    # Restore original state to avoid affecting other tests
+    mock_entity_registry._entities.clear()
+    mock_entity_registry._entities.update(original_entities)
+    mock_states.clear()
+    mock_states.update(original_states)
+```
+
+### Entity Detection Strategies
+
+When identifying entities to remove, use multiple detection strategies to handle different entity storage patterns:
+
+```python
+def is_power_entity(entity_data):
+    """Check if entity is a power sensor using multiple detection strategies."""
+    return (
+        # Direct attribute access
+        (hasattr(entity_data, "device_class") and entity_data.device_class == "power")
+        or
+        # Dictionary key access
+        (isinstance(entity_data, dict) and entity_data.get("device_class") == "power")
+        or
+        # Nested attributes access
+        (hasattr(entity_data, "attributes") and entity_data.attributes.get("device_class") == "power")
+    )
+
+# Use the detection function
+entities_to_remove = [
+    entity_id for entity_id, entity_data in original_entities.items()
+    if is_power_entity(entity_data)
+]
+```
+
+### Selective Entity Removal
+
+For tests that need specific entities while removing others:
+
+```python
+# Keep sensor.panel_power for testing, remove all other power entities
+entities_to_remove = [
+    entity_id for entity_id, entity_data in original_entities.items()
+    if entity_id != "sensor.panel_power" and is_power_entity(entity_data)
+]
+```
+
+### 🚨 CRITICAL: Collection Resolver Patching
+
+**MOST IMPORTANT:** When testing collection functions like `count('device_class:power')` or `sum('device_class:energy')`, you MUST patch the collection resolver's entity registry access. The `CollectionResolver` gets its entity registry through `er.async_get(hass)` calls, which are NOT automatically mocked.
+
+**❌ WITHOUT PATCHING (WILL FAIL):**
+```python
+# This will NOT work - CollectionResolver uses different registry instance
+with (
+    patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+    patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+):
+    # Your test code - count() will return wrong values!
+```
+
+**✅ WITH PROPER PATCHING (REQUIRED):**
+```python
+# This WILL work - CollectionResolver uses the same mock registry
+with (
+    patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+    patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+    patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+    patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+):
+    # Your test code - count() will return correct values!
+```
+
+**Why This Matters:**
+- The `CollectionResolver` calls `er.async_get(hass)` internally
+- This returns a different entity registry instance than `mock_hass.entity_registry`
+- Without patching, collection functions use the real registry, not your modified mock
+- This causes tests to fail with unexpected values (e.g., `42.0` instead of `0`)
+
+**When to Apply This Patching:**
+- ✅ Any test using collection functions: `count()`, `sum()`, `avg()`, etc.
+- ✅ Any test using device_class patterns: `device_class:power`, `device_class:energy`
+- ✅ Any test using area patterns: `area:living_room`
+- ✅ Any test using label patterns: `label:critical`
+- ✅ Any test using regex patterns: `regex:sensor.*power`
+
+### Complete Test Isolation Pattern
+
+Here's the complete pattern for tests requiring entity isolation:
+
+```python
+async def test_count_function_with_isolation(
+    self, mock_hass, mock_entity_registry, mock_states,
+    mock_config_entry, mock_async_add_entities, mock_device_registry
+):
+    """Test that count('device_class:power') returns 0 when no power entities exist."""
+
+    # 1. Save original state for restoration
+    original_entities = dict(mock_entity_registry._entities)
+    original_states = dict(mock_states)
+
+    # 2. Remove entities for isolation
+    entities_to_remove = [
+        entity_id for entity_id, entity_data in original_entities.items()
+        if (hasattr(entity_data, "device_class") and entity_data.device_class == "power")
+        or (isinstance(entity_data, dict) and entity_data.get("device_class") == "power")
+        or (hasattr(entity_data, "attributes") and entity_data.attributes.get("device_class") == "power")
+    ]
+
+    for entity_id in entities_to_remove:
+        mock_entity_registry.remove_entity(entity_id)
+        if entity_id in mock_states:
+            del mock_states[entity_id]
+
+    try:
+        # 3. Your test code here with PROPER PATCHING
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+            patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+        ):
+            # Set up storage manager, load YAML, create sensors, etc.
+
+        # 4. Verify isolation worked
+        # count('device_class:power') should return 0
+        # sum('device_class:power') should return 0
+
+    finally:
+        # 5. Restore original state
+        mock_entity_registry._entities.clear()
+        mock_entity_registry._entities.update(original_entities)
+        mock_states.clear()
+        mock_states.update(original_states)
+```
+
+### Registry Operation Methods
+
+The `DynamicMockEntityRegistry` provides these methods:
+
+#### `register_entity(entity_id, unique_id, domain, **attrs)`
+
+- **Purpose**: Add an entity to the registry for testing
+- **Parameters**:
+  - `entity_id`: Full entity ID (e.g., "sensor.test_power")
+  - `unique_id`: Unique identifier (e.g., "test_power")
+  - `domain`: Entity domain (e.g., "sensor")
+  - `**attrs`: Additional attributes (e.g., `device_class="power"`)
+- **Returns**: None
+- **Logs**: "📝 Manual registry: Added entity {entity_id}"
+
+#### `remove_entity(entity_id)`
+
+- **Purpose**: Remove an entity from the registry for test isolation
+- **Parameters**:
+  - `entity_id`: Full entity ID to remove
+- **Returns**: `True` if entity was removed, `False` if not found
+- **Logs**: "🗑️ Manual registry: Removed entity {entity_id}"
+
+### Common Use Cases
+
+#### 1. Testing Collection Functions
+
+```python
+# Test count('device_class:power') returning 0
+entities_to_remove = [entity_id for entity_id, entity_data in original_entities.items()
+                     if is_power_entity(entity_data)]
+for entity_id in entities_to_remove:
+    mock_entity_registry.remove_entity(entity_id)
+```
+
+#### 2. Testing Missing Entity Handling
+
+```python
+# Ensure specific entities don't exist
+if "sensor.missing_entity" in mock_states:
+    del mock_states["sensor.missing_entity"]
+mock_entity_registry.remove_entity("sensor.missing_entity")
+```
+
+#### 3. Testing Specific Entity Counts
+
+```python
+# Remove all but 2 power entities to test count('device_class:power') returning 2
+power_entities = [entity_id for entity_id, entity_data in original_entities.items()
+                 if is_power_entity(entity_data)]
+entities_to_keep = power_entities[:2]
+entities_to_remove = power_entities[2:]
+
+for entity_id in entities_to_remove:
+    mock_entity_registry.remove_entity(entity_id)
+```
+
+### Best Practices for Registry Operations
+
+1. **Always save original state** - Use `dict(mock_entity_registry._entities)` to create a copy
+2. **Use try/finally blocks** - Ensure restoration happens even if test fails
+3. **Use the provided methods** - Never access `_entities` directly
+4. **Remove from both registry and states** - Keep registry and states in sync
+5. **Use multiple detection strategies** - Handle different entity storage patterns
+6. **Log your operations** - The methods provide helpful logging
+7. **Test isolation thoroughly** - Verify your isolation worked as expected
+8. **Restore completely** - Clear and update both registry and states
+
+### 🚨 Troubleshooting Collection Function Issues
+
+If your tests are failing with unexpected collection function results, check these common issues:
+
+#### **Symptom: Collection functions return wrong values**
+
+**Example:** `count('device_class:power')` returns `42.0` instead of expected `0`
+
+**Root Cause:** Collection resolver not using the same mock registry as your test
+
+**Solution:** Add the required patches:
+```python
+patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+```
+
+#### **Symptom: Tests pass individually but fail in sequence**
+
+**Example:** Test A passes, Test B passes, but running both together fails
+
+**Root Cause:** Entity registry state not properly restored between tests
+
+**Solution:** Always use try/finally blocks for state restoration:
+```python
+try:
+    # Your test code
+    pass
+finally:
+    # Restore original state
+    mock_entity_registry._entities.clear()
+    mock_entity_registry._entities.update(original_entities)
+    mock_states.clear()
+    mock_states.update(original_states)
+```
+
+#### **Symptom: Entity removal not working**
+
+**Example:** `remove_entity()` called but `count()` still returns old values
+
+**Root Cause:** Using direct dictionary access instead of provided methods
+
+**Solution:** Use the registry's `remove_entity()` method:
+```python
+# ✅ CORRECT
+mock_entity_registry.remove_entity(entity_id)
+
+# ❌ INCORRECT  
+del mock_entity_registry._entities[entity_id]
+```
+
+#### **Symptom: "Attribute hass is None" errors**
+
+**Example:** `Attribute hass is None for <entity unknown.unknown=unknown>`
+
+**Root Cause:** Mock entity objects not properly initialized
+
+**Solution:** Ensure mock entities have proper hass attribute or use proper mocking patterns
+
+### Debugging Collection Function Issues
+
+To debug collection function problems:
+
+1. **Check what entities are in the registry:**
+```python
+print(f"Entities in registry: {list(mock_entity_registry._entities.keys())}")
+```
+
+2. **Verify entity removal worked:**
+```python
+power_entities = [
+    entity_id for entity_id, entity_data in mock_entity_registry._entities.items()
+    if hasattr(entity_data, "device_class") and entity_data.device_class == "power"
+]
+print(f"Power entities remaining: {power_entities}")
+```
+
+3. **Test collection resolver directly:**
+```python
+from ha_synthetic_sensors.collection_resolver import CollectionResolver
+resolver = CollectionResolver(mock_hass)
+entities = resolver.resolve_collection(DynamicQuery("device_class", "power", "count"))
+print(f"Collection resolver found: {entities}")
+```
+
 ## Best Practices
 
 1. **ALWAYS use the common fixtures** - The golden rule: use `mock_hass`, `mock_entity_registry`, `mock_states` from
@@ -456,3 +824,42 @@ async def test_your_feature(
 
 This guide provides the foundation for writing robust integration tests that properly exercise the synthetic sensors public
 API while avoiding common pitfalls.
+
+### 📚 What Was Missing from the Original Guide
+
+The original integration test guide was missing several critical insights that led to test failures:
+
+#### **1. Collection Resolver Architecture Understanding**
+- **Missing:** Understanding that `CollectionResolver` uses `er.async_get(hass)` internally
+- **Impact:** Tests were modifying one registry instance while collection functions used another
+- **Solution:** Added explicit patching for collection resolver registry access
+
+#### **2. Test Isolation Patterns**
+- **Missing:** Proper patterns for entity registry isolation
+- **Impact:** Tests interfered with each other, causing flaky results
+- **Solution:** Added `remove_entity()` method and proper state restoration patterns
+
+#### **3. Debugging Collection Function Issues**
+- **Missing:** Tools and techniques for debugging collection function problems
+- **Impact:** Difficult to diagnose why `count()` returned `42.0` instead of `0`
+- **Solution:** Added debugging techniques and troubleshooting guide
+
+#### **4. Registry Operation Best Practices**
+- **Missing:** Clear guidance on when and how to modify entity registries
+- **Impact:** Tests used inconsistent approaches to entity manipulation
+- **Solution:** Added comprehensive registry operation documentation
+
+#### **5. Symptom-Based Troubleshooting**
+- **Missing:** Clear mapping between test failures and their root causes
+- **Impact:** Developers struggled to understand why tests failed
+- **Solution:** Added symptom-based troubleshooting section
+
+### 🎯 Key Lessons Learned
+
+1. **Collection functions require special attention** - They access registries differently than other components
+2. **Test isolation is multi-layered** - Must isolate both registry and collection resolver
+3. **Proper patching is essential** - Not all components use the same mock instances
+4. **State restoration is critical** - Tests must clean up after themselves
+5. **Debugging tools are invaluable** - Need ways to inspect registry state during tests
+
+These insights ensure that future tests avoid the same pitfalls and can properly test collection function behavior.
