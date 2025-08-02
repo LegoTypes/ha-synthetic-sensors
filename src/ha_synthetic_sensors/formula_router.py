@@ -7,7 +7,7 @@ from enum import Enum
 import logging
 import re
 
-from .shared_constants import COLLECTION_PREFIXES, DURATION_FUNCTIONS, STRING_FUNCTIONS
+from .shared_constants import COLLECTION_PREFIXES, DATETIME_FUNCTIONS, DURATION_FUNCTIONS, STRING_FUNCTIONS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -424,8 +424,7 @@ class FormulaRouter:
         Returns:
             True if datetime functions found, False otherwise
         """
-        from .shared_constants import DATETIME_FUNCTIONS
-        
+
         # Check for datetime function patterns
         for datetime_func in DATETIME_FUNCTIONS:
             pattern = rf"\b{re.escape(datetime_func)}\s*\("
