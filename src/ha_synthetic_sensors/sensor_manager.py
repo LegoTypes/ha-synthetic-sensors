@@ -152,6 +152,11 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                                 self._attr_unique_id,
                             )
 
+    @property
+    def hass(self) -> HomeAssistant:
+        """Return the Home Assistant instance."""
+        return self._hass
+
     def _setup_metadata_properties(self, global_settings: GlobalSettingsDict | None) -> None:
         """Set up metadata properties for the sensor."""
         metadata_handler = MetadataHandler()
