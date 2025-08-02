@@ -276,8 +276,8 @@ sensors:
             # Import advanced string operations YAML - should succeed
             result = await storage_manager.async_from_yaml(yaml_content=advanced_string_yaml, sensor_set_id=sensor_set_id)
 
-            # Verify import succeeded (16 sensors: 14 string function + 2 compatibility)
-            expected_sensors = 16
+            # Verify import succeeded (20 sensors: 16 original + 4 normalization functions)
+            expected_sensors = 20
             assert result["sensors_imported"] == expected_sensors, (
                 f"Expected {expected_sensors} sensors, got {result['sensors_imported']}"
             )
@@ -472,3 +472,122 @@ sensors:
             # Cleanup
             if storage_manager.sensor_set_exists(sensor_set_id):
                 await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    @pytest.fixture
+    def mock_async_add_entities(self):
+        """Create a mock AddEntitiesCallback."""
+        return Mock()
+
+    @pytest.fixture
+    def mock_device_entry(self):
+        """Create a mock device entry for testing."""
+        mock_device_entry = Mock()
+        mock_device_entry.name = "Test Device"
+        mock_device_entry.identifiers = {("ha_synthetic_sensors", "test_device_123")}
+        return mock_device_entry
+
+    @pytest.fixture
+    def mock_device_registry(self, mock_device_entry):
+        """Create a mock device registry that returns the test device."""
+        mock_registry = Mock()
+        mock_registry.devices = Mock()
+        mock_registry.async_get_device.return_value = mock_device_entry
+        return mock_registry
+
+    async def test_string_normalization_functions_integration(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+    ):
+        """Test string normalization functions through the public API."""
+
+        # Set up storage manager with proper mocking
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            # Mock setup
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            # Use common device registry fixture
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            # Create storage manager
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            # Load YAML configuration
+            sensor_set_id = "string_normalization_test"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="String Normalization Test Sensors"
+            )
+
+            # Load the string normalization fixture
+            fixture_path = "tests/fixtures/integration/string_normalization.yaml"
+            with open(fixture_path, "r") as f:
+                yaml_content = f.read()
+
+            # Import string normalization YAML - should pass validation
+            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            assert result["sensors_imported"] == 16, f"Expected 16 sensors, got {result['sensors_imported']}"
+
+            # Set up synthetic sensors via public API
+            from ha_synthetic_sensors import async_setup_synthetic_sensors
+
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_123",
+            )
+
+            # Verify sensors were created via public API
+            assert sensor_manager is not None
+            assert mock_async_add_entities.called
+
+            # Test the functionality using public API - update sensors
+            await sensor_manager.async_update_sensors()
+
+            # Verify sensors were created with correct configurations
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 16
+
+            # Get created sensor entities and verify their states
+            all_entities = []
+            for call in mock_async_add_entities.call_args_list:
+                entities_list = call.args[0]  # First argument is the list of entities
+                for entity in entities_list:
+                    all_entities.append(entity)
+
+            sensor_entities = {entity.unique_id: entity for entity in all_entities}
+            assert len(sensor_entities) == 16, f"Expected 16 entities, got {len(sensor_entities)}"
+
+            # Test string normalization functions
+            normalize_entity = sensor_entities["test_normalize_whitespace"]
+            assert normalize_entity.native_value == "hello world"  # Normalized whitespace
+
+            clean_entity = sensor_entities["test_clean_special_chars"]
+            assert clean_entity.native_value == "devicename123"  # Special chars removed
+
+            sanitize_entity = sensor_entities["test_sanitize_spaces"]
+            assert sanitize_entity.native_value == "hello_world"  # Spaces replaced with underscores
+
+            # Test complex nested expression
+            complex_entity = sensor_entities["test_complex_device_name_normalization"]
+            assert complex_entity.native_value == "SmartDevice1"  # Clean -> normalize -> sanitize pipeline
+
+            # Test string concatenation
+            concat_entity = sensor_entities["test_concatenation_with_normalize"]
+            assert concat_entity.native_value == "Cleaned: hello world"  # String concatenation working
+
+            # Test additional functions
+            clean_keep_entity = sensor_entities["test_clean_keep_spaces"]
+            assert clean_keep_entity.native_value == "hello world 123"  # Clean preserves spaces in alphanumeric
+
+            sanitize_special_entity = sensor_entities["test_sanitize_special_chars"]
+            assert sanitize_special_entity.native_value == "device_name_123"  # Hyphens and @ replaced with underscores
+
+            # Cleanup
+            await storage_manager.async_delete_sensor_set(sensor_set_id)

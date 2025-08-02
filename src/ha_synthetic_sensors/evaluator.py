@@ -631,9 +631,11 @@ class Evaluator(FormulaEvaluator):
                 raise err
 
         # Validate result type based on formula context
+        # Note: With the formula router in place, main formulas can safely return strings
+        # The router ensures proper type handling and evaluation routing
         is_main_formula = sensor_config and config.id == sensor_config.unique_id
-        if is_main_formula and not isinstance(result, int | float):
-            raise ValueError(f"Main formula result must be numeric, got {type(result).__name__}: {result}")
+        if is_main_formula and not isinstance(result, int | float | str | bool):
+            raise ValueError(f"Main formula result must be numeric, string, or boolean, got {type(result).__name__}: {result}")
 
         # Cache the result (cache handler supports multiple types for future expansion)
         if isinstance(result, int | float):

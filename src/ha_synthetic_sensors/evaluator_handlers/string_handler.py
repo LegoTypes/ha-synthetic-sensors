@@ -98,6 +98,9 @@ class StringHandler(FormulaHandler):
                         "upper": lambda s: s.upper(),
                         "title": lambda s: s.title(),
                         "length": lambda s: str(len(s)),
+                        "normalize": lambda s: re.sub(r"\s+", " ", s.strip()),  # Normalize whitespace
+                        "clean": lambda s: re.sub(r"[^\w\s]", "", s).strip(),  # Remove non-alphanumeric except spaces
+                        "sanitize": lambda s: re.sub(r"[^\w]", "_", s.strip()),  # Replace non-alphanumeric with underscores
                     }
                     if routing_result.user_function in string_functions:
                         func = string_functions[routing_result.user_function]

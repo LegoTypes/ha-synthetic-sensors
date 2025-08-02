@@ -149,3 +149,32 @@ sensors:
     metadata:
       unit_of_measurement: "devices"
       device_class: "enum"
+
+  # String normalization functions
+  normalize_whitespace_sensor:
+    name: "Normalize Whitespace Test"
+    formula: "normalize('  hello   world  ')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  clean_special_chars_sensor:
+    name: "Clean Special Characters Test"
+    formula: "clean('device@name#123!')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  sanitize_spaces_sensor:
+    name: "Sanitize Spaces Test"
+    formula: "sanitize('hello world')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  complex_normalization_sensor:
+    name: "Complex Normalization Test"
+    formula: "sanitize(normalize(clean('  Smart@Device#1!!  ')))"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"

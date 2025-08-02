@@ -14,6 +14,9 @@ BASIC_STRING_FUNCTIONS: frozenset[str] = frozenset(
         "upper",
         "title",
         "length",
+        "normalize",
+        "clean",
+        "sanitize",
     }
 )
 
