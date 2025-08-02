@@ -178,3 +178,105 @@ sensors:
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
+
+  # Complex String Concatenation Patterns - Complete the remaining patterns
+  multi_variable_concatenation_sensor:
+    name: "Multi Variable Concatenation Test"
+    formula: "'Device: ' + device_name + ' | Status: ' + device_status + ' | Power: ' + str(power_value) + 'W'"
+    variables:
+      device_name: "sensor.device_name"
+      device_status: "sensor.device_status"
+      power_value: "sensor.power_reading"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  nested_function_concatenation_sensor:
+    name: "Nested Function Concatenation Test"
+    formula: "'Processed: ' + trim(upper(device_name)) + ' | Length: ' + str(length(device_name)) + ' chars'"
+    variables:
+      device_name: "sensor.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  conditional_concatenation_sensor:
+    name: "Conditional Concatenation Test"
+    formula: "'Status: ' + device_status + ' | ' + contains(device_status, 'active') + ' | ' + startswith(device_status, 'online')"
+    variables:
+      device_status: "sensor.device_status"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  complex_mixed_type_concatenation_sensor:
+    name: "Complex Mixed Type Concatenation Test"
+    formula: "'Device: ' + device_name + ' | Count: ' + str(device_count) + ' | Active: ' + str(is_active) + ' | Temp: ' + str(temperature) + '°C'"
+    variables:
+      device_name: "sensor.device_name"
+      device_count: "sensor.device_count"
+      is_active: "sensor.is_active"
+      temperature: "sensor.temperature"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  deep_nested_concatenation_sensor:
+    name: "Deep Nested Concatenation Test"
+    formula: "'Device: ' + trim(device_name) + ' | Status: ' + upper(device_status) + ' | Power: ' + str(power_value) + 'W | Active: ' + contains(device_status, 'active')"
+    variables:
+      device_name: "sensor.device_name"
+      device_status: "sensor.device_status"
+      power_value: "sensor.power_reading"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  string_function_chain_concatenation_sensor:
+    name: "String Function Chain Concatenation Test"
+    formula: "'Processed: ' + sanitize(normalize(clean(device_name))) + ' | Length: ' + str(length(device_name)) + ' | Contains: ' + contains(device_name, 'sensor')"
+    variables:
+      device_name: "sensor.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  boolean_function_concatenation_sensor:
+    name: "Boolean Function Concatenation Test"
+    formula: "'Device: ' + device_name + ' | Is Sensor: ' + contains(device_name, 'sensor') + ' | Starts Temp: ' + startswith(device_name, 'temp') + ' | Ends Active: ' + endswith(device_status, 'active')"
+    variables:
+      device_name: "sensor.device_name"
+      device_status: "sensor.device_status"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  complex_replacement_concatenation_sensor:
+    name: "Complex Replacement Concatenation Test"
+    formula: "'Original: ' + device_name + ' | Replaced: ' + replace(device_name, '_', '-') + ' | Cleaned: ' + clean(device_name) + ' | Normalized: ' + normalize(device_name)"
+    variables:
+      device_name: "sensor.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  multi_operation_concatenation_sensor:
+    name: "Multi Operation Concatenation Test"
+    formula: "'Device: ' + device_name + ' | Power: ' + str(power_value * 1.1) + 'W | Status: ' + upper(device_status) + ' | Count: ' + str(device_count + 1) + ' | Active: ' + contains(device_status, 'active')"
+    variables:
+      device_name: "sensor.device_name"
+      power_value: "sensor.power_reading"
+      device_status: "sensor.device_status"
+      device_count: "sensor.device_count"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  extended_string_function_concatenation_sensor:
+    name: "Extended String Function Concatenation Test"
+    formula: "'Device: ' + device_name + ' | Split: ' + join(split(device_name, '_'), ' | ') + ' | Padded: ' + pad_left(device_name, 20, '*') + ' | Centered: ' + center(device_name, 25, '-')"
+    variables:
+      device_name: "sensor.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"

@@ -1,0 +1,18 @@
+# Test fixture for existing datetime functions integration tests
+# Used by: test_date_arithmetic_integration.py::test_existing_datetime_functions
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_existing_datetime"
+
+sensors:
+  # Test existing datetime functions
+  test_now_function:
+    name: "Test Now Function"
+    formula: "1"  # Simple formula for now
+    attributes:
+      current_time: now()
+      today_date: today()
+    metadata:
+      device_class: "timestamp"

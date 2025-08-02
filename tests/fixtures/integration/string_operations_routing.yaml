@@ -1,0 +1,28 @@
+# Used by: test_formula_router_integration
+# Tests that the formula router correctly routes different formula types
+version: "1.0"
+
+global_settings:
+  device_identifier: "routing_test_device"
+
+sensors:
+  string_literal_sensor:
+    name: "String Literal Routing"
+    formula: "'Static String Value'"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  numeric_formula_sensor:
+    name: "Numeric Formula Routing"
+    formula: "42 * 2"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  collection_function_sensor:
+    name: "Collection Function Routing"
+    formula: "count('device_class:power')"
+    metadata:
+      unit_of_measurement: "devices"
+      device_class: "enum"

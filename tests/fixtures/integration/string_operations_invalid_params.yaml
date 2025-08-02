@@ -1,0 +1,14 @@
+# Used by: test_string_function_parameter_validation_integration
+# Tests that parameter validation works correctly in integration context
+version: "1.0"
+
+global_settings:
+  device_identifier: "invalid_param_test_device"
+
+sensors:
+  invalid_contains_sensor:
+    name: "Invalid Contains Parameters"
+    formula: "contains('only_one_param')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"

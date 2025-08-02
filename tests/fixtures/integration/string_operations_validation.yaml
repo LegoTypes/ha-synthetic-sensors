@@ -1,0 +1,27 @@
+# Used by: test_string_operations_with_existing_validation
+# Tests string operations work with existing validation system
+version: "1.0"
+
+global_settings:
+  device_identifier: "string_validation_device"
+
+sensors:
+  valid_string_sensor:
+    name: "Valid String Operations"
+    formula: "'Power: ' + state + 'W'"
+    variables:
+      state: "sensor.power_meter"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+      state_class: "measurement"
+
+  valid_numeric_sensor:
+    name: "Valid Numeric Operations"
+    formula: "state * 1.1"
+    variables:
+      state: "sensor.power_meter"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

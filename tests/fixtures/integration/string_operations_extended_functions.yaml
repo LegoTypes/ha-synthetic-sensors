@@ -1,0 +1,105 @@
+# Used by: test_extended_string_functions_public_api_integration
+# Tests extended string functions with real data through public API
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_extended_functions"
+
+sensors:
+  # String validation functions
+  test_isalpha_with_data:
+    name: "Test IsAlpha With Data"
+    formula: "isalpha(clean(text_data))"
+    variables:
+      text_data: "sensor.text_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_validation_mixed:
+    name: "Test Validation Mixed"
+    formula: "'Alpha: ' + isalpha(clean(mixed_data)) + ', Digit: ' + isdigit(replace_all(mixed_data, 'Test', ''))"
+    variables:
+      mixed_data: "sensor.mixed_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Advanced replacement with data
+  test_replace_all_with_data:
+    name: "Test Replace All With Data"
+    formula: "replace_all(text_data, ' ', '_')"
+    variables:
+      text_data: "sensor.text_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Split/join operations with real CSV data
+  test_split_join_csv:
+    name: "Test Split Join CSV"
+    formula: "join(split(csv_data, ','), ' | ')"
+    variables:
+      csv_data: "sensor.csv_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_split_count:
+    name: "Test Split Count"
+    formula: "'Items: ' + length(split(csv_data, ','))"
+    variables:
+      csv_data: "sensor.csv_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Padding functions with dynamic content
+  test_dynamic_padding:
+    name: "Test Dynamic Padding"
+    formula: "center(trim(text_data), 20, '*')"
+    variables:
+      text_data: "sensor.text_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Complex normalization chain
+  test_normalization_chain:
+    name: "Test Normalization Chain"
+    formula: "sanitize(normalize(clean(special_chars)))"
+    variables:
+      special_chars: "sensor.special_chars"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Complex nested operations
+  test_complex_string_processing:
+    name: "Test Complex String Processing"
+    formula: "'Result: ' + pad_left(join(split(replace_all(normalize(text_data), ' ', '_'), '_'), '-'), 15, '0')"
+    variables:
+      text_data: "sensor.text_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Validation with concatenation
+  test_validation_report:
+    name: "Test Validation Report"
+    formula: "'Data: ' + trim(mixed_data) + ' | Alpha: ' + isalpha(mixed_data) + ' | AlNum: ' + isalnum(mixed_data)"
+    variables:
+      mixed_data: "sensor.mixed_data"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Performance test with multiple operations
+  test_multi_operation:
+    name: "Test Multi Operation"
+    formula: "upper(center(sanitize(clean(normalize(special_chars))), 25, '-'))"
+    variables:
+      special_chars: "sensor.special_chars"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"

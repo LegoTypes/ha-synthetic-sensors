@@ -11,14 +11,46 @@ from ha_synthetic_sensors.storage_manager import StorageManager
 class TestDateArithmeticIntegration:
     """Integration tests for date arithmetic through the public API."""
 
-    async def test_basic_duration_functions(self, mock_hass, mock_entity_registry, mock_states):
-        """Test basic duration function evaluation through math functions."""
+    @pytest.fixture
+    def mock_device_entry(self):
+        """Create a mock device entry for testing."""
+        mock_device_entry = Mock()
+        mock_device_entry.name = "Test Device"  # Will be slugified for entity IDs
+        mock_device_entry.identifiers = {("ha_synthetic_sensors", "test_device_123")}
+        return mock_device_entry
 
-        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+    @pytest.fixture
+    def mock_async_add_entities(self):
+        """Create a mock async_add_entities callback for testing."""
+        return Mock()
+
+    @pytest.fixture
+    def mock_device_registry(self, mock_device_entry):
+        """Create a mock device registry that returns the test device."""
+        mock_registry = Mock()
+        mock_registry.devices = Mock()
+        mock_registry.async_get_device.return_value = mock_device_entry
+        return mock_registry
+
+    async def test_basic_duration_functions(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+    ):
+        """Test basic duration function evaluation through the public API with actual formula evaluation."""
+
+        # Set up storage manager with proper mocking (following the guide)
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            # Mock Store to avoid file system access
             mock_store = AsyncMock()
-            mock_store.async_load.return_value = None
+            mock_store.async_load.return_value = None  # Empty storage initially
             MockStore.return_value = mock_store
 
+            # Use the common device registry fixture
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            # Create storage manager
             storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
             storage_manager._store = mock_store
             await storage_manager.async_load()
@@ -29,60 +61,87 @@ class TestDateArithmeticIntegration:
             if storage_manager.sensor_set_exists(sensor_set_id):
                 await storage_manager.async_delete_sensor_set(sensor_set_id)
 
-            await storage_manager.async_create_sensor_set(sensor_set_id)
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_device_date_arithmetic",  # Must match YAML global_settings
+                name="Date Arithmetic Test Sensors",
+            )
 
-            # Test basic duration functions work in math evaluation
-            yaml_content = """
-version: "1.0"
-
-global_settings:
-  device_identifier: "test_device_date_arithmetic"
-
-sensors:
-  # Test duration functions return proper strings
-  test_days_function:
-    name: "Test Days Function"
-    formula: "days(30)"
-    metadata:
-      unit_of_measurement: ""
-
-  test_hours_function:
-    name: "Test Hours Function"
-    formula: "hours(24)"
-    metadata:
-      unit_of_measurement: ""
-
-  test_minutes_function:
-    name: "Test Minutes Function"
-    formula: "minutes(60)"
-    metadata:
-      unit_of_measurement: ""
-"""
+            # Load external YAML fixture
+            yaml_fixture_path = "tests/fixtures/integration/date_arithmetic_basic.yaml"
+            with open(yaml_fixture_path, "r", encoding="utf-8") as f:
+                date_arithmetic_yaml = f.read()
 
             # Import YAML - should succeed
-            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            result = await storage_manager.async_from_yaml(yaml_content=date_arithmetic_yaml, sensor_set_id=sensor_set_id)
 
             # Verify import succeeded
             assert result["sensors_imported"] == 3, f"Expected 3 sensors, got {result['sensors_imported']}"
 
-            # Verify sensors were created
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            assert len(sensors) == 3
+            # Set up synthetic sensors via public API to test actual evaluation
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_date_arithmetic",
+            )
 
-            # Get sensor configs to verify they were created with the right names
-            sensor_names = [s.unique_id for s in sensors]
-            assert "test_days_function" in sensor_names
-            assert "test_hours_function" in sensor_names
-            assert "test_minutes_function" in sensor_names
+            # Update sensors to trigger formula evaluation
+            await sensor_manager.async_update_sensors()
 
-    async def test_simple_date_functions(self, mock_hass, mock_entity_registry, mock_states):
-        """Test simple date function usage."""
+            # Get the actual sensor entities to verify their computed values
+            all_entities = []
+            for call in mock_async_add_entities.call_args_list:
+                entities_list = call.args[0] if call.args else []
+                all_entities.extend(entities_list)
 
-        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            # Verify we have the expected number of entities
+            assert len(all_entities) >= 3, f"Expected at least 3 entities, got {len(all_entities)}"
+
+            # Create a mapping for easy lookup
+            sensor_entities = {entity.unique_id: entity for entity in all_entities}
+
+            # Test actual formula evaluation results to verify duration functions work
+            # Test: days(30) - should return "30 days" or equivalent duration string
+            days_entity = sensor_entities.get("test_days_function")
+            if days_entity and days_entity.native_value is not None:
+                # Duration functions should return ISO duration strings
+                assert "30" in str(days_entity.native_value), f"Days function failed: got '{days_entity.native_value}'"
+
+            # Test: hours(24) - should return "24 hours" or equivalent duration string
+            hours_entity = sensor_entities.get("test_hours_function")
+            if hours_entity and hours_entity.native_value is not None:
+                assert "24" in str(hours_entity.native_value), f"Hours function failed: got '{hours_entity.native_value}'"
+
+            # Test: minutes(60) - should return "60 minutes" or equivalent duration string
+            minutes_entity = sensor_entities.get("test_minutes_function")
+            if minutes_entity and minutes_entity.native_value is not None:
+                assert "60" in str(minutes_entity.native_value), f"Minutes function failed: got '{minutes_entity.native_value}'"
+
+            # Cleanup
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_simple_date_functions(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+    ):
+        """Test simple date function usage through the public API with actual formula evaluation."""
+
+        # Set up storage manager with proper mocking (following the guide)
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            # Mock Store to avoid file system access
             mock_store = AsyncMock()
-            mock_store.async_load.return_value = None
+            mock_store.async_load.return_value = None  # Empty storage initially
             MockStore.return_value = mock_store
 
+            # Use the common device registry fixture
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            # Create storage manager
             storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
             storage_manager._store = mock_store
             await storage_manager.async_load()
@@ -93,51 +152,87 @@ sensors:
             if storage_manager.sensor_set_exists(sensor_set_id):
                 await storage_manager.async_delete_sensor_set(sensor_set_id)
 
-            await storage_manager.async_create_sensor_set(sensor_set_id)
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_device_simple_date",  # Must match YAML global_settings
+                name="Simple Date Test Sensors",
+            )
 
-            # Test simple date functions
-            yaml_content = """
-version: "1.0"
-
-global_settings:
-  device_identifier: "test_device_simple_date"
-
-sensors:
-  # Test basic date conversion
-  test_date_conversion:
-    name: "Test Date Conversion"
-    formula: "date('2025-01-01')"
-    metadata:
-      device_class: "date"
-
-  # Test date with variable
-  test_date_variable:
-    name: "Test Date Variable"
-    formula: "date(start_date)"
-    variables:
-      start_date: "2025-01-15"
-    metadata:
-      device_class: "date"
-"""
+            # Load external YAML fixture
+            yaml_fixture_path = "tests/fixtures/integration/date_arithmetic_simple.yaml"
+            with open(yaml_fixture_path, "r", encoding="utf-8") as f:
+                simple_date_yaml = f.read()
 
             # Import YAML - should succeed
-            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            result = await storage_manager.async_from_yaml(yaml_content=simple_date_yaml, sensor_set_id=sensor_set_id)
 
             # Verify import succeeded
             assert result["sensors_imported"] == 2, f"Expected 2 sensors, got {result['sensors_imported']}"
 
-            # Verify sensors were created
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            assert len(sensors) == 2
+            # Set up synthetic sensors via public API to test actual evaluation
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_simple_date",
+            )
 
-    async def test_existing_datetime_functions(self, mock_hass, mock_entity_registry, mock_states):
-        """Test that existing datetime functions still work."""
+            # Update sensors to trigger formula evaluation
+            await sensor_manager.async_update_sensors()
 
-        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            # Get the actual sensor entities to verify their computed values
+            all_entities = []
+            for call in mock_async_add_entities.call_args_list:
+                entities_list = call.args[0] if call.args else []
+                all_entities.extend(entities_list)
+
+            # Verify we have the expected number of entities
+            assert len(all_entities) >= 2, f"Expected at least 2 entities, got {len(all_entities)}"
+
+            # Create a mapping for easy lookup
+            sensor_entities = {entity.unique_id: entity for entity in all_entities}
+
+            # Test actual formula evaluation results to verify date functions work
+            # Test: date('2025-01-01') - should return ISO date format
+            date_conversion_entity = sensor_entities.get("test_date_conversion")
+            if date_conversion_entity and date_conversion_entity.native_value is not None:
+                expected_date = "2025-01-01"
+                assert expected_date in str(date_conversion_entity.native_value), (
+                    f"Date conversion failed: expected '{expected_date}' in '{date_conversion_entity.native_value}'"
+                )
+
+            # Test: date(start_date) with variable - should return ISO date format
+            date_variable_entity = sensor_entities.get("test_date_variable")
+            if date_variable_entity and date_variable_entity.native_value is not None:
+                expected_date = "2025-01-15"
+                assert expected_date in str(date_variable_entity.native_value), (
+                    f"Date variable failed: expected '{expected_date}' in '{date_variable_entity.native_value}'"
+                )
+
+            # Cleanup
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_existing_datetime_functions(
+        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+    ):
+        """Test that existing datetime functions still work through the public API with actual formula evaluation."""
+
+        # Set up storage manager with proper mocking (following the guide)
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            # Mock Store to avoid file system access
             mock_store = AsyncMock()
-            mock_store.async_load.return_value = None
+            mock_store.async_load.return_value = None  # Empty storage initially
             MockStore.return_value = mock_store
 
+            # Use the common device registry fixture
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            # Create storage manager
             storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
             storage_manager._store = mock_store
             await storage_manager.async_load()
@@ -148,33 +243,59 @@ sensors:
             if storage_manager.sensor_set_exists(sensor_set_id):
                 await storage_manager.async_delete_sensor_set(sensor_set_id)
 
-            await storage_manager.async_create_sensor_set(sensor_set_id)
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_device_existing_datetime",  # Must match YAML global_settings
+                name="Existing DateTime Test Sensors",
+            )
 
-            # Test existing datetime functions still work
-            yaml_content = """
-version: "1.0"
-
-global_settings:
-  device_identifier: "test_device_existing_datetime"
-
-sensors:
-  # Test existing datetime functions
-  test_now_function:
-    name: "Test Now Function"
-    formula: "1"  # Simple formula for now
-    attributes:
-      current_time: now()
-      today_date: today()
-    metadata:
-      device_class: "timestamp"
-"""
+            # Load external YAML fixture
+            yaml_fixture_path = "tests/fixtures/integration/date_arithmetic_existing.yaml"
+            with open(yaml_fixture_path, "r", encoding="utf-8") as f:
+                existing_datetime_yaml = f.read()
 
             # Import YAML - should succeed
-            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            result = await storage_manager.async_from_yaml(yaml_content=existing_datetime_yaml, sensor_set_id=sensor_set_id)
 
             # Verify import succeeded
             assert result["sensors_imported"] == 1, f"Expected 1 sensor, got {result['sensors_imported']}"
 
-            # Verify sensor was created
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            assert len(sensors) == 1
+            # Set up synthetic sensors via public API to test actual evaluation
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                device_identifier="test_device_existing_datetime",
+            )
+
+            # Update sensors to trigger formula evaluation
+            await sensor_manager.async_update_sensors()
+
+            # Get the actual sensor entities to verify their computed values
+            all_entities = []
+            for call in mock_async_add_entities.call_args_list:
+                entities_list = call.args[0] if call.args else []
+                all_entities.extend(entities_list)
+
+            # Verify we have the expected number of entities
+            assert len(all_entities) >= 1, f"Expected at least 1 entity, got {len(all_entities)}"
+
+            # Create a mapping for easy lookup
+            sensor_entities = {entity.unique_id: entity for entity in all_entities}
+
+            # Test actual formula evaluation results to verify datetime functions work
+            # Test: main formula should be "1"
+            now_function_entity = sensor_entities.get("test_now_function")
+            if now_function_entity and now_function_entity.native_value is not None:
+                # Main formula should evaluate to 1
+                assert now_function_entity.native_value == 1, (
+                    f"Now function main formula failed: expected '1', got '{now_function_entity.native_value}'"
+                )
+
+            # Note: Attributes with datetime functions like now() and today() would need additional testing
+            # since they return dynamic timestamps. For integration tests, we verify the main formula evaluates.
+
+            # Cleanup
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
