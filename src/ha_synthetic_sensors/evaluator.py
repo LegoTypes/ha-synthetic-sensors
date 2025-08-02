@@ -119,7 +119,7 @@ class Evaluator(FormulaEvaluator):
         self._dependency_handler = EvaluatorDependency(hass, data_provider_callback)
         self._cache_handler = EvaluatorCache(cache_config)
         self._error_handler = EvaluatorErrorHandler(self._circuit_breaker_config, self._retry_config)
-        self._formula_preprocessor = FormulaPreprocessor(self._collection_resolver)
+        self._formula_preprocessor = FormulaPreprocessor(self._collection_resolver, hass)
 
         # Initialize handler factory for formula evaluation with expression evaluator callback
         self._handler_factory = HandlerFactory(expression_evaluator=self._evaluate_expression_callback)

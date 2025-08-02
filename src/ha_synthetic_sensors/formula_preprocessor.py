@@ -3,8 +3,11 @@
 import logging
 import re
 
+from homeassistant.core import HomeAssistant
+
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
+from .constants_entities import get_ha_entity_domains
 from .dependency_parser import DependencyParser, DynamicQuery
 from .type_definitions import ContextValue
 
@@ -14,10 +17,11 @@ _LOGGER = logging.getLogger(__name__)
 class FormulaPreprocessor:
     """Handles formula preprocessing for evaluation."""
 
-    def __init__(self, collection_resolver: CollectionResolver):
+    def __init__(self, collection_resolver: CollectionResolver, hass: HomeAssistant):
         """Initialize the formula preprocessor."""
         self._collection_resolver = collection_resolver
         self._dependency_parser = DependencyParser()
+        self._hass = hass
 
     def preprocess_formula_for_evaluation(
         self,
@@ -124,8 +128,10 @@ class FormulaPreprocessor:
             if "." in entity_id:
                 parts = entity_id.split(".", 1)
                 base = parts[0]
-                # If base is a simple name (not an entity ID), it's likely an attribute reference
-                if "." not in base and not base.startswith(("sensor.", "binary_sensor.", "switch.", "light.", "climate.")):
+                # Get HA entity domain prefixes from registry - these should be converted to variables
+                known_domains = get_ha_entity_domains(self._hass)
+                # If base is NOT a known HA domain, it's likely an attribute reference
+                if base not in known_domains:
                     # This looks like an attribute reference, don't convert it
                     return entity_id
 
