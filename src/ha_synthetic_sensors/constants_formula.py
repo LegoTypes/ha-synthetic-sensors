@@ -4,7 +4,28 @@ This module centralizes formula-related constants including reserved words,
 HA state values, and other shared constants used across the evaluation system.
 """
 
-from .shared_constants import BOOLEAN_LITERALS, MATH_FUNCTIONS, PYTHON_KEYWORDS
+from .shared_constants import BOOLEAN_LITERALS, MATH_FUNCTIONS, PYTHON_KEYWORDS, STRING_FUNCTIONS
+
+# Basic string functions that take a single parameter
+BASIC_STRING_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "trim",
+        "lower",
+        "upper",
+        "title",
+        "length",
+    }
+)
+
+# Advanced string functions that take multiple parameters
+MULTI_PARAM_STRING_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "contains",
+        "startswith",
+        "endswith",
+        "replace",
+    }
+)
 
 # Reserved words that should not be treated as variables in formulas
 # These are Python keywords, boolean literals, and function names
@@ -27,6 +48,8 @@ FORMULA_RESERVED_WORDS: frozenset[str] = frozenset(
         "log10",
         # Special formula tokens
         "state",
+        # String manipulation functions (imported from STRING_FUNCTIONS)
+        *STRING_FUNCTIONS,
     }
 )
 
@@ -198,3 +221,39 @@ def is_dependency_error_type(error_type: str) -> bool:
         True if the error type is dependency-related
     """
     return error_type in DEPENDENCY_ERROR_TYPES
+
+
+def is_string_function(function_name: str) -> bool:
+    """Check if a function name is a string manipulation function.
+
+    Args:
+        function_name: The function name to check
+
+    Returns:
+        True if the function is a string manipulation function
+    """
+    return function_name in STRING_FUNCTIONS
+
+
+def is_basic_string_function(function_name: str) -> bool:
+    """Check if a function name is a basic single-parameter string function.
+
+    Args:
+        function_name: The function name to check
+
+    Returns:
+        True if the function is a basic string function (single parameter)
+    """
+    return function_name in BASIC_STRING_FUNCTIONS
+
+
+def is_multi_param_string_function(function_name: str) -> bool:
+    """Check if a function name is an advanced multi-parameter string function.
+
+    Args:
+        function_name: The function name to check
+
+    Returns:
+        True if the function is a multi-parameter string function
+    """
+    return function_name in MULTI_PARAM_STRING_FUNCTIONS

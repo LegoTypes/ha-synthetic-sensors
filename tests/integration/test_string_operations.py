@@ -247,3 +247,228 @@ sensors:
             # Cleanup
             if storage_manager.sensor_set_exists(sensor_set_id):
                 await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_advanced_string_functions_integration(self, mock_hass, mock_entity_registry, mock_states):
+        """Test advanced string functions through the public API."""
+
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            sensor_set_id = "advanced_string_operations_test"
+
+            # Clean up if exists
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+            await storage_manager.async_create_sensor_set(sensor_set_id)
+
+            # Load advanced string operations YAML fixture
+            yaml_fixture_path = "tests/fixtures/integration/string_operations_advanced.yaml"
+            with open(yaml_fixture_path, "r") as f:
+                advanced_string_yaml = f.read()
+
+            # Import advanced string operations YAML - should succeed
+            result = await storage_manager.async_from_yaml(yaml_content=advanced_string_yaml, sensor_set_id=sensor_set_id)
+
+            # Verify import succeeded (16 sensors: 14 string function + 2 compatibility)
+            expected_sensors = 16
+            assert result["sensors_imported"] == expected_sensors, (
+                f"Expected {expected_sensors} sensors, got {result['sensors_imported']}"
+            )
+
+            # Verify sensors were created
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == expected_sensors
+
+            # Verify specific advanced function sensors exist
+            sensor_names = [s.name for s in sensors]
+
+            # Basic string functions
+            assert "Trim Function Test" in sensor_names
+            assert "Case Functions Test" in sensor_names
+
+            # Substring functions
+            assert "Contains Function Test" in sensor_names
+            assert "Startswith Function Test" in sensor_names
+            assert "Endswith Function Test" in sensor_names
+
+            # Analysis functions
+            assert "Length Function Test" in sensor_names
+            assert "Length Variable Test" in sensor_names
+
+            # Replacement functions
+            assert "Replace Function Test" in sensor_names
+            assert "Replace Variable Test" in sensor_names
+
+            # Complex combinations
+            assert "Nested Functions Test" in sensor_names
+            assert "Concatenation with Functions Test" in sensor_names
+            assert "Complex Parameters Test" in sensor_names
+            assert "Mixed Operations Test" in sensor_names
+            assert "Boolean Result Concatenation Test" in sensor_names
+
+            # Backward compatibility
+            assert "Numeric Formula Compatibility" in sensor_names
+            assert "Collection Function Compatibility" in sensor_names
+
+            # Verify specific sensor configurations
+            trim_sensor = next((s for s in sensors if "trim_function" in s.unique_id), None)
+            assert trim_sensor is not None
+            assert trim_sensor.name == "Trim Function Test"
+
+            contains_sensor = next((s for s in sensors if "contains_function" in s.unique_id), None)
+            assert contains_sensor is not None
+            assert contains_sensor.name == "Contains Function Test"
+
+            length_sensor = next((s for s in sensors if "length_function" in s.unique_id), None)
+            assert length_sensor is not None
+            assert length_sensor.name == "Length Function Test"
+
+            replace_sensor = next((s for s in sensors if "replace_function" in s.unique_id), None)
+            assert replace_sensor is not None
+            assert replace_sensor.name == "Replace Function Test"
+
+            # Cleanup
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_string_function_parameter_validation_integration(self, mock_hass, mock_entity_registry, mock_states):
+        """Test that parameter validation works correctly in integration context."""
+
+        # Test YAML with invalid parameter counts
+        invalid_param_yaml = """
+version: "1.0"
+
+global_settings:
+  device_identifier: "invalid_param_test_device"
+
+sensors:
+  invalid_contains_sensor:
+    name: "Invalid Contains Parameters"
+    formula: "contains('only_one_param')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+"""
+
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            sensor_set_id = "invalid_param_test"
+
+            # Clean up if exists
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+            await storage_manager.async_create_sensor_set(sensor_set_id)
+
+            # Import invalid parameter YAML - should fail gracefully
+            try:
+                result = await storage_manager.async_from_yaml(yaml_content=invalid_param_yaml, sensor_set_id=sensor_set_id)
+                # If it doesn't raise an exception, it should import 0 sensors
+                assert result["sensors_imported"] == 0, "Invalid parameter syntax should not create sensors"
+            except Exception as e:
+                # Should raise a validation or syntax error
+                assert any(keyword in str(e).lower() for keyword in ["parameter", "syntax", "requires"]), (
+                    f"Error should mention parameter validation: {e}"
+                )
+
+            # Cleanup
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+    async def test_string_functions_with_real_variables_integration(self, mock_hass, mock_entity_registry, mock_states):
+        """Test string functions with realistic variable scenarios."""
+
+        # Setup mock states for more realistic testing
+        mock_states.return_value = [
+            Mock(
+                entity_id="sensor.living_room_temperature", state="23.5", attributes={"device_name": "Living Room Temp Sensor"}
+            ),
+            Mock(entity_id="sensor.kitchen_humidity", state="45.2", attributes={"device_name": "Kitchen Humidity Sensor"}),
+            Mock(entity_id="sensor.device_status", state="online_active", attributes={"friendly_name": "Device Status"}),
+        ]
+
+        realistic_variables_yaml = """
+version: "1.0"
+
+global_settings:
+  device_identifier: "realistic_variables_test_device"
+
+sensors:
+  device_name_analysis_sensor:
+    name: "Device Name Analysis"
+    formula: "'Name: ' + trim(device_name) + ' | Contains Temp: ' + contains(device_name, 'Temp') + ' | Length: ' + length(device_name)"
+    variables:
+      device_name: "sensor.living_room_temperature.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  status_processing_sensor:
+    name: "Status Processing"
+    formula: "'Status: ' + replace(upper(status), '_', ' ') + ' | Starts Online: ' + startswith(status, 'online')"
+    variables:
+      status: "sensor.device_status"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  multi_device_comparison_sensor:
+    name: "Multi Device Comparison"
+    formula: "'Temp Length: ' + length(temp_name) + ' | Humidity Length: ' + length(humidity_name) + ' | Same Type: ' + contains(temp_name, 'Sensor')"
+    variables:
+      temp_name: "sensor.living_room_temperature.device_name"
+      humidity_name: "sensor.kitchen_humidity.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+"""
+
+        with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore:
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            sensor_set_id = "realistic_variables_test"
+
+            # Clean up if exists
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+            await storage_manager.async_create_sensor_set(sensor_set_id)
+
+            # Import realistic variables YAML - should succeed
+            result = await storage_manager.async_from_yaml(yaml_content=realistic_variables_yaml, sensor_set_id=sensor_set_id)
+
+            # Verify import succeeded
+            assert result["sensors_imported"] == 3, f"Expected 3 sensors, got {result['sensors_imported']}"
+
+            # Verify sensors were created with realistic configurations
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 3
+
+            sensor_names = [s.name for s in sensors]
+            assert "Device Name Analysis" in sensor_names
+            assert "Status Processing" in sensor_names
+            assert "Multi Device Comparison" in sensor_names
+
+            # Cleanup
+            if storage_manager.sensor_set_exists(sensor_set_id):
+                await storage_manager.async_delete_sensor_set(sensor_set_id)

@@ -1,0 +1,151 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "advanced_string_test_device"
+
+sensors:
+  # Basic string functions
+  trim_function_sensor:
+    name: "Trim Function Test"
+    formula: "trim('   padded string   ')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  case_functions_sensor:
+    name: "Case Functions Test"
+    formula: "upper(lower(title('mixed Case STRING')))"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Advanced substring functions
+  contains_function_sensor:
+    name: "Contains Function Test"
+    formula: "contains('Temperature Sensor Device', 'Sensor')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  startswith_function_sensor:
+    name: "Startswith Function Test"
+    formula: "startswith(device_name, 'Temperature')"
+    variables:
+      device_name: "sensor.temperature_device"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  endswith_function_sensor:
+    name: "Endswith Function Test"
+    formula: "endswith(device_status, '_active')"
+    variables:
+      device_status: "sensor.device_status"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # String analysis functions
+  length_function_sensor:
+    name: "Length Function Test"
+    formula: "length('Hello World')"
+    metadata:
+      unit_of_measurement: "characters"
+      device_class: "enum"
+
+  length_variable_sensor:
+    name: "Length Variable Test"
+    formula: "length(message_text)"
+    variables:
+      message_text: "sensor.status_message"
+    metadata:
+      unit_of_measurement: "characters"
+      device_class: "enum"
+
+  # String replacement functions
+  replace_function_sensor:
+    name: "Replace Function Test"
+    formula: "replace('old_sensor_name', 'old', 'new')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  replace_variable_sensor:
+    name: "Replace Variable Test"
+    formula: "replace(device_id, '_', '-')"
+    variables:
+      device_id: "sensor.device_identifier"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Nested function combinations
+  nested_functions_sensor:
+    name: "Nested Functions Test"
+    formula: "contains(lower(trim(device_description)), 'sensor')"
+    variables:
+      device_description: "sensor.device_description"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Functions in concatenation
+  concatenation_with_functions_sensor:
+    name: "Concatenation with Functions Test"
+    formula: "'Device: ' + trim(device_name) + ' | Length: ' + length(device_name)"
+    variables:
+      device_name: "sensor.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Complex parameter expressions
+  complex_parameters_sensor:
+    name: "Complex Parameters Test"
+    formula: "contains('Device: ' + device_type, prefix + ' Type')"
+    variables:
+      device_type: "sensor.device_type"
+      prefix: "sensor.type_prefix"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Mixed string and numeric operations
+  mixed_operations_sensor:
+    name: "Mixed Operations Test"
+    formula: "'Power: ' + str(power_value * 1.1) + 'W | Status: ' + upper(status)"
+    variables:
+      power_value: "sensor.power_reading"
+      status: "sensor.device_status"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # String functions with boolean results in concatenation
+  boolean_result_concatenation_sensor:
+    name: "Boolean Result Concatenation Test"
+    formula: "'Contains sensor: ' + contains(device_name, 'sensor') + ', Starts with temp: ' + startswith(device_name, 'temp')"
+    variables:
+      device_name: "sensor.device_name"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Backward compatibility - ensure existing formulas still work
+  numeric_formula_sensor:
+    name: "Numeric Formula Compatibility"
+    formula: "power_reading * efficiency_factor"
+    variables:
+      power_reading: "sensor.power_meter"
+      efficiency_factor: "sensor.efficiency"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  collection_function_sensor:
+    name: "Collection Function Compatibility"
+    formula: "count('device_class:power')"
+    metadata:
+      unit_of_measurement: "devices"
+      device_class: "enum"

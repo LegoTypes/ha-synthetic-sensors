@@ -74,6 +74,36 @@ DATETIME_FUNCTIONS: frozenset[str] = frozenset(
     }
 )
 
+# String manipulation functions
+STRING_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "str",
+        "trim",
+        "lower",
+        "upper",
+        "title",
+        "contains",
+        "startswith",
+        "endswith",
+        "length",
+        "replace",
+    }
+)
+
+# Collection pattern prefixes used in formula parsing
+COLLECTION_PREFIXES: frozenset[str] = frozenset(
+    {
+        "device_class:",
+        "state:",
+        "attribute:",
+        "entity_id:",
+        "domain:",
+        "area:",
+        "integration:",
+        "platform:",
+    }
+)
+
 # Mathematical and aggregation functions
 MATH_FUNCTIONS: frozenset[str] = frozenset(
     {
@@ -105,8 +135,16 @@ def get_reserved_words(hass: HomeAssistant | None = None) -> frozenset[str]:
         Frozenset of all reserved words
     """
     if hass is None:
-        return PYTHON_KEYWORDS | BUILTIN_TYPES | BOOLEAN_LITERALS | MATH_FUNCTIONS | STATE_KEYWORDS
-    return PYTHON_KEYWORDS | BUILTIN_TYPES | BOOLEAN_LITERALS | MATH_FUNCTIONS | STATE_KEYWORDS | get_ha_entity_domains(hass)
+        return PYTHON_KEYWORDS | BUILTIN_TYPES | BOOLEAN_LITERALS | MATH_FUNCTIONS | STRING_FUNCTIONS | STATE_KEYWORDS
+    return (
+        PYTHON_KEYWORDS
+        | BUILTIN_TYPES
+        | BOOLEAN_LITERALS
+        | MATH_FUNCTIONS
+        | STRING_FUNCTIONS
+        | STATE_KEYWORDS
+        | get_ha_entity_domains(hass)
+    )
 
 
 # Legacy constant for backward compatibility (lazy loaded)
@@ -127,9 +165,12 @@ def get_ha_domains(hass: HomeAssistant | None = None) -> frozenset[str]:
 __all__ = [
     "BOOLEAN_LITERALS",
     "BUILTIN_TYPES",
+    "COLLECTION_PREFIXES",
+    "DATETIME_FUNCTIONS",
     "MATH_FUNCTIONS",
     "PYTHON_KEYWORDS",
     "STATE_KEYWORDS",
+    "STRING_FUNCTIONS",
     "get_ha_domains",
     "get_reserved_words",
 ]

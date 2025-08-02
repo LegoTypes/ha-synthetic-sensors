@@ -6,7 +6,9 @@ from dataclasses import dataclass
 import logging
 import re
 
+from ..constants_formula import BASIC_STRING_FUNCTIONS, MULTI_PARAM_STRING_FUNCTIONS
 from ..formula_router import EvaluatorType, FormulaRouter, FormulaSyntaxError
+from ..shared_constants import STRING_FUNCTIONS
 from ..type_definitions import ContextValue
 from .base_handler import FormulaHandler
 from .numeric_handler import NumericHandler
@@ -78,25 +80,32 @@ class StringHandler(FormulaHandler):
                 # Evaluate inner formula and convert result to string
                 inner_result = self._evaluate_inner_expression(inner_formula, context)
                 return str(inner_result)
-            if routing_result.user_function in ["trim", "lower", "upper", "title"]:
+            if routing_result.user_function in STRING_FUNCTIONS:
                 # Extract inner formula from string function wrapper
                 inner_formula = self._formula_router.extract_inner_formula(formula, routing_result.user_function)
                 _LOGGER.debug("Extracted inner formula from %s(): %s", routing_result.user_function, inner_formula)
 
-                # Evaluate inner formula first
-                inner_result = self._evaluate_inner_expression(inner_formula, context)
-                string_value = str(inner_result)
+                # Handle functions with different parameter patterns
+                if routing_result.user_function in BASIC_STRING_FUNCTIONS:
+                    # Single parameter functions
+                    inner_result = self._evaluate_inner_expression(inner_formula, context)
+                    string_value = str(inner_result)
 
-                # Apply the string function
-                string_functions: dict[str, Callable[[str], str]] = {
-                    "trim": lambda s: s.strip(),
-                    "lower": lambda s: s.lower(),
-                    "upper": lambda s: s.upper(),
-                    "title": lambda s: s.title(),
-                }
-                if routing_result.user_function in string_functions:
-                    func = string_functions[routing_result.user_function]
-                    return func(string_value)
+                    # Apply the string function
+                    string_functions: dict[str, Callable[[str], str]] = {
+                        "trim": lambda s: s.strip(),
+                        "lower": lambda s: s.lower(),
+                        "upper": lambda s: s.upper(),
+                        "title": lambda s: s.title(),
+                        "length": lambda s: str(len(s)),
+                    }
+                    if routing_result.user_function in string_functions:
+                        func = string_functions[routing_result.user_function]
+                        return func(string_value)
+
+                elif routing_result.user_function in MULTI_PARAM_STRING_FUNCTIONS:
+                    # Multi-parameter functions - need to parse parameters
+                    return self._evaluate_multi_parameter_function(routing_result.user_function, inner_formula, context)
 
             # Direct string evaluation (string literals and concatenation)
             return self._evaluate_string_expression(formula, context)
@@ -139,9 +148,7 @@ class StringHandler(FormulaHandler):
         formula = formula.strip()
 
         # First check if this is itself a function call that should be recursively evaluated
-        if self._is_function_call(formula) and any(
-            formula.startswith(f"{func}(") for func in ["str", "trim", "lower", "upper", "title"]
-        ):
+        if self._is_function_call(formula) and any(formula.startswith(f"{func}(") for func in STRING_FUNCTIONS):
             # Recursively evaluate this function call using the main evaluate method
             return self.evaluate(formula, context)
         # Handle simple string literals by evaluating them first
@@ -363,9 +370,121 @@ class StringHandler(FormulaHandler):
 
         # Use the main evaluate method for all recognized function calls
         # This ensures consistency and proper nested function handling
-        if any(operand.startswith(f"{func}(") for func in ["str", "trim", "lower", "upper", "title"]) and operand.endswith(")"):
+        recognized_functions = list(STRING_FUNCTIONS)
+        if any(operand.startswith(f"{func}(") for func in recognized_functions) and operand.endswith(")"):
             # Recursively evaluate using main evaluate method
             return self.evaluate(operand, context)
 
         # For other function calls, return as-is for now
         return operand
+
+    def _evaluate_multi_parameter_function(
+        self, function_name: str, parameters: str, context: dict[str, ContextValue] | None = None
+    ) -> str:
+        """
+        Evaluate string functions that take multiple parameters.
+
+        Supports:
+        - contains(string, substring): Check if string contains substring
+        - startswith(string, prefix): Check if string starts with prefix
+        - endswith(string, suffix): Check if string ends with suffix
+        - replace(string, old, new): Replace first occurrence of old with new
+
+        Args:
+            function_name: Name of the function to evaluate
+            parameters: Parameter string to parse (e.g., "text, 'hello'")
+            context: Variable context for evaluation
+
+        Returns:
+            String result of the function evaluation
+        """
+        # Parse parameters - simple comma splitting with quote awareness
+        params = self._parse_function_parameters(parameters)
+
+        match function_name:
+            case "contains":
+                if len(params) != 2:
+                    raise FormulaSyntaxError(f"contains() requires exactly 2 parameters, got {len(params)}", parameters)
+
+                text = str(self._evaluate_inner_expression(params[0], context))
+                substring = str(self._evaluate_inner_expression(params[1], context))
+                return "true" if substring in text else "false"
+
+            case "startswith":
+                if len(params) != 2:
+                    raise FormulaSyntaxError(f"startswith() requires exactly 2 parameters, got {len(params)}", parameters)
+
+                text = str(self._evaluate_inner_expression(params[0], context))
+                prefix = str(self._evaluate_inner_expression(params[1], context))
+                return "true" if text.startswith(prefix) else "false"
+
+            case "endswith":
+                if len(params) != 2:
+                    raise FormulaSyntaxError(f"endswith() requires exactly 2 parameters, got {len(params)}", parameters)
+
+                text = str(self._evaluate_inner_expression(params[0], context))
+                suffix = str(self._evaluate_inner_expression(params[1], context))
+                return "true" if text.endswith(suffix) else "false"
+
+            case "replace":
+                if len(params) != 3:
+                    raise FormulaSyntaxError(f"replace() requires exactly 3 parameters, got {len(params)}", parameters)
+
+                text = str(self._evaluate_inner_expression(params[0], context))
+                old = str(self._evaluate_inner_expression(params[1], context))
+                new = str(self._evaluate_inner_expression(params[2], context))
+                return text.replace(old, new, 1)  # Replace only first occurrence
+
+            case _:
+                return str(parameters)  # Fallback
+
+    def _parse_function_parameters(self, parameters: str) -> list[str]:
+        """
+        Parse function parameters with simple comma splitting and quote awareness.
+
+        Examples:
+        - "text, 'hello'" → ["text", "'hello'"]
+        - "'Device: ' + name, 'sensor'" → ["'Device: ' + name", "'sensor'"]
+
+        Args:
+            parameters: Parameter string to parse
+
+        Returns:
+            List of parameter strings
+        """
+        if not parameters.strip():
+            return []
+
+        params = []
+        current_param = ""
+        in_quote = False
+        quote_char = None
+        paren_depth = 0
+
+        for char in parameters:
+            if char in ('"', "'") and not in_quote:
+                in_quote = True
+                quote_char = char
+                current_param += char
+            elif char == quote_char and in_quote:
+                in_quote = False
+                quote_char = None
+                current_param += char
+            elif char == "(" and not in_quote:
+                paren_depth += 1
+                current_param += char
+            elif char == ")" and not in_quote:
+                paren_depth -= 1
+                current_param += char
+            elif char == "," and not in_quote and paren_depth == 0:
+                # Found parameter separator
+                params.append(current_param.strip())
+                current_param = ""
+            else:
+                current_param += char
+
+        # Add the last parameter
+        if current_param.strip():
+            params.append(current_param.strip())
+
+        return params

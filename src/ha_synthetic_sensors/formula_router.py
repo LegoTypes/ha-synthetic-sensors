@@ -7,6 +7,8 @@ from enum import Enum
 import logging
 import re
 
+from .shared_constants import COLLECTION_PREFIXES, STRING_FUNCTIONS
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -118,8 +120,8 @@ class FormulaRouter:
             )
 
         # Check for string manipulation functions
-        string_functions = ["trim(", "lower(", "upper(", "title("]
-        for func_start in string_functions:
+        string_function_patterns = [f"{func}(" for func in STRING_FUNCTIONS if func != "str"]
+        for func_start in string_function_patterns:
             if formula_stripped.startswith(func_start) and formula_stripped.endswith(")"):
                 func_name = func_start[:-1]  # Remove the '('
                 return RoutingResult(
@@ -164,24 +166,12 @@ class FormulaRouter:
         string_pattern = r"""(?:'[^']*'|"[^"]*")"""
         matches = re.findall(string_pattern, formula)
 
-        # Known collection pattern prefixes
-        collection_prefixes = {
-            "device_class:",
-            "state:",
-            "attribute:",
-            "entity_id:",
-            "domain:",
-            "area:",
-            "integration:",
-            "platform:",
-        }
-
         for match in matches:
             # Remove the quotes to check content
             content = match[1:-1]  # Remove first and last character (quotes)
 
             # Check if this looks like a collection pattern
-            is_collection_pattern = any(content.startswith(prefix) for prefix in collection_prefixes)
+            is_collection_pattern = any(content.startswith(prefix) for prefix in COLLECTION_PREFIXES)
 
             if not is_collection_pattern:
                 self._logger.debug("Found non-collection string literal: %s", match)
