@@ -153,7 +153,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                             )
 
     @property
-    def hass(self) -> HomeAssistant:
+    def hass_instance(self) -> HomeAssistant:
         """Return the Home Assistant instance."""
         return self._hass
 
