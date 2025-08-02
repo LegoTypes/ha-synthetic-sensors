@@ -6,29 +6,33 @@ HA state values, and other shared constants used across the evaluation system.
 
 from .shared_constants import BOOLEAN_LITERALS, MATH_FUNCTIONS, PYTHON_KEYWORDS, STRING_FUNCTIONS
 
-# Basic string functions that take a single parameter
-BASIC_STRING_FUNCTIONS: frozenset[str] = frozenset(
-    {
-        "trim",
-        "lower",
-        "upper",
-        "title",
-        "length",
-        "normalize",
-        "clean",
-        "sanitize",
-    }
+# Define categorization mapping for string functions
+_MULTI_PARAM_FUNCTION_NAMES = frozenset(
+    {"contains", "startswith", "endswith", "replace", "replace_all", "split", "join", "pad_left", "pad_right", "center"}
 )
 
-# Advanced string functions that take multiple parameters
-MULTI_PARAM_STRING_FUNCTIONS: frozenset[str] = frozenset(
-    {
-        "contains",
-        "startswith",
-        "endswith",
-        "replace",
-    }
-)
+# Derive string function categories from shared constants to avoid duplication
+MULTI_PARAM_STRING_FUNCTIONS: frozenset[str] = STRING_FUNCTIONS & _MULTI_PARAM_FUNCTION_NAMES
+BASIC_STRING_FUNCTIONS: frozenset[str] = STRING_FUNCTIONS - MULTI_PARAM_STRING_FUNCTIONS - {"str"}
+
+
+# Validate that our categorization matches the shared constants at module load time
+def _validate_string_function_categorization() -> None:
+    """Validate that string function categories are consistent with shared constants."""
+    categorized_functions = BASIC_STRING_FUNCTIONS | MULTI_PARAM_STRING_FUNCTIONS | {"str"}
+    if categorized_functions != STRING_FUNCTIONS:
+        missing_in_categorized = STRING_FUNCTIONS - categorized_functions
+        missing_in_shared = categorized_functions - STRING_FUNCTIONS
+        error_msg = "String function categorization mismatch. "
+        if missing_in_categorized:
+            error_msg += f"Missing in categorized: {sorted(missing_in_categorized)}. "
+        if missing_in_shared:
+            error_msg += f"Missing in shared: {sorted(missing_in_shared)}. "
+        raise ValueError(error_msg)
+
+
+# Perform validation at module import time
+_validate_string_function_categorization()
 
 # Reserved words that should not be treated as variables in formulas
 # These are Python keywords, boolean literals, and function names
@@ -91,6 +95,22 @@ ADDITIONAL_MATH_FUNCTIONS: frozenset[str] = frozenset(
         "tan",  # Tangent
     }
 )
+
+# String function constants for error messages and defaults
+DEFAULT_PADDING_CHAR: str = " "
+COMMA_SEPARATOR: str = ","
+STRING_TRUE: str = "true"
+STRING_FALSE: str = "false"
+
+# Error message templates for string functions
+ERROR_MSG_PARAMETER_COUNT_EXACT: str = "{function}() requires exactly {expected} parameters, got {actual}"
+ERROR_MSG_PARAMETER_COUNT_RANGE: str = "{function}() requires {min_params} or {max_params} parameters, got {actual}"
+ERROR_MSG_FILL_CHAR_LENGTH: str = "{function}() fill character must be exactly 1 character"
+
+# Pattern constants for tests to match error messages
+ERROR_PATTERN_PARAMETER_COUNT_EXACT = r".*{function}\(\) requires exactly \d+ parameters, got \d+"
+ERROR_PATTERN_PARAMETER_COUNT_RANGE = r".*{function}\(\) requires \d+ or \d+ parameters, got \d+"
+ERROR_PATTERN_FILL_CHAR_LENGTH = r".*fill character must be exactly 1 character"
 
 # All supported functions (collection + additional math)
 SUPPORTED_FUNCTIONS: frozenset[str] = frozenset(COLLECTION_FUNCTIONS | ADDITIONAL_MATH_FUNCTIONS)

@@ -6,7 +6,17 @@ from dataclasses import dataclass
 import logging
 import re
 
-from ..constants_formula import BASIC_STRING_FUNCTIONS, MULTI_PARAM_STRING_FUNCTIONS
+from ..constants_formula import (
+    BASIC_STRING_FUNCTIONS,
+    COMMA_SEPARATOR,
+    DEFAULT_PADDING_CHAR,
+    ERROR_MSG_FILL_CHAR_LENGTH,
+    ERROR_MSG_PARAMETER_COUNT_EXACT,
+    ERROR_MSG_PARAMETER_COUNT_RANGE,
+    MULTI_PARAM_STRING_FUNCTIONS,
+    STRING_FALSE,
+    STRING_TRUE,
+)
 from ..formula_router import EvaluatorType, FormulaRouter, FormulaSyntaxError
 from ..shared_constants import STRING_FUNCTIONS
 from ..type_definitions import ContextValue
@@ -101,6 +111,11 @@ class StringHandler(FormulaHandler):
                         "normalize": lambda s: re.sub(r"\s+", " ", s.strip()),  # Normalize whitespace
                         "clean": lambda s: re.sub(r"[^\w\s]", "", s).strip(),  # Remove non-alphanumeric except spaces
                         "sanitize": lambda s: re.sub(r"[^\w]", "_", s.strip()),  # Replace non-alphanumeric with underscores
+                        # String validation functions - return boolean as string
+                        "isalpha": lambda s: STRING_TRUE if s.isalpha() else STRING_FALSE,
+                        "isdigit": lambda s: STRING_TRUE if s.isdigit() else STRING_FALSE,
+                        "isnumeric": lambda s: STRING_TRUE if s.isnumeric() else STRING_FALSE,
+                        "isalnum": lambda s: STRING_TRUE if s.isalnum() else STRING_FALSE,
                     }
                     if routing_result.user_function in string_functions:
                         func = string_functions[routing_result.user_function]
@@ -387,12 +402,6 @@ class StringHandler(FormulaHandler):
         """
         Evaluate string functions that take multiple parameters.
 
-        Supports:
-        - contains(string, substring): Check if string contains substring
-        - startswith(string, prefix): Check if string starts with prefix
-        - endswith(string, suffix): Check if string ends with suffix
-        - replace(string, old, new): Replace first occurrence of old with new
-
         Args:
             function_name: Name of the function to evaluate
             parameters: Parameter string to parse (e.g., "text, 'hello'")
@@ -404,42 +413,130 @@ class StringHandler(FormulaHandler):
         # Parse parameters - simple comma splitting with quote awareness
         params = self._parse_function_parameters(parameters)
 
+        # Route to specialized handlers based on function category
+        if function_name in {"contains", "startswith", "endswith"}:
+            return self._evaluate_string_test_function(function_name, params, context)
+        if function_name in {"replace", "replace_all"}:
+            return self._evaluate_string_replacement_function(function_name, params, context)
+        if function_name in {"split", "join"}:
+            return self._evaluate_string_split_join_function(function_name, params, context)
+        if function_name in {"pad_left", "pad_right", "center"}:
+            return self._evaluate_string_padding_function(function_name, params, context)
+        return str(parameters)  # Fallback
+
+    def _evaluate_string_test_function(
+        self, function_name: str, params: list[str], context: dict[str, ContextValue] | None = None
+    ) -> str:
+        """Evaluate string test functions (contains, startswith, endswith)."""
+        if len(params) != 2:
+            raise FormulaSyntaxError(
+                ERROR_MSG_PARAMETER_COUNT_EXACT.format(function=function_name, expected=2, actual=len(params)),
+                ",".join(params),
+            )
+
+        text = str(self._evaluate_inner_expression(params[0], context))
+        test_value = str(self._evaluate_inner_expression(params[1], context))
+
         match function_name:
             case "contains":
-                if len(params) != 2:
-                    raise FormulaSyntaxError(f"contains() requires exactly 2 parameters, got {len(params)}", parameters)
-
-                text = str(self._evaluate_inner_expression(params[0], context))
-                substring = str(self._evaluate_inner_expression(params[1], context))
-                return "true" if substring in text else "false"
-
+                return STRING_TRUE if test_value in text else STRING_FALSE
             case "startswith":
-                if len(params) != 2:
-                    raise FormulaSyntaxError(f"startswith() requires exactly 2 parameters, got {len(params)}", parameters)
-
-                text = str(self._evaluate_inner_expression(params[0], context))
-                prefix = str(self._evaluate_inner_expression(params[1], context))
-                return "true" if text.startswith(prefix) else "false"
-
+                return STRING_TRUE if text.startswith(test_value) else STRING_FALSE
             case "endswith":
-                if len(params) != 2:
-                    raise FormulaSyntaxError(f"endswith() requires exactly 2 parameters, got {len(params)}", parameters)
+                return STRING_TRUE if text.endswith(test_value) else STRING_FALSE
+            case _:
+                return str(test_value)  # Fallback
 
-                text = str(self._evaluate_inner_expression(params[0], context))
-                suffix = str(self._evaluate_inner_expression(params[1], context))
-                return "true" if text.endswith(suffix) else "false"
+    def _evaluate_string_replacement_function(
+        self, function_name: str, params: list[str], context: dict[str, ContextValue] | None = None
+    ) -> str:
+        """Evaluate string replacement functions (replace, replace_all)."""
+        if len(params) != 3:
+            raise FormulaSyntaxError(
+                ERROR_MSG_PARAMETER_COUNT_EXACT.format(function=function_name, expected=3, actual=len(params)),
+                ",".join(params),
+            )
 
+        text = str(self._evaluate_inner_expression(params[0], context))
+        old = str(self._evaluate_inner_expression(params[1], context))
+        new = str(self._evaluate_inner_expression(params[2], context))
+
+        match function_name:
             case "replace":
-                if len(params) != 3:
-                    raise FormulaSyntaxError(f"replace() requires exactly 3 parameters, got {len(params)}", parameters)
+                return text.replace(old, new, 1)  # Replace only first occurrence
+            case "replace_all":
+                return text.replace(old, new)  # Replace all occurrences
+            case _:
+                return text  # Fallback
+
+    def _evaluate_string_split_join_function(
+        self, function_name: str, params: list[str], context: dict[str, ContextValue] | None = None
+    ) -> str:
+        """Evaluate string split/join functions."""
+        match function_name:
+            case "split":
+                if len(params) not in [1, 2]:
+                    raise FormulaSyntaxError(
+                        ERROR_MSG_PARAMETER_COUNT_RANGE.format(
+                            function="split", min_params=1, max_params=2, actual=len(params)
+                        ),
+                        ",".join(params),
+                    )
 
                 text = str(self._evaluate_inner_expression(params[0], context))
-                old = str(self._evaluate_inner_expression(params[1], context))
-                new = str(self._evaluate_inner_expression(params[2], context))
-                return text.replace(old, new, 1)  # Replace only first occurrence
+                if len(params) == 2:
+                    delimiter = str(self._evaluate_inner_expression(params[1], context))
+                    parts = text.split(delimiter)
+                else:
+                    parts = text.split()  # Split on whitespace by default
+                return COMMA_SEPARATOR.join(parts)
+
+            case "join":
+                if len(params) != 2:
+                    raise FormulaSyntaxError(
+                        ERROR_MSG_PARAMETER_COUNT_EXACT.format(function="join", expected=2, actual=len(params)),
+                        ",".join(params),
+                    )
+
+                items_str = str(self._evaluate_inner_expression(params[0], context))
+                delimiter = str(self._evaluate_inner_expression(params[1], context))
+                items = [item.strip() for item in items_str.split(COMMA_SEPARATOR)]
+                return delimiter.join(items)
 
             case _:
-                return str(parameters)  # Fallback
+                return ",".join(params)  # Fallback
+
+    def _evaluate_string_padding_function(
+        self, function_name: str, params: list[str], context: dict[str, ContextValue] | None = None
+    ) -> str:
+        """Evaluate string padding functions (pad_left, pad_right, center)."""
+        if len(params) not in [2, 3]:
+            raise FormulaSyntaxError(
+                ERROR_MSG_PARAMETER_COUNT_RANGE.format(function=function_name, min_params=2, max_params=3, actual=len(params)),
+                ",".join(params),
+            )
+
+        text = str(self._evaluate_inner_expression(params[0], context))
+        width = int(self._evaluate_inner_expression(params[1], context))
+        fill_char = DEFAULT_PADDING_CHAR
+
+        if len(params) == 3:
+            fill_char = str(self._evaluate_inner_expression(params[2], context))
+            if len(fill_char) != 1:
+                raise FormulaSyntaxError(
+                    ERROR_MSG_FILL_CHAR_LENGTH.format(function=function_name),
+                    ",".join(params),
+                )
+
+        match function_name:
+            case "pad_left":
+                return text.rjust(width, fill_char)
+            case "pad_right":
+                return text.ljust(width, fill_char)
+            case "center":
+                return text.center(width, fill_char)
+            case _:
+                return text  # Fallback
 
     def _parse_function_parameters(self, parameters: str) -> list[str]:
         """

@@ -1,0 +1,151 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_extended_functions"
+
+sensors:
+  # String validation functions
+  test_isalpha_letters:
+    name: "Test IsAlpha Letters"
+    formula: "isalpha('hello')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_isdigit_numbers:
+    name: "Test IsDigit Numbers"
+    formula: "isdigit('12345')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_isnumeric_unicode:
+    name: "Test IsNumeric Unicode"
+    formula: "isnumeric('½')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_isalnum_mixed:
+    name: "Test IsAlnum Mixed"
+    formula: "isalnum('hello123')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Advanced replacement functions
+  test_replace_all_basic:
+    name: "Test Replace All Basic"
+    formula: "replace_all('hello world hello', 'hello', 'hi')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_replace_all_multiple:
+    name: "Test Replace All Multiple"
+    formula: "replace_all('banana', 'a', 'o')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # String splitting and joining
+  test_split_comma:
+    name: "Test Split Comma"
+    formula: "split('apple,banana,cherry', ',')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_split_whitespace:
+    name: "Test Split Whitespace"
+    formula: "split('hello world test')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_join_pipe:
+    name: "Test Join Pipe"
+    formula: "join('a,b,c', ' | ')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_join_space:
+    name: "Test Join Space"
+    formula: "join('hello,world', ' ')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Padding functions
+  test_pad_left_default:
+    name: "Test Pad Left Default"
+    formula: "pad_left('hello', 10)"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_pad_left_custom:
+    name: "Test Pad Left Custom"
+    formula: "pad_left('hi', 5, '*')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_pad_right_default:
+    name: "Test Pad Right Default"
+    formula: "pad_right('hello', 8)"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_pad_right_custom:
+    name: "Test Pad Right Custom"
+    formula: "pad_right('test', 7, '0')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_center_default:
+    name: "Test Center Default"
+    formula: "center('hello', 11)"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_center_custom:
+    name: "Test Center Custom"
+    formula: "center('hi', 6, '-')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Complex nested operations
+  test_nested_validation:
+    name: "Test Nested Validation"
+    formula: "isdigit(replace_all('abc123abc', 'abc', ''))"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_complex_transformation:
+    name: "Test Complex Transformation"
+    formula: "center(join(split('hello world', ' '), '_'), 15, '*')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # String concatenation with new functions
+  test_concatenation_validation:
+    name: "Test Concatenation Validation"
+    formula: "'Is alpha: ' + isalpha('hello') + ', Is digit: ' + isdigit('123')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_concatenation_transformation:
+    name: "Test Concatenation Transformation"
+    formula: "'Result: ' + center('test', 8, '*')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"

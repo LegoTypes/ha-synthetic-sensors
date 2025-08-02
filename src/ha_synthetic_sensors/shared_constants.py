@@ -87,9 +87,19 @@ STRING_FUNCTIONS: frozenset[str] = frozenset(
         "endswith",
         "length",
         "replace",
+        "replace_all",
         "normalize",
         "clean",
         "sanitize",
+        "isalpha",
+        "isdigit",
+        "isnumeric",
+        "isalnum",
+        "split",
+        "join",
+        "pad_left",
+        "pad_right",
+        "center",
     }
 )
 
