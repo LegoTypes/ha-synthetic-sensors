@@ -51,9 +51,9 @@ class DateHandler(FormulaHandler):
             config: Date arithmetic configuration
             expression_evaluator: Callback to evaluate complex expressions (delegates back to main evaluator)
         """
+        super().__init__(expression_evaluator)
         self._config = config or DateArithmeticConfig()
         self._formula_router = FormulaRouter()
-        self._expression_evaluator = expression_evaluator
         self._type_analyzer = TypeAnalyzer()
 
     def can_handle(self, formula: str) -> bool:

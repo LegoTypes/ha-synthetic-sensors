@@ -568,9 +568,12 @@ entities_to_remove = [
 
 ### 🚨 CRITICAL: Collection Resolver Patching
 
-**MOST IMPORTANT:** When testing collection functions like `count('device_class:power')` or `sum('device_class:energy')`, you MUST patch the collection resolver's entity registry access. The `CollectionResolver` gets its entity registry through `er.async_get(hass)` calls, which are NOT automatically mocked.
+**MOST IMPORTANT:** When testing collection functions like `count('device_class:power')` or `sum('device_class:energy')`, you
+MUST patch the collection resolver's entity registry access. The `CollectionResolver` gets its entity registry through
+`er.async_get(hass)` calls, which are NOT automatically mocked.
 
 **❌ WITHOUT PATCHING (WILL FAIL):**
+
 ```python
 # This will NOT work - CollectionResolver uses different registry instance
 with (
@@ -581,6 +584,7 @@ with (
 ```
 
 **✅ WITH PROPER PATCHING (REQUIRED):**
+
 ```python
 # This WILL work - CollectionResolver uses the same mock registry
 with (
@@ -593,12 +597,14 @@ with (
 ```
 
 **Why This Matters:**
+
 - The `CollectionResolver` calls `er.async_get(hass)` internally
 - This returns a different entity registry instance than `mock_hass.entity_registry`
 - Without patching, collection functions use the real registry, not your modified mock
 - This causes tests to fail with unexpected values (e.g., `42.0` instead of `0`)
 
 **When to Apply This Patching:**
+
 - ✅ Any test using collection functions: `count()`, `sum()`, `avg()`, etc.
 - ✅ Any test using device_class patterns: `device_class:power`, `device_class:energy`
 - ✅ Any test using area patterns: `area:living_room`
@@ -734,6 +740,7 @@ If your tests are failing with unexpected collection function results, check the
 **Root Cause:** Collection resolver not using the same mock registry as your test
 
 **Solution:** Add the required patches:
+
 ```python
 patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
 patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
@@ -746,6 +753,7 @@ patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_
 **Root Cause:** Entity registry state not properly restored between tests
 
 **Solution:** Always use try/finally blocks for state restoration:
+
 ```python
 try:
     # Your test code
@@ -765,11 +773,12 @@ finally:
 **Root Cause:** Using direct dictionary access instead of provided methods
 
 **Solution:** Use the registry's `remove_entity()` method:
+
 ```python
 # ✅ CORRECT
 mock_entity_registry.remove_entity(entity_id)
 
-# ❌ INCORRECT  
+# ❌ INCORRECT
 del mock_entity_registry._entities[entity_id]
 ```
 
@@ -785,12 +794,14 @@ del mock_entity_registry._entities[entity_id]
 
 To debug collection function problems:
 
-1. **Check what entities are in the registry:**
+**Check what entities are in the registry:**
+
 ```python
 print(f"Entities in registry: {list(mock_entity_registry._entities.keys())}")
 ```
 
-2. **Verify entity removal worked:**
+**Verify entity removal worked:**
+
 ```python
 power_entities = [
     entity_id for entity_id, entity_data in mock_entity_registry._entities.items()
@@ -799,7 +810,8 @@ power_entities = [
 print(f"Power entities remaining: {power_entities}")
 ```
 
-3. **Test collection resolver directly:**
+**Test collection resolver directly:**
+
 ```python
 from ha_synthetic_sensors.collection_resolver import CollectionResolver
 resolver = CollectionResolver(mock_hass)
@@ -830,26 +842,31 @@ API while avoiding common pitfalls.
 The original integration test guide was missing several critical insights that led to test failures:
 
 #### **1. Collection Resolver Architecture Understanding**
+
 - **Missing:** Understanding that `CollectionResolver` uses `er.async_get(hass)` internally
 - **Impact:** Tests were modifying one registry instance while collection functions used another
 - **Solution:** Added explicit patching for collection resolver registry access
 
 #### **2. Test Isolation Patterns**
+
 - **Missing:** Proper patterns for entity registry isolation
 - **Impact:** Tests interfered with each other, causing flaky results
 - **Solution:** Added `remove_entity()` method and proper state restoration patterns
 
 #### **3. Debugging Collection Function Issues**
+
 - **Missing:** Tools and techniques for debugging collection function problems
 - **Impact:** Difficult to diagnose why `count()` returned `42.0` instead of `0`
 - **Solution:** Added debugging techniques and troubleshooting guide
 
 #### **4. Registry Operation Best Practices**
+
 - **Missing:** Clear guidance on when and how to modify entity registries
 - **Impact:** Tests used inconsistent approaches to entity manipulation
 - **Solution:** Added comprehensive registry operation documentation
 
 #### **5. Symptom-Based Troubleshooting**
+
 - **Missing:** Clear mapping between test failures and their root causes
 - **Impact:** Developers struggled to understand why tests failed
 - **Solution:** Added symptom-based troubleshooting section

@@ -1,6 +1,7 @@
 """Base handler interface for formula evaluation."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 from ..type_definitions import ContextValue
@@ -8,6 +9,16 @@ from ..type_definitions import ContextValue
 
 class FormulaHandler(ABC):
     """Base interface for formula handlers in the compiler-like evaluation system."""
+
+    def __init__(
+        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None
+    ) -> None:
+        """Initialize the handler with optional expression evaluator.
+
+        Args:
+            expression_evaluator: Callback for handlers to delegate complex expression evaluation
+        """
+        self._expression_evaluator = expression_evaluator
 
     @abstractmethod
     def can_handle(self, formula: str) -> bool:

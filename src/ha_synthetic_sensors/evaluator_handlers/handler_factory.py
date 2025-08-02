@@ -77,12 +77,8 @@ class HandlerFactory:
             return None
         handler_type = self._handler_types[name]
 
-        # Special handling for DateHandler to inject expression evaluator callback
-        if name == "date":
-            return handler_type(expression_evaluator=self._expression_evaluator)  # type: ignore[call-arg]
-
-        # Standard instantiation for other handlers
-        return handler_type()
+        # All handlers now accept expression_evaluator as a standard parameter
+        return handler_type(expression_evaluator=self._expression_evaluator)
 
     def get_handler_for_formula(self, formula: str) -> FormulaHandler | None:
         """Get the appropriate handler for a given formula."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import re
 from typing import Any
 
@@ -13,8 +14,11 @@ from .function_registry import get_datetime_function_registry
 class DateTimeHandler(FormulaHandler):
     """Handler for datetime functions in the formula evaluation system."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None
+    ) -> None:
         """Initialize the datetime handler."""
+        super().__init__(expression_evaluator)
         self._registry = get_datetime_function_registry()
         # Pattern to match datetime function calls like now(), today(), etc.
         self._function_pattern = re.compile(r"\b(\w+)\(\s*\)")

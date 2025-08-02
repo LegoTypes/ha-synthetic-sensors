@@ -1,5 +1,6 @@
 """Numeric formula handler for processing mathematical formulas."""
 
+from collections.abc import Callable
 import logging
 from typing import Any
 
@@ -14,8 +15,11 @@ _LOGGER = logging.getLogger(__name__)
 class NumericHandler(FormulaHandler):
     """Handler for numeric formulas in the compiler-like evaluation system."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None
+    ) -> None:
         """Initialize the numeric handler with formula compilation cache."""
+        super().__init__(expression_evaluator)
         self._compilation_cache = FormulaCompilationCache()
 
     def can_handle(self, formula: str) -> bool:

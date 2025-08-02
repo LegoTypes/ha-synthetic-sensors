@@ -37,8 +37,13 @@ class ArithmeticTokenizerConfig:
 class StringHandler(FormulaHandler):
     """Handler for string-based formulas in the compiler-like evaluation system."""
 
-    def __init__(self, config: ArithmeticTokenizerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: ArithmeticTokenizerConfig | None = None,
+        expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None,
+    ) -> None:
         """Initialize the string handler with configuration."""
+        super().__init__(expression_evaluator)
         self._config = config or ArithmeticTokenizerConfig()
         self._formula_router = FormulaRouter()
 
