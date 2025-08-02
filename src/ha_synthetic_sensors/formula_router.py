@@ -132,10 +132,17 @@ class FormulaRouter:
         # Check for string manipulation functions
         string_function_patterns = [f"{func}(" for func in STRING_FUNCTIONS if func != "str"]
         for func_start in string_function_patterns:
-            if formula_stripped.startswith(func_start) and formula_stripped.endswith(")"):
+            if (
+                formula_stripped.startswith(func_start)
+                and formula_stripped.endswith(")")
+                and self._is_single_function_call(formula_stripped, func_start[:-1])
+            ):
                 func_name = func_start[:-1]  # Remove the '('
                 return RoutingResult(
-                    evaluator_type=EvaluatorType.STRING, should_cache=False, user_function=func_name, original_formula=formula
+                    evaluator_type=EvaluatorType.STRING,
+                    should_cache=False,
+                    user_function=func_name,
+                    original_formula=formula,
                 )
 
         # Check for numeric() function
@@ -157,6 +164,43 @@ class FormulaRouter:
             )
 
         return None
+
+    def _is_single_function_call(self, formula: str, function_name: str) -> bool:
+        """
+        Check if a formula is truly a single function call, not a complex expression.
+
+        For example:
+        - "title('device')" -> True (single function call)
+        - "title('device') + ': ' + trim(name)" -> False (complex expression)
+
+        Args:
+            formula: The formula to check
+            function_name: The name of the function to check for
+
+        Returns:
+            True if it's a single function call, False otherwise
+        """
+        # Count parentheses to find the end of the function call
+        if not formula.startswith(f"{function_name}("):
+            return False
+
+        paren_count = 0
+        start_pos = len(function_name) + 1  # Position after "function("
+
+        for i, char in enumerate(formula[start_pos:], start_pos):
+            if char == "(":
+                paren_count += 1
+            elif char == ")":
+                if paren_count == 0:
+                    # Found the closing parenthesis for the function
+                    # Check if there's anything significant after it
+                    remaining = formula[i + 1 :].strip()
+                    # If there's anything other than whitespace, it's not a single function call
+                    return len(remaining) == 0
+                paren_count -= 1
+
+        # If we get here, parentheses weren't balanced properly
+        return False
 
     def _contains_string_literals(self, formula: str) -> bool:
         """
