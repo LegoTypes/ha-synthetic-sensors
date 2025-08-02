@@ -868,24 +868,133 @@ proper type handling and routing.
 - ✅ Integration test suite validating all 20 extended functions
 - ✅ Proper error handling and syntax validation
 
-#### **Milestone 2.2: Date Arithmetic System**
+#### **Milestone 2.2: User-Friendly Date Arithmetic System** 🔄 _IN PROGRESS - Explicit Duration Design_
 
-**Objective**: Date manipulation and arithmetic operations
+**Problem**: Current date arithmetic is ambiguous and error-prone
 
-**Tasks**:
+- `date('2025-01-01') - 30` → What is 30? Days? Hours? Months?
+- Users struggle with date string manipulation
+- No clear way to express common time operations
 
-1. Implement `DateEvaluator` with date parsing
-2. Add date arithmetic: date + number, date - date
-3. Implement date formatting and conversion functions
-4. Create date validation and error handling
-5. Add timezone support considerations
+**Solution**: Explicit Duration Functions for Crystal-Clear YAML
+
+**Design Philosophy**:
+
+- **🎯 Explicit over implicit**: `days(30)` instead of ambiguous `30`
+- **🔒 Type safety**: Clear duration types prevent mistakes
+- **📝 Readable YAML**: Code reads like natural language
+- **⚡ Common operations made simple**: Handle 90% of date use cases easily
+
+### **Duration Helper Functions**
+
+Complete set of duration helpers for all time scales:
+
+```yaml
+# Time Duration Helpers
+seconds(30)     # 30 seconds
+minutes(15)     # 15 minutes
+hours(6)        # 6 hours
+days(7)         # 7 days
+weeks(2)        # 2 weeks
+months(3)       # 3 months
+```
+
+### **Real-World YAML Examples**
+
+**Basic Date Arithmetic:**
+
+```yaml
+sensors:
+  # Add time to dates
+  future_date:
+    formula: "date('2025-01-01') + days(30)" # January 31st, 2025
+
+  # Subtract time from dates
+  past_date:
+    formula: "date(now()) - weeks(2)" # 2 weeks ago
+
+  # Calculate date differences
+  days_since_created:
+    formula: "date(now()) - date(created_timestamp)" # Days between dates
+```
+
+**Practical Home Assistant Use Cases:**
+
+```yaml
+sensors:
+  # Device uptime in days
+  device_uptime_days:
+    formula: "date(now()) - date(state.last_changed)"
+    metadata:
+      unit_of_measurement: "days"
+      device_class: "duration"
+
+  # Maintenance due date
+  next_maintenance:
+    formula: "date(last_service_date) + months(6)"
+    metadata:
+      device_class: "date"
+
+  # Recent activity filter (last 24 hours)
+  recent_activity:
+    formula: "count(state.last_changed >= date(now()) - hours(24))"
+    metadata:
+      unit_of_measurement: "events"
+
+  # Scheduled automation trigger
+  daily_reset_time:
+    formula: "date(today()) + hours(6)" # 6 AM today
+
+  # Time until next event
+  time_until_backup:
+    formula: "date(next_backup_time) - date(now())"
+    metadata:
+      unit_of_measurement: "hours"
+```
+
+**Complex Date Logic:**
+
+```yaml
+sensors:
+  # Multi-duration calculations
+  project_deadline:
+    formula: "date(start_date) + weeks(4) + days(3)" # 4 weeks 3 days later
+
+  # Conditional date arithmetic
+  maintenance_overdue:
+    formula: "date(now()) > date(last_service) + months(12) ? 1 : 0"
+
+  # Business hours calculatin
+  next_business_day:
+    formula: "date(today()) + days(1) + hours(9)" # Tomorrow at 9 AM
+```
+
+### **Implementation asks**
+
+1. ⭐ **Duration Function Library**: Implement `seconds()`, `minutes()`, `hours()`, `days()`, `weeks()`, `months()`
+2. ⭐ **DateHandler Integration**: Update handler to recognize and process duration functions
+3. ⭐ **FormulaRouter Enhancement**: Route duration functions to DateHandler
+4. ⭐ **Type-Safe Aritmetic**: Ensure `date() + duration()` and `date() - date()` operations
+
+5. ⭐ **Error Handling**: Clear error messages for invalid duration combinations
+6. ⭐ **Performance Optimization**: Efficient duration calculations
+7. ⭐ **Integration Testing**: Real-world scenarios using public APIs only
+
+### **User Benefits**
+
+- ✅ **No more guessing**: `days(30)` is unambiguous
+- ✅ **Natural language**: YAML reads like English
+- ✅ **Fewer errors**: Type safety prevents common mistakes
+- ✅ **Common patterns**: Simple syntax for 90% of date operations
+- ✅ **Home Assistant native**: Perfect for automation timing
 
 **Deliverables**:
 
-- `src/ha_synthetic_sensors/evaluator_handlers/date_handler.py`
-- Date function library
-- Date arithmetic operations
-- Integration tests with time-based scenarios
+- `src/ha_synthetic_sensors/evaluator_handlers/date_handler.py` (redesigned)
+- Complete duration function library: `seconds()`, `minutes()`, `hours()`, `days()`, `weeks()`, `months()`
+- Type-safe date arithmetic operations
+- Integration tests covering real-world Home Assistant scenarios
+- YAML fixtures demonstrating practical date operations
 
 #### **Milestone 2.3: Collection Pattern Integration**
 

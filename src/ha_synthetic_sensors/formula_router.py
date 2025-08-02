@@ -7,7 +7,7 @@ from enum import Enum
 import logging
 import re
 
-from .shared_constants import COLLECTION_PREFIXES, STRING_FUNCTIONS
+from .shared_constants import COLLECTION_PREFIXES, DURATION_FUNCTIONS, STRING_FUNCTIONS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,12 +90,22 @@ class FormulaRouter:
             )
             return user_function_result
 
-        # Category 2: Check for string literals (automatic string routing)
+        # Category 2: Check for duration functions (automatic date routing)
+        if self._contains_duration_functions(formula):
+            self._logger.debug("Formula routed to date evaluator due to duration functions")
+            return RoutingResult(evaluator_type=EvaluatorType.DATE, should_cache=False, original_formula=formula)
+
+        # Category 3: Check for string literals (automatic string routing)
         if self._contains_string_literals(formula):
             self._logger.debug("Formula routed to string evaluator due to string literals")
             return RoutingResult(evaluator_type=EvaluatorType.STRING, should_cache=False, original_formula=formula)
 
-        # Category 3: Default to numeric (existing behavior)
+        # Category 4: Check if formula is a quoted string literal (from variable resolution)
+        if (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
+            self._logger.debug("Formula routed to string evaluator (quoted literal)")
+            return RoutingResult(evaluator_type=EvaluatorType.STRING, should_cache=False, original_formula=formula)
+
+        # Category 5: Default to numeric (existing behavior)
         self._logger.debug("Formula routed to numeric evaluator (default)")
         return RoutingResult(evaluator_type=EvaluatorType.NUMERIC, should_cache=True, original_formula=formula)
 
@@ -327,5 +337,27 @@ class FormulaRouter:
                     paren_count -= 1
                     if paren_count == 0:
                         return True
+
+        return False
+
+    def _contains_duration_functions(self, formula: str) -> bool:
+        """
+        Detect if formula contains duration function calls.
+
+        Looks for duration functions like days(), hours(), weeks(), etc.
+        These indicate date arithmetic operations.
+
+        Args:
+            formula: Formula to analyze
+
+        Returns:
+            True if duration functions found, False otherwise
+        """
+        # Check for duration function patterns
+        for duration_func in DURATION_FUNCTIONS:
+            pattern = rf"\b{re.escape(duration_func)}\s*\("
+            if re.search(pattern, formula):
+                self._logger.debug("Found duration function: %s", duration_func)
+                return True
 
         return False

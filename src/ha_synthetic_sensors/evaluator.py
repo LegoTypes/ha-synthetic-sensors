@@ -121,8 +121,8 @@ class Evaluator(FormulaEvaluator):
         self._error_handler = EvaluatorErrorHandler(self._circuit_breaker_config, self._retry_config)
         self._formula_preprocessor = FormulaPreprocessor(self._collection_resolver)
 
-        # Initialize handler factory for formula evaluation
-        self._handler_factory = HandlerFactory()
+        # Initialize handler factory for formula evaluation with expression evaluator callback
+        self._handler_factory = HandlerFactory(expression_evaluator=self._evaluate_expression_callback)
 
         # Initialize sensor-to-backing mapping
         self._sensor_to_backing_mapping: dict[str, str] = {}
@@ -879,3 +879,27 @@ class Evaluator(FormulaEvaluator):
             Set of all registered sensor names
         """
         return self._sensor_registry_phase.get_registered_sensors()
+
+    def _evaluate_expression_callback(self, expression: str, context: dict[str, ContextValue] | None = None) -> ContextValue:
+        """
+        Expression evaluator callback for handlers that need to delegate complex expressions.
+
+        This allows handlers like DateHandler to delegate complex expression evaluation
+        back to the main evaluator while maintaining separation of concerns.
+
+        Args:
+            expression: The expression to evaluate
+            context: Variable context for evaluation
+
+        Returns:
+            The evaluated result
+        """
+        # Create a temporary FormulaConfig for the expression
+        temp_config = FormulaConfig(id=f"temp_expression_{hash(expression)}", name="Temporary Expression", formula=expression)
+
+        # Evaluate the expression using the main evaluation pipeline
+        result = self.evaluate_formula(temp_config, context)
+
+        if result["success"]:
+            return result["value"]
+        raise ValueError(f"Failed to evaluate expression '{expression}': {result.get('error', 'Unknown error')}")

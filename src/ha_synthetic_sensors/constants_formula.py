@@ -55,6 +55,8 @@ FORMULA_RESERVED_WORDS: frozenset[str] = frozenset(
         "log10",
         # Special formula tokens
         "state",
+        # Type conversion functions
+        "date",  # Date conversion function: date('2025-01-01')
         # String manipulation functions (imported from STRING_FUNCTIONS)
         *STRING_FUNCTIONS,
     }

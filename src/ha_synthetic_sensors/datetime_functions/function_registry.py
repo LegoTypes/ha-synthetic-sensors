@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .date_functions import DateFunctions
+from .duration_functions import DurationFunctions
 from .protocol import DateTimeFunction
 from .timezone_functions import TimezoneFunctions
 
@@ -23,6 +24,7 @@ class DateTimeFunctionRegistry:
         """Register the default datetime function handlers."""
         self.register_handler(TimezoneFunctions())
         self.register_handler(DateFunctions())
+        self.register_handler(DurationFunctions())
 
     def register_handler(self, handler: DateTimeFunction) -> None:
         """Register a datetime function handler.

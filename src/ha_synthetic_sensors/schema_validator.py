@@ -28,7 +28,7 @@ except ImportError:
 from .constants_formula import FORMULA_RESERVED_WORDS
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
-from .shared_constants import DATETIME_FUNCTIONS
+from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS
 
 try:
     from jsonschema import Draft7Validator
@@ -763,8 +763,12 @@ class SchemaValidator:
         return has_operators and not is_entity_id and not has_colon
 
     def _is_datetime_literal(self, value: str) -> bool:
-        """Check if a string is a datetime literal."""
-        return bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?$", value))
+        """Check if a string is a datetime literal (full datetime or date-only)."""
+        # Accept full datetime: 2025-01-01T12:00:00Z
+        datetime_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?$"
+        # Accept date-only: 2025-01-01
+        date_pattern = r"^\d{4}-\d{2}-\d{2}$"
+        return bool(re.match(datetime_pattern, value) or re.match(date_pattern, value))
 
     def _is_version_literal(self, value: str) -> bool:
         """Check if a string is a version literal (requires 'v' prefix)."""
@@ -794,8 +798,10 @@ class SchemaValidator:
             # 3. Local attribute variables (accessible within same attribute)
             # 4. Sensor keys (for cross-sensor references)
             # 5. Datetime function names (now, today, yesterday, etc.)
-            # 6. Entity references (domain.entity format)
+            # 6. Duration function names (days, hours, minutes, etc.)
+            # 7. Entity references (domain.entity format)
             datetime_functions = DATETIME_FUNCTIONS
+            duration_functions = DURATION_FUNCTIONS
             is_valid = (
                 token in sensor_keys
                 or (global_vars and token in global_vars)
@@ -804,6 +810,7 @@ class SchemaValidator:
                 or (literal_attrs and token in literal_attrs)
                 or (other_attr_names and token in other_attr_names)
                 or token in datetime_functions
+                or token in duration_functions
                 or token in FORMULA_RESERVED_WORDS
                 or self._is_entity_id(token)
             )

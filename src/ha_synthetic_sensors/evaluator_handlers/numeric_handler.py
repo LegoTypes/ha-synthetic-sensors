@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from ..formula_compilation_cache import FormulaCompilationCache
+from ..formula_router import EvaluatorType, FormulaRouter
 from ..type_definitions import ContextValue
 from .base_handler import FormulaHandler
 
@@ -21,12 +22,12 @@ class NumericHandler(FormulaHandler):
         """
         Determine if a formula should be processed as a numeric formula.
 
-        Numeric formulas are the default case - any formula that doesn't match
-        string or boolean patterns is treated as numeric.
+        Only handles formulas that are actually numeric in nature.
         """
-        # Numeric handler is the default - it handles everything that isn't explicitly
-        # string or boolean. This allows for maximum flexibility.
-        return True
+        # Use FormulaRouter to determine if this should be handled as numeric
+        router = FormulaRouter()
+        routing_result = router.route_formula(formula)
+        return routing_result.evaluator_type == EvaluatorType.NUMERIC
 
     def evaluate(self, formula: str, context: dict[str, ContextValue] | None = None) -> float:
         """
@@ -53,11 +54,15 @@ class NumericHandler(FormulaHandler):
             # Evaluate using the pre-compiled formula
             result = compiled_formula.evaluate(context or {})
 
-            # Validate numeric result
-            if not isinstance(result, int | float):
-                raise ValueError(f"Numeric formula result must be numeric, got {type(result).__name__}: {result}")
+            # Validate numeric result - NumericHandler should ONLY handle numeric formulas
+            if isinstance(result, int | float):
+                return float(result)
 
-            return float(result)
+            # If we get non-numeric results, this indicates a ROUTING ERROR
+            # The formula should have been sent to the appropriate handler (string/boolean)
+            raise ValueError(
+                f"ROUTING ERROR: NumericHandler received non-numeric result. Formula '{formula}' -> {type(result).__name__}: {result}. This should be routed to a different handler."
+            )
         except Exception as e:
             _LOGGER.warning("Numeric formula evaluation failed for '%s': %s", formula, e)
             raise

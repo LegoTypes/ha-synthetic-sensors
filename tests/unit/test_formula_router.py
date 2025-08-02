@@ -190,7 +190,6 @@ class TestFormulaRouter:
             assert result.evaluator_type == EvaluatorType.STRING, f"Failed for formula: {formula}"
 
         non_string_formulas = [
-            "'device_class:power'",  # Collection pattern
             "count('state:on')",  # Collection pattern in function
             "state * 1.1",  # No quotes
             "42",  # No quotes
@@ -199,3 +198,12 @@ class TestFormulaRouter:
         for formula in non_string_formulas:
             result = router.route_formula(formula)
             assert result.evaluator_type == EvaluatorType.NUMERIC, f"Failed for formula: {formula}"
+
+        # Special case: quoted collection patterns are STRING literals, not collection patterns
+        collection_as_string_formulas = [
+            "'device_class:power'",  # This is a quoted string literal, not a collection pattern
+        ]
+
+        for formula in collection_as_string_formulas:
+            result = router.route_formula(formula)
+            assert result.evaluator_type == EvaluatorType.STRING, f"Failed for formula: {formula}"

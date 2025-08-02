@@ -6,7 +6,7 @@ from datetime import datetime
 
 from ..constants_types import TypeCategory
 from ..exceptions import UnsupportedComparisonError
-from ..type_analyzer import OperandType
+from ..type_analyzer import DateTimeParser, OperandType
 from .base_handler import BaseComparisonHandler
 from .comparison_protocol import ComparisonTypeInfo
 
@@ -104,8 +104,8 @@ class DateTimeComparisonHandler(BaseComparisonHandler):
         if isinstance(value, datetime):
             return value
         if isinstance(value, str):
-            # Handle common ISO formats
-            test_value = value.replace("Z", "+00:00")
-            return datetime.fromisoformat(test_value)
+            # Use centralized timezone normalization
+            normalized_value = DateTimeParser.normalize_iso_timezone(value)
+            return datetime.fromisoformat(normalized_value)
 
         raise ValueError(f"Cannot convert {value} to datetime")

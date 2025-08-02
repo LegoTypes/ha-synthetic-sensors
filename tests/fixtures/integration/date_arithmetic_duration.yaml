@@ -1,0 +1,65 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_date_arithmetic"
+
+sensors:
+  # Basic date arithmetic with explicit durations
+  future_date_30_days:
+    name: "30 Days From Start"
+    formula: "date('2025-01-01') + days(30)"
+    metadata:
+      device_class: "date"
+
+  past_date_2_weeks:
+    name: "2 Weeks Ago From Reference"
+    formula: "date('2025-01-15') - weeks(2)"
+    metadata:
+      device_class: "date"
+
+  # Date differences (should return numeric days)
+  days_between_dates:
+    name: "Days Between Two Dates"
+    formula: "date('2025-01-31') - date('2025-01-01')"
+    metadata:
+      unit_of_measurement: "days"
+      device_class: "duration"
+
+  # Complex multi-duration arithmetic
+  complex_date_calculation:
+    name: "Complex Date Math"
+    formula: "date('2025-01-01') + weeks(4) + days(3)"
+    metadata:
+      device_class: "date"
+
+  # Using different time units
+  precise_timing:
+    name: "Precise Time Addition"
+    formula: "date('2025-01-01') + hours(36)"
+    metadata:
+      device_class: "date"
+
+  # Minutes and seconds for fine-grained control
+  minute_precision:
+    name: "Minute Level Precision"
+    formula: "date('2025-01-01') + minutes(90)"
+    metadata:
+      device_class: "date"
+
+  # Practical Home Assistant use cases
+  maintenance_due:
+    name: "Next Maintenance Due"
+    formula: "date(last_service_date) + months(6)"
+    variables:
+      last_service_date: "2024-07-01"
+    metadata:
+      device_class: "date"
+
+  # Recent activity (boolean result)
+  is_recent_activity:
+    name: "Recent Activity Check"
+    formula: "date(event_timestamp) >= date(now()) - hours(24) ? 1 : 0"
+    variables:
+      event_timestamp: "2025-01-01T12:00:00"
+    metadata:
+      device_class: "connectivity"

@@ -6,6 +6,17 @@ from typing import Protocol, cast, runtime_checkable
 
 from .constants_types import BUILTIN_VALUE_TYPES, VALUE_ATTRIBUTE_NAMES, BuiltinValueType, MetadataDict, TypeCategory
 
+__all__ = [
+    "AttributeProvider",
+    "MetadataAttributeProvider",
+    "MetadataProvider",
+    "StringCategorizer",
+    "TypeAnalyzer",
+    "TypeCategory",
+    "UserType",
+    "UserTypeReducer",
+]
+
 # === Core Protocols ===
 
 
@@ -248,6 +259,11 @@ class DateTimeParser:
     """Handles datetime parsing and conversion."""
 
     @staticmethod
+    def normalize_iso_timezone(value: str) -> str:
+        """Normalize ISO datetime string by replacing Z with +00:00."""
+        return value.replace("Z", "+00:00")
+
+    @staticmethod
     def parse_datetime(value: OperandType) -> datetime | None:
         """Try to parse a value as datetime."""
         if isinstance(value, datetime):
@@ -261,9 +277,10 @@ class DateTimeParser:
                     return datetime.strptime(value, fmt)
                 except ValueError:
                     continue
-            # Try ISO format
+            # Try ISO format with timezone normalization
             try:
-                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                normalized_value = DateTimeParser.normalize_iso_timezone(value)
+                return datetime.fromisoformat(normalized_value)
             except ValueError:
                 pass
         return None
@@ -275,18 +292,72 @@ class DateTimeParser:
         if isinstance(value, datetime):
             return True, value
 
+        # Numeric timestamp
+        if isinstance(value, int | float):
+            try:
+                return True, datetime.fromtimestamp(value)
+            except (ValueError, OSError):
+                return False, datetime.min
+
         # String to datetime
         if isinstance(value, str):
             try:
-                # Handle common ISO formats
-                test_value = value.replace("Z", "+00:00")
-                dt = datetime.fromisoformat(test_value)
+                # Handle common ISO formats with timezone normalization
+                normalized_value = DateTimeParser.normalize_iso_timezone(value)
+                dt = datetime.fromisoformat(normalized_value)
                 return True, dt
             except ValueError:
                 return False, datetime.min
 
         # Cannot reduce other types to datetime
         return False, datetime.min
+
+    @staticmethod
+    def try_reduce_to_date_string(value: OperandType) -> tuple[bool, str]:
+        """Try to reduce a value to ISO date string (date-only, no time)."""
+        try:
+            # Handle datetime objects
+            if isinstance(value, datetime):
+                return True, value.date().isoformat()
+
+            if isinstance(value, date):
+                return True, value.isoformat()
+
+            # Handle numeric timestamps
+            if isinstance(value, int | float):
+                dt = datetime.fromtimestamp(value)
+                return True, dt.date().isoformat()
+
+            # Handle string values
+            if isinstance(value, str):
+                # Check if it contains time information
+                if "T" in value or " " in value:
+                    # Full datetime - convert to date only
+                    normalized_value = DateTimeParser.normalize_iso_timezone(value)
+                    dt = datetime.fromisoformat(normalized_value)
+                    return True, dt.date().isoformat()
+                # Validate as date-only and return as-is
+                datetime.fromisoformat(value)  # Validation
+                return True, value
+
+        except (ValueError, OSError):
+            pass
+
+        # Cannot convert other types or conversion failed
+        return False, ""
+
+    @staticmethod
+    def convert_datetime_to_date_string(datetime_string: str) -> str:
+        """Convert a datetime string to date-only string, handling timezone normalization.
+
+        This is a convenience method for the common pattern of converting datetime
+        function results (which return full datetimes) to date-only strings.
+        """
+        if "T" in datetime_string:
+            normalized_value = DateTimeParser.normalize_iso_timezone(datetime_string)
+            dt = datetime.fromisoformat(normalized_value)
+            return dt.date().isoformat()
+        return datetime_string
 
 
 class VersionParser:
@@ -341,9 +412,9 @@ class StringCategorizer:
     def _is_datetime_string(value: str) -> bool:
         """Check if string represents a datetime (permissive)."""
         try:
-            # Handle common ISO formats
-            test_value = value.replace("Z", "+00:00")
-            datetime.fromisoformat(test_value)
+            # Use centralized timezone normalization
+            normalized_value = DateTimeParser.normalize_iso_timezone(value)
+            datetime.fromisoformat(normalized_value)
             return True
         except ValueError:
             return False
@@ -625,3 +696,36 @@ class TypeAnalyzer:
         if isinstance(value, datetime | date | time):
             return TypeCategory.DATETIME
         return TypeCategory.UNKNOWN
+
+    @staticmethod
+    def categorize_expression_type(expression: str, context: dict[str, OperandType] | None = None) -> TypeCategory:
+        """
+        Determine the type category for an expression that may contain quoted literals or variables.
+
+        This method is designed for date arithmetic expressions where we need to handle:
+        - Quoted date literals: "'2025-01-01'"
+        - Context variables: "start_date"
+        - Mixed expressions where type depends on resolved values
+
+        Args:
+            expression: The expression string to analyze
+            context: Optional context for variable resolution
+
+        Returns:
+            TypeCategory based on the resolved expression value
+        """
+        if not isinstance(expression, str):
+            return TypeAnalyzer.categorize_type(expression)
+
+        # Handle quoted literals by analyzing the inner content
+        if expression.startswith("'") and expression.endswith("'"):
+            inner_content = expression[1:-1]
+            return TypeAnalyzer.categorize_type(inner_content)
+
+        # Handle context variable lookup
+        if context and expression in context:
+            resolved_value = context[expression]
+            return TypeAnalyzer.categorize_type(resolved_value)
+
+        # Fall back to standard string categorization
+        return StringCategorizer.categorize_string(expression)

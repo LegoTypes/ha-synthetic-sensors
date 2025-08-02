@@ -74,6 +74,18 @@ DATETIME_FUNCTIONS: frozenset[str] = frozenset(
     }
 )
 
+# Duration helper functions for explicit date arithmetic
+DURATION_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "days",
+        "weeks",
+        "months",
+        "hours",
+        "minutes",
+        "seconds",
+    }
+)
+
 # String manipulation functions
 STRING_FUNCTIONS: frozenset[str] = frozenset(
     {
@@ -127,6 +139,7 @@ MATH_FUNCTIONS: frozenset[str] = frozenset(
         "count",
     }
     | DATETIME_FUNCTIONS
+    | DURATION_FUNCTIONS
 )
 
 # State-related keywords
@@ -180,6 +193,7 @@ __all__ = [
     "BUILTIN_TYPES",
     "COLLECTION_PREFIXES",
     "DATETIME_FUNCTIONS",
+    "DURATION_FUNCTIONS",
     "MATH_FUNCTIONS",
     "PYTHON_KEYWORDS",
     "STATE_KEYWORDS",
