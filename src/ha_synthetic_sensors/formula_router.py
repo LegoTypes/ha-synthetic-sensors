@@ -95,6 +95,11 @@ class FormulaRouter:
             self._logger.debug("Formula routed to date evaluator due to duration functions")
             return RoutingResult(evaluator_type=EvaluatorType.DATE, should_cache=False, original_formula=formula)
 
+        # Category 2a: Check for datetime functions (automatic date routing)
+        if self._contains_datetime_functions(formula):
+            self._logger.debug("Formula routed to date evaluator due to datetime functions")
+            return RoutingResult(evaluator_type=EvaluatorType.DATE, should_cache=False, original_formula=formula)
+
         # Category 3: Check for string literals (automatic string routing)
         if self._contains_string_literals(formula):
             self._logger.debug("Formula routed to string evaluator due to string literals")
@@ -402,6 +407,30 @@ class FormulaRouter:
             pattern = rf"\b{re.escape(duration_func)}\s*\("
             if re.search(pattern, formula):
                 self._logger.debug("Found duration function: %s", duration_func)
+                return True
+
+        return False
+
+    def _contains_datetime_functions(self, formula: str) -> bool:
+        """
+        Detect if formula contains datetime function calls.
+
+        Looks for datetime functions like now(), today(), yesterday(), utc_now(), etc.
+        These indicate datetime operations that should be routed to the date handler.
+
+        Args:
+            formula: Formula to analyze
+
+        Returns:
+            True if datetime functions found, False otherwise
+        """
+        from .shared_constants import DATETIME_FUNCTIONS
+        
+        # Check for datetime function patterns
+        for datetime_func in DATETIME_FUNCTIONS:
+            pattern = rf"\b{re.escape(datetime_func)}\s*\("
+            if re.search(pattern, formula):
+                self._logger.debug("Found datetime function: %s", datetime_func)
                 return True
 
         return False
