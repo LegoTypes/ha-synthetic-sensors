@@ -19,6 +19,8 @@ class FormulaPreprocessor:
 
     def __init__(self, collection_resolver: CollectionResolver, hass: HomeAssistant):
         """Initialize the formula preprocessor."""
+        if hass is None:
+            raise ValueError("FormulaPreprocessor requires a valid Home Assistant instance, got None")
         self._collection_resolver = collection_resolver
         self._dependency_parser = DependencyParser()
         self._hass = hass

@@ -41,6 +41,8 @@ class CollectionResolver:
         Args:
             hass: Home Assistant instance
         """
+        if hass is None:
+            raise ValueError("CollectionResolver requires a valid Home Assistant instance, got None")
         self._hass = hass
 
         # Get registry references
@@ -821,6 +823,8 @@ class CollectionResolver:
         Returns:
             List of numeric values (0.0 for non-numeric or missing entities)
         """
+        if self._hass is None:
+            raise ValueError("CollectionResolver cannot get entity values: Home Assistant instance is None")
         values = []
         for entity_id in entity_ids:
             try:

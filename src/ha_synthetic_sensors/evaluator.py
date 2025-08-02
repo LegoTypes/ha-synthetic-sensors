@@ -105,6 +105,8 @@ class Evaluator(FormulaEvaluator):
                                    where exists=True if data is available, False if not found.
                                    Variables automatically try backing entities first, then HA fallback.
         """
+        if hass is None:
+            raise ValueError("Evaluator requires a valid Home Assistant instance, got None")
         self._hass = hass
 
         # Initialize components
