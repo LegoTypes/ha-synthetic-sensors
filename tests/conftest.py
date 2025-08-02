@@ -736,6 +736,14 @@ def mock_entity_registry():
                 self._entities[entity_id] = mock_entity
                 print(f"📝 Manual registry: Added entity {entity_id}")
 
+        def remove_entity(self, entity_id):
+            """Helper method to remove entities for testing isolation."""
+            if entity_id in self._entities:
+                del self._entities[entity_id]
+                print(f"🗑️ Manual registry: Removed entity {entity_id}")
+                return True
+            return False
+
         def async_get(self, entity_id):
             """Mock the async_get method that HA uses to retrieve entities."""
             return self._entities.get(entity_id)
