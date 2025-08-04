@@ -14,6 +14,29 @@ METADATA_PROPERTY_ASSUMED_STATE = "assumed_state"
 METADATA_PROPERTY_OPTIONS = "options"
 METADATA_PROPERTY_ENTITY_CATEGORY = "entity_category"
 
+# Metadata handler constants
+METADATA_FUNCTION_NAME = "metadata"
+METADATA_HANDLER_NAME = "metadata"
+
+# Valid metadata keys that can be accessed via metadata() function
+METADATA_FUNCTION_VALID_KEYS: frozenset[str] = frozenset(
+    {
+        "last_changed",
+        "last_updated",
+        "entity_id",
+        "domain",
+        "object_id",
+        "friendly_name",
+    }
+)
+
+# Metadata function error messages
+ERROR_METADATA_FUNCTION_PARAMETER_COUNT = "metadata() function requires exactly 2 parameters, got {count}"
+ERROR_METADATA_INVALID_KEY = "Invalid metadata key: {key}. Valid keys: {valid_keys}"
+ERROR_METADATA_HASS_NOT_AVAILABLE = "Home Assistant instance not available for metadata lookup"
+ERROR_METADATA_ENTITY_NOT_FOUND = "Entity '{entity_id}' not found in Home Assistant states"
+ERROR_METADATA_KEY_NOT_FOUND = "Metadata key '{key}' not found for entity '{entity_id}'"
+
 # Metadata property types
 METADATA_STRING_PROPERTIES = [
     METADATA_PROPERTY_UNIT_OF_MEASUREMENT,

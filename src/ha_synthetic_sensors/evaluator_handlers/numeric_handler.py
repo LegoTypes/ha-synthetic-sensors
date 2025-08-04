@@ -6,7 +6,7 @@ from typing import Any
 
 from ..formula_compilation_cache import FormulaCompilationCache
 from ..formula_router import EvaluatorType, FormulaRouter
-from ..type_definitions import ContextValue
+from ..type_definitions import ContextValue, ReferenceValue
 from .base_handler import FormulaHandler
 
 _LOGGER = logging.getLogger(__name__)
@@ -15,9 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 class NumericHandler(FormulaHandler):
     """Handler for numeric formulas in the compiler-like evaluation system."""
 
-    def __init__(
-        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None
-    ) -> None:
+    def __init__(self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None) -> None:
         """Initialize the numeric handler with formula compilation cache."""
         super().__init__(expression_evaluator)
         self._compilation_cache = FormulaCompilationCache()
@@ -55,8 +53,11 @@ class NumericHandler(FormulaHandler):
             # Get compiled formula from cache (or compile if not cached)
             compiled_formula = self._compilation_cache.get_compiled_formula(formula)
 
+            # Extract values from ReferenceValue objects for numeric evaluation
+            numeric_context = self._extract_values_for_numeric_evaluation(context or {})
+
             # Evaluate using the pre-compiled formula
-            result = compiled_formula.evaluate(context or {})
+            result = compiled_formula.evaluate(numeric_context)
 
             # Validate numeric result - NumericHandler should ONLY handle numeric formulas
             if isinstance(result, int | float):
@@ -70,6 +71,28 @@ class NumericHandler(FormulaHandler):
         except Exception as e:
             _LOGGER.warning("Numeric formula evaluation failed for '%s': %s", formula, e)
             raise
+
+    def _extract_values_for_numeric_evaluation(self, context: dict[str, ContextValue]) -> dict[str, Any]:
+        """Extract values from ReferenceValue objects for numeric evaluation.
+
+        Args:
+            context: EvaluationContext containing ReferenceValue objects
+
+        Returns:
+            Dictionary with variable names mapped to their values for SimpleEval
+        """
+        numeric_context: dict[str, Any] = {}
+
+        for key, value in context.items():
+            if isinstance(value, ReferenceValue):
+                # Extract the value from ReferenceValue for numeric computation
+                numeric_context[key] = value.value
+                _LOGGER.debug("NumericHandler: Extracted %s -> %s (from ReferenceValue)", key, value.value)
+            else:
+                # Keep other values as-is (functions, constants, etc.)
+                numeric_context[key] = value
+
+        return numeric_context
 
     def clear_compiled_formulas(self) -> None:
         """Clear all compiled formulas from cache.

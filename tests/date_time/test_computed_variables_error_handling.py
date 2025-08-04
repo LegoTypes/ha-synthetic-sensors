@@ -7,6 +7,7 @@ from ha_synthetic_sensors.config_models import ComputedVariable, FormulaConfig
 from ha_synthetic_sensors.exceptions import MissingDependencyError
 from ha_synthetic_sensors.utils_config import resolve_config_variables, _analyze_computed_variable_error
 from ha_synthetic_sensors.type_definitions import ContextValue
+from ha_synthetic_sensors.reference_value_manager import ReferenceValue
 
 
 class TestComputedVariableErrorHandling:
@@ -147,10 +148,11 @@ class TestComputedVariableErrorHandling:
         # Should not raise an error - dependencies should resolve in order
         resolve_config_variables(eval_context, config, mock_resolver)
 
-        assert eval_context["a"] == 10
-        assert eval_context["b"] == 5
-        assert eval_context["intermediate"] == 15.0
-        assert eval_context["final"] == 30.0
+        # With ReferenceValue architecture, check the .value property
+        assert eval_context["a"].value == 10
+        assert eval_context["b"].value == 5
+        assert eval_context["intermediate"].value == 15.0
+        assert eval_context["final"].value == 30.0
 
     def test_multiple_error_aggregation(self):
         """Test that multiple computed variable errors are properly aggregated."""
@@ -176,4 +178,8 @@ class TestComputedVariableErrorHandling:
         # Should mention both failed variables with their specific issues
         assert "error1" in error_message or "error2" in error_message
         # Success variable should have resolved (not mentioned in error)
-        assert eval_context.get("success") == 200.0  # Should have resolved successfully
+        success_value = eval_context.get("success")
+        if isinstance(success_value, ReferenceValue):
+            assert success_value.value == 200.0  # Should have resolved successfully
+        else:
+            assert success_value == 200.0  # Should have resolved successfully

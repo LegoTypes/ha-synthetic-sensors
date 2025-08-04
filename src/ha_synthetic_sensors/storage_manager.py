@@ -472,6 +472,10 @@ class StorageManager:
                 device_identifier=device_identifier,
             )
 
+        # Ensure entity index is properly rebuilt after all sensors and global settings are stored
+        sensor_set = self.get_sensor_set(sensor_set_id)
+        sensor_set.rebuild_entity_index()
+
     def prepare_sensor_set_creation_params(
         self, config: Config, sensor_set_id: str, device_identifier: str | None = None
     ) -> tuple[str | None, str, GlobalSettingsDict]:

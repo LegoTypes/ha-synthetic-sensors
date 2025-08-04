@@ -111,11 +111,21 @@ class VariableResolverFactory:
 
     def resolve_variable(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
         """Resolve a variable using the appropriate resolver."""
+        _LOGGER.error("RESOLVER_FACTORY: Resolving variable %s with value %s", variable_name, variable_value)
         # Check if any resolver can handle this variable
         for resolver in self._resolvers:
             if resolver.can_resolve(variable_name, variable_value):
-                return resolver.resolve(variable_name, variable_value, context)
+                _LOGGER.error("RESOLVER_FACTORY: Using resolver %s for variable %s", type(resolver).__name__, variable_name)
+                result = resolver.resolve(variable_name, variable_value, context)
+                _LOGGER.error(
+                    "RESOLVER_FACTORY: Resolver %s returned %s (type: %s)",
+                    type(resolver).__name__,
+                    result,
+                    type(result).__name__,
+                )
+                return result
         # No resolver found
+        _LOGGER.error("RESOLVER_FACTORY: No resolver found for variable %s", variable_name)
         return None
 
     def get_all_resolvers(self) -> list[VariableResolver]:

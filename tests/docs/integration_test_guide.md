@@ -1,7 +1,270 @@
 # Integration Test Guide: Using Synthetic Sensors Public API
 
-This guide explains how to properly set up integration tests that use the `ha-synthetic-sensors` public API, based on lessons
-learned from implementing `test_dependency_resolution_with_missing_entities`.
+This guide explains how to properly set up integration tests that use the `ha-synthetic-sensors` public API.
+
+## 🚀 Quick Start (Copy-Paste Template)
+
+**TL;DR: Copy `tests/integration/TEMPLATE_integration_test.py`, modify the TODO sections, and run.**
+
+### 1. Copy the Template
+
+```bash
+cp tests/integration/TEMPLATE_integration_test.py tests/integration/test_your_feature.py
+```
+
+### 2. Edit These 7 Key Sections
+
+1. **Class/method names** (lines 10, 14)
+2. **Required entities** (lines 24-27) - entities your YAML references
+3. **YAML file path** (line 39) - your test YAML file (use `tests/fixtures/integration/`)
+4. **Expected sensor count** (line 32) - number of sensors in YAML
+5. **Device identifier** (line 33) - must match YAML `global_settings.device_identifier`
+6. **Sensor unique IDs** (line 116) - replace with your actual sensor IDs
+7. **Expected values** (line 125) - calculate based on your formulas
+
+### 3. Create Your YAML Fixture ⚠️ **IMPORTANT PATH**
+
+**📁 Fixture Location Rules:**
+
+- **Integration tests**: `tests/fixtures/integration/your_test.yaml`
+- **Unit tests**: `tests/yaml_fixtures/unit_test_your_feature.yaml`
+
+Put your integration test YAML in `tests/fixtures/integration/your_test.yaml` with:
+
+```yaml
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_your_feature" # Must match step 5 above
+
+sensors:
+  your_sensor:
+    name: "Your Test Sensor"
+    formula: "input_entity + 50"
+    variables:
+      input_entity: "sensor.input_entity"
+```
+
+### 4. Run Your Test
+
+```bash
+poetry run python -m pytest tests/integration/test_your_feature.py -v
+```
+
+**The template includes bulletproof assertions that will tell you exactly what's wrong if anything fails.**
+
+---
+
+## 🎯 Critical Concepts: Backing Entities vs YAML Entities
+
+**⚠️ MAJOR CONFUSION ALERT:** AI models frequently get these concepts wrong!
+
+### 🚫 **What NEVER Goes in YAML**
+
+```yaml
+# ❌ WRONG - backing entities are NEVER defined in YAML
+sensors:
+  my_sensor:
+    formula: "state * 1.1"
+    backing_entities: # ❌ This doesn't exist!
+      - "sensor.power_meter"
+```
+
+### ✅ **What DOES Go in YAML**
+
+```yaml
+# ✅ CORRECT - only synthetic sensor definitions
+sensors:
+  my_sensor:
+    name: "My Synthetic Sensor"
+    formula: "state * 1.1" # 'state' resolves to backing entity automatically
+    variables:
+      input_value: "sensor.some_entity" # References to OTHER entities (HA or synthetic)
+```
+
+### 🔍 **Understanding Entity Types**
+
+#### 1. **Backing Entities** (Not in YAML)
+
+- **Live HA entities**: `sensor.power_meter`, `switch.living_room_light`
+- **Virtual entities**: Provided by integration via `data_provider_callback`
+- **How they work**: The `state` token in formulas resolves to these automatically
+- **Test setup**: You create these in your test with `mock_states` or `data_provider_callback`
+
+#### 2. **YAML Entity References** (In YAML)
+
+- **Other synthetic sensors**: `my_other_sensor` (references another sensor in the same YAML)
+- **External HA entities**: `sensor.temperature` (references real HA entities)
+- **Critical rule**: ALL entity references in YAML MUST resolve to real entities during evaluation
+
+#### 3. **Sensor Types in YAML**
+
+```yaml
+sensors:
+  # Type 1: Has backing entity (state token resolves to backing data)
+  power_adjusted:
+    formula: "state * 1.1" # 'state' = backing entity value
+
+  # Type 2: Completely computed (no backing entity, only variables)
+  total_consumption:
+    formula: "power_adjusted + other_sensor" # Only references other entities
+    variables:
+      other_sensor: "sensor.external_power"
+
+  # Type 3: Mixed (backing entity + other references)
+  power_efficiency:
+    formula: "state / target_power * 100" # state = backing, target_power = variable
+    variables:
+      target_power: "sensor.target_setting"
+```
+
+### 🧪 **Test Implications**
+
+#### Required Test Setup
+
+```python
+# 1. Create backing entities (for sensors that use 'state' token)
+# These are NOT in YAML - they're the data source
+mock_states["sensor.power_meter"] = create_mock_state("1000.0")
+
+# 2. Create referenced entities (for YAML variable references)
+# These ARE referenced in YAML and must exist
+mock_states["sensor.external_power"] = create_mock_state("500.0")
+mock_states["sensor.target_setting"] = create_mock_state("800.0")
+
+# 3. Your YAML only defines synthetic sensors
+yaml_content = """
+sensors:
+  power_adjusted:        # Gets backing data from sensor.power_meter (via device mapping)
+    formula: "state * 1.1"
+  total_consumption:     # Pure computation
+    formula: "power_adjusted + external_power"
+    variables:
+      external_power: "sensor.external_power"  # Must exist in mock_states!
+"""
+```
+
+### ❌ **Common Mistakes**
+
+1. **Putting backing entities in YAML**
+
+   ```yaml
+   # ❌ WRONG - this syntax doesn't exist
+   sensors:
+     my_sensor:
+       backing_entity: "sensor.power" # Not a real field!
+   ```
+
+2. **Forgetting to create referenced entities**
+
+   ```python
+   # ❌ BAD - YAML references sensor.input but test doesn't create it
+   yaml_content = """
+   sensors:
+     test_sensor:
+       formula: "input_value * 2"
+       variables:
+         input_value: "sensor.input"  # This must exist!
+   """
+   # Missing: mock_states["sensor.input"] = create_mock_state("100")
+   ```
+
+3. **Confusing backing vs referenced entities**
+
+   ```python
+   # ❌ CONFUSION - thinking 'state' needs to be in mock_states
+   # If sensor uses 'state' token, it gets data from backing entity (device mapping)
+   # You don't put the backing entity in YAML variables!
+   ```
+
+### 💡 **Key Takeaways**
+
+- **YAML = synthetic sensor definitions only**
+- **Backing entities = data sources (not in YAML)**
+- **Variable references = other entities (must exist in test)**
+- **`state` token = automatic backing entity resolution**
+- **All entity references in YAML must resolve to real entities**
+
+---
+
+## 🏗️ Unit Tests vs Integration Tests
+
+**Do you need a unit test template too?** Here's when to use each:
+
+### 🔧 **Unit Tests** - Test Individual Components
+
+- **Use when**: Testing specific handlers, parsers, or isolated logic
+- **Fixtures**: `tests/yaml_fixtures/unit_test_your_feature.yaml`
+- **Pattern**: Mock everything except the component being tested
+- **Example**: Testing formula evaluation, YAML parsing, dependency resolution
+
+### 🌐 **Integration Tests** - Test Complete Workflows
+
+- **Use when**: Testing end-to-end flows through the public API
+- **Fixtures**: `tests/fixtures/integration/your_feature.yaml`
+- **Pattern**: Use common fixtures, test real workflows
+- **Example**: YAML → synthetic sensors → Home Assistant entities
+
+**For most new features, start with integration tests using this template.**
+
+---
+
+## 🛡️ Bulletproof Assertion Principles
+
+**NEVER write useless assertions like these:**
+
+```python
+# ❌ BAD - tells you nothing when it fails
+assert sensor is not None
+assert mock_async_add_entities.called
+assert len(entities) > 0
+
+# ❌ WORST - assertions wrapped in 'if' blocks (NEVER DO THIS!)
+if sensor is not None:
+    assert sensor.native_value == 150.0  # Silently passes if sensor is None!
+```
+
+**ALWAYS write bulletproof assertions like these:**
+
+```python
+# ✅ GOOD - tells you exactly what went wrong
+assert sensor is not None, (
+    f"Sensor 'temperature_sensor' not found. Available: {list(entity_lookup.keys())}"
+)
+
+assert mock_async_add_entities.call_args_list, (
+    "async_add_entities was never called - no entities were added to HA"
+)
+
+assert len(entities) == 3, (
+    f"Wrong entity count: expected 3, got {len(entities)}. "
+    f"Entities: {[getattr(e, 'unique_id', 'no_id') for e in entities]}"
+)
+
+# ✅ EXCELLENT - test exact values, not just existence
+expected_value = 150.0  # input1 (100) + input2 (50)
+actual_value = float(sensor.native_value)
+assert abs(actual_value - expected_value) < 0.001, (
+    f"Temperature sensor calculation wrong: expected {expected_value}, got {actual_value}"
+)
+
+# ✅ BEST PRACTICE - combined existence and value check in one assertion
+assert sensor is not None and float(sensor.native_value) == 150.0, (
+    f"Sensor test failed: sensor={sensor}, "
+    f"value={getattr(sensor, 'native_value', 'N/A')}, "
+    f"available={list(entity_lookup.keys())}"
+)
+```
+
+**Key Rules:**
+
+1. **Always include what you expected vs what you got**
+2. **Always show available options when something is missing**
+3. **Test exact values, not just "not None"**
+4. **Explain the calculation in comments**
+5. **Never wrap assertions in "if exists" checks**
+
+---
 
 ## Overview
 
@@ -54,29 +317,23 @@ async def test_your_integration_test(
 - **NEVER create custom registry mocks** - the common fixtures provide the complete HA environment
 - **ONLY add what's missing** - if you need additional entities, add them to the existing fixtures, don't replace them
 
-### 2. Common Device Registry Fixture
+### 2. Standard Common Fixtures (Already Available)
 
-Add this fixture to your test class for proper device registration:
+The following fixtures are already available in `conftest.py` - just include them in your test method signature:
 
 ```python
-@pytest.fixture
-def mock_device_entry(self):
-    """Create a mock device entry for testing."""
-    mock_device_entry = Mock()
-    mock_device_entry.name = "Test Device"  # Will be slugified for entity IDs
-    mock_device_entry.identifiers = {("ha_synthetic_sensors", "test_device_123")}
-    return mock_device_entry
-
-@pytest.fixture
-def mock_device_registry(self, mock_device_entry):
-    """Create a mock device registry that returns the test device."""
-    mock_registry = Mock()
-    mock_registry.devices = Mock()
-    mock_registry.async_get_device.return_value = mock_device_entry
-    return mock_registry
+async def test_your_feature(
+    self,
+    mock_hass,                    # ✅ Ready to use - HA instance with proper config
+    mock_entity_registry,         # ✅ Ready to use - Entity registry with test entities
+    mock_states,                  # ✅ Ready to use - State manager for entity states
+    mock_device_registry,         # ✅ Ready to use - Device registry (NEW!)
+    mock_config_entry,            # ✅ Ready to use - Config entry for integration (NEW!)
+    mock_async_add_entities,      # ✅ Ready to use - Entity addition callback (NEW!)
+):
 ```
 
-**Important:** This device registry fixture is **additional** to the common registry fixtures - it doesn't replace them.
+**That's it!** No more boilerplate fixture creation in every test class.
 
 ### 3. Essential Imports
 
@@ -786,9 +1043,42 @@ del mock_entity_registry._entities[entity_id]
 
 **Example:** `Attribute hass is None for <entity unknown.unknown=unknown>`
 
-**Root Cause:** Mock entity objects not properly initialized
+**Root Cause:** Mock entity objects not properly initialized with Home Assistant instance
 
-**Solution:** Ensure mock entities have proper hass attribute or use proper mocking patterns
+**Solution:** Set the hass attribute on entities after creation:
+
+```python
+# After getting entities from mock_async_add_entities
+all_entities = []
+for call in mock_async_add_entities.call_args_list:
+    entities_list = call.args[0] if call.args else []
+    all_entities.extend(entities_list)
+
+# Set hass attribute on all entities
+for entity in all_entities:
+    entity.hass = mock_hass
+```
+
+#### **Symptom: "Frame helper not set up" warnings**
+
+**Example:**
+`WARNING Entity sensor.my_sensor (<class 'ha_synthetic_sensors.sensor_manager.DynamicSensor'>) does not have a platform`
+
+**Root Cause:** Entities are not properly associated with a platform in the test environment
+
+**Solution:** Set both hass and platform attributes on entities after creation:
+
+```python
+# Create mock platform
+mock_platform = Mock()
+mock_platform.platform_name = "sensor"
+mock_platform.logger = Mock()
+
+# Set both hass and platform attributes
+for entity in all_entities:
+    entity.hass = mock_hass
+    entity.platform = mock_platform
+```
 
 ### Debugging Collection Function Issues
 
@@ -833,6 +1123,19 @@ print(f"Collection resolver found: {entities}")
 9. **Clean up after tests** - Delete sensor sets to avoid test pollution
 10. **Use Mock(), not AsyncMock() for async_add_entities** - Home Assistant's AddEntitiesCallback is synchronous, not a
     coroutine
+11. **Properly initialize entities** - Set both `hass` and `platform` attributes on entities to prevent warnings:
+
+    ```python
+    # Create mock platform
+    mock_platform = Mock()
+    mock_platform.platform_name = "sensor"
+    mock_platform.logger = Mock()
+
+    # Set attributes on all entities
+    for entity in all_entities:
+        entity.hass = mock_hass
+        entity.platform = mock_platform
+    ```
 
 This guide provides the foundation for writing robust integration tests that properly exercise the synthetic sensors public
 API while avoiding common pitfalls.
@@ -880,3 +1183,144 @@ The original integration test guide was missing several critical insights that l
 5. **Debugging tools are invaluable** - Need ways to inspect registry state during tests
 
 These insights ensure that future tests avoid the same pitfalls and can properly test collection function behavior.
+
+---
+
+## 🚨 STOP! Common AI/Developer Mistakes
+
+**Before you write your test, avoid these repeated mistakes:**
+
+### ❌ Mistake 1: "Just checking it doesn't crash"
+
+```python
+# BAD - tells you nothing useful
+assert sensor_manager is not None
+assert len(entities) > 0
+```
+
+**✅ Fix:** Test exact expected values and provide detailed error messages.
+
+### ❌ Mistake 2: "Wrapping assertions in 'if' blocks" ⚠️ **BIGGEST OFFENSE**
+
+```python
+# BAD - makes assertions completely useless!
+if sensor is not None:
+    assert sensor.native_value == 150.0  # Never fails if sensor is None!
+
+if entity.native_value is not None:
+    assert entity.native_value == 200.0  # Never fails if value is None!
+
+if len(entities) > 0:
+    assert entities[0].unique_id == "test_sensor"  # Never fails if entities is empty!
+```
+
+**⚠️ Why This Is So Bad:**
+
+- Test **silently passes** when sensor/entity/value is None
+- You think your test is working but it's testing **nothing**
+- Bugs go undetected because assertions never run
+
+**✅ Fix:** Assert the sensor exists AND has the right value in one bulletproof assertion:
+
+```python
+# GOOD - fails with clear message if anything is wrong
+assert sensor is not None, f"Sensor not found. Available: {list(entity_lookup.keys())}"
+assert sensor.native_value == 150.0, f"Wrong value: expected 150.0, got {sensor.native_value}"
+
+# EVEN BETTER - combine into one bulletproof assertion
+assert sensor is not None and sensor.native_value == 150.0, (
+    f"Sensor test failed: sensor={sensor}, value={getattr(sensor, 'native_value', 'N/A')}, "
+    f"available_sensors={list(entity_lookup.keys())}"
+)
+```
+
+### ❌ Mistake 3: "Wrong API parameters"
+
+```python
+# BAD - sensor_set_id doesn't exist
+await async_setup_synthetic_sensors(sensor_set_id="test")
+```
+
+**✅ Fix:** Use `device_identifier` parameter as shown in the template.
+
+### ❌ Mistake 4: "Missing required entities"
+
+```python
+# BAD - YAML references sensor.input but test doesn't create it
+required_entities = {"sensor.wrong_name": {"state": "100"}}
+```
+
+**✅ Fix:** Create ALL entities that your YAML variables reference.
+
+### ❌ Mistake 5: "Device identifier mismatch"
+
+```python
+# BAD - YAML has device_identifier: "device_a" but test uses "device_b"
+device_identifier = "device_b"  # Doesn't match YAML
+```
+
+**✅ Fix:** Ensure exact match between YAML `global_settings.device_identifier` and test.
+
+### ❌ Mistake 6: "Putting backing entities in YAML" ⚠️ **FUNDAMENTAL CONFUSION**
+
+```yaml
+# ❌ WRONG - backing entities are NEVER in YAML!
+sensors:
+  my_sensor:
+    formula: "state * 1.1"
+    backing_entity: "sensor.power_meter" # This field doesn't exist!
+    backing_entities: # This also doesn't exist!
+      - "sensor.power_meter"
+```
+
+**✅ Fix:** Backing entities are handled via device mapping or data_provider_callback, never in YAML.
+
+### ❌ Mistake 7: "Missing entities that YAML references"
+
+```python
+# ❌ BAD - YAML references entities that don't exist in test
+yaml_content = """
+sensors:
+  test_sensor:
+    formula: "input_value + other_value"
+    variables:
+      input_value: "sensor.missing_entity"    # Must exist!
+      other_value: "sensor.another_missing"   # Must exist!
+"""
+# Missing: mock_states["sensor.missing_entity"] = create_mock_state("100")
+# Missing: mock_states["sensor.another_missing"] = create_mock_state("200")
+```
+
+**✅ Fix:** Create ALL entities that your YAML variables reference in your test setup.
+
+### ✅ The Solution: Use the Template
+
+Copy `tests/integration/TEMPLATE_integration_test.py` and follow the TODO comments. The template prevents all these mistakes
+and provides bulletproof assertions that tell you exactly what went wrong.
+
+---
+
+## 📚 Related Documentation
+
+### YAML Syntax and API References
+
+- **[📖 Cookbook](../../docs/cookbook.md)** - Real-world YAML examples and patterns for all features
+- **[🔧 Integration Guide](../../docs/Synthetic_Sensors_Integration_Guide.md)** - Complete public API documentation and usage
+  patterns
+- **[🏗️ Creating New Handlers Guide](../../docs/Dev/creating_new_handlers_guide.md)** - For developing custom function
+  handlers
+
+### Advanced References
+
+- [Cache Behavior Guide](../../docs/Cache_Behavior_and_Data_Lifecycle.md) - Understanding caching in tests
+- [Comparison Handler Design](../../docs/Dev/comparison_handler_design.md) - For collection pattern testing
+- [Reference Value Architecture](../../docs/Dev/reference_value_architecture.md) - Advanced evaluation concepts
+
+### Testing Resources
+
+- [Integration Test Template](../integration/TEMPLATE_integration_test.py) - Copy-paste starting point
+- [Common Test Fixtures](../conftest.py) - Available test utilities
+- [Example Integration Tests](../integration/) - Working test examples
+
+**📌 Pro Tip:** When your YAML syntax doesn't work, check the **Cookbook** first for working examples, then refer to the
+**Integration Guide** for API details.

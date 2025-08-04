@@ -272,7 +272,7 @@ class SensorOpsHandler:
         _LOGGER.debug("Deleted sensor: %s", unique_id)
         return True
 
-    def serialize_sensor_config(self, sensor_config: SensorConfig) -> Any:
+    def serialize_sensor_config(self, sensor_config: SensorConfig) -> dict[str, Any]:
         """Serialize sensor configuration for storage.
 
         Args:
@@ -294,7 +294,10 @@ class SensorOpsHandler:
 
         # Convert to dict and handle sets
         config_dict = asdict(sensor_config)
-        return set_to_list(config_dict)
+        result = set_to_list(config_dict)
+        if isinstance(result, dict):
+            return result
+        return {}
 
     def deserialize_sensor_config(self, config_data: dict[str, Any]) -> SensorConfig:
         """Deserialize sensor configuration from storage.
@@ -331,7 +334,7 @@ class SensorOpsHandler:
 
         def deserialize_variables(variables_data: dict[str, Any]) -> dict[str, Any]:
             """Deserialize variables dictionary."""
-            variables = {}
+            variables: dict[str, Any] = {}
             for var_name, var_value in variables_data.items():
                 if isinstance(var_value, dict) and "formula" in var_value:
                     # This is a computed variable

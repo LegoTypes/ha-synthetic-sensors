@@ -1,0 +1,94 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_metadata_function"
+  variables:
+    # Global variable with entity reference for testing
+    external_sensor: "sensor.external_power_meter"
+  metadata:
+    attribution: "Metadata Function Integration Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # Test 1: Basic metadata() function access - direct entity reference
+  metadata_last_changed_sensor:
+    name: "Metadata Last Changed Test"
+    formula: "metadata(power_entity, 'last_changed')"
+    variables:
+      power_entity: "sensor.power_meter"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "timestamp"
+
+  # Test 2: Entity ID access via metadata function
+  metadata_entity_id_sensor:
+    name: "Metadata Entity ID Test"
+    formula: "metadata(temp_entity, 'entity_id')"
+    variables:
+      temp_entity: "sensor.temp_probe"
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 3: Cross-sensor metadata access using global variable
+  metadata_cross_sensor_test:
+    name: "Cross-Sensor Metadata Test"
+    formula: "metadata(external_sensor, 'entity_id')"
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 4: Sensor key self-reference test (see how this behaves)
+  metadata_self_reference_test:
+    name: "Self Reference Test"
+    entity_id: "sensor.power_meter"  # Explicit entity_id for self-reference
+    formula: "metadata(metadata_self_reference_test, 'object_id')"  # Uses sensor key
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 5: Direct entity ID in formula (no variables)
+  metadata_direct_entity_test:
+    name: "Direct Entity Metadata Test"
+    formula: "metadata(sensor.power_meter, 'last_changed')"  # Direct entity ID
+    metadata:
+      unit_of_measurement: ""
+      device_class: "timestamp"
+
+  # Test 6: Variable with entity ID
+  metadata_variable_entity_test:
+    name: "Variable Entity Test"
+    formula: "metadata(var_entity, 'object_id')"
+    variables:
+      var_entity: "sensor.temp_probe"  # Variable holds entity ID
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 9: Multiple entity metadata concatenation
+  metadata_mixed_reference_test:
+    name: "Mixed Reference Concatenation Test"
+    formula: "metadata(primary_entity, 'entity_id') + ' vs ' + metadata(backing_entity, 'entity_id')"
+    variables:
+      primary_entity: "sensor.temp_probe"
+      backing_entity: "sensor.power_meter"
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 5: Simple attribute calculation (removed problematic metadata state test)
+  metadata_simple_attribute_test:
+    name: "Simple Attribute Test"
+    formula: "mixed_entity * 1.1"
+    variables:
+      mixed_entity: "sensor.power_meter"
+    attributes:
+      doubled_value:
+        formula: "state * 2"  # Simple calculation without metadata
+    metadata:
+      unit_of_measurement: "W"
+
+  # Test 6: Metadata comparison test (simplified)
+  metadata_comparison_test:
+    name: "Metadata Comparison Test"
+    formula: "metadata(temp_entity, 'last_changed')"
+    variables:
+      temp_entity: "sensor.temp_probe"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "timestamp"

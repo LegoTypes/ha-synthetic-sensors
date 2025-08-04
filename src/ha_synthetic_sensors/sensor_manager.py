@@ -32,6 +32,7 @@ from .exceptions import (
 )
 from .metadata_handler import MetadataHandler
 from .name_resolver import NameResolver
+from .reference_value_manager import ReferenceValueManager
 from .type_definitions import DataProviderCallback, DataProviderChangeNotifier, EvaluationResult
 
 if TYPE_CHECKING:
@@ -292,11 +293,13 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 _LOGGER.debug("Found computed variables, delegating variable resolution to evaluator")
                 return None
 
+        # ARCHITECTURE FIX: Use ReferenceValueManager for type safety
         context: dict[str, Any] = {}
         for var_name, var_value in formula_config.variables.items():
             # Check if this is a numeric literal (not a string entity ID)
             if isinstance(var_value, int | float):
-                context[var_name] = var_value
+                # Create ReferenceValue for numeric literals (reference = variable name)
+                ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, var_value)
                 continue
 
             # Check if this is a string that doesn't look like an entity ID
@@ -304,10 +307,11 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 # Try to convert to numeric if possible
                 try:
                     numeric_value = float(var_value)
-                    context[var_name] = numeric_value
+                    # Create ReferenceValue for numeric string
+                    ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, numeric_value)
                 except ValueError:
-                    # Keep as string if not numeric
-                    context[var_name] = var_value
+                    # Create ReferenceValue for string literal
+                    ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, var_value)
                 continue
 
             # Handle entity references (strings with dots)
@@ -317,12 +321,22 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 state = self._hass.states.get(var_value)
                 if state is not None:
                     try:
-                        # Try to get numeric value
+                        # Try to get numeric value and create ReferenceValue with entity ID as reference
                         numeric_value = float(state.state)
-                        context[var_name] = numeric_value
+                        ReferenceValueManager.set_variable_with_reference_value(
+                            context,
+                            var_name,
+                            var_value,
+                            numeric_value,  # var_value is entity ID
+                        )
                     except (ValueError, TypeError):
-                        # Fall back to string value for non-numeric states
-                        context[var_name] = state.state
+                        # Fall back to string value for non-numeric states with entity ID as reference
+                        ReferenceValueManager.set_variable_with_reference_value(
+                            context,
+                            var_name,
+                            var_value,
+                            state.state,  # var_value is entity ID
+                        )
                 else:
                     # Entity not found - this will cause appropriate evaluation failure
                     context[var_name] = None
@@ -347,7 +361,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 if main_result["success"] and main_result["value"] is not None:
                     if attr_context is None:
                         attr_context = {}
-                    attr_context["state"] = main_result["value"]
+                    # ARCHITECTURE FIX: Use ReferenceValueManager for state token in attributes
+                    ReferenceValueManager.set_variable_with_reference_value(
+                        attr_context, "state", self.entity_id or "state", main_result["value"]
+                    )
 
                 # Evaluate the attribute formula
                 attr_result = self._evaluator.evaluate_formula_with_sensor_config(formula, attr_context, self._config)
@@ -432,7 +449,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             if not has_backing_entity and self._attr_native_value is not None:
                 if main_context is None:
                     main_context = {}
-                main_context["state"] = self._attr_native_value
+                # ARCHITECTURE FIX: Use ReferenceValueManager for state token
+                ReferenceValueManager.set_variable_with_reference_value(
+                    main_context, "state", self.entity_id or "state", self._attr_native_value
+                )
                 _LOGGER.debug(
                     "Providing previous state %s for sensor %s without backing entity", self._attr_native_value, self.entity_id
                 )

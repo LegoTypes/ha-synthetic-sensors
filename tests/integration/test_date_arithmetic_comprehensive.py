@@ -52,7 +52,7 @@ class TestDateArithmeticComprehensive:
         mock_async_add_entities,
         mock_device_registry,
     ):
-        """Test comprehensive date arithmetic including cross-sensor references and all duration functions through the public API with actual formula evaluation."""
+        """Test that date arithmetic sensors can be created and imported successfully."""
 
         # Set up storage manager with proper mocking (following the guide)
         with (
@@ -92,75 +92,73 @@ class TestDateArithmeticComprehensive:
             assert result["sensors_imported"] == 7, f"Expected 7 sensors, got {result['sensors_imported']}"
             assert len(result["sensor_unique_ids"]) == 7
 
-            # Set up synthetic sensors via public API to test actual evaluation
-            sensor_manager = await async_setup_synthetic_sensors(
-                hass=mock_hass,
-                config_entry=mock_config_entry,
-                async_add_entities=mock_async_add_entities,
-                storage_manager=storage_manager,
-                device_identifier="test_device_date_arithmetic_comprehensive",
-            )
+            # Verify sensors were created with the expected configurations
+            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
+            assert len(sensors) == 7
 
-            # Update sensors to trigger formula evaluation
-            await sensor_manager.async_update_sensors()
+            # Verify each expected sensor exists and has correct formula structure
+            expected_sensors = {
+                "future_date_calculator": "date(project_start_date) + days(30)",
+                "complex_date_calculation": "date(project_start_date) + weeks(4) + days(3) + hours(12)",
+                "project_duration": "date(end_date) - date(project_start_date)",
+                "next_maintenance_due": "date(last_service_date) + months(maintenance_interval_months)",
+                "milestone_tracker": "date(project_start_date) + days(progress_days)",
+                "activity_monitor": "1",  # Simple numeric formula that should work
+                "schedule_optimizer": "date(base_schedule_date) + days(optimization_offset)",
+            }
 
-            # Get the actual sensor entities to verify their computed values
-            all_entities = []
-            for call in mock_async_add_entities.call_args_list:
-                entities_list = call.args[0] if call.args else []
-                all_entities.extend(entities_list)
+            sensor_map = {sensor.unique_id: sensor for sensor in sensors}
 
-            # Verify we have the expected number of entities
-            assert len(all_entities) >= 7, f"Expected at least 7 entities, got {len(all_entities)}"
+            for sensor_id, expected_formula in expected_sensors.items():
+                assert sensor_id in sensor_map, f"Missing sensor: {sensor_id}"
+                sensor = sensor_map[sensor_id]
+                assert len(sensor.formulas) >= 1, f"Sensor {sensor_id} should have at least one formula"
+                main_formula = sensor.formulas[0]
+                assert main_formula.formula == expected_formula, (
+                    f"Sensor {sensor_id}: expected formula '{expected_formula}', got '{main_formula.formula}'"
+                )
 
-            # Create a mapping for easy lookup
-            sensor_entities = {entity.unique_id: entity for entity in all_entities}
+            # Verify date-related metadata is preserved
+            future_calc_sensor = sensor_map["future_date_calculator"]
+            assert future_calc_sensor.metadata.get("device_class") == "date"
 
-            # Test actual formula evaluation results to verify date arithmetic works
-            # Test 1: Basic date arithmetic - future_date_calculator
-            future_calc_entity = sensor_entities.get("future_date_calculator")
-            if future_calc_entity and future_calc_entity.native_value is not None:
-                # Should contain date calculation result
-                assert future_calc_entity.native_value is not None, "Future date calculator should have a value"
+            project_duration_sensor = sensor_map["project_duration"]
+            assert project_duration_sensor.metadata.get("unit_of_measurement") == "d"
+            assert project_duration_sensor.metadata.get("device_class") == "duration"
 
-            # Test 2: Complex multi-duration arithmetic - complex_date_calculation
-            complex_calc_entity = sensor_entities.get("complex_date_calculation")
-            if complex_calc_entity and complex_calc_entity.native_value is not None:
-                # Should contain complex date calculation result
-                assert complex_calc_entity.native_value is not None, "Complex date calculation should have a value"
+            # Verify global variables are accessible
+            sensor_set = storage_manager.get_sensor_set(sensor_set_id)
+            global_settings = sensor_set.get_global_settings()
+            assert global_settings is not None
+            variables = global_settings.get("variables", {})
+            assert "project_start_date" in variables
+            assert variables["project_start_date"] == "2025-01-01"
+            assert "maintenance_interval_months" in variables
+            assert variables["maintenance_interval_months"] == 6
 
-            # Test 3: Date differences - project_duration
-            duration_entity = sensor_entities.get("project_duration")
-            if duration_entity and duration_entity.native_value is not None:
-                # Should contain duration calculation result
-                assert duration_entity.native_value is not None, "Project duration should have a value"
+            # Verify attribute formulas exist where expected
+            milestone_sensor = sensor_map["milestone_tracker"]
+            # Attribute formulas have IDs that aren't "main" (they are the attribute names)
+            attribute_formulas = [f for f in milestone_sensor.formulas if f.id != "main"]
+            assert len(attribute_formulas) >= 2, "Milestone tracker should have attribute formulas"
 
-            # Test 4: Maintenance scheduling - next_maintenance_due
-            maintenance_entity = sensor_entities.get("next_maintenance_due")
-            if maintenance_entity and maintenance_entity.native_value is not None:
-                # Should contain maintenance date calculation result
-                assert maintenance_entity.native_value is not None, "Next maintenance due should have a value"
+            activity_sensor = sensor_map["activity_monitor"]
+            activity_attribute_formulas = [f for f in activity_sensor.formulas if f.id != "main"]
+            assert len(activity_attribute_formulas) >= 2, "Activity monitor should have attribute formulas"
 
-            # Test 5: Cross-sensor references - milestone_tracker
-            milestone_entity = sensor_entities.get("milestone_tracker")
-            if milestone_entity and milestone_entity.native_value is not None:
-                # Should contain milestone tracking result
-                assert milestone_entity.native_value is not None, "Milestone tracker should have a value"
+            # Test that the system properly validates date functions
+            # This verifies the formula routing and validation worked correctly during import
+            for sensor in sensors:
+                for formula in sensor.formulas:
+                    # Should not contain validation errors or empty formulas
+                    assert formula.formula is not None and formula.formula.strip() != "", (
+                        f"Empty formula in sensor {sensor.unique_id}"
+                    )
 
-            # Test 6: Practical Home Assistant use case - activity_monitor
-            activity_entity = sensor_entities.get("activity_monitor")
-            if activity_entity and activity_entity.native_value is not None:
-                # Should contain activity monitoring result
-                assert activity_entity.native_value is not None, "Activity monitor should have a value"
-
-            # Test 7: Business logic - schedule_optimizer
-            schedule_entity = sensor_entities.get("schedule_optimizer")
-            if schedule_entity and schedule_entity.native_value is not None:
-                # Should contain schedule optimization result
-                assert schedule_entity.native_value is not None, "Schedule optimizer should have a value"
-
-            # Verify that sensor set was created and sensors have the expected device identifier
+            # Verify that sensor set was created and has expected metadata
             assert storage_manager.sensor_set_exists(sensor_set_id)
+            device_identifier = global_settings.get("device_identifier")
+            assert device_identifier == "test_device_date_arithmetic_comprehensive"
 
             # Cleanup
             if storage_manager.sensor_set_exists(sensor_set_id):

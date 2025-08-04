@@ -19,8 +19,16 @@ from typing import TYPE_CHECKING, ClassVar
 
 from homeassistant.core import HomeAssistant
 
+from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
 from .math_functions import MathFunctions
-from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, DATETIME_FUNCTIONS, PYTHON_KEYWORDS, get_ha_domains
+from .shared_constants import (
+    BOOLEAN_LITERALS,
+    BUILTIN_TYPES,
+    DATETIME_FUNCTIONS,
+    METADATA_FUNCTIONS,
+    PYTHON_KEYWORDS,
+    get_ha_domains,
+)
 
 if TYPE_CHECKING:
     from .config_models import ComputedVariable
@@ -130,6 +138,8 @@ class DependencyParser:
         ]
         # Add datetime functions from shared constants
         excluded_keywords.extend(DATETIME_FUNCTIONS)
+        # Add metadata functions from shared constants
+        excluded_keywords.extend(METADATA_FUNCTIONS)
         excluded_pattern = "|".join(excluded_keywords)
         return re.compile(rf"\b(?!(?:{excluded_pattern})\b)[a-zA-Z_][a-zA-Z0-9_]*\b")
 
@@ -296,9 +306,35 @@ class DependencyParser:
         for entity_id in entities:
             entity_id_parts.update(entity_id.split("."))
 
-        # Get all potential variables
+        # Get all potential variables using centralized extractor for general extraction
+        # Use centralized extractor but still apply dependency parser's filtering logic
         variables = set()
-        variable_matches = self._variable_pattern.findall(formula)
+        centralized_variables = extract_variables(formula, context=ExtractionContext.DEPENDENCY_PARSING)
+        variable_matches = list(centralized_variables)
+
+        # SPECIAL CASE: Extract variables from within collection patterns
+        # This handles formulas like sum("device_class:device_type") or avg("area:target_area", "device_class:device_type")
+
+        # Find aggregation functions and extract all quoted strings within them
+        aggregation_func_pattern = re.compile(r"\b(sum|avg|count|min|max|std|var)\s*\(([^)]+)\)", re.IGNORECASE)
+        for func_match in aggregation_func_pattern.finditer(formula):
+            func_args = func_match.group(2)
+            # Extract all quoted strings from the function arguments
+            quoted_strings = re.findall(r'["\'](.*?)["\']', func_args)
+
+            for quoted_content in quoted_strings:
+                # Check if this is a collection pattern that might contain variables
+                for query_type, pattern in self.QUERY_PATTERNS.items():
+                    pattern_match = pattern.match(quoted_content.strip())
+                    if pattern_match:
+                        # Extract variables from the pattern value
+                        pattern_value = pattern_match.group(1)
+                        # Add both the query type and any variables in the pattern value
+                        variables.add(query_type)
+                        # Extract variables from pattern value (handles device_type in device_class:device_type)
+                        pattern_variables = self._variable_pattern.findall(pattern_value)
+                        variables.update(pattern_variables)
+                        break
 
         # Extract variables from dot notation first to identify attribute parts to exclude
         dot_notation_attributes = set()

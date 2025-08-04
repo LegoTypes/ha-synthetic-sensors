@@ -14,9 +14,7 @@ from .function_registry import get_datetime_function_registry
 class DateTimeHandler(FormulaHandler):
     """Handler for datetime functions in the formula evaluation system."""
 
-    def __init__(
-        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None
-    ) -> None:
+    def __init__(self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None) -> None:
         """Initialize the datetime handler."""
         super().__init__(expression_evaluator)
         self._registry = get_datetime_function_registry()

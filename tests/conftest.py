@@ -1116,6 +1116,39 @@ def mock_config_entry():
 
 
 @pytest.fixture
+def mock_device_registry():
+    """Create a mock device registry that works with the synthetic sensors system."""
+    mock_registry = MagicMock()
+
+    # Create a mock device entry
+    mock_device_entry = MagicMock()
+    mock_device_entry.name = "Test Device"
+    mock_device_entry.identifiers = {("ha_synthetic_sensors", "test_device_123")}
+
+    # Set up the registry to return our mock device
+    mock_registry.devices = MagicMock()
+    mock_registry.async_get_device.return_value = mock_device_entry
+
+    return mock_registry
+
+
+@pytest.fixture
+def mock_async_add_entities():
+    """Create a mock async_add_entities callback that properly tracks entity additions."""
+    mock_callback = MagicMock()
+
+    def mock_callback_impl(entities):
+        # Store the entities for verification
+        mock_callback.added_entities = entities
+        return None
+
+    mock_callback.side_effect = mock_callback_impl
+    mock_callback.added_entities = []  # Initialize for easy access
+
+    return mock_callback
+
+
+@pytest.fixture
 def sample_sensor_configs() -> dict[str, dict[str, Any]]:
     """Sample sensor configurations for testing."""
     return {

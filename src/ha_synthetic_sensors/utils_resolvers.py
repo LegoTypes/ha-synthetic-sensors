@@ -11,6 +11,7 @@ from .constants_boolean_states import FALSE_STATES, TRUE_STATES
 from .constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
 from .data_validation import validate_data_provider_result
 from .exceptions import DataValidationError, MissingDependencyError
+from .type_definitions import ReferenceValue
 from .utils_hass import check_data_provider_conditions, check_hass_lookup_conditions, get_data_provider_callback
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,16 +49,21 @@ def resolve_via_data_provider_entity(dependency_handler: Any, entity_id: str, or
                     "Entity resolver: entity '%s' exists but has None value, returning unknown state",
                     entity_id,
                 )
-                return "unknown"  # Use lowercase for HA state consistency
+                # Return unknown state wrapped in ReferenceValue
+                return ReferenceValue(reference=entity_id, value="unknown")
 
             # Handle special Home Assistant state values
             if isinstance(value, str) and (is_ha_state_value(value) or is_ha_unknown_equivalent(value)):
                 _LOGGER.debug("Entity resolver: entity '%s' has %s state via data provider", entity_id, value)
-                # Return the normalized HA state value so evaluator can handle it appropriately
-                return normalize_ha_state_value(value)
+                # Return the normalized HA state value wrapped in ReferenceValue
+                normalized_value = normalize_ha_state_value(value)
+                return ReferenceValue(reference=entity_id, value=normalized_value)
 
             _LOGGER.debug("Entity resolver: resolved '%s' to %s", entity_id, value)
-            return value
+
+            # ARCHITECTURE FIX: Create ReferenceValue object for data provider lookups
+            # This ensures that data provider lookups return ReferenceValue objects
+            return ReferenceValue(reference=entity_id, value=value)
     except DataValidationError:
         # Re-raise fatal errors according to the guide
         raise
@@ -232,9 +238,17 @@ def resolve_via_hass_entity(dependency_handler: Any, entity_id: str, original_re
                 "Entity resolver: entity '%s' has None state, returning unknown",
                 entity_id,
             )
-            return "unknown"  # Use lowercase for HA state consistency
+            # Return unknown state wrapped in ReferenceValue
+            return ReferenceValue(reference=entity_id, value="unknown")
 
-        return _convert_hass_state_value(state_value, entity_id, hass_state)
+        # Convert state value to appropriate type
+        converted_value = _convert_hass_state_value(state_value, entity_id, hass_state)
+
+        # ARCHITECTURE FIX: Create ReferenceValue object for HA entity lookups
+        # This ensures that HA entity lookups return ReferenceValue objects like data provider lookups
+        result = ReferenceValue(reference=entity_id, value=converted_value)
+        _LOGGER.debug("UTILS_RESOLVERS: Created ReferenceValue for HA entity '%s': %s", entity_id, result)
+        return result
     except Exception as e:
         _LOGGER.warning("Error resolving entity reference '%s' via HASS: %s", entity_id, e)
 

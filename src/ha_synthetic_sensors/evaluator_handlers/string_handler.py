@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 import re
+from typing import Any
 
 from ..constants_formula import (
     BASIC_STRING_FUNCTIONS,
@@ -40,7 +41,7 @@ class StringHandler(FormulaHandler):
     def __init__(
         self,
         config: ArithmeticTokenizerConfig | None = None,
-        expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None,
+        expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None,
     ) -> None:
         """Initialize the string handler with configuration."""
         super().__init__(expression_evaluator)

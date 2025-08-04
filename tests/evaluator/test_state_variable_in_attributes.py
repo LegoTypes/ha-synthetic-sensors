@@ -58,21 +58,30 @@ class TestStateVariableInAttributes:
                 # Should have access to state=100.0
                 assert context is not None
                 assert "state" in context
-                assert context["state"] == 100.0
+                # With ReferenceValue architecture, check the .value property
+                state_value = context["state"].value if hasattr(context["state"], "value") else context["state"]
+                assert state_value == 100.0
                 return {"success": True, "value": 2400.0, "state": "ok"}
             elif config.id == "weekly_total":
                 # Should have access to state=100.0
                 assert context is not None
                 assert "state" in context
-                assert context["state"] == 100.0
+                # With ReferenceValue architecture, check the .value property
+                state_value = context["state"].value if hasattr(context["state"], "value") else context["state"]
+                assert state_value == 100.0
                 return {"success": True, "value": 16800.0, "state": "ok"}
             elif config.id == "with_additional_vars":
                 # Should have access to both state and multiplier
                 assert context is not None
                 assert "state" in context
                 assert "multiplier" in context
-                assert context["state"] == 100.0
-                assert context["multiplier"] == 2.5
+                # With ReferenceValue architecture, check the .value property
+                state_value = context["state"].value if hasattr(context["state"], "value") else context["state"]
+                multiplier_value = (
+                    context["multiplier"].value if hasattr(context["multiplier"], "value") else context["multiplier"]
+                )
+                assert state_value == 100.0
+                assert multiplier_value == 2.5
                 return {"success": True, "value": 250.0, "state": "ok"}
             else:
                 return main_result
@@ -140,7 +149,9 @@ class TestStateVariableInAttributes:
                 # Should have context with state even though _build_variable_context returned None
                 assert context is not None
                 assert "state" in context
-                assert context["state"] == 50.0
+                # With ReferenceValue architecture, check the .value property
+                state_value = context["state"].value if hasattr(context["state"], "value") else context["state"]
+                assert state_value == 50.0
                 return {"success": True, "value": 100.0, "state": "ok"}
             else:
                 return main_result

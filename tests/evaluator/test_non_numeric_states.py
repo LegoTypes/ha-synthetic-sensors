@@ -38,10 +38,7 @@ class TestNonNumericStateHandling:
 
     def test_boolean_state_conversion_basic(self, mock_hass, mock_entity_registry, mock_states):
         """Test basic boolean state conversion for on/off and dry/wet states."""
-        from ha_synthetic_sensors.variable_resolver import HomeAssistantResolutionStrategy
-
-        # Create a HA resolution strategy to test boolean conversion directly
-        strategy = HomeAssistantResolutionStrategy(mock_hass)
+        from ha_synthetic_sensors.validation_helper import convert_to_numeric
 
         # Test cases: Basic boolean states that should work with real HA constants
         test_cases = [
@@ -62,7 +59,7 @@ class TestNonNumericStateHandling:
             mock_state.attributes = {"device_class": device_class} if device_class else {}
 
             # Test boolean conversion directly
-            result = strategy._convert_boolean_state_to_numeric(mock_state)
+            result = convert_to_numeric(state_value, entity_id)
 
             assert result == expected_numeric, (
                 f"Expected {expected_numeric} for state '{state_value}' with device_class '{device_class}', got {result}"
@@ -158,9 +155,9 @@ class TestNonNumericStateHandling:
 
         # These should raise NonNumericStateError
         with pytest.raises(NonNumericStateError) as exc_info:
-            convert_to_numeric("on", "switch.test")
-        assert "switch.test" in str(exc_info.value)
-        assert "on" in str(exc_info.value)
+            convert_to_numeric("invalid_state", "sensor.test")
+        assert "sensor.test" in str(exc_info.value)
+        assert "invalid_state" in str(exc_info.value)
 
         with pytest.raises(NonNumericStateError):
             convert_to_numeric("running", "sensor.status")

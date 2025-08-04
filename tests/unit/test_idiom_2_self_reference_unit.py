@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
+from ha_synthetic_sensors.exceptions import MissingDependencyError
 
 
 class TestIdiom2SelfReference:
@@ -23,8 +24,8 @@ class TestIdiom2SelfReference:
 
     @pytest.fixture
     def sensor_key_yaml(self):
-        """Load the main formula state YAML file."""
-        yaml_path = "examples/idiom_2_main_formula_state.yaml"
+        """Load the sensor key YAML file."""
+        yaml_path = "examples/idiom_2_equivalence.yaml"
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
@@ -74,7 +75,7 @@ class TestIdiom2SelfReference:
     def test_sensor_key_reference(self, config_manager, sensor_key_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test that sensor key name resolves to backing entity value."""
         config = config_manager.load_from_yaml(sensor_key_yaml)
-        sensor = config.sensors[0]
+        sensor = config.sensors[1]  # Use power_calculator_key sensor
 
         # Create sensor manager with data provider
         def mock_data_provider(entity_id: str):
@@ -94,11 +95,14 @@ class TestIdiom2SelfReference:
         sensor_manager.register_data_provider_entities({"sensor.span_panel_instantaneous_power"})
 
         # Register the sensor-to-backing mapping
-        sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
+        sensor_to_backing_mapping = {"power_calculator_key": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
 
-        # Test main formula evaluation
+        # Register the sensor with initial value
         evaluator = sensor_manager._evaluator
+        evaluator.register_sensor("power_calculator_key", "sensor.power_calculator_key", 1000.0)
+
+        # Test main formula evaluation
         main_formula = sensor.formulas[0]
 
         main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
@@ -107,7 +111,6 @@ class TestIdiom2SelfReference:
         assert main_result["success"] is True
         assert main_result["value"] == 2000.0
 
-    # @pytest.mark.skip(reason="Entity ID self-reference not yet supported by evaluator")
     def test_entity_id_reference(self, config_manager, entity_id_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test that full entity ID resolves to backing entity value."""
         config = config_manager.load_from_yaml(entity_id_yaml)
@@ -134,6 +137,10 @@ class TestIdiom2SelfReference:
         sensor_to_backing_mapping = {"power_calculator": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
 
+        # Register the sensor with initial value
+        evaluator = sensor_manager._evaluator
+        evaluator.register_sensor("power_calculator", "sensor.power_calculator", 1000.0)
+
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
@@ -157,8 +164,7 @@ class TestIdiom2SelfReference:
 
         # Create sensor manager
         def mock_data_provider(entity_id: str):
-            if entity_id == "sensor.current_power":
-                return {"value": 1000.0, "exists": True}
+            # Don't provide sensor.current_power to test missing dependency
             return {"value": None, "exists": False}
 
         mock_add_entities = MagicMock()
@@ -169,17 +175,15 @@ class TestIdiom2SelfReference:
             SensorManagerConfig(data_provider_callback=mock_data_provider),
         )
 
-        # Register the external entity
-        sensor_manager.register_data_provider_entities({"sensor.current_power"})
+        # Don't register any entities to test missing dependency
 
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        # Should fail because no previous value and no backing entity
-        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
-        assert result["success"] is False
-        assert "state" in result["error"].lower()
+        # Should fail because sensor.current_power is not resolved
+        with pytest.raises(MissingDependencyError, match="Missing dependency 'sensor.current_power'"):
+            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
 
     def test_self_reference_in_attributes(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test self-reference patterns in attribute formulas."""

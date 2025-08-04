@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 import re
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from ..datetime_functions import get_datetime_function_registry
 from ..formula_router import EvaluatorType, FormulaRouter
@@ -43,9 +43,9 @@ class DateHandler(FormulaHandler):
     def __init__(
         self,
         config: DateArithmeticConfig | None = None,
-        expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None,
+        expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None,
     ) -> None:
-        """Initialize the date handler with configuration and optional expression evaluator.
+        """Initialize the date handler with configuration.
 
         Args:
             config: Date arithmetic configuration
@@ -344,7 +344,7 @@ class DateHandler(FormulaHandler):
 
         # For complex expressions, delegate to main evaluator if available
         if self._expression_evaluator is not None:
-            return self._expression_evaluator(expression, context)
+            return self._expression_evaluator(expression, context)  # type: ignore[no-any-return]
 
         # Final fallback: return as string for backward compatibility
         return expression

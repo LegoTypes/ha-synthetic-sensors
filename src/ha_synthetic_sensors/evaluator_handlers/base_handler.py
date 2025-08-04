@@ -11,12 +11,13 @@ class FormulaHandler(ABC):
     """Base interface for formula handlers in the compiler-like evaluation system."""
 
     def __init__(
-        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], ContextValue] | None = None
+        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None, **kwargs: Any
     ) -> None:
         """Initialize the handler with optional expression evaluator.
 
         Args:
             expression_evaluator: Callback for handlers to delegate complex expression evaluation
+            **kwargs: Additional keyword arguments for derived handlers
         """
         self._expression_evaluator = expression_evaluator
 

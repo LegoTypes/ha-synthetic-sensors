@@ -261,6 +261,84 @@ In this example:
 - The `with_multiplier` attribute is calculated as the main state times a custom multiplier (2.5).
 - Both attribute formulas use the `state` variable, which is the freshly calculated main sensor value.
 
+### Metadata Function
+
+The `metadata()` function provides access to Home Assistant entity metadata properties. This allows you to retrieve
+information about entity state changes, entity IDs, and other metadata.
+
+**Syntax:**
+
+```yaml
+metadata(entity_reference, 'metadata_key')
+```
+
+**Available Metadata Keys:**
+
+- `last_changed` - When the entity state last changed
+- `last_updated` - When the entity was last updated
+- `entity_id` - Full entity ID (e.g., "sensor.power_meter", not useful)
+- `domain` - Entity domain (e.g., "sensor", "switch")
+- `object_id` - Entity object ID (e.g., "power_meter")
+- `friendly_name` - Entity friendly name
+
+**Examples:**
+
+```yaml
+sensors:
+  # Data staleness detection
+  power_data_freshness:
+    name: "Power Data Freshness"
+    formula: "(now() - metadata(power_entity, 'last_changed')) < hours(1) ? 1 : 0"
+    variables:
+      power_entity: "sensor.power_meter"
+    metadata:
+      unit_of_measurement: "binary"
+
+  # Entity domain validation
+  entity_type_check:
+    name: "Entity Type Validation"
+    formula: "metadata(sensor.temp_probe, 'domain') == 'sensor' ? 1 : 0"
+    metadata:
+      unit_of_measurement: "binary"
+
+  # Display friendly names in attributes
+  sensor_with_metadata_info:
+    name: "Enhanced Sensor Info"
+    formula: "power_sensor * efficiency_factor"
+    variables:
+      power_sensor: "sensor.power_meter"
+      efficiency_factor: 0.95
+    attributes:
+      source_name:
+        formula: "metadata(power_sensor, 'friendly_name')"
+      data_age_minutes:
+        formula: "(now() - metadata(power_sensor, 'last_changed')) / minutes(1)"
+        metadata:
+          unit_of_measurement: "min"
+          suggested_display_precision: 1
+      is_recent:
+        formula: "metadata(power_sensor, 'last_updated') > (now() - minutes(5)) ? 'Yes' : 'No'"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # State token for current sensor metadata
+  self_reference_metadata:
+    name: "Self Reference Metadata"
+    entity_id: "sensor.power_meter"
+
+    formula: "metadata(state, 'object_id')" # Uses state token for current sensor
+    metadata:
+      unit_of_measurement: ""
+```
+
+**Entity Reference Types:**
+
+- **Variable names**: `metadata(power_entity, 'entity_id')` - Uses variable that resolves to entity ID
+- **Direct entity IDs**: `metadata(sensor.power_meter, 'last_changed')` - Direct entity reference
+- **State token**: `metadata(state, 'entity_id')` - References the current sensor's backing entity
+- **Global variables**: `metadata(external_sensor, 'domain')` - Uses global variable reference
+
 ### Metadata Dictionary
 
 The `metadata` dictionary provides extensible support for all Home Assistant sensor properties. This metadata is added
@@ -1021,4 +1099,4 @@ When sensors are associated with devices, entity IDs are automatically generated
   - device_identifier "circuit_a1" → Device "Circuit - Phase A" → `sensor.circuit_phase_a_current`
 
 This automatic naming ensures consistent, predictable entity IDs that clearly indicate which device they belong to, while
-avoiding conflicts between sensors from different devices.
+avoiding conflicts between sensors from different device

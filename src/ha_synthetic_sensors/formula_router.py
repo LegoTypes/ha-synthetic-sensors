@@ -7,7 +7,7 @@ from enum import Enum
 import logging
 import re
 
-from .shared_constants import COLLECTION_PREFIXES, DATETIME_FUNCTIONS, DURATION_FUNCTIONS, STRING_FUNCTIONS
+from .shared_constants import COLLECTION_PREFIXES, DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS, STRING_FUNCTIONS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -407,6 +407,28 @@ class FormulaRouter:
             pattern = rf"\b{re.escape(duration_func)}\s*\("
             if re.search(pattern, formula):
                 self._logger.debug("Found duration function: %s", duration_func)
+                return True
+
+        return False
+
+    def _contains_metadata_functions(self, formula: str) -> bool:
+        """
+        Detect if formula contains metadata function calls.
+
+        Looks for metadata functions like metadata() that access HA entity metadata.
+        These indicate metadata operations that should be routed to the metadata handler.
+
+        Args:
+            formula: Formula to analyze
+
+        Returns:
+            True if metadata functions found, False otherwise
+        """
+        # Check for metadata function patterns
+        for metadata_func in METADATA_FUNCTIONS:
+            pattern = rf"\b{re.escape(metadata_func)}\s*\("
+            if re.search(pattern, formula):
+                self._logger.debug("Found metadata function: %s", metadata_func)
                 return True
 
         return False

@@ -1,0 +1,14 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_your_feature"
+
+sensors:
+  your_sensor:
+    name: "Your Test Sensor"
+    formula: "input_entity + 50"
+    variables:
+      input_entity: "sensor.input_entity"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

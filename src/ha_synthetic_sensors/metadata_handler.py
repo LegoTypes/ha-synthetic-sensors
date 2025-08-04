@@ -1,7 +1,7 @@
 """Metadata handling for synthetic sensors."""
 
 import logging
-from typing import Any
+from typing import Any, TypeGuard
 
 from .config_models import FormulaConfig, SensorConfig
 from .constants_metadata import (
@@ -41,6 +41,10 @@ class MetadataHandler:
     def __init__(self) -> None:
         """Initialize the metadata handler."""
 
+    def is_valid_metadata_dict(self, metadata: Any) -> TypeGuard[dict[str, Any]]:
+        """Type guard to check if value is a valid metadata dictionary."""
+        return isinstance(metadata, dict)
+
     def merge_metadata(self, global_metadata: dict[str, Any], local_metadata: dict[str, Any]) -> dict[str, Any]:
         """
         Merge global and local metadata, with local metadata taking precedence.
@@ -67,8 +71,7 @@ class MetadataHandler:
         Returns:
             Merged metadata dictionary
         """
-        sensor_metadata = getattr(sensor_config, "metadata", {})
-        return self.merge_metadata(global_metadata, sensor_metadata)
+        return self.merge_metadata(global_metadata, sensor_config.metadata)
 
     def get_attribute_metadata(self, attribute_config: FormulaConfig) -> dict[str, Any]:
         """
@@ -80,15 +83,27 @@ class MetadataHandler:
         Returns:
             Attribute metadata dictionary
         """
-        attribute_metadata = getattr(attribute_config, "metadata", {})
-        return attribute_metadata
+        return attribute_config.metadata
 
-    def validate_metadata(self, metadata: dict[str, Any], is_attribute: bool = False) -> list[str]:
+    def merge_attribute_metadata(self, sensor_metadata: dict[str, Any], attribute_config: FormulaConfig) -> dict[str, Any]:
+        """
+        Merge sensor metadata with attribute-specific metadata.
+
+        Args:
+            sensor_metadata: Sensor metadata dictionary (already merged with global)
+            attribute_config: Attribute configuration
+
+        Returns:
+            Merged metadata dictionary for the attribute
+        """
+        return self.merge_metadata(sensor_metadata, attribute_config.metadata)
+
+    def validate_metadata(self, metadata: Any, is_attribute: bool = False) -> list[str]:
         """
         Validate metadata properties.
 
         Args:
-            metadata: Metadata dictionary to validate
+            metadata: Metadata to validate (should be a dictionary)
             is_attribute: Whether this metadata is for an attribute (vs entity)
 
         Returns:
@@ -97,7 +112,7 @@ class MetadataHandler:
         errors: list[str] = []
 
         # Basic validation - ensure metadata is a dictionary
-        if not isinstance(metadata, dict):
+        if not self.is_valid_metadata_dict(metadata):
             errors.append(ERROR_METADATA_MUST_BE_DICT)
             return errors
 
@@ -111,6 +126,30 @@ class MetadataHandler:
         _LOGGER.debug("Validated metadata: %s, errors: %s", metadata, errors)
 
         return errors
+
+    def validate_entity_metadata(self, metadata: dict[str, Any]) -> list[str]:
+        """
+        Validate entity metadata properties.
+
+        Args:
+            metadata: Entity metadata dictionary to validate
+
+        Returns:
+            List of validation errors (empty if valid)
+        """
+        return self.validate_metadata(metadata, is_attribute=False)
+
+    def validate_attribute_metadata(self, metadata: dict[str, Any]) -> list[str]:
+        """
+        Validate attribute metadata properties.
+
+        Args:
+            metadata: Attribute metadata dictionary to validate
+
+        Returns:
+            List of validation errors (empty if valid)
+        """
+        return self.validate_metadata(metadata, is_attribute=True)
 
     def _validate_attribute_metadata_restrictions(self, metadata: dict[str, Any]) -> list[str]:
         """
@@ -148,7 +187,7 @@ class MetadataHandler:
     def _validate_string_properties(self, metadata: dict[str, Any]) -> list[str]:
         """Validate string properties in metadata."""
         errors: list[str] = []
-        string_property_errors = {
+        string_property_errors: dict[str, str] = {
             METADATA_PROPERTY_UNIT_OF_MEASUREMENT: ERROR_UNIT_MUST_BE_STRING,
             METADATA_PROPERTY_DEVICE_CLASS: ERROR_DEVICE_CLASS_MUST_BE_STRING,
             METADATA_PROPERTY_STATE_CLASS: ERROR_STATE_CLASS_MUST_BE_STRING,
@@ -156,50 +195,62 @@ class MetadataHandler:
         }
 
         for prop in METADATA_STRING_PROPERTIES:
-            if prop in metadata and not isinstance(metadata[prop], str):
-                errors.append(string_property_errors.get(prop, f"Property {prop} must be a string"))
+            if prop in metadata:
+                value = metadata[prop]
+                if not isinstance(value, str):
+                    error_message = string_property_errors.get(prop, f"Property {prop} must be a string")
+                    errors.append(error_message)
 
         return errors
 
     def _validate_integer_properties(self, metadata: dict[str, Any]) -> list[str]:
         """Validate integer properties in metadata."""
         errors: list[str] = []
-        if METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION in metadata and not isinstance(
-            metadata[METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION], int
-        ):
-            errors.append(ERROR_SUGGESTED_DISPLAY_PRECISION_MUST_BE_INT)
+        if METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION in metadata:
+            value = metadata[METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION]
+            if not isinstance(value, int):
+                errors.append(ERROR_SUGGESTED_DISPLAY_PRECISION_MUST_BE_INT)
         return errors
 
     def _validate_boolean_properties(self, metadata: dict[str, Any]) -> list[str]:
         """Validate boolean properties in metadata."""
         errors: list[str] = []
-        boolean_property_errors = {
+        boolean_property_errors: dict[str, str] = {
             METADATA_PROPERTY_ENTITY_REGISTRY_ENABLED_DEFAULT: ERROR_ENTITY_REGISTRY_ENABLED_DEFAULT_MUST_BE_BOOL,
             METADATA_PROPERTY_ENTITY_REGISTRY_VISIBLE_DEFAULT: ERROR_ENTITY_REGISTRY_VISIBLE_DEFAULT_MUST_BE_BOOL,
             METADATA_PROPERTY_ASSUMED_STATE: ERROR_ASSUMED_STATE_MUST_BE_BOOL,
         }
 
         for prop in METADATA_BOOLEAN_PROPERTIES:
-            if prop in metadata and not isinstance(metadata[prop], bool):
-                errors.append(boolean_property_errors.get(prop, f"Property {prop} must be a boolean"))
+            if prop in metadata:
+                value = metadata[prop]
+                if not isinstance(value, bool):
+                    error_message = boolean_property_errors.get(prop, f"Property {prop} must be a boolean")
+                    errors.append(error_message)
 
         return errors
 
     def _validate_list_properties(self, metadata: dict[str, Any]) -> list[str]:
         """Validate list properties in metadata."""
         errors: list[str] = []
-        if METADATA_PROPERTY_OPTIONS in metadata and not isinstance(metadata[METADATA_PROPERTY_OPTIONS], list):
-            errors.append(ERROR_OPTIONS_MUST_BE_LIST)
+        if METADATA_PROPERTY_OPTIONS in metadata:
+            value = metadata[METADATA_PROPERTY_OPTIONS]
+            if not isinstance(value, list):
+                errors.append(ERROR_OPTIONS_MUST_BE_LIST)
+            elif value:  # If list is not empty, validate all items are strings
+                for item in value:
+                    if not isinstance(item, str):
+                        errors.append(f"All items in {METADATA_PROPERTY_OPTIONS} must be strings")
+                        break
         return errors
 
     def _validate_enumerated_properties(self, metadata: dict[str, Any]) -> list[str]:
         """Validate enumerated properties in metadata."""
         errors: list[str] = []
-        if (
-            METADATA_PROPERTY_ENTITY_CATEGORY in metadata
-            and metadata[METADATA_PROPERTY_ENTITY_CATEGORY] not in VALID_ENTITY_CATEGORIES
-        ):
-            errors.append(ERROR_ENTITY_CATEGORY_INVALID)
+        if METADATA_PROPERTY_ENTITY_CATEGORY in metadata:
+            value = metadata[METADATA_PROPERTY_ENTITY_CATEGORY]
+            if value not in VALID_ENTITY_CATEGORIES:
+                errors.append(ERROR_ENTITY_CATEGORY_INVALID)
         return errors
 
     def extract_ha_sensor_properties(self, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -219,3 +270,75 @@ class MetadataHandler:
         _LOGGER.debug("Extracted HA sensor properties: %s", ha_properties)
 
         return ha_properties
+
+    def filter_entity_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        """
+        Filter metadata to only include properties valid for entities.
+
+        Args:
+            metadata: Raw metadata dictionary
+
+        Returns:
+            Filtered metadata dictionary with only entity-valid properties
+        """
+        # For now, pass through all properties since we validate them elsewhere
+        # This method provides a hook for future filtering if needed
+        return metadata.copy()
+
+    def filter_attribute_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        """
+        Filter metadata to only include properties valid for attributes.
+
+        Args:
+            metadata: Raw metadata dictionary
+
+        Returns:
+            Filtered metadata dictionary with only attribute-valid properties
+        """
+        filtered: dict[str, Any] = {}
+
+        # Only include properties that are valid for attributes
+        for key, value in metadata.items():
+            if key in [
+                METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+                METADATA_PROPERTY_ICON,
+                METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION,
+            ] or not key.startswith("_"):  # Allow custom properties that don't start with underscore
+                filtered[key] = value
+
+        return filtered
+
+    def get_metadata_type_info(self, property_name: str) -> dict[str, Any]:
+        """
+        Get type information for a metadata property.
+
+        Args:
+            property_name: The metadata property name
+
+        Returns:
+            Dictionary with type information including expected type and validation rules
+        """
+        type_info: dict[str, Any] = {"property": property_name, "required": False, "description": None}
+
+        if property_name in METADATA_STRING_PROPERTIES:
+            type_info["type"] = "string"
+            type_info["python_type"] = str
+        elif property_name == METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION:
+            type_info["type"] = "integer"
+            type_info["python_type"] = int
+        elif property_name in METADATA_BOOLEAN_PROPERTIES:
+            type_info["type"] = "boolean"
+            type_info["python_type"] = bool
+        elif property_name == METADATA_PROPERTY_OPTIONS:
+            type_info["type"] = "list"
+            type_info["python_type"] = list
+            type_info["item_type"] = str
+        elif property_name == METADATA_PROPERTY_ENTITY_CATEGORY:
+            type_info["type"] = "enum"
+            type_info["python_type"] = str
+            type_info["valid_values"] = VALID_ENTITY_CATEGORIES
+        else:
+            type_info["type"] = "custom"
+            type_info["python_type"] = Any
+
+        return type_info

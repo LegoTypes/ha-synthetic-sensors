@@ -4,7 +4,11 @@ import logging
 from typing import Any
 
 from ha_synthetic_sensors.config_models import ComputedVariable, FormulaConfig, SensorConfig
+from ha_synthetic_sensors.exceptions import DataValidationError
+from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
 from ha_synthetic_sensors.type_definitions import ContextValue
+
+from .resolution_helpers import ResolutionHelpers
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,7 +90,13 @@ class VariableInheritanceHandler:
         # If this variable is used in .attribute patterns, override with entity ID
         if var_name in variables_needing_entity_ids:
             _LOGGER.debug("Overriding variable '%s' with entity ID (used in .attribute pattern): %s", var_name, var_value)
-            eval_context[var_name] = var_value
+            # Use centralized ReferenceValueManager for type safety
+            ReferenceValueManager.set_variable_with_reference_value(
+                eval_context,
+                var_name,
+                var_value,
+                var_value,  # For attribute patterns, value IS the reference
+            )
             return
 
         # Skip if this variable is already set in context (context has higher priority)
@@ -109,13 +119,18 @@ class VariableInheritanceHandler:
         try:
             resolved_value = resolver_factory.resolve_variable(var_name, var_value, eval_context)
             if resolved_value is not None:
-                eval_context[var_name] = resolved_value
-                _LOGGER.debug("Added config variable %s=%s", var_name, resolved_value)
+                # Use centralized ReferenceValueManager for type safety
+                ResolutionHelpers.log_and_set_resolved_variable(
+                    eval_context, var_name, var_value, resolved_value, "VARIABLE_INHERITANCE"
+                )
             else:
                 _LOGGER.warning(
                     "Config variable '%s' in formula '%s' resolved to None",
                     var_name,
                     formula_config.name or formula_config.id,
                 )
+        except DataValidationError:
+            # Re-raise fatal data validation errors - these should not be suppressed
+            raise
         except Exception as err:
             _LOGGER.warning("Error resolving config variable %s: %s", var_name, err)

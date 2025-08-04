@@ -7,6 +7,7 @@ from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConf
 from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.exceptions import MissingDependencyError
+from ha_synthetic_sensors.reference_value_manager import ReferenceValue
 
 
 @pytest.fixture
@@ -169,7 +170,11 @@ def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass, mock_
     # Build variable context - should return context with HA values since no data provider
     context = sensor._build_variable_context(sensor_config.formulas[0])
     assert context is not None
-    assert context["backing_value"] == 123.45
+    backing_value = context["backing_value"]
+    if isinstance(backing_value, ReferenceValue):
+        assert backing_value.value == 123.45
+    else:
+        assert backing_value == 123.45
 
     # Verify HA states.get was called
     mock_hass.states.get.assert_called_with("sensor.backing_virtual")

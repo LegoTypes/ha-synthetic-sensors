@@ -115,6 +115,13 @@ STRING_FUNCTIONS: frozenset[str] = frozenset(
     }
 )
 
+# Metadata access functions
+METADATA_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "metadata",
+    }
+)
+
 # Collection pattern prefixes used in formula parsing
 COLLECTION_PREFIXES: frozenset[str] = frozenset(
     {

@@ -145,8 +145,8 @@ class TestVariableResolution:
 
         resolve_config_variables(eval_context, config, resolver)
 
-        assert eval_context["a"] == 10.0
-        assert eval_context["b"] == 42
+        assert eval_context["a"].value == 10.0
+        assert eval_context["b"].value == 42
 
     def test_resolve_computed_variables_simple(self):
         """Test resolving simple computed variables."""
@@ -159,9 +159,9 @@ class TestVariableResolution:
 
         resolve_config_variables(eval_context, config, resolver)
 
-        assert eval_context["a"] == 10.0
-        assert eval_context["b"] == 42
-        assert eval_context["result"] == 52.0  # 10.0 + 42
+        assert eval_context["a"].value == 10.0
+        assert eval_context["b"].value == 42
+        assert eval_context["result"].value == 52.0  # 10.0 + 42
 
     def test_resolve_computed_variables_dependency_chain(self):
         """Test resolving computed variables with dependency chains."""
@@ -180,11 +180,11 @@ class TestVariableResolution:
 
         resolve_config_variables(eval_context, config, resolver)
 
-        assert eval_context["base"] == 25.0
-        assert eval_context["multiplier"] == 2.0
-        assert eval_context["bonus"] == 100
-        assert eval_context["intermediate"] == 50.0  # 25.0 * 2.0
-        assert eval_context["final"] == 150.0  # 50.0 + 100
+        assert eval_context["base"].value == 25.0
+        assert eval_context["multiplier"].value == 2.0
+        assert eval_context["bonus"].value == 100
+        assert eval_context["intermediate"].value == 50.0  # 25.0 * 2.0
+        assert eval_context["final"].value == 150.0  # 50.0 + 100
 
     def test_resolve_computed_variables_complex_expressions(self):
         """Test resolving computed variables with complex expressions."""
@@ -203,11 +203,11 @@ class TestVariableResolution:
 
         resolve_config_variables(eval_context, config, resolver)
 
-        assert eval_context["input_power"] == 1500.0
-        assert eval_context["efficiency"] == 0.9
-        assert eval_context["output_power"] == 1350.0  # 1500 * 0.9
-        assert eval_context["derated_power"] == 1080.0  # 1350 * 0.8
-        assert eval_context["final_power"] == 1080.0  # max(1080, 1000)
+        assert eval_context["input_power"].value == 1500.0
+        assert eval_context["efficiency"].value == 0.9
+        assert eval_context["output_power"].value == 1350.0  # 1500 * 0.9
+        assert eval_context["derated_power"].value == 1080.0  # 1350 * 0.8
+        assert eval_context["final_power"].value == 1080.0  # max(1080, 1000)
 
     def test_resolve_computed_variables_missing_dependencies(self):
         """Test handling of missing dependencies in computed variables."""
@@ -232,9 +232,9 @@ class TestVariableResolution:
 
         resolve_config_variables(eval_context, config, resolver)
 
-        assert eval_context["a"] == 999.0  # Context value preserved
-        assert eval_context["b"] == 50
-        assert eval_context["result"] == 1049.0  # 999.0 + 50
+        assert eval_context["a"] == 999.0  # Context value preserved (raw value)
+        assert eval_context["b"].value == 50
+        assert eval_context["result"].value == 1049.0  # 999.0 + 50
 
     def test_circular_dependency_detection(self):
         """Test detection of circular dependencies in computed variables."""
@@ -266,7 +266,7 @@ class TestVariableResolution:
 
         # This should work - it's a valid dependency chain
         resolve_config_variables(eval_context, config, resolver)
-        assert eval_context["var19"] == 20  # 1 + 19 increments
+        assert eval_context["var19"].value == 20  # 1 + 19 increments
 
     def test_resolve_with_mathematical_functions(self):
         """Test computed variables with mathematical functions."""
@@ -285,9 +285,9 @@ class TestVariableResolution:
 
         resolve_config_variables(eval_context, config, resolver)
 
-        assert eval_context["abs_result"] == 42
-        assert eval_context["round_result"] == 3.14
-        assert eval_context["max_result"] == 200
+        assert eval_context["abs_result"].value == 42
+        assert eval_context["round_result"].value == 3.14
+        assert eval_context["max_result"].value == 200
 
 
 class TestIntegrationWithExistingSystem:
@@ -376,9 +376,9 @@ class TestComputedVariablesInAttributes:
         resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify computed variable was resolved correctly
-        assert eval_context["raw_value"] == 120.0
-        assert eval_context["factor"] == 2.0
-        assert eval_context["computed_voltage"] == 240.0  # 120 * 2
+        assert eval_context["raw_value"].value == 120.0
+        assert eval_context["factor"].value == 2.0
+        assert eval_context["computed_voltage"].value == 240.0  # 120 * 2
 
     def test_computed_variables_with_state_reference_in_attributes(self):
         """Test computed variables that reference 'state' within attribute formulas."""
@@ -400,9 +400,9 @@ class TestComputedVariablesInAttributes:
         resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify computed variable used the state value correctly
-        assert eval_context["state"] == 100.0  # Should preserve original state
-        assert eval_context["multiplier"] == 1.5
-        assert eval_context["scaled_result"] == 150.0  # state (100) * multiplier (1.5)
+        assert eval_context["state"] == 100.0  # Should preserve original state (raw value)
+        assert eval_context["multiplier"].value == 1.5
+        assert eval_context["scaled_result"].value == 150.0  # state (100) * multiplier (1.5)
 
     def test_complex_attribute_computed_variables_with_dependencies(self):
         """Test complex computed variable chains in attribute formulas."""
@@ -434,10 +434,10 @@ class TestComputedVariablesInAttributes:
         resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify the dependency chain resolved correctly
-        assert eval_context["state"] == 120.0
-        assert eval_context["offset"] == 50
-        assert eval_context["scale_factor"] == 1.2
-        assert eval_context["threshold"] == 200
-        assert eval_context["adjusted_value"] == 170.0  # 120 + 50
-        assert eval_context["scaled_value"] == 204.0  # 170 * 1.2
-        assert eval_context["final_result"] == 204.0  # max(204, 200)
+        assert eval_context["state"] == 120.0  # Preserved original state (raw value)
+        assert eval_context["offset"].value == 50
+        assert eval_context["scale_factor"].value == 1.2
+        assert eval_context["threshold"].value == 200
+        assert eval_context["adjusted_value"].value == 170.0  # 120 + 50
+        assert eval_context["scaled_value"].value == 204.0  # 170 * 1.2
+        assert eval_context["final_result"].value == 204.0  # max(204, 200)

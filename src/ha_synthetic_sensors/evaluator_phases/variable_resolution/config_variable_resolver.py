@@ -3,7 +3,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ...type_definitions import ContextValue
+from ...type_definitions import ContextValue, ReferenceValue
 from .base_resolver import VariableResolver
 
 if TYPE_CHECKING:
@@ -47,15 +47,15 @@ class ConfigVariableResolver(VariableResolver):
                 return resolved_value
             # If the context value is the same as variable_value (raw entity ID), continue to resolve it
 
-        # For direct values (non-strings), return as-is
+        # For direct values (non-strings), return as ReferenceValue for consistency
         if not isinstance(variable_value, str):
             _LOGGER.debug("Config variable resolver: direct value '%s' = %s", variable_name, variable_value)
-            return variable_value
+            return ReferenceValue(reference=variable_name, value=variable_value)
 
         # For string values that don't contain dots, treat as direct values
         if "." not in variable_value:
             _LOGGER.debug("Config variable resolver: direct string value '%s' = %s", variable_name, variable_value)
-            return variable_value
+            return ReferenceValue(reference=variable_name, value=variable_value)
 
         # For entity references, delegate to other resolvers
         if self._resolver_factory:

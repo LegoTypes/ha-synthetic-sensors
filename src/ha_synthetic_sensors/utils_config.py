@@ -6,18 +6,40 @@ and other configuration-related operations to eliminate code duplication.
 
 from collections.abc import Callable
 import logging
-import re
 from typing import Any
 
 from .config_models import ComputedVariable, FormulaConfig
 from .exceptions import MissingDependencyError
 from .formula_compilation_cache import FormulaCompilationCache
-from .type_definitions import ContextValue
+from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
+from .reference_value_manager import ReferenceValueManager
+from .shared_constants import METADATA_FUNCTIONS
+from .type_definitions import ContextValue, ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
 
 # Global compilation cache for computed variable formulas
 # Uses the same caching mechanism as main formulas for consistency
+_COMPUTED_VARIABLE_COMPILATION_CACHE = FormulaCompilationCache()
+
+
+def _extract_values_for_simpleeval(eval_context: dict[str, ContextValue]) -> dict[str, ContextValue]:
+    """Extract values from ReferenceValue objects for SimpleEval evaluation.
+
+    SimpleEval doesn't understand ReferenceValue objects, so we need to extract
+    the actual values while preserving other context items.
+    """
+    simpleeval_context: dict[str, ContextValue] = {}
+
+    for key, value in eval_context.items():
+        if isinstance(value, ReferenceValue):
+            # Extract the value from ReferenceValue for SimpleEval
+            simpleeval_context[key] = value.value
+        else:
+            # Keep other values as-is (functions, constants, etc.)
+            simpleeval_context[key] = value
+
+    return simpleeval_context
 
 
 def convert_string_to_number_if_possible(result: str) -> str | int | float:
@@ -50,41 +72,13 @@ def _extract_variable_references(formula: str) -> list[str]:
     Returns:
         List of potential variable names found in the formula
     """
-
-    # First, remove string literals to avoid matching words inside quotes
-    # Handle both single and double quoted strings
-    formula_without_strings = re.sub(r"""(?:"[^"]*"|'[^']*')""", "", formula)
-
-    # Extract potential variable references from formula (without strings)
-    tokens = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_.]*\b", formula_without_strings)
-
-    # Filter out Python keywords and built-in functions
-    excluded_tokens = {
-        "if",
-        "else",
-        "elif",
-        "and",
-        "or",
-        "not",
-        "True",
-        "False",
-        "None",
-        "abs",
-        "round",
-        "max",
-        "min",
-        "sum",
-        "len",
-        "int",
-        "float",
-        "str",
-        "conditional",
-        "iff",
-        "f",
-        "fstring",  # f is often used in f-strings
-    }
-
-    return [token for token in tokens if token not in excluded_tokens]
+    return list(
+        extract_variables(
+            formula,
+            context=ExtractionContext.CONFIG_VALIDATION,
+            allow_dot_notation=True,  # utils_config allows dot notation
+        )
+    )
 
 
 _COMPUTED_VARIABLE_COMPILATION_CACHE = FormulaCompilationCache(max_entries=500)
@@ -101,12 +95,15 @@ def get_computed_variable_cache_stats() -> dict[str, Any]:
     return _COMPUTED_VARIABLE_COMPILATION_CACHE.get_statistics()
 
 
-def validate_computed_variable_references(variables: dict[str, Any], config_id: str | None = None) -> list[str]:
+def validate_computed_variable_references(
+    variables: dict[str, Any], config_id: str | None = None, global_variables: dict[str, Any] | None = None
+) -> list[str]:
     """Validate that computed variables don't reference undefined variables.
 
     Args:
         variables: Dictionary of variables including computed variables
         config_id: Optional config ID for error context
+        global_variables: Dictionary of global variables that are available
 
     Returns:
         List of validation error messages
@@ -118,8 +115,13 @@ def validate_computed_variable_references(variables: dict[str, Any], config_id: 
     # Get all available variable names (simple variables and computed variable names)
     available_vars = set(variables.keys())
 
+    # Add global variables if provided
+    if global_variables:
+        available_vars.update(global_variables.keys())
+
     # Add common context variables that are always available
     always_available = {"state", "now", "today", "yesterday"}  # Common tokens
+    always_available.update(METADATA_FUNCTIONS)  # Add metadata functions
     available_vars.update(always_available)
 
     # Check each computed variable for references to undefined variables
@@ -182,7 +184,10 @@ def _try_exception_handler(
     try:
         # Use the same compilation cache for exception handler formulas
         compiled_handler = _COMPUTED_VARIABLE_COMPILATION_CACHE.get_compiled_formula(handler_formula)
-        result = compiled_handler.evaluate(eval_context, numeric_only=False)
+
+        # Extract values from ReferenceValue objects for SimpleEval evaluation
+        simpleeval_context = _extract_values_for_simpleeval(eval_context)
+        result = compiled_handler.evaluate(simpleeval_context, numeric_only=False)
         _LOGGER.debug("Resolved computed variable %s using exception handler: %s", var_name, result)
 
         # Convert numeric strings to numbers for consistency
@@ -277,6 +282,7 @@ def resolve_config_variables(
         resolver_callback: Callback function to resolve individual variables
         sensor_config: Optional sensor configuration for context
     """
+    _LOGGER.error("UTILS_CONFIG: resolve_config_variables called with resolver_callback: %s", resolver_callback)
     if not config or not config.variables:
         return
 
@@ -315,16 +321,40 @@ def _resolve_simple_variables(
         sensor_config: Sensor configuration for context
         config: FormulaConfig for context
     """
+    # Entity-centric ReferenceValue registry: one ReferenceValue per unique entity_id
+    entity_registry_key = "_entity_reference_registry"
+    if entity_registry_key not in eval_context:
+        eval_context[entity_registry_key] = {}
+
     for var_name, var_value in simple_variables.items():
         # Skip if this variable is already set in context (context has higher priority)
-        if var_name in eval_context:
+        if var_name in eval_context and var_name != entity_registry_key:
             _LOGGER.debug("Skipping config variable %s (already set in context)", var_name)
             continue
 
         resolved_value = resolver_callback(var_name, var_value, eval_context, sensor_config)
         if resolved_value is not None:
-            eval_context[var_name] = resolved_value
-            _LOGGER.debug("Resolved simple variable %s = %s", var_name, resolved_value)
+            # Check if resolver already returned a ReferenceValue object
+            if isinstance(resolved_value, ReferenceValue):
+                # Resolver already created ReferenceValue - use it directly
+                _LOGGER.error("UTILS_CONFIG: %s already ReferenceValue, setting directly: %s", var_name, resolved_value)
+                eval_context[var_name] = resolved_value
+                # Update the registry if needed
+                entity_registry_key = "_entity_reference_registry"
+                if entity_registry_key not in eval_context:
+                    eval_context[entity_registry_key] = {}
+                entity_registry = eval_context[entity_registry_key]
+                if isinstance(entity_registry, dict):
+                    entity_registry[resolved_value.reference] = resolved_value
+            else:
+                # Resolver returned raw value - wrap in ReferenceValue
+                _LOGGER.error(
+                    "UTILS_CONFIG: %s raw value, wrapping: %s (type: %s)",
+                    var_name,
+                    resolved_value,
+                    type(resolved_value).__name__,
+                )
+                ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_value, resolved_value)
 
 
 def _resolve_computed_variables(
@@ -333,7 +363,6 @@ def _resolve_computed_variables(
     config: FormulaConfig,
 ) -> None:
     """Resolve computed variables using simpleeval in dependency order."""
-
     _LOGGER.debug("Resolving %d computed variables", len(computed_variables))
 
     # Simple dependency ordering: resolve variables that don't depend on other computed variables first
@@ -341,93 +370,155 @@ def _resolve_computed_variables(
     remaining_vars = computed_variables.copy()
     max_iterations = len(computed_variables) + 1  # Prevent infinite loops
     iteration = 0
-
-    # Store error details separately to avoid modifying ComputedVariable objects
     error_details_map: dict[str, dict[str, Any]] = {}
 
     while remaining_vars and iteration < max_iterations:
         iteration += 1
-        made_progress = False
-
-        for var_name in list(remaining_vars.keys()):
-            computed_var = remaining_vars[var_name]
-
-            # Skip if already resolved
-            if var_name in eval_context:
-                del remaining_vars[var_name]
-                resolved_vars.add(var_name)
-                made_progress = True
-                continue
-
-            # Try to evaluate the computed variable formula with current context
-            try:
-                # Use the same compilation cache approach as main formulas
-                compiled_formula = _COMPUTED_VARIABLE_COMPILATION_CACHE.get_compiled_formula(computed_var.formula)
-                result = compiled_formula.evaluate(eval_context, numeric_only=False)
-
-                eval_context[var_name] = result
-                _LOGGER.debug("Resolved computed variable %s = %s", var_name, result)
-                del remaining_vars[var_name]
-                resolved_vars.add(var_name)
-                made_progress = True
-
-            except Exception as err:
-                # Try exception handler before giving up
-                exception_result = _try_exception_handler(var_name, computed_var, eval_context, err)
-
-                if exception_result is not None:
-                    # Exception handler succeeded - use its result
-                    eval_context[var_name] = exception_result
-                    _LOGGER.debug("Resolved computed variable %s using exception handler = %s", var_name, exception_result)
-                    del remaining_vars[var_name]
-                    resolved_vars.add(var_name)
-                    made_progress = True
-                    continue
-
-                # Exception handler failed or not available - provide detailed error context
-                error_details = _analyze_computed_variable_error(var_name, computed_var.formula, eval_context, err)
-                _LOGGER.debug("Could not resolve computed variable %s: %s", var_name, error_details["summary"])
-
-                # Store error details for final error reporting
-                error_details_map[var_name] = error_details
-
-                # Continue to next variable - maybe dependencies aren't ready yet
-                continue
+        made_progress = _process_computed_variables_iteration(remaining_vars, resolved_vars, eval_context, error_details_map)
 
         if not made_progress:
-            # No progress made - provide detailed error analysis for each failed variable
-            failed_var_details: list[dict[str, Any]] = []
-            for var_name, computed_var in remaining_vars.items():
-                stored_error_details: dict[str, Any] | None = error_details_map.get(var_name)
-                if stored_error_details is not None:
-                    failed_var_details.append(stored_error_details)
-                else:
-                    # Basic error info if detailed analysis wasn't captured
-                    failed_var_details.append(
-                        {
-                            "variable_name": var_name,
-                            "formula": computed_var.formula,
-                            "likely_cause": "circular_dependency_or_missing_deps",
-                            "suggestion": "Check for circular references or missing variable definitions",
-                        }
-                    )
-
-            # Create comprehensive error message
-            error_messages: list[str] = []
-            for details in failed_var_details:
-                error_messages.append(f"• {details['variable_name']}: {details['suggestion']}")
-
-            raise MissingDependencyError(
-                f"Could not resolve computed variables {list(remaining_vars.keys())}:\n" + "\n".join(error_messages)
-            )
+            _handle_no_progress_error(remaining_vars, error_details_map)
 
     if remaining_vars:
-        # Max iterations exceeded - likely circular dependencies
-        remaining_var_names = list(remaining_vars.keys())
-        formulas_info = [f"{name}: '{remaining_vars[name].formula}'" for name in remaining_var_names]
+        _handle_max_iterations_error(remaining_vars, max_iterations)
 
-        raise MissingDependencyError(
-            f"Could not resolve computed variables {remaining_var_names} within {max_iterations} iterations. "
-            f"This likely indicates circular dependencies between variables:\n"
-            + "\n".join(f"• {info}" for info in formulas_info)
-        )
+
+def _process_computed_variables_iteration(
+    remaining_vars: dict[str, ComputedVariable],
+    resolved_vars: set[str],
+    eval_context: dict[str, ContextValue],
+    error_details_map: dict[str, dict[str, Any]],
+) -> bool:
+    """Process one iteration of computed variable resolution.
+
+    Returns:
+        True if progress was made, False otherwise
+    """
+    made_progress = False
+
+    for var_name in list(remaining_vars.keys()):
+        computed_var = remaining_vars[var_name]
+
+        # Skip if already resolved
+        if var_name in eval_context:
+            del remaining_vars[var_name]
+            resolved_vars.add(var_name)
+            made_progress = True
+            continue
+
+        # Try to evaluate the computed variable formula with current context
+        try:
+            success = _try_resolve_computed_variable(var_name, computed_var, eval_context)
+            if success:
+                del remaining_vars[var_name]
+                resolved_vars.add(var_name)
+                made_progress = True
+        except Exception as err:
+            handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
+            if handled:
+                del remaining_vars[var_name]
+                resolved_vars.add(var_name)
+                made_progress = True
+
+    return made_progress
+
+
+def _try_resolve_computed_variable(
+    var_name: str, computed_var: ComputedVariable, eval_context: dict[str, ContextValue]
+) -> bool:
+    """Try to resolve a single computed variable.
+
+    Returns:
+        True if successfully resolved, False otherwise
+    """
+    # Use the same compilation cache approach as main formulas
+    compiled_formula = _COMPUTED_VARIABLE_COMPILATION_CACHE.get_compiled_formula(computed_var.formula)
+
+    # Extract values from ReferenceValue objects for SimpleEval evaluation
+    simpleeval_context = _extract_values_for_simpleeval(eval_context)
+    _LOGGER.error(
+        "COMPUTED_VAR_DEBUG: Evaluating %s formula '%s' with context: %s",
+        var_name,
+        computed_var.formula,
+        simpleeval_context,
+    )
+    result = compiled_formula.evaluate(simpleeval_context, numeric_only=False)
+    _LOGGER.error("COMPUTED_VAR_DEBUG: Result for %s: %s (type: %s)", var_name, result, type(result).__name__)
+
+    # For computed variables, the formula itself is the "reference"
+    ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, computed_var.formula, result)
+    _LOGGER.debug("Resolved computed variable %s = %s", var_name, result)
+    return True
+
+
+def _try_handle_computed_variable_error(
+    var_name: str,
+    computed_var: ComputedVariable,
+    eval_context: dict[str, ContextValue],
+    error_details_map: dict[str, dict[str, Any]],
+    err: Exception,
+) -> bool:
+    """Try to handle a computed variable error using exception handler.
+
+    Returns:
+        True if error was handled successfully, False otherwise
+    """
+    # Try exception handler before giving up
+    exception_result = _try_exception_handler(var_name, computed_var, eval_context, err)
+
+    if exception_result is not None:
+        # Exception handler succeeded - use its result
+        ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, computed_var.formula, exception_result)
+        _LOGGER.debug("Resolved computed variable %s using exception handler = %s", var_name, exception_result)
+        return True
+
+    # Exception handler failed or not available - provide detailed error context
+    error_details = _analyze_computed_variable_error(var_name, computed_var.formula, eval_context, err)
+    _LOGGER.debug("Could not resolve computed variable %s: %s", var_name, error_details["summary"])
+
+    # Store error details for final error reporting
+    error_details_map[var_name] = error_details
+    return False
+
+
+def _handle_no_progress_error(
+    remaining_vars: dict[str, ComputedVariable], error_details_map: dict[str, dict[str, Any]]
+) -> None:
+    """Handle the case where no progress was made in computed variable resolution."""
+    # No progress made - provide detailed error analysis for each failed variable
+    failed_var_details: list[dict[str, Any]] = []
+    for var_name, computed_var in remaining_vars.items():
+        stored_error_details: dict[str, Any] | None = error_details_map.get(var_name)
+        if stored_error_details is not None:
+            failed_var_details.append(stored_error_details)
+        else:
+            # Basic error info if detailed analysis wasn't captured
+            failed_var_details.append(
+                {
+                    "variable_name": var_name,
+                    "formula": computed_var.formula,
+                    "likely_cause": "circular_dependency_or_missing_deps",
+                    "suggestion": "Check for circular references or missing variable definitions",
+                }
+            )
+
+    # Create comprehensive error message
+    error_messages: list[str] = []
+    for details in failed_var_details:
+        error_messages.append(f"• {details['variable_name']}: {details['suggestion']}")
+
+    raise MissingDependencyError(
+        f"Could not resolve computed variables {list(remaining_vars.keys())}:\n" + "\n".join(error_messages)
+    )
+
+
+def _handle_max_iterations_error(remaining_vars: dict[str, ComputedVariable], max_iterations: int) -> None:
+    """Handle the case where max iterations were exceeded in computed variable resolution."""
+    # Max iterations exceeded - likely circular dependencies
+    remaining_var_names = list(remaining_vars.keys())
+    formulas_info = [f"{name}: '{remaining_vars[name].formula}'" for name in remaining_var_names]
+
+    raise MissingDependencyError(
+        f"Could not resolve computed variables {remaining_var_names} within {max_iterations} iterations. "
+        f"This likely indicates circular dependencies between variables:\n" + "\n".join(f"• {info}" for info in formulas_info)
+    )

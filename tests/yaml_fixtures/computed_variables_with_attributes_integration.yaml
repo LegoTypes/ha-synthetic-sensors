@@ -121,7 +121,7 @@ sensors:
     attributes:
       # Attribute with computed variables that reference main sensor state
       efficiency_rating:
-        formula: "rating"
+        formula: "'excellent' if is_excellent else ('good' if is_good else ('fair' if is_fair else 'poor'))'"
         variables:
           excellent_threshold: 0.95
           good_threshold: 0.85
@@ -135,8 +135,6 @@ sensors:
           is_fair:
             formula: "state >= fair_threshold and state < good_threshold"
 
-          rating:
-            formula: "'excellent' if is_excellent else ('good' if is_good else ('fair' if is_fair else 'poor'))"
 
       # Advanced computed variables with mathematical functions
       efficiency_analysis:

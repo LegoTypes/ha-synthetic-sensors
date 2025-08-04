@@ -28,7 +28,7 @@ except ImportError:
 from .constants_formula import FORMULA_RESERVED_WORDS
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
-from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS
+from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS
 
 try:
     from jsonschema import Draft7Validator
@@ -346,6 +346,13 @@ class SchemaValidator:
             sensor_vars=sensor_vars,
         )
 
+        # Validate metadata function usage (no 'state' token as first parameter)
+        self._validate_metadata_function_usage(
+            formula_text,
+            f"sensors.{sensor_key}.formula",
+            errors,
+        )
+
     def _validate_sensor_attributes(
         self,
         sensor_key: str,
@@ -414,6 +421,13 @@ class SchemaValidator:
             attr_vars=attr_vars,
             literal_attrs=literal_attrs,
             other_attr_names=other_attr_names,
+        )
+
+        # Validate metadata function usage (no 'state' token as first parameter)
+        self._validate_metadata_function_usage(
+            attr_formula,
+            f"sensors.{sensor_key}.attributes.{attr_name}.formula",
+            errors,
         )
 
     def _extract_validation_context(self, config_data: dict[str, Any] | None) -> tuple[set[str], set[str]]:
@@ -802,6 +816,7 @@ class SchemaValidator:
             # 7. Entity references (domain.entity format)
             datetime_functions = DATETIME_FUNCTIONS
             duration_functions = DURATION_FUNCTIONS
+            metadata_functions = METADATA_FUNCTIONS
             is_valid = (
                 token in sensor_keys
                 or (global_vars and token in global_vars)
@@ -811,6 +826,7 @@ class SchemaValidator:
                 or (other_attr_names and token in other_attr_names)
                 or token in datetime_functions
                 or token in duration_functions
+                or token in metadata_functions
                 or token in FORMULA_RESERVED_WORDS
                 or self._is_entity_id(token)
             )
@@ -835,6 +851,40 @@ class SchemaValidator:
                         path=path,
                         severity=ValidationSeverity.ERROR,
                         suggested_fix="Define all variables used in the formula",
+                    )
+                )
+
+    def _validate_metadata_function_usage(
+        self,
+        formula: str,
+        path: str,
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate that metadata functions don't use 'state' token as first parameter.
+
+        The 'state' token resolves to a value, but metadata() expects an entity ID.
+        This prevents invalid patterns like metadata(state, 'entity_id').
+
+        Args:
+            formula: Formula to validate
+            path: Path for error reporting
+            errors: List to append validation errors to
+        """
+        # Pattern to match metadata function calls: metadata(first_param, ...)
+        metadata_pattern = r"\bmetadata\s*\(\s*([^,\s]+)"
+
+        for match in re.finditer(metadata_pattern, formula):
+            first_param = match.group(1).strip().strip("'\"")
+
+            if first_param == "state":
+                errors.append(
+                    ValidationError(
+                        message="Invalid metadata function usage: 'state' token cannot be used as first parameter. "
+                        "The 'state' token resolves to a value, but metadata() expects an entity ID. "
+                        "Use an explicit entity ID instead (e.g., 'sensor.my_entity').",
+                        path=path,
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix="Replace 'state' with an explicit entity ID like 'sensor.my_entity'",
                     )
                 )
 
