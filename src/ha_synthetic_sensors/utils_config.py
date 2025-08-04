@@ -13,7 +13,7 @@ from .exceptions import MissingDependencyError
 from .formula_compilation_cache import FormulaCompilationCache
 from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
 from .reference_value_manager import ReferenceValueManager
-from .shared_constants import METADATA_FUNCTIONS
+from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS
 from .type_definitions import ContextValue, ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
@@ -122,6 +122,8 @@ def validate_computed_variable_references(
     # Add common context variables that are always available
     always_available = {"state", "now", "today", "yesterday"}  # Common tokens
     always_available.update(METADATA_FUNCTIONS)  # Add metadata functions
+    always_available.update(DURATION_FUNCTIONS)  # Add duration functions
+    always_available.update(DATETIME_FUNCTIONS)  # Add datetime functions
     available_vars.update(always_available)
 
     # Check each computed variable for references to undefined variables
