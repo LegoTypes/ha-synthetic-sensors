@@ -129,29 +129,30 @@ HA metadata will grow over time. Bracket notation accommodates expansion:
 
 ### 1. Function Implementation
 
-Implement `metadata()` function as a specialized handler that returns datetime objects for use with enhanced SimpleEval datetime functions:
+Implement `metadata()` function as a specialized handler that returns datetime objects for use with enhanced SimpleEval
+datetime functions:
 
 ```python
 class MetadataHandler:
     """Specialized handler for entity metadata access."""
-    
+
     def evaluate(self, formula: str, context: dict[str, ReferenceValue]) -> Any:
         """Handle metadata function calls with entity state resolution."""
         entity_ref, metadata_key = self._parse_metadata_call(formula)
         entity_value = self._resolve_entity_reference(entity_ref, context)
-        
+
         if entity_value and hasattr(entity_value, 'hass_state'):
             hass_state = entity_value.hass_state
-            
+
             # Return raw datetime objects for use with enhanced SimpleEval datetime functions
             # Enhanced SimpleEval has minutes_between(), hours_between(), etc.
             if metadata_key in ('last_changed', 'last_updated'):
                 return getattr(hass_state, metadata_key, None)
-                
+
             # Handle direct attribute access for other metadata
             return getattr(hass_state, metadata_key, None)
         return None
-        
+
     def can_handle(self, formula: str) -> bool:
         """Check if formula contains metadata function calls."""
         return 'metadata(' in formula
@@ -164,14 +165,14 @@ Metadata functions integrate with the enhanced SimpleEval routing system:
 ```python
 class EnhancedFormulaRouter:
     """Router with fast-path detection for metadata calls."""
-    
+
     def route_formula(self, formula: str) -> EvaluatorType:
         """Ultra-fast routing: metadata detection + enhanced SimpleEval."""
-        
+
         # Step 1: Ultra-fast metadata scan (1% of cases)
         if 'metadata(' in formula:
             return EvaluatorType.METADATA
-            
+
         # Step 2: Enhanced SimpleEval handles 99% of everything else
         return EvaluatorType.ENHANCED_SIMPLEEVAL
 
@@ -388,20 +389,17 @@ patterns.
 
 Function-style metadata access provides:
 
-✅ **Collision-free** access to HA entity metadata
-✅ **Future-proof** extensible syntax  
-✅ **Clear semantics** distinguishing metadata from attributes
-✅ **Backward compatibility** with existing formulas
-✅ **Enhanced SimpleEval integration** with ultra-fast routing
-✅ **Consistent patterns** with the enhanced handler architecture
+✅ **Collision-free** access to HA entity metadata ✅ **Future-proof** extensible syntax
+✅ **Clear semantics** distinguishing metadata from attributes ✅ **Backward compatibility** with existing formulas ✅
+**Enhanced SimpleEval integration** with ultra-fast routing ✅ **Consistent patterns** with the enhanced handler architecture
 
-This enhancement enables powerful new use cases like grace period logic while maintaining the simplicity and performance
-of the enhanced synthetic sensor system. The metadata function integrates seamlessly with enhanced SimpleEval's native
+This enhancement enables powerful new use cases like grace period logic while maintaining the simplicity and performance of
+the enhanced synthetic sensor system. The metadata function integrates seamlessly with enhanced SimpleEval's native
 conditional syntax (`x if condition else y`) and datetime operations.
 
 **Key Implementation Notes:**
 
 - Sensor key self-references must be converted to `state` token
-- Cross-sensor entity_id references must be updated after HA registration  
+- Cross-sensor entity_id references must be updated after HA registration
 - Metadata handler integrates with enhanced SimpleEval routing for optimal performance
 - Function approach allows faster delivery with lower implementation risk

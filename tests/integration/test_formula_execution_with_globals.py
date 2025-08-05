@@ -71,9 +71,7 @@ class TestFormulaExecutionWithGlobals:
                 # Create sensor set
                 sensor_set_id = "test_formula_execution"
                 await storage_manager.async_create_sensor_set(
-                    sensor_set_id=sensor_set_id, 
-                    device_identifier=device_identifier, 
-                    name="Formula Execution Test"
+                    sensor_set_id=sensor_set_id, device_identifier=device_identifier, name="Formula Execution Test"
                 )
 
                 # Load YAML - this should succeed with the validation fix
@@ -96,18 +94,16 @@ class TestFormulaExecutionWithGlobals:
                             "sensor.math_backing": 10.0,
                             "sensor.complex_backing": 1.0,
                         }
-                        
-                        return {
-                            "value": backing_data.get(entity_id),
-                            "exists": entity_id in backing_data
-                        }
+
+                        return {"value": backing_data.get(entity_id), "exists": entity_id in backing_data}
+
                     return data_provider
 
                 # Create sensor to backing mapping
                 sensor_to_backing_mapping = {
                     "span_main_meter_produced_energy": "sensor.span_backing",
                     "builtin_functions_test": "sensor.builtin_backing",
-                    "global_math_operations": "sensor.math_backing", 
+                    "global_math_operations": "sensor.math_backing",
                     "complex_expression_test": "sensor.complex_backing",
                 }
 
@@ -121,16 +117,18 @@ class TestFormulaExecutionWithGlobals:
                     data_provider_callback=create_data_provider_with_globals(),
                     sensor_to_backing_mapping=sensor_to_backing_mapping,
                 )
-                
+
                 print(f"✅ Runtime Fix: Global settings should now be available during evaluation")
                 print(f"✅ Device identifier: {device_identifier}")
-                print(f"✅ Global variables: {storage_manager.get_sensor_set(sensor_set_id).get_global_settings().get('variables', {})}")
+                print(
+                    f"✅ Global variables: {storage_manager.get_sensor_set(sensor_set_id).get_global_settings().get('variables', {})}"
+                )
 
                 assert sensor_manager is not None, "Sensor manager creation failed"
                 assert mock_async_add_entities.call_args_list, "No entities were added to HA"
 
                 print(f"🔧 Manually calling async_update_sensors to test runtime fix...")
-                
+
                 # Update sensors to trigger formula evaluation
                 await sensor_manager.async_update_sensors()
 
@@ -150,17 +148,17 @@ class TestFormulaExecutionWithGlobals:
                 # TEST ACTUAL FORMULA EXECUTION WITH EXPECTED VALUES
                 # =============================================================================
 
-                                # TEST 1: SPAN use case - global variable in computed variable
+                # TEST 1: SPAN use case - global variable in computed variable
                 span_sensor = entity_lookup.get("span_main_meter_produced_energy")
                 assert span_sensor is not None, f"SPAN sensor not found. Available: {list(entity_lookup.keys())}"
 
                 print(f"🔍 SPAN sensor native_value: {span_sensor.native_value}")
                 print(f"🔍 SPAN sensor available: {span_sensor.available}")
-                
+
                 # TEST 2: Check the similar global_math_operations sensor
                 math_sensor = entity_lookup.get("global_math_operations")
                 assert math_sensor is not None, f"Math sensor not found"
-                
+
                 print(f"🔍 Math sensor native_value: {math_sensor.native_value}")
                 print(f"🔍 Math sensor available: {math_sensor.available}")
 
@@ -176,18 +174,17 @@ class TestFormulaExecutionWithGlobals:
                 )
                 print(f"✅ SPAN Sensor: {span_value} (expected {expected_span})")
 
-                # TEST 2: Built-in functions execute correctly  
+                # TEST 2: Built-in functions execute correctly
                 builtin_sensor = entity_lookup.get("builtin_functions_test")
                 assert builtin_sensor is not None, f"Built-in functions sensor not found"
-                
-                # This sensor has: formula = "time_diff_minutes + hours_in_minutes + minutes(state)"
-                # time_diff_minutes = minutes(5) / minutes(1) = 5 (dimensionless)
-                # hours_in_minutes = hours(1) / minutes(1) = 60 (dimensionless) 
-                # minutes(state) = minutes(100.0) = 100 minutes
-                # Expected: Duration arithmetic with largest unit (minutes) = 165 minutes
+
+                # This sensor has: formula = "minutes(time_diff_minutes) + minutes(hours_in_minutes) + minutes(state)"
+                # time_diff_minutes = 5.0, hours_in_minutes = 60.0, state = 100.0
+                # Formula: minutes(5) + minutes(60) + minutes(100) = 165 minutes
+                # Clean Slate converts timedelta to seconds: 165 * 60 = 9900 seconds
                 assert builtin_sensor.native_value is not None, "Built-in functions sensor has None value"
                 builtin_value = float(builtin_sensor.native_value)
-                expected_builtin = 165.0  # 5 + 60 + 100
+                expected_builtin = 9900.0  # minutes(5) + minutes(60) + minutes(100) = 165 minutes = 9900 seconds
                 assert abs(builtin_value - expected_builtin) < 0.001, (
                     f"Built-in functions value wrong: expected {expected_builtin}, got {builtin_value}. "
                     f"This means built-in functions aren't executing correctly."
@@ -197,7 +194,7 @@ class TestFormulaExecutionWithGlobals:
                 # TEST 3: Global variables in math operations
                 math_sensor = entity_lookup.get("global_math_operations")
                 assert math_sensor is not None, f"Math operations sensor not found"
-                
+
                 # This sensor has: formula = "calculated_threshold + bonus_points + state"
                 # calculated_threshold = energy_grace_period_minutes * 2 = 30 * 2 = 60
                 # bonus_points = energy_grace_period_minutes if energy_grace_period_minutes > 20 else 0 = 30
@@ -215,10 +212,10 @@ class TestFormulaExecutionWithGlobals:
                 # TEST 4: Complex expressions with globals and built-ins
                 complex_sensor = entity_lookup.get("complex_expression_test")
                 assert complex_sensor is not None, f"Complex expression sensor not found"
-                
+
                 # This sensor has: formula = "grace_check + time_factor + state"
                 # grace_check = 1 if energy_grace_period_minutes > 25 else 0 = 1 (since 30 > 25)
-                # time_factor = minutes(2) + seconds(30) = 2 + 0.5 = 2.5
+                # time_factor = (minutes(2) + seconds(30)).total_seconds() / 60 = 2.5 minutes
                 # state = 1.0
                 # Expected: 1 + 2.5 + 1 = 4.5
                 assert complex_sensor.native_value is not None, "Complex expression sensor has None value"
@@ -265,32 +262,30 @@ def test_validation_vs_execution_phases():
     from ha_synthetic_sensors.config_models import ComputedVariable
 
     print("\n=== VALIDATION vs EXECUTION PHASES ===")
-    
+
     # The computed variable that was failing
-    variables = {
-        'within_grace': ComputedVariable(formula='energy_grace_period_minutes > 25')
-    }
-    
+    variables = {"within_grace": ComputedVariable(formula="energy_grace_period_minutes > 25")}
+
     print("PHASE 1: VALIDATION (during YAML parsing)")
     print("Before fix: This would fail because global variables not available during validation")
     print("After fix: This should pass because global variables are now provided to validation")
-    
+
     # Test validation with global variables (the fix)
-    global_variables = {'energy_grace_period_minutes': '30'}
-    errors = validate_computed_variable_references(variables, 'test_sensor', global_variables)
-    
+    global_variables = {"energy_grace_period_minutes": "30"}
+    errors = validate_computed_variable_references(variables, "test_sensor", global_variables)
+
     if errors:
         print(f"❌ VALIDATION FAILED: {errors[0]}")
         print("The validation fix is NOT working!")
     else:
         print("✅ VALIDATION PASSED: Global variables recognized during validation")
         print("The validation fix IS working!")
-    
+
     print("\nPHASE 2: EXECUTION (during sensor updates)")
     print("This is tested in the integration test above.")
     print("Global variables must be available in the runtime context for formula evaluation.")
     print("The integration test proves both validation AND execution work correctly.")
-    
+
     print("\nCONCLUSION:")
     print("The original SPAN panel bug was a VALIDATION issue that prevented YAML from parsing.")
     print("The fix ensures global variables are available during BOTH validation AND execution.")

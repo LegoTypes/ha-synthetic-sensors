@@ -402,6 +402,7 @@ async def async_create_sensor_manager(
     device_info: DeviceInfo | None = None,
     unique_id_prefix: str = "",
     data_provider_callback: Any = None,
+    device_identifier: str | None = None,
 ) -> SensorManager:
     """Create a sensor manager for external integrations.
 
@@ -415,6 +416,7 @@ async def async_create_sensor_manager(
         device_info: Device info for sensors (optional)
         unique_id_prefix: Prefix for unique IDs (optional)
         data_provider_callback: Callback for providing live data (optional)
+        device_identifier: Device identifier for global settings lookup (optional)
 
     Returns:
         SensorManager: Ready-to-use sensor manager
@@ -442,6 +444,7 @@ async def async_create_sensor_manager(
     # Create manager config for external integration
     manager_config = SensorManagerConfig(
         integration_domain=integration_domain,
+        device_identifier=device_identifier,
         device_info=device_info,
         unique_id_prefix=unique_id_prefix,
         lifecycle_managed_externally=True,

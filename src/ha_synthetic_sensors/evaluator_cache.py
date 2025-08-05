@@ -109,6 +109,9 @@ class EvaluatorCache:
 
         filtered = {}
         for key, value in context.items():
+            # Skip internal keys that start with underscore
+            if key.startswith("_"):
+                continue
             # Only cache simple, serializable values
             if isinstance(value, str | int | float | bool):
                 filtered[key] = value

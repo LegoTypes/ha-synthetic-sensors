@@ -5,7 +5,7 @@ global_settings:
   variables:
     # Global variables from the SPAN use case that was failing
     energy_grace_period_minutes: "30"
-    
+
 sensors:
   # EXACT SPAN scenario from the fix document - this was failing before
   span_main_meter_produced_energy:
@@ -19,11 +19,11 @@ sensors:
     metadata:
       unit_of_measurement: "kWh"
       device_class: "energy"
-      
+
   # Test built-in functions that were not recognized before fix
   builtin_functions_test:
-    name: "Built-in Functions Test" 
-    formula: "time_diff_minutes + hours_in_minutes + minutes(state)"
+    name: "Built-in Functions Test"
+    formula: "minutes(time_diff_minutes) + minutes(hours_in_minutes) + minutes(state)"
     variables:
       # Realistic duration function usage - converting time differences to numeric values
       time_diff_minutes:
@@ -35,7 +35,7 @@ sensors:
     metadata:
       unit_of_measurement: "min"
       device_class: "duration"
-      
+
   # Test global variables with math operations
   global_math_operations:
     name: "Global Variables Math Test"
@@ -51,7 +51,7 @@ sensors:
         UNAVAILABLE: "0"
     metadata:
       unit_of_measurement: "points"
-      
+
   # Test complex expression with globals and built-ins (simplified from original SPAN case)
   complex_expression_test:
     name: "Complex Expression Test"
@@ -63,7 +63,7 @@ sensors:
         UNAVAILABLE: "0"
       # Test built-in function in math
       time_factor:
-        formula: "minutes(2) + seconds(30)"  # Should be 2.5
+        formula: "as_minutes(minutes(2) + seconds(30))"  # 2.5 minutes
         UNAVAILABLE: "0"
     metadata:
       unit_of_measurement: "units"

@@ -1,9 +1,11 @@
 """Helper utilities for the evaluator."""
 
 import ast
+import hashlib
 import logging
 from typing import Any
 
+from ha_synthetic_sensors.constants_boolean_states import get_current_false_states, get_current_true_states
 from ha_synthetic_sensors.constants_formula import is_ha_state_value
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,6 +57,46 @@ class EvaluatorHelpers:
             return result
 
     @staticmethod
+    def convert_string_to_boolean_if_possible(result: str) -> str | bool:
+        """Convert HA-style boolean strings to actual boolean values for enhanced SimpleEval.
+
+        Uses HA's own device trigger mappings for ground truth on what constitutes
+        true/false states, avoiding hardcoded lists.
+        """
+        if isinstance(result, str):
+            # Use HA's lazy-loaded boolean state mappings
+            true_states = get_current_true_states()
+            false_states = get_current_false_states()
+
+            # Check against HA's official boolean state mappings
+            if result in true_states or result.lower() in {str(s).lower() for s in true_states if s is not None}:
+                return True
+            if result in false_states or result.lower() in {str(s).lower() for s in false_states if s is not None}:
+                return False
+
+        # Return original value if not a recognized boolean string
+        return result
+
+    @staticmethod
+    def preprocess_value_for_enhanced_eval(value: Any) -> Any:
+        """Preprocess values for enhanced SimpleEval evaluation.
+
+        Handles conversion of strings to appropriate types:
+        - HA boolean strings ('on'/'off') to boolean values
+        - Numeric strings to numbers
+        """
+        if isinstance(value, str):
+            # Try boolean conversion first (HA state values)
+            boolean_result = EvaluatorHelpers.convert_string_to_boolean_if_possible(value)
+            if isinstance(boolean_result, bool):
+                return boolean_result
+
+            # Try numeric conversion if not a boolean
+            return EvaluatorHelpers.convert_string_to_number_if_possible(value)
+
+        return value
+
+    @staticmethod
     def process_evaluation_result(result: Any) -> float | str | bool:
         """Process and validate evaluation result."""
         # Handle numeric results
@@ -81,8 +123,6 @@ class EvaluatorHelpers:
         """Generate cache key ID for formula configuration."""
         if context:
             # Create a deterministic hash of context keys and values for cache keying
-            import hashlib  # pylint: disable=import-outside-toplevel
-
             context_items = sorted(context.items()) if context else []
             context_str = str(context_items)
             context_hash = hashlib.md5(context_str.encode(), usedforsecurity=False).hexdigest()[:8]

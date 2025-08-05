@@ -419,7 +419,7 @@ class TestEvaluator:
             ("invalid_function()", "not defined"),
             ("", "cannot evaluate empty string"),
             ("1 +", "invalid syntax"),
-            ("(1 + 2", "closing parenthesis"),
+            ("(1 + 2", "was never closed"),
         ]
 
         for i, (formula, expected_error_part) in enumerate(error_cases):

@@ -717,66 +717,57 @@ class VariableResolutionPhase:
         variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)(?!\.)\b")
         entity_mappings: dict[str, str] = {}
         ha_dependencies: list[str] = []
-        entity_to_value_mappings: dict[str, str] = {}  # Legacy tracking - will be removed
 
-        def replace_variable_ref(match: re.Match[str]) -> str:
+        def validate_variable_ref(match: re.Match[str]) -> str:
             var_name = match.group(1)
             # Skip reserved words and function names
             if is_reserved_word(var_name):
                 return var_name
+
             # Check if this variable exists in the evaluation context
             if var_name in eval_context:
                 context_value = eval_context[var_name]
                 # Handle ReferenceValue objects (universal reference/value pairs)
                 if isinstance(context_value, ReferenceValue):
-                    # Extract the value for formula evaluation (SimpleEval needs values, not ReferenceValue objects)
-                    # Handlers will get the ReferenceValue objects separately through the context
                     ref_value: ReferenceValue = context_value
                     value = ref_value.value
                     reference = ref_value.reference
                     _LOGGER.debug(
-                        "Resolved ReferenceValue %s: reference=%s, value=%s (extracting value for formula)",
+                        "Validated ReferenceValue %s: reference=%s, value=%s (keeping variable name in formula)",
                         var_name,
                         reference,
                         value,
                     )
-                    # Track dependencies and mappings for legacy compatibility
+                    # Track dependencies for HA states
                     if isinstance(value, str) and is_ha_state_value(value):
                         entity_id = reference if "." in reference else existing_mappings.get(var_name, reference)
                         ha_dependencies.append(f"{var_name} ({entity_id}) is {value}")
-                    # Legacy tracking for backward compatibility (will be removed)
-                    resolved_value = str(value)
-                    entity_to_value_mappings[var_name] = resolved_value
-                    entity_to_value_mappings[reference] = resolved_value
-                    # Return the extracted value for SimpleEval (handlers get ReferenceValue objects via context)
-                    if isinstance(value, str):
-                        # For string values, return them quoted for proper evaluation
-                        return f'"{value}"'
-                    return str(value)
-                # Handle regular values (backward compatibility) - extract these
-                # Type check to ensure we only assign compatible types
+                        entity_mappings[var_name] = entity_id
+
+                    # NEW APPROACH: Keep the variable name in the formula
+                    # Handlers will access the ReferenceValue objects from context
+                    return var_name
+
+                # Handle regular values (backward compatibility)
                 value = context_value if isinstance(context_value, str | int | float | None) else str(context_value)
                 # Check if value is an HA state
                 if isinstance(value, str) and is_ha_state_value(value):
                     entity_id = existing_mappings.get(var_name, "unknown")
                     ha_dependencies.append(f"{var_name} ({entity_id}) is {value}")
-                # Legacy tracking for backward compatibility (will be removed)
-                resolved_value = str(value)
-                if var_name in existing_mappings:
-                    original_entity_id = existing_mappings[var_name]
-                    entity_to_value_mappings[var_name] = resolved_value
-                    entity_to_value_mappings[original_entity_id] = resolved_value
-                else:
-                    entity_to_value_mappings[var_name] = resolved_value
-                if isinstance(value, str):
-                    # For string values, return them quoted for proper evaluation
-                    return f'"{value}"'
-                return str(value)
-            # Not a variable, return as-is
+                    entity_mappings[var_name] = entity_id
+
+                # NEW APPROACH: Keep the variable name in the formula
+                return var_name
+
+            # Variable not found in context - this will be handled by the evaluator as a missing dependency
             return var_name
 
-        resolved_formula = variable_pattern.sub(replace_variable_ref, formula)
-        return resolved_formula, entity_mappings, ha_dependencies, entity_to_value_mappings
+        # NEW APPROACH: Don't modify the formula, just validate variables exist
+        # The original formula is returned unchanged, handlers get values from context
+        validated_formula = variable_pattern.sub(validate_variable_ref, formula)
+
+        # Return empty entity_to_value_mappings since we're not doing substitution anymore
+        return validated_formula, entity_mappings, ha_dependencies, {}
 
     def _resolve_config_variables_with_attribute_preservation(
         self,

@@ -260,7 +260,7 @@ class MetadataHandler(FormulaHandler):
         context_value = lookup_context[clean_ref]
 
         if isinstance(context_value, ReferenceValue):
-            # This is a ReferenceValue - use the reference directly
+            # This is a ReferenceValue - for entity ID resolution, we need to determine what to return
             ref_value_obj: ReferenceValue = context_value
             reference = ref_value_obj.reference
             value = ref_value_obj.value
@@ -270,7 +270,15 @@ class MetadataHandler(FormulaHandler):
                 reference,
                 value,
             )
-            return reference
+            # For entity ID resolution:
+            # - If reference is an entity ID (contains '.'), return the reference
+            # - If reference is a global variable reference, return the resolved value (entity ID)
+            if reference and "." in reference and not reference.startswith("global_variable:"):
+                # This is an entity ID reference - return the entity ID
+                return reference
+
+            # This is a global variable or other reference - return the resolved value
+            return str(value)
 
         # Handle legacy raw values during migration to ReferenceValue system
         return self._handle_legacy_context_value(clean_ref, context_value, context)

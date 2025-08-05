@@ -83,6 +83,11 @@ DURATION_FUNCTIONS: frozenset[str] = frozenset(
         "hours",
         "minutes",
         "seconds",
+        # Unit conversion functions for timedelta results
+        "as_minutes",
+        "as_seconds",
+        "as_hours",
+        "as_days",
     }
 )
 

@@ -1,5 +1,6 @@
 """Cache for compiled formula expressions to improve evaluation performance."""
 
+from datetime import date, datetime, timedelta
 import hashlib
 import logging
 from typing import Any
@@ -27,7 +28,9 @@ class CompiledFormula:
         self.parsed_ast = self.evaluator.parse(formula)
         self.hit_count = 0
 
-    def evaluate(self, context: dict[str, Any], numeric_only: bool = True) -> float | bool | str | int:
+    def evaluate(
+        self, context: dict[str, Any], numeric_only: bool = True
+    ) -> float | bool | str | int | datetime | date | timedelta:
         """Evaluate the compiled formula with given context.
 
         Args:
@@ -48,8 +51,8 @@ class CompiledFormula:
             raise ValueError(f"Expected numeric result, got {type(result).__name__}")
 
         # Return result as-is for computed variables and other flexible use cases
-        # Validate that the result is one of the expected types
-        if isinstance(result, float | bool | str | int):
+        # Support enhanced types: datetime, date, timedelta for enhanced SimpleEval
+        if isinstance(result, float | bool | str | int | datetime | date | timedelta):
             return result
 
         # Handle unexpected types by converting to string representation
@@ -64,15 +67,23 @@ class FormulaCompilationCache:
     improvement for frequently used formulas.
     """
 
-    def __init__(self, max_entries: int = 1000):
+    def __init__(self, max_entries: int = 1000, use_enhanced_functions: bool = False):
         """Initialize the compilation cache.
 
         Args:
             max_entries: Maximum number of compiled formulas to cache
+            use_enhanced_functions: If True, use enhanced functions for SimpleEval integration
         """
         self._cache: dict[str, CompiledFormula] = {}
         self._max_entries = max_entries
-        self._math_functions = MathFunctions.get_builtin_functions()
+        self._use_enhanced_functions = use_enhanced_functions
+
+        # Choose function set based on enhancement flag
+        if use_enhanced_functions:
+            self._math_functions = MathFunctions.get_all_functions()  # Enhanced with timedelta support
+        else:
+            self._math_functions = MathFunctions.get_builtin_functions()  # Legacy string-based duration
+
         self._hits = 0
         self._misses = 0
 

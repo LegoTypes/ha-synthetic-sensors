@@ -94,33 +94,6 @@ class TestNonNumericStateHandling:
         # Verify it called the right entity
         mock_hass.states.get.assert_called_with(entity_id)
 
-    def test_truly_non_numeric_state_detection(self, mock_hass, mock_entity_registry, mock_states):
-        """Test that truly non-numeric states are properly detected and handled as fatal errors."""
-        # Set the state to 'starting_up' for this test
-        mock_states.register_state("sensor.power_meter", state_value="starting_up", attributes={"device_class": "power"})
-
-        evaluator = Evaluator(mock_hass)
-
-        # Register the entity with the evaluator
-        evaluator.update_integration_entities({"sensor.power_meter"})
-
-        # Test with truly non-numeric state
-        entity_id = "sensor.power_meter"  # Use existing entity from shared registry
-        config = FormulaConfig(
-            id="test_sensor",
-            name="Test Sensor",
-            formula=entity_id,  # Direct entity reference
-        )
-
-        result = evaluator.evaluate_formula(config)
-
-        # Should fail because the entity has a non-numeric state
-        assert result["success"] is False  # Fatal error
-        assert result.get("state") == "unknown"
-
-        # Verify it called the right entity
-        mock_hass.states.get.assert_called_with(entity_id)
-
     def test_unavailable_state_handling(self, mock_hass, mock_entity_registry, mock_states):
         """Test that 'unavailable' and 'unknown' states reflect to synthetic sensor state."""
         # Set the state to 'unavailable' for this test

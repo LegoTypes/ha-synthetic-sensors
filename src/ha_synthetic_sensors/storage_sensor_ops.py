@@ -11,7 +11,7 @@ from dataclasses import asdict
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .config_models import ComputedVariable, ExceptionHandler, FormulaConfig, SensorConfig
+from .config_models import AlternateStateHandler, ComputedVariable, FormulaConfig, SensorConfig
 from .exceptions import SensorUpdateError, SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -320,16 +320,16 @@ class SensorOpsHandler:
                 return [list_to_set(item) for item in obj]
             return obj
 
-        def deserialize_exception_handler(handler_data: dict[str, Any]) -> ExceptionHandler:
+        def deserialize_alternate_state_handler(handler_data: dict[str, Any]) -> AlternateStateHandler:
             """Deserialize exception handler data."""
-            return ExceptionHandler(**handler_data)
+            return AlternateStateHandler(**handler_data)
 
         def deserialize_computed_variable(var_data: dict[str, Any]) -> ComputedVariable:
             """Deserialize computed variable data."""
             computed_var_data = var_data.copy()
-            if "exception_handler" in computed_var_data and computed_var_data["exception_handler"] is not None:
-                handler_data = computed_var_data["exception_handler"]
-                computed_var_data["exception_handler"] = deserialize_exception_handler(handler_data)
+            if "alternate_state_handler" in computed_var_data and computed_var_data["alternate_state_handler"] is not None:
+                handler_data = computed_var_data["alternate_state_handler"]
+                computed_var_data["alternate_state_handler"] = deserialize_alternate_state_handler(handler_data)
             return ComputedVariable(**computed_var_data)
 
         def deserialize_variables(variables_data: dict[str, Any]) -> dict[str, Any]:
@@ -346,10 +346,10 @@ class SensorOpsHandler:
 
         def deserialize_formula_config(formula_data: dict[str, Any]) -> FormulaConfig:
             """Deserialize formula configuration."""
-            # Handle exception handler deserialization
-            if "exception_handler" in formula_data and formula_data["exception_handler"] is not None:
-                handler_data = formula_data["exception_handler"]
-                formula_data["exception_handler"] = deserialize_exception_handler(handler_data)
+            # Handle alternate state handler deserialization
+            if "alternate_state_handler" in formula_data and formula_data["alternate_state_handler"] is not None:
+                handler_data = formula_data["alternate_state_handler"]
+                formula_data["alternate_state_handler"] = deserialize_alternate_state_handler(handler_data)
 
             # Handle computed variables in variables dict
             if formula_data.get("variables"):

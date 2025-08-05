@@ -14,10 +14,13 @@ from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
 from .constants_formula import is_reserved_word
 from .dependency_parser import DependencyParser
+from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_cache import EvaluatorCache
 from .evaluator_config import CircuitBreakerConfig, RetryConfig
 from .evaluator_dependency import EvaluatorDependency
 from .evaluator_error_handler import EvaluatorErrorHandler
+from .evaluator_execution import FormulaExecutionEngine
+from .evaluator_formula_processor import FormulaProcessor
 from .evaluator_handlers import HandlerFactory
 from .evaluator_helpers import EvaluatorHelpers
 from .evaluator_phases.context_building import ContextBuildingPhase
@@ -28,6 +31,7 @@ from .evaluator_phases.sensor_registry import SensorRegistryPhase
 from .evaluator_phases.variable_resolution import VariableResolutionPhase
 from .evaluator_phases.variable_resolution.resolution_types import VariableResolutionResult
 from .evaluator_results import EvaluatorResults
+from .evaluator_sensor_registry import EvaluatorSensorRegistry
 from .exceptions import (
     BackingEntityResolutionError,
     CircularDependencyError,
@@ -134,6 +138,20 @@ class Evaluator(FormulaEvaluator):
         # Initialize handler factory for formula evaluation with expression evaluator callback
         self._handler_factory = HandlerFactory(expression_evaluator=self._evaluate_expression_callback, hass=hass)
 
+        # Initialize enhanced routing (clean slate design - always enabled)
+        self._enhanced_helper = EnhancedSimpleEvalHelper()
+
+        self._execution_engine = FormulaExecutionEngine(
+            self._handler_factory,
+            self._error_handler,
+            self._enhanced_helper,
+        )
+        self._sensor_registry = EvaluatorSensorRegistry()
+
+        # Initialize formula processor
+        # Note: This will be properly initialized after variable resolution phase is created
+        self._formula_processor: FormulaProcessor | None = None
+
         # Initialize sensor-to-backing mapping
         self._sensor_to_backing_mapping: dict[str, str] = {}
 
@@ -143,6 +161,9 @@ class Evaluator(FormulaEvaluator):
         self._context_building_phase = ContextBuildingPhase()
         self._pre_evaluation_phase = PreEvaluationPhase()
         self._sensor_registry_phase = SensorRegistryPhase()
+
+        # Initialize formula processor now that variable resolution phase is available
+        self._formula_processor = FormulaProcessor(self._variable_resolution_phase)
 
         # Initialize generic dependency manager for universal dependency tracking
         self._generic_dependency_manager = GenericDependencyManager()
@@ -333,7 +354,7 @@ class Evaluator(FormulaEvaluator):
                 metadata=config.metadata,
                 attributes=config.attributes,
                 dependencies=config.dependencies,
-                exception_handler=config.exception_handler,
+                alternate_state_handler=config.alternate_state_handler,
             )
             return self._evaluate_with_dependency_management(resolved_config, context, sensor_config)
 
@@ -377,15 +398,37 @@ class Evaluator(FormulaEvaluator):
         """Evaluate formula using normal evaluation path."""
         result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
         self._error_handler.handle_successful_evaluation(formula_name)
+
+        # Cache the successful result
+        if isinstance(result, float | int):
+            self._cache_handler.cache_result(config, eval_context, config.id, float(result))
+
         return self._create_success_result(result)
 
     def _handle_value_error(self, error: ValueError, formula_name: str) -> EvaluationResult:
         """Handle ValueError exceptions during formula evaluation."""
+        error_msg = str(error)
+
         # Handle formula evaluation failures due to None values
-        if "Formula evaluation failed due to None values" in str(error):
-            _LOGGER.warning("Formula '%s': %s", formula_name, str(error))
+        if "Formula evaluation failed due to None values" in error_msg:
+            _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
             self._error_handler.increment_error_count(formula_name)
             return EvaluatorResults.create_success_result_with_state("unavailable", value="unavailable")
+
+        # Handle mathematical and evaluation errors
+        if any(
+            phrase in error_msg
+            for phrase in [
+                "Division by zero in formula",
+                "Undefined variable:",
+                "Formula evaluation error:",
+                "Formula evaluation failed:",
+            ]
+        ):
+            _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
+            self._error_handler.increment_error_count(formula_name)
+            return EvaluatorResults.create_error_result(error_msg, state="unavailable")
+
         # Re-raise other ValueError exceptions
         raise error
 
@@ -552,7 +595,7 @@ class Evaluator(FormulaEvaluator):
             return EvaluatorResults.create_success_result(float(result))
         return EvaluatorResults.create_success_result_with_state("ok", value=result)
 
-    def _try_formula_exception_handler(
+    def _try_formula_alternate_state_handler(
         self,
         config: FormulaConfig,
         eval_context: dict[str, ContextValue],
@@ -570,7 +613,7 @@ class Evaluator(FormulaEvaluator):
         Returns:
             Resolved value from exception handler, or None if no handler or handler failed
         """
-        if not config.exception_handler:
+        if not config.alternate_state_handler:
             return None
 
         # Determine which exception handler to use based on error type
@@ -578,12 +621,12 @@ class Evaluator(FormulaEvaluator):
         error_str = str(error).lower()
 
         if "unavailable" in error_str or "not defined" in error_str:
-            handler_formula = config.exception_handler.unavailable
+            handler_formula = config.alternate_state_handler.unavailable
         elif "unknown" in error_str:
-            handler_formula = config.exception_handler.unknown
+            handler_formula = config.alternate_state_handler.unknown
         else:
             # For general errors, try unavailable handler first, then unknown
-            handler_formula = config.exception_handler.unavailable or config.exception_handler.unknown
+            handler_formula = config.alternate_state_handler.unavailable or config.alternate_state_handler.unknown
 
         if not handler_formula:
             return None
@@ -644,50 +687,28 @@ class Evaluator(FormulaEvaluator):
         self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]
     ) -> tuple[VariableResolutionResult, str]:
         """Resolve formula variables and return resolution result and resolved formula."""
-        # Check if formula is already resolved (contains only numbers, operators, and functions)
-        needs_resolution_pattern = re.compile(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b")
-        formula_variables = needs_resolution_pattern.findall(config.formula)
-        # Filter out known function names and operators
-        function_names = {"min", "max", "abs", "round", "int", "float", "str", "len", "sum", "any", "all"}
-        variables_needing_resolution = [var for var in formula_variables if var not in function_names]
-
-        if variables_needing_resolution:
-            # Formula contains variables that need resolution
-            resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
-                config.formula, sensor_config, eval_context, config
-            )
-            resolved_formula = resolution_result.resolved_formula
-        else:
-            # Formula is already resolved (only contains numbers and operators)
-            resolution_result = VariableResolutionResult(
-                resolved_formula=config.formula,
-                has_ha_state=False,
-                ha_state_value=None,
-                unavailable_dependencies=[],
-                entity_to_value_mappings={},
-            )
-            resolved_formula = config.formula
-
-        return resolution_result, resolved_formula
+        if self._formula_processor is None:
+            raise RuntimeError("Formula processor not initialized")
+        return self._formula_processor.resolve_formula_variables(config, sensor_config, eval_context)
 
     def _prepare_handler_context(
         self, eval_context: dict[str, ContextValue], resolution_result: VariableResolutionResult
     ) -> dict[str, ContextValue]:
         """Prepare context for formula handlers."""
-        # Create type-safe context for handlers using centralized converter
-        # NO FALLBACK: All variables must be ReferenceValue objects
-        handler_context = ReferenceValueManager.convert_to_evaluation_context(eval_context)
+        if self._formula_processor is None:
+            raise RuntimeError("Formula processor not initialized")
+        return self._formula_processor.prepare_handler_context(eval_context, resolution_result)
 
-        # Add entity-to-value mappings for legacy compatibility
-        if resolution_result.entity_to_value_mappings:
-            handler_context["_entity_to_value_mappings"] = resolution_result.entity_to_value_mappings
-
-        _LOGGER.debug("Handler context keys: %s", list(handler_context.keys()))
-        for key, value in handler_context.items():
+    def _extract_values_for_enhanced_evaluation(self, context: dict[str, ContextValue]) -> dict[str, Any]:
+        """Extract values from ReferenceValue objects for enhanced SimpleEval evaluation."""
+        # Use public interface via temporary execution (avoid protected access)
+        enhanced_context: dict[str, Any] = {}
+        for key, value in context.items():
             if isinstance(value, ReferenceValue):
-                _LOGGER.debug("  Handler ReferenceValue %s: reference=%s, value=%s", key, value.reference, value.value)
-
-        return handler_context
+                enhanced_context[key] = EvaluatorHelpers.process_evaluation_result(value.value)
+            else:
+                enhanced_context[key] = value
+        return enhanced_context
 
     def _execute_with_handler(
         self,
@@ -697,42 +718,20 @@ class Evaluator(FormulaEvaluator):
         eval_context: dict[str, ContextValue],
         sensor_config: SensorConfig | None,
     ) -> float | str | bool:
-        """Execute formula with appropriate handler, including exception handling."""
+        """Execute formula with CLEAN SLATE enhanced routing - delegated to execution engine."""
         try:
-            # Use handler factory to route formula to appropriate handler
-            # Special case: For metadata handlers, check the original formula since they need variable names
-            original_formula = config.formula
-            metadata_handler = self._handler_factory.get_handler("metadata")
-            if metadata_handler and metadata_handler.can_handle(original_formula):
-                # Use metadata handler with original formula to preserve variable names
-                metadata_handler = self._handler_factory.get_handler("metadata")
-                if metadata_handler:
-                    result = metadata_handler.evaluate(original_formula, handler_context)
-                    return result  # type: ignore[no-any-return]
-                raise ValueError("Metadata handler not available")
-
-            # Use resolved formula for other handlers
-            handler = self._handler_factory.get_handler_for_formula(resolved_formula)
-            if handler:
-                result = handler.evaluate(resolved_formula, handler_context)
-                return result  # type: ignore[no-any-return]
-
-            # Fallback to numeric handler if no specific handler found
-            numeric_handler = self._handler_factory.get_handler("numeric")
-            if numeric_handler:
-                result = numeric_handler.evaluate(resolved_formula, handler_context)
-                return result  # type: ignore[no-any-return]
-            raise ValueError("No handler available for formula evaluation")
-
+            # Delegate to the execution engine to avoid code duplication
+            return self._execution_engine.execute_formula_evaluation(
+                config, resolved_formula, handler_context, eval_context, sensor_config
+            )
         except Exception as err:
-            # Try exception handler before giving up
-            exception_result = self._try_formula_exception_handler(config, eval_context, sensor_config, err)
+            # Exception handler for compatibility (but clean slate should not need this)
+            exception_result = self._try_formula_alternate_state_handler(config, eval_context, sensor_config, err)
 
             if exception_result is not None:
-                # Exception handler succeeded - use its result
                 _LOGGER.debug("Formula %s resolved using exception handler = %s", config.id, exception_result)
                 return exception_result
-            # Exception handler failed or not available - re-raise original error
+            # Re-raise original error - clean slate should be deterministic
             raise err
 
     def _finalize_result(
@@ -744,18 +743,9 @@ class Evaluator(FormulaEvaluator):
         sensor_config: SensorConfig | None,
     ) -> float | str | bool:
         """Validate result type and cache if appropriate."""
-        # Validate result type based on formula context
-        is_main_formula = sensor_config and config.id == sensor_config.unique_id
-        if is_main_formula and not isinstance(result, int | float | str | bool):
-            raise ValueError(f"Main formula result must be numeric, string, or boolean, got {type(result).__name__}: {result}")
-
-        # Cache the result (cache handler supports multiple types for future expansion)
-        if isinstance(result, int | float):
-            self._cache_handler.cache_result(config, context, cache_key_id, float(result))
-
-        # Ensure proper type annotation for return
-        final_result: float | str | bool = float(result) if isinstance(result, int | float) else result
-        return final_result
+        if self._formula_processor is None:
+            raise RuntimeError("Formula processor not initialized")
+        return self._formula_processor.finalize_result(result, config, context, cache_key_id, sensor_config)
 
     def _build_evaluation_context(
         self,
@@ -910,63 +900,27 @@ class Evaluator(FormulaEvaluator):
 
     # CROSS-SENSOR REFERENCE MANAGEMENT
     def register_sensor(self, sensor_name: str, entity_id: str, initial_value: float | str | bool = 0.0) -> None:
-        """
-        Register a sensor in the cross-sensor reference registry.
-
-        This method enables cross-sensor references by tracking all sensors and their values.
-        Sensors can then reference each other by name (e.g., base_power_sensor).
-
-        Args:
-            sensor_name: The unique name of the sensor (e.g., "base_power_sensor")
-            entity_id: The Home Assistant entity ID (e.g., "sensor.base_power_sensor")
-            initial_value: The initial value for the sensor
-        """
+        """Register a sensor in the cross-sensor reference registry."""
+        self._sensor_registry.register_sensor(sensor_name, entity_id, initial_value)
         self._sensor_registry_phase.register_sensor(sensor_name, entity_id, initial_value)
 
     def update_sensor_value(self, sensor_name: str, value: float | str | bool) -> None:
-        """
-        Update a sensor's value in the cross-sensor reference registry.
-
-        This method is called when a sensor's value changes, enabling other sensors
-        to reference the updated value in their formulas.
-
-        Args:
-            sensor_name: The unique name of the sensor
-            value: The new value for the sensor
-        """
+        """Update a sensor's value in the cross-sensor reference registry."""
+        self._sensor_registry.update_sensor_value(sensor_name, value)
         self._sensor_registry_phase.update_sensor_value(sensor_name, value)
 
     def get_sensor_value(self, sensor_name: str) -> float | str | bool | None:
-        """
-        Get a sensor's current value from the cross-sensor reference registry.
-
-        This method is used during formula evaluation to resolve cross-sensor references.
-
-        Args:
-            sensor_name: The unique name of the sensor
-
-        Returns:
-            The current value of the sensor, or None if not found
-        """
-        return self._sensor_registry_phase.get_sensor_value(sensor_name)
+        """Get a sensor's current value from the cross-sensor reference registry."""
+        return self._sensor_registry.get_sensor_value(sensor_name)
 
     def unregister_sensor(self, sensor_name: str) -> None:
-        """
-        Unregister a sensor from the cross-sensor reference registry.
-
-        Args:
-            sensor_name: The unique name of the sensor to unregister
-        """
+        """Unregister a sensor from the cross-sensor reference registry."""
+        self._sensor_registry.unregister_sensor(sensor_name)
         self._sensor_registry_phase.unregister_sensor(sensor_name)
 
     def get_registered_sensors(self) -> set[str]:
-        """
-        Get all registered sensor names.
-
-        Returns:
-            Set of all registered sensor names
-        """
-        return self._sensor_registry_phase.get_registered_sensors()
+        """Get all registered sensor names."""
+        return self._sensor_registry.get_registered_sensors()
 
     def _evaluate_expression_callback(self, expression: str, context: dict[str, ContextValue] | None = None) -> ContextValue:
         """

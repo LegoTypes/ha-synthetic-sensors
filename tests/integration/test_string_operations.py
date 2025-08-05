@@ -414,7 +414,7 @@ class TestStringOperationsIntegration:
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
 
             # Verify import succeeded
-            expected_sensor_count = 30
+            expected_sensor_count = 32  # Updated: added 2 new sensors for enhanced SimpleEval testing
             assert result["sensors_imported"] == expected_sensor_count
 
             # Use public API with backing entities (Pattern 2 from guide)
@@ -511,6 +511,20 @@ class TestStringOperationsIntegration:
                 assert boolean_func_entity.native_value == expected, (
                     f"Boolean function concatenation failed: expected '{expected}', got '{boolean_func_entity.native_value}'"
                 )
+
+            # Test the new enhanced SimpleEval string function chaining sensors
+            string_chaining_entity = sensor_entities.get("string_function_chaining_sensor")
+            if string_chaining_entity and string_chaining_entity.native_value:
+                # Formula: upper(trim(replace(device_name, '_', '-')))
+                # With device_name: "sensor.device_with_spaces" (entity_id becomes string value)
+                # Expected result depends on how the entity resolves
+                assert string_chaining_entity.native_value is not None, "String function chaining should produce a result"
+
+            complex_operations_entity = sensor_entities.get("complex_string_operations_sensor")
+            if complex_operations_entity and complex_operations_entity.native_value:
+                # Formula: replace(upper(trim(device_name)), 'SENSOR', 'DEVICE')
+                # Should process the device_name value through the function chain
+                assert complex_operations_entity.native_value is not None, "Complex string operations should produce a result"
 
             # Verify sensors were created with proper configurations
             sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)

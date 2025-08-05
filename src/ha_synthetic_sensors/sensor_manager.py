@@ -49,6 +49,7 @@ class SensorManagerConfig:
     """Configuration for SensorManager with device integration support."""
 
     integration_domain: str = "synthetic_sensors"  # Integration domain for device lookup
+    device_identifier: str | None = None  # Device identifier for global settings lookup
     device_info: DeviceInfo | None = None
     unique_id_prefix: str = ""  # Optional prefix for unique IDs (for compatibility)
     lifecycle_managed_externally: bool = False
@@ -1126,6 +1127,9 @@ class SensorManager:
 
     async def async_update_sensors(self, sensor_configs: list[SensorConfig] | None = None) -> None:
         """Enhanced evaluation loop with cross-sensor dependency management."""
+        # Update global settings on evaluator before starting evaluation
+        self._update_global_settings_on_evaluator()
+
         # Start new update cycle - clears cache for fresh data
         self._evaluator.start_update_cycle()
 
@@ -1759,5 +1763,79 @@ class SensorManager:
                 f"Ensure the device is registered before creating synthetic sensors."
             )
 
-        # Fallback for sensors without device association (legacy behavior)
+        # No device_identifier provided - use default format
         return f"sensor.{sensor_key}"
+
+    def _update_global_settings_on_evaluator(self) -> None:
+        """Update global settings on the evaluator before evaluation starts.
+
+        This ensures that global variables are available during formula evaluation,
+        fixing the runtime execution issue for computed variables referencing globals.
+        """
+        self._logger.info("🔍 RUNTIME FIX DEBUG: _update_global_settings_on_evaluator called")
+
+        if not self._storage_manager:
+            self._logger.warning("❌ RUNTIME FIX: No storage manager available")
+            return
+
+        try:
+            # Get current global settings from storage manager
+            # We need to get the sensor set that this manager is associated with
+            # For now, we'll iterate through sensor sets to find the one with our device_identifier
+            device_id = self._get_current_device_identifier()
+            self._logger.info("🔍 RUNTIME FIX DEBUG: Device identifier: %s", device_id)
+            if not device_id:
+                self._logger.warning("❌ RUNTIME FIX: No device identifier found")
+                return
+
+            # Find the sensor set with matching device identifier
+            sensor_sets_metadata = self._storage_manager.list_sensor_sets()
+            target_sensor_set = None
+
+            for sensor_set_metadata in sensor_sets_metadata:
+                # sensor_set_metadata is a SensorSetMetadata object
+                if sensor_set_metadata.device_identifier == device_id:
+                    target_sensor_set = self._storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
+                    break
+
+            if target_sensor_set:
+                global_settings = target_sensor_set.get_global_settings()
+
+                # Update global settings on the evaluator's variable resolution phase
+                variable_resolution_phase = getattr(self._evaluator, "_variable_resolution_phase", None)
+                if variable_resolution_phase and hasattr(variable_resolution_phase, "set_global_settings"):
+                    variable_resolution_phase.set_global_settings(global_settings)
+
+                # CRITICAL FIX: Also update global settings on the context building phase
+                # This ensures global variables are available BEFORE computed variables are evaluated
+                context_building_phase = getattr(self._evaluator, "_context_building_phase", None)
+                if context_building_phase and hasattr(context_building_phase, "set_global_settings"):
+                    context_building_phase.set_global_settings(global_settings)
+                    self._logger.info(
+                        "✅ RUNTIME FIX SUCCESS: Updated global settings on both phases: %s",
+                        list(global_settings.get("variables", {}).keys()),
+                    )
+                else:
+                    self._logger.warning("❌ Context building phase not available for global settings update")
+            else:
+                self._logger.debug("No sensor set found with device identifier: %s", device_id)
+
+        except Exception as e:
+            self._logger.warning("Failed to update global settings on evaluator: %s", e)
+
+    def _get_current_device_identifier(self) -> str | None:
+        """Get the device identifier for the current sensor manager."""
+        # Check if we have sensors and can get device identifier from them
+        if self._sensors_by_unique_id:
+            # Get device identifier from first sensor's device info
+            first_sensor = next(iter(self._sensors_by_unique_id.values()))
+            if hasattr(first_sensor, "_device_identifier"):
+                device_id = getattr(first_sensor, "_device_identifier", None)
+                if isinstance(device_id, str):
+                    return device_id
+
+        # Check manager config
+        if hasattr(self._manager_config, "device_identifier"):
+            return self._manager_config.device_identifier
+
+        return None

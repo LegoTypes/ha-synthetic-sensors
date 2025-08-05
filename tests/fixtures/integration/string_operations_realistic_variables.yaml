@@ -1,35 +1,32 @@
-# Used by: test_string_functions_with_real_variables_integration
-# Tests string functions with realistic variable scenarios
-version: "1.0"
-
+version: '1.0'
 global_settings:
-  device_identifier: "realistic_variables_test_device"
-
+  device_identifier: realistic_variables_test_device
 sensors:
   device_name_analysis_sensor:
-    name: "Device Name Analysis"
-    formula: "'Name: ' + trim(device_name) + ' | Contains Temp: ' + contains(device_name, 'Temp') + ' | Length: ' + length(device_name)"
+    name: Device Name Analysis
+    formula: '''Name: '' + trim(device_name) + '' | Contains Temp: '' + ''Temp'' in
+      device_name + '' | Length: '' + len(device_name)'
     variables:
-      device_name: "sensor.living_room_temperature.device_name"
+      device_name: sensor.living_room_temperature.device_name
     metadata:
-      unit_of_measurement: ""
-      device_class: "enum"
-
+      unit_of_measurement: ''
+      device_class: enum
   status_processing_sensor:
-    name: "Status Processing"
-    formula: "'Status: ' + replace(upper(status), '_', ' ') + ' | Starts Online: ' + startswith(status, 'online')"
+    name: Status Processing
+    formula: '''Status: '' + replace(upper(status), ''_'', '' '') + '' | Starts Online:
+      '' + startswith(status, ''online'')'
     variables:
-      status: "sensor.device_status"
+      status: sensor.device_status
     metadata:
-      unit_of_measurement: ""
-      device_class: "enum"
-
+      unit_of_measurement: ''
+      device_class: enum
   multi_device_comparison_sensor:
-    name: "Multi Device Comparison"
-    formula: "'Temp Length: ' + length(temp_name) + ' | Humidity Length: ' + length(humidity_name) + ' | Same Type: ' + contains(temp_name, 'Sensor')"
+    name: Multi Device Comparison
+    formula: '''Temp Length: '' + len(temp_name) + '' | Humidity Length: '' + len(humidity_name)
+      + '' | Same Type: '' + ''Sensor'' in temp_name'
     variables:
-      temp_name: "sensor.living_room_temperature.device_name"
-      humidity_name: "sensor.kitchen_humidity.device_name"
+      temp_name: sensor.living_room_temperature.device_name
+      humidity_name: sensor.kitchen_humidity.device_name
     metadata:
-      unit_of_measurement: ""
-      device_class: "enum"
+      unit_of_measurement: ''
+      device_class: enum

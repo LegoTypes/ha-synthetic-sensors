@@ -38,6 +38,7 @@ class EvaluatorType(Enum):
     NUMERIC = "numeric"
     DATE = "date"
     BOOLEAN = "boolean"
+    DURATION = "duration"
 
 
 @dataclass
@@ -80,39 +81,59 @@ class FormulaRouter:
         # First, validate formula syntax
         self._validate_formula_syntax(formula)
 
-        # Category 1: Check for explicit user functions (highest priority)
+        # Use a routing chain to reduce return statements
+        result = self._route_by_priority(formula)
+
+        self._logger.debug("Formula routed to %s evaluator: %s", result.evaluator_type.value, formula)
+
+        return result
+
+    def _route_by_priority(self, formula: str) -> RoutingResult:
+        """Route formula using priority-based chain to minimize return statements."""
+        # Priority 1: Check for explicit user functions (highest priority)
         user_function_result = self._check_user_functions(formula)
         if user_function_result:
-            self._logger.debug(
-                "Formula routed to %s via user function: %s",
-                user_function_result.evaluator_type.value,
-                user_function_result.user_function,
-            )
             return user_function_result
 
-        # Category 2: Check for duration functions (automatic date routing)
-        if self._contains_duration_functions(formula):
-            self._logger.debug("Formula routed to date evaluator due to duration functions")
-            return RoutingResult(evaluator_type=EvaluatorType.DATE, should_cache=False, original_formula=formula)
+        # Priority 2: Check for duration/datetime functions
+        duration_result = self._route_duration_and_datetime(formula)
+        if duration_result:
+            return duration_result
 
-        # Category 2a: Check for datetime functions (automatic date routing)
-        if self._contains_datetime_functions(formula):
-            self._logger.debug("Formula routed to date evaluator due to datetime functions")
-            return RoutingResult(evaluator_type=EvaluatorType.DATE, should_cache=False, original_formula=formula)
+        # Priority 3: Check for string patterns
+        string_result = self._route_string_patterns(formula)
+        if string_result:
+            return string_result
 
-        # Category 3: Check for string literals (automatic string routing)
-        if self._contains_string_literals(formula):
-            self._logger.debug("Formula routed to string evaluator due to string literals")
-            return RoutingResult(evaluator_type=EvaluatorType.STRING, should_cache=False, original_formula=formula)
-
-        # Category 4: Check if formula is a quoted string literal (from variable resolution)
-        if (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
-            self._logger.debug("Formula routed to string evaluator (quoted literal)")
-            return RoutingResult(evaluator_type=EvaluatorType.STRING, should_cache=False, original_formula=formula)
-
-        # Category 5: Default to numeric (existing behavior)
-        self._logger.debug("Formula routed to numeric evaluator (default)")
+        # Priority 4: Default to numeric
         return RoutingResult(evaluator_type=EvaluatorType.NUMERIC, should_cache=True, original_formula=formula)
+
+    def _route_duration_and_datetime(self, formula: str) -> RoutingResult | None:
+        """Route duration and datetime functions."""
+        if self._contains_duration_functions(formula):
+            # Route pure duration operations to Duration Handler
+            if self._is_pure_duration_operation(formula):
+                return RoutingResult(evaluator_type=EvaluatorType.DURATION, should_cache=True, original_formula=formula)
+            # Date arithmetic with durations goes to Date Handler
+            return RoutingResult(evaluator_type=EvaluatorType.DATE, should_cache=False, original_formula=formula)
+
+        # Check for datetime functions (automatic date routing)
+        if self._contains_datetime_functions(formula):
+            return RoutingResult(evaluator_type=EvaluatorType.DATE, should_cache=False, original_formula=formula)
+
+        return None
+
+    def _route_string_patterns(self, formula: str) -> RoutingResult | None:
+        """Route string literal patterns."""
+        # Check for string literals (automatic string routing)
+        if self._contains_string_literals(formula):
+            return RoutingResult(evaluator_type=EvaluatorType.STRING, should_cache=False, original_formula=formula)
+
+        # Check if formula is a quoted string literal (from variable resolution)
+        if (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
+            return RoutingResult(evaluator_type=EvaluatorType.STRING, should_cache=False, original_formula=formula)
+
+        return None
 
     def _check_user_functions(self, formula: str) -> RoutingResult | None:
         """
@@ -407,6 +428,55 @@ class FormulaRouter:
             pattern = rf"\b{re.escape(duration_func)}\s*\("
             if re.search(pattern, formula):
                 self._logger.debug("Found duration function: %s", duration_func)
+                return True
+
+        return False
+
+    def _is_pure_duration_operation(self, formula: str) -> bool:
+        """
+        Check if a formula involves only duration functions and arithmetic operations.
+
+        Pure duration operations include:
+        - minutes(5) / minutes(1) -> numeric ratio
+        - hours(1) * 2 -> duration result
+        - minutes(5) + minutes(3) -> duration result
+
+        These should go to the Duration Handler.
+
+        Non-pure duration operations (go to Date Handler):
+        - now() + minutes(5) -> datetime + duration
+        - date('2025-01-01') + hours(1) -> date + duration
+
+        Args:
+            formula: Formula to analyze
+
+        Returns:
+            True if this is a pure duration operation
+        """
+        # Check if formula contains datetime functions (now, date, etc.)
+        # If so, it's datetime arithmetic, not pure duration
+        if self._contains_datetime_functions(formula):
+            return False
+
+        # Check if formula contains non-duration functions that might return dates
+        if self._contains_metadata_functions(formula):
+            # Could be metadata(state, 'last_changed') which returns datetime
+            return False
+
+        # If it only contains duration functions and basic operators, it's pure duration
+        duration_funcs = "|".join(re.escape(func) for func in DURATION_FUNCTIONS)
+
+        # Check for duration arithmetic patterns
+        patterns = [
+            rf"\b({duration_funcs})\s*\([^)]*\)\s*[+\-*/]\s*\b({duration_funcs})\s*\([^)]*\)",  # duration op duration
+            rf"\b({duration_funcs})\s*\([^)]*\)\s*[*/]\s*[\d.]+",  # duration * number
+            rf"[\d.]+\s*[*/]\s*\b({duration_funcs})\s*\([^)]*\)",  # number * duration
+            rf".*\b({duration_funcs})\s*\([^)]*\).*[+\-].*",  # any formula with duration function and addition/subtraction
+        ]
+
+        for pattern in patterns:
+            if re.search(pattern, formula):
+                self._logger.debug("Found pure duration operation: %s", formula)
                 return True
 
         return False

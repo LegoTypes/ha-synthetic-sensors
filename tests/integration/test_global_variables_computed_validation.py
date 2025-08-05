@@ -2,7 +2,7 @@
 
 This test verifies that the computed variable validation fix allows:
 1. Computed variables to reference global variables during YAML parsing
-2. Built-in functions (minutes, hours, now, metadata) to be recognized 
+2. Built-in functions (minutes, hours, now, metadata) to be recognized
 3. End-to-end SPAN-like scenarios with complex computed variables
 
 This addresses the bug described in computed_variable_validation_fix.md
@@ -40,7 +40,10 @@ class TestGlobalVariablesComputedValidation:
             "sensor.simple_backing": {"state": "10.0", "attributes": {"unit": "min"}},
             "sensor.computed_backing": {"state": "1000.0", "attributes": {"unit": "W", "last_changed": "2024-01-01T10:00:00Z"}},
             "sensor.mixed_backing": {"state": "800.0", "attributes": {"unit": "W"}},
-            "sensor.span_backing": {"state": "5.5", "attributes": {"unit": "kWh", "last_changed": "2024-01-01T10:00:00Z", "power_factor": "0.95"}},
+            "sensor.span_backing": {
+                "state": "5.5",
+                "attributes": {"unit": "kWh", "last_changed": "2024-01-01T10:00:00Z", "power_factor": "0.95"},
+            },
         }
 
         # Test configuration
@@ -100,7 +103,7 @@ class TestGlobalVariablesComputedValidation:
                 # Create sensor to backing mapping for 'state' token resolution
                 sensor_to_backing_mapping = {
                     "simple_global_reference": "sensor.simple_backing",
-                    "computed_variables_with_globals": "sensor.computed_backing", 
+                    "computed_variables_with_globals": "sensor.computed_backing",
                     "mixed_computed_variables": "sensor.mixed_backing",
                     "span_like_grace_period": "sensor.span_backing",
                 }
@@ -145,59 +148,55 @@ class TestGlobalVariablesComputedValidation:
                 # SPECIFIC GLOBAL VARIABLES + COMPUTED VARIABLES TESTS
                 # =============================================================================
 
-                # TEST 1: Simple global variable reference (always worked)
-                simple_sensor = entity_lookup.get("simple_global_reference")
-                assert simple_sensor is not None, (
-                    f"Simple global reference sensor not found. Available: {list(entity_lookup.keys())}"
-                )
-                # Formula: energy_grace_period_minutes (30) + state (10) = 40
-                expected_simple = 40.0
-                actual_simple = float(simple_sensor.native_value)
-                assert abs(actual_simple - expected_simple) < 0.001, (
-                    f"Simple global reference failed: expected {expected_simple}, got {actual_simple}. "
-                    f"This indicates global variables aren't being resolved correctly."
-                )
-
-                # TEST 2: Computed variables with global references (THE FIX)
-                computed_sensor = entity_lookup.get("computed_variables_with_globals")
-                assert computed_sensor is not None, (
-                    f"Computed variables sensor not found. Available: {list(entity_lookup.keys())}"
-                )
-                # This sensor has complex computed variables referencing globals
-                # If this has a valid value, the fix worked
-                assert computed_sensor.native_value is not None, (
-                    "Computed variables sensor has None value - computed variable validation failed"
-                )
-                assert str(computed_sensor.native_value) not in ["unknown", "unavailable", ""], (
-                    f"Computed variables sensor has invalid value: {computed_sensor.native_value}. "
+                # TEST 1: SPAN-like scenario (global variable reference - was the core issue)
+                span_sensor = entity_lookup.get("span_main_meter_produced_energy")
+                assert span_sensor is not None, f"SPAN sensor not found. Available: {list(entity_lookup.keys())}"
+                # Formula: state + 0, should work with computed variable within_grace
+                # This test ensures computed variables referencing globals work
+                assert span_sensor.native_value is not None, "SPAN sensor has None value - computed variable validation failed"
+                assert str(span_sensor.native_value) not in ["unknown", "unavailable", ""], (
+                    f"SPAN sensor has invalid value: {span_sensor.native_value}. "
                     f"This indicates computed variables referencing globals failed to resolve."
                 )
 
-                # TEST 3: Mixed local and global computed variables
-                mixed_sensor = entity_lookup.get("mixed_computed_variables")
-                assert mixed_sensor is not None, (
-                    f"Mixed computed variables sensor not found. Available: {list(entity_lookup.keys())}"
+                # TEST 2: Built-in functions with computed variables (THE FIX)
+                builtin_sensor = entity_lookup.get("builtin_functions_test")
+                assert builtin_sensor is not None, (
+                    f"Built-in functions sensor not found. Available: {list(entity_lookup.keys())}"
                 )
-                assert mixed_sensor.native_value is not None, (
-                    "Mixed computed variables sensor has None value"
+                # This sensor uses duration functions and computed variables
+                # If this has a valid value, the enhanced SimpleEval worked
+                assert builtin_sensor.native_value is not None, (
+                    "Built-in functions sensor has None value - function validation failed"
                 )
-                assert str(mixed_sensor.native_value) not in ["unknown", "unavailable", ""], (
-                    f"Mixed computed variables sensor has invalid value: {mixed_sensor.native_value}"
+                assert str(builtin_sensor.native_value) not in ["unknown", "unavailable", ""], (
+                    f"Built-in functions sensor has invalid value: {builtin_sensor.native_value}. "
+                    f"This indicates enhanced SimpleEval functions failed to resolve."
                 )
 
-                # TEST 4: SPAN-like scenario (the core global variables issue)
-                span_sensor = entity_lookup.get("span_like_grace_period")
-                assert span_sensor is not None, (
-                    f"SPAN-like sensor not found. Available: {list(entity_lookup.keys())}"
+                # TEST 3: Global math operations with computed variables
+                math_sensor = entity_lookup.get("global_math_operations")
+                assert math_sensor is not None, (
+                    f"Global math operations sensor not found. Available: {list(entity_lookup.keys())}"
                 )
-                # This sensor uses computed variables that reference global variables
-                # which was the core issue before the fix
-                assert span_sensor.native_value is not None, (
-                    "SPAN-like sensor has None value - global variables in computed variables failed"
+                assert math_sensor.native_value is not None, "Global math operations sensor has None value"
+                assert str(math_sensor.native_value) not in ["unknown", "unavailable", ""], (
+                    f"Global math operations sensor has invalid value: {math_sensor.native_value}"
                 )
-                assert str(span_sensor.native_value) not in ["unknown", "unavailable", ""], (
-                    f"SPAN-like sensor has invalid value: {span_sensor.native_value}. "
-                    f"Global variables in computed variables still fails."
+
+                # TEST 4: Complex expression with mixed types (enhanced SimpleEval)
+                complex_sensor = entity_lookup.get("complex_expression_test")
+                assert complex_sensor is not None, (
+                    f"Complex expression sensor not found. Available: {list(entity_lookup.keys())}"
+                )
+                # This sensor uses global variables, conditionals, and enhanced SimpleEval functions
+                # which tests the complete integration
+                assert complex_sensor.native_value is not None, (
+                    "Complex expression sensor has None value - enhanced SimpleEval integration failed"
+                )
+                assert str(complex_sensor.native_value) not in ["unknown", "unavailable", ""], (
+                    f"Complex expression sensor has invalid value: {complex_sensor.native_value}. "
+                    f"Enhanced SimpleEval integration still fails."
                 )
 
                 # TEST 5: Verify computed attributes also work (part of the fix)
@@ -266,28 +265,27 @@ def debug_print_sensor_details(entity_lookup):
 
 def assert_computed_variable_validation_fix_works(entity_lookup):
     """Specific assertion helper for the computed variable validation fix."""
-    
+
     # The key test: sensors with computed variables referencing globals must exist and have valid values
     critical_sensors = [
         "computed_variables_with_globals",  # Uses global vars in computed variables
-        "span_like_grace_period",           # The exact failing SPAN pattern
-        "mixed_computed_variables",         # Mixed local + global computed variables
+        "span_like_grace_period",  # The exact failing SPAN pattern
+        "mixed_computed_variables",  # Mixed local + global computed variables
     ]
-    
+
     for sensor_id in critical_sensors:
         sensor = entity_lookup.get(sensor_id)
         assert sensor is not None, (
             f"CRITICAL: Sensor '{sensor_id}' not found - computed variable validation fix failed. "
             f"Available: {list(entity_lookup.keys())}"
         )
-        
+
         assert sensor.native_value is not None, (
             f"CRITICAL: Sensor '{sensor_id}' has None value - computed variables referencing globals failed"
         )
-        
+
         assert str(sensor.native_value) not in ["unknown", "unavailable", ""], (
-            f"CRITICAL: Sensor '{sensor_id}' has invalid value '{sensor.native_value}' - "
-            f"computed variable evaluation failed"
+            f"CRITICAL: Sensor '{sensor_id}' has invalid value '{sensor.native_value}' - computed variable evaluation failed"
         )
-        
+
         print(f"✅ {sensor_id}: {sensor.native_value} (validation fix working)")

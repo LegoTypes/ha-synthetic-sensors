@@ -328,7 +328,7 @@ class SensorSetOpsHandler:
             attributes=updated_attributes,
             dependencies=formula_config.dependencies.copy(),  # Dependencies handled separately
             variables=updated_variables,
-            exception_handler=formula_config.exception_handler,  # Preserve exception handler
+            alternate_state_handler=formula_config.alternate_state_handler,  # Preserve alternate state handler
         )
 
     def _build_self_reference_patterns(self, sensor_key: str, entity_id: str | None) -> set[str]:

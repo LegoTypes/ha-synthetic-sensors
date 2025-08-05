@@ -73,23 +73,6 @@ class EmptyEvaluationContextError(FatalEvaluationError):
         )
 
 
-class MissingDependencyError(FatalEvaluationError):
-    """Fatal error: required dependencies are missing and cannot be resolved.
-
-    This is different from UNAVAILABLE/UNKNOWN values which represent valid
-    evaluation results where data is None-like. Missing dependencies indicate
-    the evaluation system is fundamentally broken.
-    """
-
-    def __init__(self, dependencies: list[str], context: str = "evaluation"):
-        self.dependencies = dependencies
-        self.context = context
-        super().__init__(
-            f"FATAL: Missing required dependencies {dependencies} in {context}. "
-            f"This indicates a critical system error - dependencies should be resolved before evaluation."
-        )
-
-
 class DependencyError(FormulaEvaluationError):
     """Base class for dependency-related errors."""
 

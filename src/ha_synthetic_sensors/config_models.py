@@ -54,7 +54,7 @@ def _default_metadata() -> dict[str, Any]:
 
 
 @dataclass
-class ExceptionHandler:
+class AlternateStateHandler:
     """Exception handler for formulas and variables when entities become unavailable or unknown."""
 
     unavailable: str | None = None  # Formula to execute when dependencies are unavailable
@@ -63,11 +63,11 @@ class ExceptionHandler:
     def __post_init__(self) -> None:
         """Validate the exception handler after initialization."""
         if not self.unavailable and not self.unknown:
-            raise ValueError("ExceptionHandler must have at least one handler (unavailable or unknown)")
+            raise ValueError("AlternateStateHandler must have at least one handler (unavailable or unknown)")
         if self.unavailable and not self.unavailable.strip():
-            raise ValueError("ExceptionHandler unavailable formula cannot be whitespace only")
+            raise ValueError("AlternateStateHandler unavailable formula cannot be whitespace only")
         if self.unknown and not self.unknown.strip():
-            raise ValueError("ExceptionHandler unknown formula cannot be whitespace only")
+            raise ValueError("AlternateStateHandler unknown formula cannot be whitespace only")
 
 
 @dataclass
@@ -76,7 +76,7 @@ class ComputedVariable:
 
     formula: str
     dependencies: set[str] = field(default_factory=set)
-    exception_handler: ExceptionHandler | None = None  # Exception handling for this variable
+    alternate_state_handler: AlternateStateHandler | None = None  # Alternate state handling for UNAVAILABLE/UNKNOWN
 
     def __post_init__(self) -> None:
         """Validate the computed variable after initialization."""
@@ -99,7 +99,7 @@ class FormulaConfig:
     variables: dict[str, str | int | float | ComputedVariable] = field(
         default_factory=_default_variables
     )  # Variable name -> entity_id mappings, numeric literals, or computed variables
-    exception_handler: ExceptionHandler | None = None  # Exception handling for this formula
+    alternate_state_handler: AlternateStateHandler | None = None  # Alternate state handling for UNAVAILABLE/UNKNOWN
 
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""

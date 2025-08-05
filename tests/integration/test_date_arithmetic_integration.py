@@ -103,21 +103,31 @@ class TestDateArithmeticIntegration:
             sensor_entities = {entity.unique_id: entity for entity in all_entities}
 
             # Test actual formula evaluation results to verify duration functions work
-            # Test: days(30) - should return "30 days" or equivalent duration string
+            # CLEAN SLATE: Duration functions now return seconds (float) via enhanced SimpleEval
+
+            # Test: days(30) - should return 2592000.0 seconds (30 * 24 * 60 * 60)
             days_entity = sensor_entities.get("test_days_function")
             if days_entity and days_entity.native_value is not None:
-                # Duration functions should return ISO duration strings
-                assert "30" in str(days_entity.native_value), f"Days function failed: got '{days_entity.native_value}'"
+                expected_seconds = 30 * 24 * 60 * 60  # 30 days in seconds = 2592000
+                assert days_entity.native_value == expected_seconds, (
+                    f"Days function failed: expected {expected_seconds}, got '{days_entity.native_value}'"
+                )
 
-            # Test: hours(24) - should return "24 hours" or equivalent duration string
+            # Test: hours(24) - should return 86400.0 seconds (24 * 60 * 60)
             hours_entity = sensor_entities.get("test_hours_function")
             if hours_entity and hours_entity.native_value is not None:
-                assert "24" in str(hours_entity.native_value), f"Hours function failed: got '{hours_entity.native_value}'"
+                expected_seconds = 24 * 60 * 60  # 24 hours in seconds = 86400
+                assert hours_entity.native_value == expected_seconds, (
+                    f"Hours function failed: expected {expected_seconds}, got '{hours_entity.native_value}'"
+                )
 
-            # Test: minutes(60) - should return "60 minutes" or equivalent duration string
+            # Test: minutes(60) - should return 3600.0 seconds (60 * 60)
             minutes_entity = sensor_entities.get("test_minutes_function")
             if minutes_entity and minutes_entity.native_value is not None:
-                assert "60" in str(minutes_entity.native_value), f"Minutes function failed: got '{minutes_entity.native_value}'"
+                expected_seconds = 60 * 60  # 60 minutes in seconds = 3600
+                assert minutes_entity.native_value == expected_seconds, (
+                    f"Minutes function failed: expected {expected_seconds}, got '{minutes_entity.native_value}'"
+                )
 
             # Cleanup
             if storage_manager.sensor_set_exists(sensor_set_id):

@@ -6,12 +6,13 @@ and other configuration-related operations to eliminate code duplication.
 
 from collections.abc import Callable
 import logging
+import re
 from typing import Any
 
 from .config_models import ComputedVariable, FormulaConfig
-from .exceptions import EmptyEvaluationContextError, FatalEvaluationError, MissingDependencyError
-from .formula_router import FormulaRouter
-from .evaluator_handlers.handler_factory import HandlerFactory
+from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
+from .evaluator_helpers import EvaluatorHelpers
+from .exceptions import FatalEvaluationError, MissingDependencyError
 from .formula_compilation_cache import FormulaCompilationCache
 from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
 from .reference_value_manager import ReferenceValueManager
@@ -25,6 +26,26 @@ _LOGGER = logging.getLogger(__name__)
 _COMPUTED_VARIABLE_COMPILATION_CACHE = FormulaCompilationCache()
 
 
+# Enhanced SimpleEval helper for computed variables to use same functions as main formulas
+class _EnhancedHelperSingleton:
+    """Singleton for enhanced SimpleEval helper to avoid global statement."""
+
+    _instance: EnhancedSimpleEvalHelper | None = None
+
+    @classmethod
+    def get_instance(cls) -> EnhancedSimpleEvalHelper:
+        """Get or create the enhanced SimpleEval helper for computed variables."""
+        if cls._instance is None:
+            cls._instance = EnhancedSimpleEvalHelper()
+            _LOGGER.debug("Created enhanced SimpleEval helper for computed variables")
+        return cls._instance
+
+
+def _get_enhanced_helper() -> EnhancedSimpleEvalHelper:
+    """Get or create the enhanced SimpleEval helper for computed variables."""
+    return _EnhancedHelperSingleton.get_instance()
+
+
 def _extract_values_for_simpleeval(eval_context: dict[str, ContextValue]) -> dict[str, ContextValue]:
     """Extract values from ReferenceValue objects for SimpleEval evaluation.
 
@@ -36,33 +57,16 @@ def _extract_values_for_simpleeval(eval_context: dict[str, ContextValue]) -> dic
     for key, value in eval_context.items():
         if isinstance(value, ReferenceValue):
             # Extract the value from ReferenceValue for SimpleEval
-            simpleeval_context[key] = value.value
+            extracted_value = value.value
+            # Apply the same preprocessing as main formulas for consistency
+            if isinstance(extracted_value, str):
+                extracted_value = EvaluatorHelpers.convert_string_to_number_if_possible(extracted_value)
+            simpleeval_context[key] = extracted_value
         else:
             # Keep other values as-is (functions, constants, etc.)
             simpleeval_context[key] = value
 
     return simpleeval_context
-
-
-def convert_string_to_number_if_possible(result: str) -> str | int | float:
-    """Convert a string result to a number if possible, otherwise return as string.
-
-    This is a shared utility to eliminate duplicate code across multiple handlers.
-
-    Args:
-        result: String result to potentially convert
-
-    Returns:
-        Converted number (int or float) if possible, otherwise the original string
-    """
-    try:
-        # Try to convert string to number for main formulas
-        if "." in result:
-            return float(result)
-        return int(result)
-    except ValueError:
-        # If conversion fails, return as string
-        return result
 
 
 def _extract_variable_references(formula: str) -> list[str]:
@@ -155,76 +159,7 @@ def validate_computed_variable_references(
     return errors
 
 
-def _try_exception_handler(
-    var_name: str, computed_var: ComputedVariable, eval_context: dict[str, ContextValue], error: Exception
-) -> bool | str | float | int | None:
-    """Try to resolve a computed variable using its exception handler.
-
-    Args:
-        var_name: Name of the computed variable that failed
-        computed_var: The ComputedVariable object with potential exception handler
-        eval_context: Current evaluation context
-        error: The exception that occurred during main formula evaluation
-
-    Returns:
-        Resolved value from exception handler, or None if no handler or handler failed
-    """
-    if not computed_var.exception_handler:
-        return None
-
-    # Determine which exception handler to use based on error type
-    handler_formula = None
-    
-    # FATAL ERRORS: These should NEVER be masked by UNAVAILABLE fallbacks
-    fatal_error_patterns = [
-        "syntax",
-        "invalid formula",
-        "no handler",
-        "routing",
-        "received non-date formula",
-        "received non-numeric formula", 
-        "received non-string formula",
-        "division by zero",
-        "invalid duration",
-    ]
-    
-    error_str = str(error).lower()
-    is_fatal_error = any(pattern in error_str for pattern in fatal_error_patterns)
-    
-    if is_fatal_error:
-        # Fatal errors should propagate, not be masked by fallbacks
-        _LOGGER.error("FATAL ERROR in computed variable '%s': %s - This should NOT be masked by UNAVAILABLE fallbacks", var_name, error)
-        return None  # Let the error propagate as fatal
-    
-    # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN fallbacks
-    if "unavailable" in error_str or "not defined" in error_str:
-        handler_formula = computed_var.exception_handler.unavailable
-    elif "unknown" in error_str:
-        handler_formula = computed_var.exception_handler.unknown
-    else:
-        # For other non-fatal errors, try unavailable handler first, then unknown
-        handler_formula = computed_var.exception_handler.unavailable or computed_var.exception_handler.unknown
-
-    if not handler_formula:
-        return None
-
-    try:
-        # Use the same compilation cache for exception handler formulas
-        compiled_handler = _COMPUTED_VARIABLE_COMPILATION_CACHE.get_compiled_formula(handler_formula)
-
-        # Extract values from ReferenceValue objects for SimpleEval evaluation
-        simpleeval_context = _extract_values_for_simpleeval(eval_context)
-        result = compiled_handler.evaluate(simpleeval_context, numeric_only=False)
-        _LOGGER.debug("Resolved computed variable %s using exception handler: %s", var_name, result)
-
-        # Convert numeric strings to numbers for consistency
-        if isinstance(result, str):
-            return convert_string_to_number_if_possible(result)
-
-        return result
-    except Exception as handler_err:
-        _LOGGER.debug("Exception handler for variable %s also failed: %s", var_name, handler_err)
-        return None
+# CLEAN SLATE: Removed exception handler fallback logic - deterministic system should not fallback to 0
 
 
 def _analyze_computed_variable_error(
@@ -404,7 +339,7 @@ def _resolve_computed_variables(
         made_progress = _process_computed_variables_iteration(remaining_vars, resolved_vars, eval_context, error_details_map)
 
         if not made_progress:
-            _handle_no_progress_error(remaining_vars, error_details_map)
+            _handle_no_progress_error(remaining_vars, error_details_map, eval_context)
 
     if remaining_vars:
         _handle_max_iterations_error(remaining_vars, max_iterations)
@@ -441,16 +376,38 @@ def _process_computed_variables_iteration(
                 resolved_vars.add(var_name)
                 made_progress = True
         except FatalEvaluationError:
-            # FATAL ERRORS: Let these bubble up immediately - they indicate critical system failures
-            # EmptyEvaluationContextError, MissingDependencyError should NEVER be masked by UNAVAILABLE fallbacks
+            # FATAL ERRORS: Programming errors should bubble up immediately
             raise
         except Exception as err:
-            # NON-FATAL ERRORS: Try to handle with UNAVAILABLE fallbacks
-            handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
-            if handled:
-                del remaining_vars[var_name]
-                resolved_vars.add(var_name)
-                made_progress = True
+            # Check if this is a real evaluation error vs entity unavailable/unknown
+            error_str = str(err).lower()
+            if any(pattern in error_str for pattern in ["unavailable", "unknown", "not found"]):
+                # Entity state issues - use YAML exception handlers
+                handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
+                if handled:
+                    del remaining_vars[var_name]
+                    resolved_vars.add(var_name)
+                    made_progress = True
+            else:
+                # Programming/formula errors - should not fallback to 0
+                _LOGGER.error(
+                    "COMPUTED_VAR_FAILURE: Programming/deterministic error in variable %s: %s - This should NOT use alternate state handlers",
+                    var_name,
+                    err,
+                )
+                # For now, still try alternate state handler but log as suspicious
+                handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
+                if handled:
+                    _LOGGER.warning(
+                        "SUSPICIOUS: Used alternate state handler for programming error in %s - this may mask a real bug",
+                        var_name,
+                    )
+                    del remaining_vars[var_name]
+                    resolved_vars.add(var_name)
+                    made_progress = True
+                else:
+                    # If alternate state handler also fails, bubble up the original error
+                    raise err
 
     return made_progress
 
@@ -466,51 +423,57 @@ def _try_resolve_computed_variable(
     Returns:
         True if successfully resolved, False otherwise
     """
-    # FATAL ERROR CHECK: Empty context during computed variable evaluation is a critical system error
-    if not eval_context:
-        raise EmptyEvaluationContextError(computed_var.formula, "computed variable")
-    
-    _LOGGER.error(
-        "COMPUTED_VAR_DEBUG: Evaluating %s formula '%s' with context: %s",
-        var_name,
-        computed_var.formula,
-        eval_context,
-    )
-    
-    # Use FormulaRouter to determine the appropriate handler (same as main formulas)
-    formula_router = FormulaRouter()
-    routing_result = formula_router.route_formula(computed_var.formula)
-    
-    # Create handler factory and get the appropriate handler
-    # Note: We'll pass None for hass since computed variables don't need HA integration
-    handler_factory = HandlerFactory(expression_evaluator=None, hass=None)
-    
-    # Get handler based on routing result
-    if routing_result.evaluator_type.value == "numeric":
-        handler = handler_factory.get_handler("numeric")
-    elif routing_result.evaluator_type.value == "string":
-        handler = handler_factory.get_handler("string")
-    elif routing_result.evaluator_type.value == "date":
-        handler = handler_factory.get_handler("date")
-    elif routing_result.evaluator_type.value == "boolean":
-        handler = handler_factory.get_handler("boolean")
-    elif routing_result.evaluator_type.value == "duration":
-        handler = handler_factory.get_handler("duration")
-    else:
-        # Fallback to numeric handler
-        handler = handler_factory.get_handler("numeric")
-    
-    if not handler:
-        raise ValueError(f"No handler available for computed variable formula: {computed_var.formula}")
-    
-    # Evaluate using the proper handler (which includes type analyzer integration)
-    result = handler.evaluate(computed_var.formula, eval_context)
-    _LOGGER.error("COMPUTED_VAR_DEBUG: Result for %s: %s (type: %s)", var_name, result, type(result).__name__)
+    _LOGGER.debug("Resolving computed variable %s with formula: %s", var_name, computed_var.formula)
 
-    # For computed variables, the formula itself is the "reference"
-    ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, computed_var.formula, result)
-    _LOGGER.debug("Resolved computed variable %s = %s", var_name, result)
-    return True
+    # Use Enhanced SimpleEval for computed variables to access math functions like minutes(), hours(), etc.
+    enhanced_helper = _get_enhanced_helper()
+
+    # Extract values from ReferenceValue objects for Enhanced SimpleEval evaluation
+    enhanced_context = _extract_values_for_simpleeval(eval_context)
+
+    try:
+        # Use Enhanced SimpleEval which has all the math functions (minutes, hours, etc.)
+        success, result = enhanced_helper.try_enhanced_eval(computed_var.formula, enhanced_context)
+
+        if success:
+            _LOGGER.debug("Computed variable %s resolved to: %s", var_name, result)
+
+            # Apply the same result processing as main formulas
+            result = EvaluatorHelpers.process_evaluation_result(result)
+
+            # Store the result in the evaluation context
+            ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, computed_var.formula, result)
+            return True
+
+        # Enhanced SimpleEval failed - result contains the exception
+        _LOGGER.debug("Computed variable %s failed Enhanced SimpleEval: %s", var_name, result)
+
+        # Try to extract undefined variable names from the error for better error messages
+        if result is not None:
+            error_str = str(result)
+            # Look for SimpleEval NameNotDefined patterns like "'undefined1' is not defined"
+            name_match = re.search(r"'([^']+)' is not defined", error_str)
+            if name_match:
+                undefined_var = name_match.group(1)
+                _LOGGER.debug("Computed variable %s references undefined variable: %s", var_name, undefined_var)
+                # Store this information for later error reporting
+                # Use a separate tracking mechanism that doesn't interfere with ContextValue typing
+                if "_undefined_variables" not in eval_context:
+                    # We need to work around the ContextValue typing constraint
+                    # by storing the set as a string temporarily, then converting back
+                    eval_context["_undefined_variables"] = f"SET:{undefined_var}"
+                else:
+                    existing = eval_context["_undefined_variables"]
+                    if isinstance(existing, str) and existing.startswith("SET:"):
+                        vars_list = existing[4:].split(",") if existing != "SET:" else []
+                        vars_list.append(undefined_var)
+                        eval_context["_undefined_variables"] = f"SET:{','.join(vars_list)}"
+
+        return False
+
+    except Exception as err:
+        _LOGGER.debug("Computed variable %s failed to resolve: %s", var_name, err)
+        return False
 
 
 def _try_handle_computed_variable_error(
@@ -520,21 +483,23 @@ def _try_handle_computed_variable_error(
     error_details_map: dict[str, dict[str, Any]],
     err: Exception,
 ) -> bool:
-    """Try to handle a computed variable error using exception handler.
+    """Try to handle a computed variable error using alternate state handler.
 
     Returns:
         True if error was handled successfully, False otherwise
     """
-    # Try exception handler before giving up
-    exception_result = _try_exception_handler(var_name, computed_var, eval_context, err)
+    # Try alternate state handler before giving up
+    alternate_state_result = _try_alternate_state_handler(var_name, computed_var, eval_context, err)
 
-    if exception_result is not None:
-        # Exception handler succeeded - use its result
-        ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, computed_var.formula, exception_result)
-        _LOGGER.debug("Resolved computed variable %s using exception handler = %s", var_name, exception_result)
+    if alternate_state_result is not None:
+        # Alternate state handler succeeded - use its result
+        ReferenceValueManager.set_variable_with_reference_value(
+            eval_context, var_name, computed_var.formula, alternate_state_result
+        )
+        _LOGGER.debug("Resolved computed variable %s using alternate state handler = %s", var_name, alternate_state_result)
         return True
 
-    # Exception handler failed or not available - provide detailed error context
+    # Alternate state handler failed or not available - provide detailed error context
     error_details = _analyze_computed_variable_error(var_name, computed_var.formula, eval_context, err)
     _LOGGER.debug("Could not resolve computed variable %s: %s", var_name, error_details["summary"])
 
@@ -543,12 +508,92 @@ def _try_handle_computed_variable_error(
     return False
 
 
+def _try_alternate_state_handler(
+    var_name: str, computed_var: ComputedVariable, eval_context: dict[str, ContextValue], error: Exception
+) -> bool | str | float | int | None:
+    """Try to resolve a computed variable using its alternate state handler.
+
+    Args:
+        var_name: Name of the computed variable that failed
+        computed_var: The ComputedVariable object with potential alternate state handler
+        eval_context: Current evaluation context
+        error: The exception that occurred during main formula evaluation
+
+    Returns:
+        Resolved value from alternate state handler, or None if no handler or handler failed
+    """
+    if not computed_var.alternate_state_handler:
+        return None
+
+    # Determine which alternate state handler to use based on error type
+    handler_formula = None
+
+    # FATAL ERRORS: These should NEVER be masked by UNAVAILABLE fallbacks
+    fatal_error_patterns = [
+        "syntax",
+        "invalid formula",
+        "no handler",
+        "routing",
+        "received non-date formula",
+        "received non-numeric formula",
+        "received non-string formula",
+        "division by zero",
+        "invalid duration",
+    ]
+
+    error_str = str(error).lower()
+    is_fatal_error = any(pattern in error_str for pattern in fatal_error_patterns)
+
+    if is_fatal_error:
+        # Fatal errors should propagate, not be masked by fallbacks
+        _LOGGER.error(
+            "FATAL ERROR in computed variable '%s': %s - This should NOT be masked by UNAVAILABLE fallbacks", var_name, error
+        )
+        return None  # Let the error propagate as fatal
+
+    # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN fallbacks
+    if "unavailable" in error_str or "not defined" in error_str:
+        handler_formula = computed_var.alternate_state_handler.unavailable
+    elif "unknown" in error_str:
+        handler_formula = computed_var.alternate_state_handler.unknown
+    else:
+        # For other non-fatal errors, try unavailable handler first, then unknown
+        handler_formula = computed_var.alternate_state_handler.unavailable or computed_var.alternate_state_handler.unknown
+
+    if not handler_formula:
+        return None
+
+    try:
+        # Use Enhanced SimpleEval for alternate state handlers too
+        enhanced_helper = _get_enhanced_helper()
+
+        # Extract values from ReferenceValue objects for Enhanced SimpleEval evaluation
+        enhanced_context = _extract_values_for_simpleeval(eval_context)
+
+        success, result = enhanced_helper.try_enhanced_eval(handler_formula, enhanced_context)
+
+        if success:
+            _LOGGER.debug("Resolved computed variable %s using alternate state handler: %s", var_name, result)
+            # Apply the same result processing as main formulas
+            return EvaluatorHelpers.process_evaluation_result(result)
+
+        _LOGGER.debug("Alternate state handler Enhanced SimpleEval failed for variable %s: %s", var_name, result)
+        return None
+
+    except Exception as handler_err:
+        _LOGGER.debug("Alternate state handler for variable %s also failed: %s", var_name, handler_err)
+        return None
+
+
 def _handle_no_progress_error(
-    remaining_vars: dict[str, ComputedVariable], error_details_map: dict[str, dict[str, Any]]
+    remaining_vars: dict[str, ComputedVariable],
+    error_details_map: dict[str, dict[str, Any]],
+    eval_context: dict[str, ContextValue],
 ) -> None:
     """Handle the case where no progress was made in computed variable resolution."""
     # No progress made - provide detailed error analysis for each failed variable
     failed_var_details: list[dict[str, Any]] = []
+
     for var_name, computed_var in remaining_vars.items():
         stored_error_details: dict[str, Any] | None = error_details_map.get(var_name)
         if stored_error_details is not None:
@@ -569,9 +614,27 @@ def _handle_no_progress_error(
     for details in failed_var_details:
         error_messages.append(f"• {details['variable_name']}: {details['suggestion']}")
 
-    raise MissingDependencyError(
-        f"Could not resolve computed variables {list(remaining_vars.keys())}:\n" + "\n".join(error_messages)
-    )
+    # Include specific undefined variables that were referenced in formulas
+    undefined_vars_raw = eval_context.get("_undefined_variables")
+    undefined_vars: set[str] = set()
+    if undefined_vars_raw and isinstance(undefined_vars_raw, str) and undefined_vars_raw.startswith("SET:"):
+        vars_str = undefined_vars_raw[4:]
+        if vars_str:
+            undefined_vars = set(vars_str.split(","))
+
+    if undefined_vars:
+        undefined_list = sorted(undefined_vars)
+        error_msg = (
+            f"Could not resolve computed variables {list(remaining_vars.keys())}: Missing variables: {undefined_list}.\n"
+            + "\n".join(error_messages)
+        )
+    else:
+        error_msg = (
+            f"Could not resolve computed variables {list(remaining_vars.keys())}: Missing variables: {list(remaining_vars)}.\n"
+            + "\n".join(error_messages)
+        )
+
+    raise MissingDependencyError(error_msg)
 
 
 def _handle_max_iterations_error(remaining_vars: dict[str, ComputedVariable], max_iterations: int) -> None:

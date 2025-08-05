@@ -35,6 +35,7 @@ class ContextBuildingPhase:
         self._data_provider_callback: DataProviderCallback | None = None
         self._dependency_handler: Any = None
         self._sensor_to_backing_mapping: dict[str, str] = {}
+        self._global_settings: dict[str, Any] | None = None
 
     def set_evaluator_dependencies(
         self,
@@ -48,6 +49,18 @@ class ContextBuildingPhase:
         self._data_provider_callback = data_provider_callback
         self._dependency_handler = dependency_handler
         self._sensor_to_backing_mapping = sensor_to_backing_mapping
+
+    def set_global_settings(self, global_settings: dict[str, Any] | None) -> None:
+        """Set global settings to make global variables available during context building.
+
+        This ensures that global variables are available when computed variables are
+        evaluated, fixing the empty context issue.
+        """
+        self._global_settings = global_settings
+        _LOGGER.debug(
+            "Context building phase: set global settings with %d variables",
+            len(global_settings.get("variables", {})) if global_settings else 0,
+        )
 
     def build_evaluation_context(
         self,
@@ -67,6 +80,10 @@ class ContextBuildingPhase:
 
         # Add context variables first (highest priority)
         self._add_context_variables(eval_context, context)
+
+        # RUNTIME FIX: Add global variables BEFORE resolving computed variables
+        # This ensures global variables are available when computed variables are evaluated
+        self._add_global_variables_to_context(eval_context)
 
         # Resolve entity dependencies
         self._resolve_entity_dependencies(eval_context, dependencies, resolver_factory)
@@ -127,6 +144,33 @@ class ContextBuildingPhase:
                         raise TypeError(
                             f"Raw value found in context: {key}={value}. Context should only contain ReferenceValue objects."
                         )
+
+    def _add_global_variables_to_context(self, eval_context: dict[str, ContextValue]) -> None:
+        """Add global variables to the evaluation context before computed variable resolution.
+
+        This is critical for fixing the empty context issue - global variables must be
+        available BEFORE computed variables are evaluated.
+        """
+        if not self._global_settings:
+            _LOGGER.debug("Context building: No global settings available")
+            return
+
+        global_vars = self._global_settings.get("variables", {})
+        if not global_vars:
+            _LOGGER.debug("Context building: No global variables to add")
+            return
+
+        for var_name, var_value in global_vars.items():
+            # Store global variable as ReferenceValue with original value
+            # Let the handler/type analyzer system handle conversion during evaluation
+            ReferenceValueManager.set_variable_with_reference_value(
+                eval_context, var_name, f"global_variable:{var_name}", var_value
+            )
+            _LOGGER.debug("Context building: Added global variable '%s' = %s", var_name, var_value)
+
+        _LOGGER.info(
+            "✅ RUNTIME FIX: Added %d global variables to context before computed variable evaluation", len(global_vars)
+        )
 
     def _resolve_entity_dependencies(
         self, eval_context: dict[str, ContextValue], dependencies: set[str], resolver_factory: VariableResolverFactory

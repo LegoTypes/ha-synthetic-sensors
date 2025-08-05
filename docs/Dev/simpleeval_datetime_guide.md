@@ -168,7 +168,7 @@ These functions are specifically designed for integration with entity metadata a
 ```python
 def minutes_between(start_datetime, end_datetime):
     """Calculate minutes between two datetime objects.
-    
+
     Designed for metadata formulas like:
     minutes_between(metadata(state, 'last_changed'), now())
     """
@@ -178,7 +178,7 @@ def minutes_between(start_datetime, end_datetime):
 
 def hours_between(start_datetime, end_datetime):
     """Calculate hours between two datetime objects.
-    
+
     Designed for metadata formulas like:
     hours_between(metadata(state, 'last_updated'), now())
     """
@@ -188,7 +188,7 @@ def hours_between(start_datetime, end_datetime):
 
 def seconds_between(start_datetime, end_datetime):
     """Calculate seconds between two datetime objects.
-    
+
     Designed for metadata formulas like:
     seconds_between(metadata(state, 'last_changed'), now())
     """
@@ -491,49 +491,49 @@ def create_secure_datetime_evaluator(allow_current_time=True, max_year=2100):
 ```python
 def create_ha_synthetic_evaluator():
     """Create enhanced SimpleEval optimized for HA synthetic sensor metadata integration."""
-    
+
     functions = DEFAULT_FUNCTIONS.copy()
     functions.update({
         # Core datetime constructors
         'datetime': datetime,
         'date': date,
         'timedelta': timedelta,
-        
+
         # Current time functions (essential for metadata calculations)
         'now': datetime.now,
         'today': date.today,
-        
+
         # Duration creation (replaces custom Duration objects)
         'days': lambda n: timedelta(days=n),
         'hours': lambda n: timedelta(hours=n),
         'minutes': lambda n: timedelta(minutes=n),
         'seconds': lambda n: timedelta(seconds=n),
         'weeks': lambda n: timedelta(weeks=n),
-        
+
         # Metadata integration functions (NEW - essential for metadata access)
         'minutes_between': minutes_between,
         'hours_between': hours_between,
         'seconds_between': seconds_between,
         'days_between': days_between,
-        
+
         # Business logic functions
         'add_business_days': add_business_days,
         'is_business_day': is_business_day,
         'is_weekend': is_weekend,
-        
+
         # Formatting functions
         'format_date': format_date,
         'format_friendly': format_friendly,
         'format_iso': format_iso,
     })
-    
+
     # Critical: Allow access to timedelta methods for SimpleEval compatibility
     allowed_attrs = {
         datetime: {'year', 'month', 'day', 'hour', 'minute', 'second', 'weekday'},
         date: {'year', 'month', 'day', 'weekday'},
         timedelta: {'days', 'seconds', 'total_seconds'},  # Essential for .total_seconds()
     }
-    
+
     return SimpleEval(functions=functions, allowed_attrs=allowed_attrs)
 
 # Example usage with metadata integration
@@ -767,15 +767,18 @@ simpleeval's security benefits through controlled function and attribute access.
 For HA synthetic sensor metadata integration, these functions are **required**:
 
 **Core Functions**:
+
 - `now()`, `today()` - Current time access
 - `minutes_between()`, `hours_between()`, `days_between()` - Metadata calculations
 - `format_friendly()`, `format_date()` - Human-readable output
 
 **Duration Functions**:
+
 - `minutes()`, `hours()`, `days()` - Create timedelta objects (replacing custom Duration)
 - Must return Python `timedelta` objects for SimpleEval `allowed_attrs` compatibility
 
 **Key Implementation Points**:
+
 - All datetime functions must work with Python `datetime`/`timedelta` objects
 - No method calls like `.total_seconds()` in formulas - use calculation functions instead
 - MetadataHandler returns raw `datetime` objects for function consumption

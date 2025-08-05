@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
-from .config_models import ComputedVariable, Config, ExceptionHandler, FormulaConfig, SensorConfig
+from .config_models import AlternateStateHandler, ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .config_yaml_converter import ConfigYamlConverter
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector
@@ -373,14 +373,14 @@ class ConfigManager:
 
         return sensor
 
-    def _parse_exception_handler(self, handler_data: dict[str, Any]) -> ExceptionHandler | None:
+    def _parse_alternate_state_handler(self, handler_data: dict[str, Any]) -> AlternateStateHandler | None:
         """Parse exception handler from YAML data.
 
         Args:
             handler_data: Dictionary containing UNAVAILABLE and/or UNKNOWN keys
 
         Returns:
-            ExceptionHandler object or None if no handlers found
+            AlternateStateHandler object or None if no handlers found
         """
         unavailable_handler = handler_data.get("UNAVAILABLE")
         unknown_handler = handler_data.get("UNKNOWN")
@@ -388,7 +388,7 @@ class ConfigManager:
         if not unavailable_handler and not unknown_handler:
             return None
 
-        return ExceptionHandler(unavailable=unavailable_handler, unknown=unknown_handler)
+        return AlternateStateHandler(unavailable=unavailable_handler, unknown=unknown_handler)
 
     def _parse_variables(self, variables_data: dict[str, Any]) -> dict[str, str | int | float | ComputedVariable]:
         """Parse variables dictionary, handling computed variables with formula key and exception handlers.
@@ -411,14 +411,14 @@ class ConfigManager:
                         raise ValueError(f"Variable '{var_name}' has empty formula expression")
 
                     # Parse exception handler if present
-                    exception_handler = self._parse_exception_handler(var_value)
+                    alternate_state_handler = self._parse_alternate_state_handler(var_value)
 
                     # Create ComputedVariable object
                     # Note: Dependencies will be resolved during context building phase
                     parsed_variables[var_name] = ComputedVariable(
                         formula=str(formula_expr).strip(),
                         dependencies=set(),  # Will be populated during dependency resolution
-                        exception_handler=exception_handler,
+                        alternate_state_handler=alternate_state_handler,
                     )
                 elif "UNAVAILABLE" in var_value or "UNKNOWN" in var_value:
                     # This appears to be a simple variable with exception handlers
@@ -481,8 +481,8 @@ class ConfigManager:
                 # Handle other types by converting to string
                 attributes[attr_name] = str(attr_config)
 
-        # Parse formula-level exception handler if present
-        formula_exception_handler = self._parse_exception_handler(cast(dict[str, Any], sensor_data))
+        # Parse formula-level alternate state handler if present
+        formula_alternate_state_handler = self._parse_alternate_state_handler(cast(dict[str, Any], sensor_data))
 
         return FormulaConfig(
             id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
@@ -491,7 +491,7 @@ class ConfigManager:
             attributes=attributes,
             variables=variables,
             metadata=sensor_data.get("metadata", {}),
-            exception_handler=formula_exception_handler,
+            alternate_state_handler=formula_alternate_state_handler,
         )
 
     def _parse_attribute_formula(
@@ -551,8 +551,8 @@ class ConfigManager:
         # Entity IDs in attribute formulas will be resolved directly during evaluation
         # Global and parent variables will be inherited during evaluation phase
 
-        # Parse attribute-level exception handler if present
-        attr_exception_handler = self._parse_exception_handler(cast(dict[str, Any], attr_config))
+        # Parse attribute-level alternate state handler if present
+        attr_alternate_state_handler = self._parse_alternate_state_handler(cast(dict[str, Any], attr_config))
 
         return FormulaConfig(
             id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
@@ -561,7 +561,7 @@ class ConfigManager:
             attributes={},
             variables=formula_variables,
             metadata=attr_config.get("metadata", {}),
-            exception_handler=attr_exception_handler,
+            alternate_state_handler=attr_alternate_state_handler,
         )
 
     async def async_reload_config(self) -> Config:
