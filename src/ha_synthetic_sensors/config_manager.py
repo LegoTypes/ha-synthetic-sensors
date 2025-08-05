@@ -358,7 +358,7 @@ class ConfigManager:
         sensor.metadata = sensor_data.get("metadata", {})
 
         # Parse main formula (required)
-        formula = self._parse_single_formula(sensor_key, sensor_data)
+        formula = self._parse_single_formula(sensor_key, sensor_data, global_settings)
         sensor.formulas.append(formula)
 
         # Parse calculated attributes if present - only create formula entries for attributes with explicit formula structure
@@ -437,12 +437,15 @@ class ConfigManager:
 
         return parsed_variables
 
-    def _parse_single_formula(self, sensor_key: str, sensor_data: SensorConfigDict) -> FormulaConfig:
+    def _parse_single_formula(
+        self, sensor_key: str, sensor_data: SensorConfigDict, global_settings: GlobalSettingsDict | None = None
+    ) -> FormulaConfig:
         """Parse a single formula sensor configuration (v1.0 format).
 
         Args:
             sensor_key: Sensor key (used as base for formula ID)
             sensor_data: Sensor configuration dictionary
+            global_settings: Global settings containing variables
 
         Returns:
             FormulaConfig: Parsed formula configuration
@@ -455,7 +458,8 @@ class ConfigManager:
         variables = self._parse_variables(sensor_data.get("variables", {}))
 
         # Validate computed variable references
-        validation_errors = validate_computed_variable_references(variables, sensor_key)
+        global_variables = (global_settings or {}).get("variables", {})
+        validation_errors = validate_computed_variable_references(variables, sensor_key, global_variables)
         if validation_errors:
             error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
             self._logger.error(error_msg)
@@ -534,7 +538,10 @@ class ConfigManager:
         formula_variables = self._parse_variables(attr_variables if isinstance(attr_variables, dict) else {})
 
         # Validate computed variable references in attribute variables
-        validation_errors = validate_computed_variable_references(formula_variables, f"{sensor_key}.{attr_name}")
+        global_variables = (global_settings or {}).get("variables", {})
+        validation_errors = validate_computed_variable_references(
+            formula_variables, f"{sensor_key}.{attr_name}", global_variables
+        )
         if validation_errors:
             error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
             self._logger.error(error_msg)

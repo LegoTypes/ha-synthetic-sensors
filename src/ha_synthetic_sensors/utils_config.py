@@ -9,7 +9,9 @@ import logging
 from typing import Any
 
 from .config_models import ComputedVariable, FormulaConfig
-from .exceptions import MissingDependencyError
+from .exceptions import EmptyEvaluationContextError, FatalEvaluationError, MissingDependencyError
+from .formula_router import FormulaRouter
+from .evaluator_handlers.handler_factory import HandlerFactory
 from .formula_compilation_cache import FormulaCompilationCache
 from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
 from .reference_value_manager import ReferenceValueManager
@@ -172,12 +174,35 @@ def _try_exception_handler(
 
     # Determine which exception handler to use based on error type
     handler_formula = None
-    if "unavailable" in str(error).lower() or "not defined" in str(error).lower():
+    
+    # FATAL ERRORS: These should NEVER be masked by UNAVAILABLE fallbacks
+    fatal_error_patterns = [
+        "syntax",
+        "invalid formula",
+        "no handler",
+        "routing",
+        "received non-date formula",
+        "received non-numeric formula", 
+        "received non-string formula",
+        "division by zero",
+        "invalid duration",
+    ]
+    
+    error_str = str(error).lower()
+    is_fatal_error = any(pattern in error_str for pattern in fatal_error_patterns)
+    
+    if is_fatal_error:
+        # Fatal errors should propagate, not be masked by fallbacks
+        _LOGGER.error("FATAL ERROR in computed variable '%s': %s - This should NOT be masked by UNAVAILABLE fallbacks", var_name, error)
+        return None  # Let the error propagate as fatal
+    
+    # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN fallbacks
+    if "unavailable" in error_str or "not defined" in error_str:
         handler_formula = computed_var.exception_handler.unavailable
-    elif "unknown" in str(error).lower():
+    elif "unknown" in error_str:
         handler_formula = computed_var.exception_handler.unknown
     else:
-        # For general errors, try unavailable handler first, then unknown
+        # For other non-fatal errors, try unavailable handler first, then unknown
         handler_formula = computed_var.exception_handler.unavailable or computed_var.exception_handler.unknown
 
     if not handler_formula:
@@ -415,7 +440,12 @@ def _process_computed_variables_iteration(
                 del remaining_vars[var_name]
                 resolved_vars.add(var_name)
                 made_progress = True
+        except FatalEvaluationError:
+            # FATAL ERRORS: Let these bubble up immediately - they indicate critical system failures
+            # EmptyEvaluationContextError, MissingDependencyError should NEVER be masked by UNAVAILABLE fallbacks
+            raise
         except Exception as err:
+            # NON-FATAL ERRORS: Try to handle with UNAVAILABLE fallbacks
             handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
             if handled:
                 del remaining_vars[var_name]
@@ -428,23 +458,53 @@ def _process_computed_variables_iteration(
 def _try_resolve_computed_variable(
     var_name: str, computed_var: ComputedVariable, eval_context: dict[str, ContextValue]
 ) -> bool:
-    """Try to resolve a single computed variable.
+    """Try to resolve a single computed variable using the proper FormulaRouter and handler system.
+
+    This ensures computed variables go through the same evaluation pathway as main formulas,
+    including proper type conversion via the type analyzer system.
 
     Returns:
         True if successfully resolved, False otherwise
     """
-    # Use the same compilation cache approach as main formulas
-    compiled_formula = _COMPUTED_VARIABLE_COMPILATION_CACHE.get_compiled_formula(computed_var.formula)
-
-    # Extract values from ReferenceValue objects for SimpleEval evaluation
-    simpleeval_context = _extract_values_for_simpleeval(eval_context)
+    # FATAL ERROR CHECK: Empty context during computed variable evaluation is a critical system error
+    if not eval_context:
+        raise EmptyEvaluationContextError(computed_var.formula, "computed variable")
+    
     _LOGGER.error(
         "COMPUTED_VAR_DEBUG: Evaluating %s formula '%s' with context: %s",
         var_name,
         computed_var.formula,
-        simpleeval_context,
+        eval_context,
     )
-    result = compiled_formula.evaluate(simpleeval_context, numeric_only=False)
+    
+    # Use FormulaRouter to determine the appropriate handler (same as main formulas)
+    formula_router = FormulaRouter()
+    routing_result = formula_router.route_formula(computed_var.formula)
+    
+    # Create handler factory and get the appropriate handler
+    # Note: We'll pass None for hass since computed variables don't need HA integration
+    handler_factory = HandlerFactory(expression_evaluator=None, hass=None)
+    
+    # Get handler based on routing result
+    if routing_result.evaluator_type.value == "numeric":
+        handler = handler_factory.get_handler("numeric")
+    elif routing_result.evaluator_type.value == "string":
+        handler = handler_factory.get_handler("string")
+    elif routing_result.evaluator_type.value == "date":
+        handler = handler_factory.get_handler("date")
+    elif routing_result.evaluator_type.value == "boolean":
+        handler = handler_factory.get_handler("boolean")
+    elif routing_result.evaluator_type.value == "duration":
+        handler = handler_factory.get_handler("duration")
+    else:
+        # Fallback to numeric handler
+        handler = handler_factory.get_handler("numeric")
+    
+    if not handler:
+        raise ValueError(f"No handler available for computed variable formula: {computed_var.formula}")
+    
+    # Evaluate using the proper handler (which includes type analyzer integration)
+    result = handler.evaluate(computed_var.formula, eval_context)
     _LOGGER.error("COMPUTED_VAR_DEBUG: Result for %s: %s (type: %s)", var_name, result, type(result).__name__)
 
     # For computed variables, the formula itself is the "reference"
