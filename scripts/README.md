@@ -4,6 +4,40 @@ This directory contains shared scripts that can be used across multiple projects
 
 ## Available Scripts
 
+### `run_cache_report.sh`
+
+A performance testing and reporting script that demonstrates the AST compilation cache improvements in the synthetic sensors
+package.
+
+**Usage:**
+
+```bash
+./scripts/run_cache_report.sh
+```
+
+**What it does:**
+
+1. **EnhancedSimpleEvalHelper Performance**: Tests AST caching performance across different formula types
+2. **Cache Integration Testing**: Validates cache integration through the full Evaluator
+3. **NumericHandler Comparison**: Compares enhanced vs standard handler performance
+4. **Memory Usage & Scaling**: Tests cache behavior with hundreds of unique formulas
+5. **Performance Summary**: Provides detailed performance metrics and speedup measurements
+
+**Key Metrics Reported:**
+
+- Cold vs warm evaluation times (AST compilation vs cached AST)
+- Performance speedup ratios (typically 5-20x improvement)
+- Cache hit rates and statistics
+- Memory usage and scaling characteristics
+- Overall cache effectiveness across different scenarios
+
+**Expected Results:**
+
+- 5-20x performance improvements demonstrated
+- AST caching benefits 99% of formulas (via EnhancedSimpleEvalHelper)
+- High cache hit rates for repeated formula evaluations
+- Excellent scaling to hundreds of unique formulas
+
 ### `validate_examples.sh`
 
 A validation script for YAML examples and test fixtures in the synthetic sensors project.

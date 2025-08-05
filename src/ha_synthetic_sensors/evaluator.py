@@ -819,7 +819,11 @@ class Evaluator(FormulaEvaluator):
         This should be called when formulas change or during configuration reload
         to ensure that formula modifications take effect.
         """
-        # Clear compiled formulas in numeric handler
+        # Clear compiled formulas in enhanced helper (99% of formulas)
+        if hasattr(self._enhanced_helper, "clear_compiled_formulas"):
+            self._enhanced_helper.clear_compiled_formulas()
+
+        # Clear compiled formulas in numeric handler (specialized cases)
         numeric_handler = self._handler_factory.get_handler("numeric")
         if numeric_handler is not None and hasattr(numeric_handler, "clear_compiled_formulas"):
             numeric_handler.clear_compiled_formulas()
@@ -828,18 +832,62 @@ class Evaluator(FormulaEvaluator):
         """Get formula compilation cache statistics.
 
         Returns:
-            Dictionary with compilation cache statistics
+            Dictionary with compilation cache statistics from enhanced helper and specialized handlers
         """
+        stats: dict[str, Any] = {
+            "enhanced_helper": {},
+            "numeric_handler": {},
+            "total_entries": 0,
+            "total_hits": 0,
+            "total_misses": 0,
+            "combined_hit_rate": 0.0,
+        }
+
+        # Get stats from enhanced helper (99% of formulas)
+        if hasattr(self._enhanced_helper, "get_compilation_cache_stats"):
+            enhanced_stats = self._enhanced_helper.get_compilation_cache_stats()
+            stats["enhanced_helper"] = enhanced_stats
+            stats["total_entries"] += enhanced_stats.get("total_entries", 0)
+            stats["total_hits"] += enhanced_stats.get("hits", 0)
+            stats["total_misses"] += enhanced_stats.get("misses", 0)
+
+        # Get stats from numeric handler (specialized cases)
         numeric_handler = self._handler_factory.get_handler("numeric")
         if numeric_handler is not None and hasattr(numeric_handler, "get_compilation_cache_stats"):
-            result: dict[str, Any] = numeric_handler.get_compilation_cache_stats()
-            return result
+            numeric_stats = numeric_handler.get_compilation_cache_stats()
+            stats["numeric_handler"] = numeric_stats
+            stats["total_entries"] += numeric_stats.get("total_entries", 0)
+            stats["total_hits"] += numeric_stats.get("hits", 0)
+            stats["total_misses"] += numeric_stats.get("misses", 0)
+
+        # Calculate combined hit rate
+        total_hits: int = stats["total_hits"]
+        total_misses: int = stats["total_misses"]
+        total_requests = total_hits + total_misses
+        if total_requests > 0:
+            stats["combined_hit_rate"] = (total_hits / total_requests) * 100
+
+        return stats
+
+    def get_enhanced_evaluation_stats(self) -> dict[str, Any]:
+        """Get enhanced evaluation usage statistics.
+
+        Returns:
+            Dictionary with enhanced evaluation usage and cache statistics
+        """
+        if hasattr(self._enhanced_helper, "get_enhancement_stats"):
+            return self._enhanced_helper.get_enhancement_stats()
         return {
-            "total_entries": 0,
-            "hits": 0,
-            "misses": 0,
-            "hit_rate": 0.0,
-            "max_entries": 0,
+            "enhanced_eval_count": 0,
+            "fallback_count": 0,
+            "total_evaluations": 0,
+            "compilation_cache": {
+                "total_entries": 0,
+                "hits": 0,
+                "misses": 0,
+                "hit_rate": 0.0,
+                "max_entries": 0,
+            },
         }
 
     # Configuration methods

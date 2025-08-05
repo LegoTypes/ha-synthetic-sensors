@@ -23,10 +23,23 @@ class TestEvaluatorCompilationCache:
         # Should return empty dict or stats dict
         assert isinstance(stats, dict)
 
-        # If numeric handler exists, should have cache stats
-        if stats:
-            expected_keys = {"total_entries", "hits", "misses", "hit_rate", "max_entries"}
-            assert all(key in stats for key in expected_keys)
+        # New structure should have these top-level keys
+        expected_top_level_keys = {
+            "enhanced_helper",
+            "numeric_handler",
+            "total_entries",
+            "total_hits",
+            "total_misses",
+            "combined_hit_rate",
+        }
+        assert all(key in stats for key in expected_top_level_keys)
+
+        # Each handler section should have cache stats
+        for handler_key in ["enhanced_helper", "numeric_handler"]:
+            handler_stats = stats[handler_key]
+            assert isinstance(handler_stats, dict)
+            expected_handler_keys = {"total_entries", "hits", "misses", "hit_rate", "max_entries"}
+            assert all(key in handler_stats for key in expected_handler_keys)
 
     def test_clear_compiled_formulas(self, evaluator):
         """Test clearing compiled formulas."""
@@ -35,8 +48,7 @@ class TestEvaluatorCompilationCache:
 
         # Verify cache is cleared
         stats = evaluator.get_compilation_cache_stats()
-        if stats:
-            assert stats["total_entries"] == 0
+        assert stats["total_entries"] == 0
 
     def test_formula_evaluation_with_compilation_cache(self, evaluator, mock_hass, mock_entity_registry, mock_states):
         """Test that formula compilation cache still works through NumericHandler."""
@@ -94,17 +106,15 @@ class TestEvaluatorCompilationCache:
 
         # Compilation cache should still have entries
         final_stats = evaluator.get_compilation_cache_stats()
-        if final_stats and initial_stats:
-            # Compilation cache should not have been cleared
-            assert final_stats["total_entries"] >= initial_stats["total_entries"]
+        # Compilation cache should not have been cleared
+        assert final_stats["total_entries"] >= initial_stats["total_entries"]
 
         # Clear compilation cache specifically
         evaluator.clear_compiled_formulas()
 
         # Now compilation cache should be empty
         cleared_stats = evaluator.get_compilation_cache_stats()
-        if cleared_stats:
-            assert cleared_stats["total_entries"] == 0
+        assert cleared_stats["total_entries"] == 0
 
     def test_different_formulas_cached_separately(self, evaluator, mock_hass):
         """Test that different formulas are cached as separate entries through NumericHandler."""

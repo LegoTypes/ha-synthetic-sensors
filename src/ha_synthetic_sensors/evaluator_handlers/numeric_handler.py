@@ -40,7 +40,7 @@ class NumericHandler(FormulaHandler):
             self._compilation_cache = FormulaCompilationCache(use_enhanced_functions=True)
         else:
             self._enhanced_helper = None
-            # Use legacy compilation cache
+            # Use standard compilation cache
             self._compilation_cache = FormulaCompilationCache(use_enhanced_functions=False)
 
         self._type_analyzer = TypeAnalyzer()
@@ -60,14 +60,14 @@ class NumericHandler(FormulaHandler):
         """
         NUMERIC FORMULA HANDLER: Process mathematical formulas using cached compiled expressions.
 
-        This method supports both enhanced evaluation (Phase 2) and legacy evaluation:
+        This method supports both enhanced evaluation (Phase 2) and standard evaluation:
 
         Enhanced Mode (use_enhanced_evaluation=True):
         - Tries enhanced SimpleEval first for fast-path evaluation
         - Supports duration arithmetic: minutes(5) / minutes(1) -> 5.0
-        - Falls back to legacy compilation cache if enhanced fails
+        - Falls back to standard compilation cache if enhanced fails
 
-        Legacy Mode (use_enhanced_evaluation=False):
+        Standard Mode (use_enhanced_evaluation=False):
         - Uses traditional compilation cache approach
         - Maintains full backward compatibility
 
@@ -99,17 +99,17 @@ class NumericHandler(FormulaHandler):
                         # This means we got a timedelta object, which NumericHandler shouldn't handle
                         # This should be routed to DurationHandler instead
                         _LOGGER.warning("Enhanced evaluation returned timedelta for NumericHandler: %s -> %s", formula, result)
-                        # Fall through to legacy evaluation which will fail and route correctly
+                        # Fall through to standard evaluation which will fail and route correctly
                     else:
                         # Enhanced evaluation returned non-numeric result - routing error
                         _LOGGER.warning(
                             "Enhanced evaluation routing error: %s -> %s (%s)", formula, result, type(result).__name__
                         )
-                        # Fall through to legacy evaluation
+                        # Fall through to standard evaluation
 
-                _LOGGER.debug("Enhanced evaluation FALLBACK to legacy for: %s", formula)
+                _LOGGER.debug("Enhanced evaluation FALLBACK to standard for: %s", formula)
 
-            # Legacy evaluation path (always available as fallback)
+            # Standard evaluation path (always available as fallback)
             compiled_formula = self._compilation_cache.get_compiled_formula(formula)
             result = compiled_formula.evaluate(numeric_context)
 

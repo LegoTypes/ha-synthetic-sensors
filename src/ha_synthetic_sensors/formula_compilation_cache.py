@@ -82,7 +82,7 @@ class FormulaCompilationCache:
         if use_enhanced_functions:
             self._math_functions = MathFunctions.get_all_functions()  # Enhanced with timedelta support
         else:
-            self._math_functions = MathFunctions.get_builtin_functions()  # Legacy string-based duration
+            self._math_functions = MathFunctions.get_builtin_functions()  # Standard string-based duration
 
         self._hits = 0
         self._misses = 0
