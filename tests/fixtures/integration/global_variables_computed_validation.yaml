@@ -1,0 +1,69 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_global_computed_validation" # Must match test
+  variables:
+    # Global variables from the SPAN use case that was failing
+    energy_grace_period_minutes: "30"
+    
+sensors:
+  # EXACT SPAN scenario from the fix document - this was failing before
+  span_main_meter_produced_energy:
+    name: "SPAN Main Meter Produced Energy"
+    formula: "state + 0"
+    variables:
+      # THE EXACT FORMULA that was causing validation failures
+      within_grace:
+        formula: "energy_grace_period_minutes > 25"
+        UNAVAILABLE: "false"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"
+      
+  # Test built-in functions that were not recognized before fix
+  builtin_functions_test:
+    name: "Built-in Functions Test" 
+    formula: "time_diff_minutes + hours_in_minutes + minutes(state)"
+    variables:
+      # Realistic duration function usage - converting time differences to numeric values
+      time_diff_minutes:
+        formula: "minutes(5) / minutes(1)"  # 5 minutes ÷ 1 minute = 5 (numeric)
+        UNAVAILABLE: "0"
+      hours_in_minutes:
+        formula: "hours(1) / minutes(1)"    # 1 hour ÷ 1 minute = 60 (numeric)
+        UNAVAILABLE: "0"
+    metadata:
+      unit_of_measurement: "min"
+      device_class: "duration"
+      
+  # Test global variables with math operations
+  global_math_operations:
+    name: "Global Variables Math Test"
+    formula: "calculated_threshold + bonus_points + state"
+    variables:
+      # Computed variable doing math with global variable
+      calculated_threshold:
+        formula: "energy_grace_period_minutes * 2"  # 30 * 2 = 60
+        UNAVAILABLE: "0"
+      # Computed variable with conditional using global
+      bonus_points:
+        formula: "energy_grace_period_minutes if energy_grace_period_minutes > 20 else 0"  # Should be 30
+        UNAVAILABLE: "0"
+    metadata:
+      unit_of_measurement: "points"
+      
+  # Test complex expression with globals and built-ins (simplified from original SPAN case)
+  complex_expression_test:
+    name: "Complex Expression Test"
+    formula: "grace_check + time_factor + state"
+    variables:
+      # Test global variable in conditional
+      grace_check:
+        formula: "1 if energy_grace_period_minutes > 25 else 0"  # Should be 1
+        UNAVAILABLE: "0"
+      # Test built-in function in math
+      time_factor:
+        formula: "minutes(2) + seconds(30)"  # Should be 2.5
+        UNAVAILABLE: "0"
+    metadata:
+      unit_of_measurement: "units"

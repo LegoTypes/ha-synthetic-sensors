@@ -169,6 +169,7 @@ async def async_setup_synthetic_sensors(
         add_entities_callback=async_add_entities,
         device_info=device_info,
         data_provider_callback=data_provider_callback,
+        device_identifier=device_identifier,
     )
 
     # Register backing entities if provided and non-empty
@@ -263,6 +264,7 @@ async def async_setup_synthetic_sensors_with_entities(
         add_entities_callback=async_add_entities,
         device_info=device_info,
         data_provider_callback=data_provider_callback,
+        device_identifier=device_identifier,
     )
 
     # Register backing entities and mappings

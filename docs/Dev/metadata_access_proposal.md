@@ -71,8 +71,10 @@ formula: "state.voltage * metadata(sensor.current, 'last_changed')"  # Mix attri
 
 ```yaml
 within_grace:
-  formula: "((now() - metadata(state, 'last_changed')) / 60) < grace_period_minutes"
+  formula: "time_diff_minutes < grace_period_minutes"
   variables:
+    time_diff_minutes:
+      formula: "minutes_between(metadata(state, 'last_changed'), now())"
     grace_period_minutes: 15
 ```
 
@@ -100,8 +102,8 @@ HA metadata will grow over time. Bracket notation accommodates expansion:
 
 **Current Metadata**:
 
-- `last_changed` - When state value changed
-- `last_updated` - When entity was updated
+- `last_changed` - When state value changed (datetime object for use with datetime functions)
+- `last_updated` - When entity was updated (datetime object for use with datetime functions)
 - `entity_id` - Full entity identifier
 - `domain` - Entity domain (sensor, switch, etc.)
 - `object_id` - Entity name part
@@ -127,28 +129,51 @@ HA metadata will grow over time. Bracket notation accommodates expansion:
 
 ### 1. Function Implementation
 
-Implement `metadata()` function using existing function infrastructure:
+Implement `metadata()` function as a specialized handler that returns datetime objects for use with enhanced SimpleEval datetime functions:
 
 ```python
-# Add to datetime function registry pattern
-def metadata(entity_ref: str, metadata_key: str) -> Any:
-    """Resolve entity metadata using HA state object."""
-    # Access entity.last_changed, entity.last_updated, etc.
-    hass_state = hass.states.get(entity_ref)
-    if hass_state:
-        return getattr(hass_state, metadata_key, None)
-    return None
+class MetadataHandler:
+    """Specialized handler for entity metadata access."""
+    
+    def evaluate(self, formula: str, context: dict[str, ReferenceValue]) -> Any:
+        """Handle metadata function calls with entity state resolution."""
+        entity_ref, metadata_key = self._parse_metadata_call(formula)
+        entity_value = self._resolve_entity_reference(entity_ref, context)
+        
+        if entity_value and hasattr(entity_value, 'hass_state'):
+            hass_state = entity_value.hass_state
+            
+            # Return raw datetime objects for use with enhanced SimpleEval datetime functions
+            # Enhanced SimpleEval has minutes_between(), hours_between(), etc.
+            if metadata_key in ('last_changed', 'last_updated'):
+                return getattr(hass_state, metadata_key, None)
+                
+            # Handle direct attribute access for other metadata
+            return getattr(hass_state, metadata_key, None)
+        return None
+        
+    def can_handle(self, formula: str) -> bool:
+        """Check if formula contains metadata function calls."""
+        return 'metadata(' in formula
 ```
 
-### 2. Validation Updates
+### 2. Enhanced SimpleEval Integration
 
-Update formula validation to recognize metadata function as valid:
+Metadata functions integrate with the enhanced SimpleEval routing system:
 
 ```python
-# Add metadata to allowed functions
-ALLOWED_FUNCTIONS = {
-    'now', 'date', 'metadata', ...
-}
+class EnhancedFormulaRouter:
+    """Router with fast-path detection for metadata calls."""
+    
+    def route_formula(self, formula: str) -> EvaluatorType:
+        """Ultra-fast routing: metadata detection + enhanced SimpleEval."""
+        
+        # Step 1: Ultra-fast metadata scan (1% of cases)
+        if 'metadata(' in formula:
+            return EvaluatorType.METADATA
+            
+        # Step 2: Enhanced SimpleEval handles 99% of everything else
+        return EvaluatorType.ENHANCED_SIMPLEEVAL
 
 def validate_metadata_function(self, entity_ref: str, metadata_key: str):
     """Validate that metadata key exists in HA entity model."""
@@ -216,12 +241,12 @@ other_sensor:
 
 ```yaml
 energy_sensor:
-  formula: "entity_id"
-  UNAVAILABLE: "if(within_grace, state, UNAVAILABLE)"
+  formula: "state if within_grace else 'unavailable'"
   variables:
     within_grace:
-      formula: "((now() - metadata(state, 'last_changed')) / 60) < grace_period_minutes"
-      UNAVAILABLE: "false"
+      formula: "time_diff_minutes < grace_period_minutes"
+    time_diff_minutes:
+      formula: "minutes_between(metadata(state, 'last_changed'), now())"
     grace_period_minutes: 15
 ```
 
@@ -229,7 +254,7 @@ energy_sensor:
 
 ```yaml
 dynamic_sensor:
-  formula: "if(metadata(state, 'domain') == 'sensor', state * 2, state)"
+  formula: "state * 2 if metadata(state, 'domain') == 'sensor' else state"
   attributes:
     source_entity:
       formula: "metadata(state, 'entity_id')"
@@ -241,10 +266,12 @@ dynamic_sensor:
 
 ```yaml
 validated_sensor:
-  formula: "if(data_is_fresh, state, 'stale')"
+  formula: "state if data_is_fresh else 'stale'"
   variables:
     data_is_fresh:
-      formula: "((now() - metadata(state, 'last_updated')) / 60) < max_age_minutes"
+      formula: "age_minutes < max_age_minutes"
+    age_minutes:
+      formula: "minutes_between(metadata(state, 'last_updated'), now())"
     max_age_minutes: 30
 ```
 
@@ -252,10 +279,50 @@ validated_sensor:
 
 ```yaml
 comparison_sensor:
-  formula: "if(temp_newer, sensor.temp1, sensor.temp2)"
+  formula: "sensor.temp1 if temp_newer else sensor.temp2"
   variables:
     temp_newer:
       formula: "metadata(sensor.temp1, 'last_changed') > metadata(sensor.temp2, 'last_changed')"
+```
+
+### 5. Complete Grace Period Example
+
+```yaml
+sensors:
+  power_with_grace:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: "state if is_fresh else 'stale'"
+    variables:
+      is_fresh:
+        formula: "minutes_since_update < grace_period"
+      minutes_since_update:
+        formula: "minutes_between(metadata(state, 'last_updated'), now())"
+      grace_period: 15
+    attributes:
+      last_update_time:
+        formula: "format_friendly(metadata(state, 'last_updated'))"
+      minutes_ago:
+        formula: "minutes_since_update"
+      status:
+        formula: "'fresh' if is_fresh else 'stale'"
+```
+
+### 6. Business Day Calculations
+
+```yaml
+sensors:
+  next_business_update:
+    formula: "days_between(today(), next_update)"
+    variables:
+      next_update:
+        formula: "add_business_days(metadata(state, 'last_changed'), 5)"
+      is_business_day_now:
+        formula: "is_business_day(today())"
+    attributes:
+      update_date:
+        formula: "format_date(next_update)"
+      business_day_check:
+        formula: "is_business_day_now"
 ```
 
 ## Backward Compatibility
@@ -321,15 +388,20 @@ patterns.
 
 Function-style metadata access provides:
 
-✅ **Collision-free** access to HA entity metadata ✅ **Future-proof** extensible syntax ✅ **Clear semantics**
-distinguishing metadata from attributes ✅ **Backward compatibility** with existing formulas ✅ **Implementation simplicity**
-leveraging existing function infrastructure ✅ **Consistent patterns** with datetime functions like `now()`
+✅ **Collision-free** access to HA entity metadata
+✅ **Future-proof** extensible syntax  
+✅ **Clear semantics** distinguishing metadata from attributes
+✅ **Backward compatibility** with existing formulas
+✅ **Enhanced SimpleEval integration** with ultra-fast routing
+✅ **Consistent patterns** with the enhanced handler architecture
 
-This enhancement enables powerful new use cases like grace period logic while maintaining the simplicity and clarity of the
-current synthetic sensor system.
+This enhancement enables powerful new use cases like grace period logic while maintaining the simplicity and performance
+of the enhanced synthetic sensor system. The metadata function integrates seamlessly with enhanced SimpleEval's native
+conditional syntax (`x if condition else y`) and datetime operations.
 
 **Key Implementation Notes:**
 
 - Sensor key self-references must be converted to `state` token
-- Cross-sensor entity_id references must be updated after HA registration
+- Cross-sensor entity_id references must be updated after HA registration  
+- Metadata handler integrates with enhanced SimpleEval routing for optimal performance
 - Function approach allows faster delivery with lower implementation risk
