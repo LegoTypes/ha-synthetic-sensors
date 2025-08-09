@@ -23,10 +23,23 @@ class TestEvaluatorCompilationCache:
         # Should return empty dict or stats dict
         assert isinstance(stats, dict)
 
-        # If numeric handler exists, should have cache stats
-        if stats:
-            expected_keys = {"total_entries", "hits", "misses", "hit_rate", "max_entries"}
-            assert all(key in stats for key in expected_keys)
+        # New structure should have these top-level keys
+        expected_top_level_keys = {
+            "enhanced_helper",
+            "numeric_handler",
+            "total_entries",
+            "total_hits",
+            "total_misses",
+            "combined_hit_rate",
+        }
+        assert all(key in stats for key in expected_top_level_keys)
+
+        # Each handler section should have cache stats
+        for handler_key in ["enhanced_helper", "numeric_handler"]:
+            handler_stats = stats[handler_key]
+            assert isinstance(handler_stats, dict)
+            expected_handler_keys = {"total_entries", "hits", "misses", "hit_rate", "max_entries"}
+            assert all(key in handler_stats for key in expected_handler_keys)
 
     def test_clear_compiled_formulas(self, evaluator):
         """Test clearing compiled formulas."""
@@ -35,43 +48,40 @@ class TestEvaluatorCompilationCache:
 
         # Verify cache is cleared
         stats = evaluator.get_compilation_cache_stats()
-        if stats:
-            assert stats["total_entries"] == 0
+        assert stats["total_entries"] == 0
 
     def test_formula_evaluation_with_compilation_cache(self, evaluator, mock_hass, mock_entity_registry, mock_states):
-        """Test that formula evaluation uses compilation cache."""
+        """Test that formula compilation cache still works through NumericHandler."""
 
-        # Set up mock data provider
-        def mock_data_provider(entity_id):
-            return {"value": 10.0, "exists": True}
+        # Test the compilation cache functionality directly through NumericHandler
+        from ha_synthetic_sensors.evaluator_handlers.numeric_handler import NumericHandler
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-        evaluator._data_provider_callback = mock_data_provider
+        # Create a NumericHandler with enhanced evaluation (uses compilation cache)
+        handler = NumericHandler(use_enhanced_evaluation=False)
 
-        # Create a formula config
-        formula_config = FormulaConfig(id="test_formula", formula="a * 2 + b", variables={"a": 5, "b": 3})
+        # Create test context with ReferenceValue objects
+        context = {"power": ReferenceValue("power", 1500.0), "rate": ReferenceValue("rate", 0.12)}
 
-        # Evaluate the same formula multiple times
-        context = {"a": 5, "b": 3}
+        # Test the same formula multiple times to exercise caching
+        formula = "power * rate / 1000"
 
-        result1 = evaluator.evaluate_formula(formula_config, context)
-        result2 = evaluator.evaluate_formula(formula_config, context)
-        result3 = evaluator.evaluate_formula(formula_config, context)
+        result1 = handler.evaluate(formula, context)
+        result2 = handler.evaluate(formula, context)
+        result3 = handler.evaluate(formula, context)
 
-        # All results should have the same value, but cache indicators may differ
-        assert result1["value"] == result2["value"] == result3["value"] == 13.0
-        assert result1["success"] == result2["success"] == result3["success"] == True
+        # All results should be the same
+        expected_result = 1500.0 * 0.12 / 1000  # 0.18
+        assert abs(result1 - expected_result) < 0.001
+        assert abs(result2 - expected_result) < 0.001
+        assert abs(result3 - expected_result) < 0.001
 
-        # Second and third evaluations may be cached (depending on cache state)
-        # This is expected behavior per the Cache Behavior documentation
+        # Get compilation cache statistics from the handler
+        cache_stats = handler._compilation_cache.get_statistics()
 
-        # Check cache statistics show usage
-        stats = evaluator.get_compilation_cache_stats()
-        if stats:
-            # Should have at least one cached formula
-            assert stats["total_entries"] >= 1
-            # May have cache hits, but depends on cache state and implementation
-            # The key test is that formulas are compiled and cached
-            assert stats["total_entries"] + stats["hits"] + stats["misses"] > 0
+        # Should have at least one cached formula
+        assert cache_stats["total_entries"] >= 1
+        assert cache_stats["total_entries"] + cache_stats["hits"] + cache_stats["misses"] > 0
 
     def test_compilation_cache_survives_result_cache_clear(self, evaluator):
         """Test that formula compilation cache is separate from result cache."""
@@ -96,40 +106,41 @@ class TestEvaluatorCompilationCache:
 
         # Compilation cache should still have entries
         final_stats = evaluator.get_compilation_cache_stats()
-        if final_stats and initial_stats:
-            # Compilation cache should not have been cleared
-            assert final_stats["total_entries"] >= initial_stats["total_entries"]
+        # Compilation cache should not have been cleared
+        assert final_stats["total_entries"] >= initial_stats["total_entries"]
 
         # Clear compilation cache specifically
         evaluator.clear_compiled_formulas()
 
         # Now compilation cache should be empty
         cleared_stats = evaluator.get_compilation_cache_stats()
-        if cleared_stats:
-            assert cleared_stats["total_entries"] == 0
+        assert cleared_stats["total_entries"] == 0
 
-    def test_different_formulas_cached_separately(self, evaluator):
-        """Test that different formulas are cached as separate entries."""
+    def test_different_formulas_cached_separately(self, evaluator, mock_hass):
+        """Test that different formulas are cached as separate entries through NumericHandler."""
 
-        # Set up mock data provider
-        def mock_data_provider(entity_id):
-            return {"value": 1.0, "exists": True}
+        # Test different formulas through NumericHandler to exercise compilation cache
+        from ha_synthetic_sensors.evaluator_handlers.numeric_handler import NumericHandler
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-        evaluator._data_provider_callback = mock_data_provider
+        # Create a NumericHandler with enhanced evaluation (uses compilation cache)
+        handler = NumericHandler(use_enhanced_evaluation=False)
 
-        # Create different formula configs
-        formula1 = FormulaConfig(id="formula1", formula="a + b", variables={"a": 1, "b": 2})
-        formula2 = FormulaConfig(id="formula2", formula="a * b", variables={"a": 3, "b": 4})
+        # Create different contexts
+        context1 = {"value1": ReferenceValue("value1", 5), "value2": ReferenceValue("value2", 10)}
+        context2 = {"value3": ReferenceValue("value3", 8), "value4": ReferenceValue("value4", 3)}
 
-        # Evaluate both formulas
-        result1 = evaluator.evaluate_formula(formula1, {"a": 1, "b": 2})
-        result2 = evaluator.evaluate_formula(formula2, {"a": 3, "b": 4})
+        # Evaluate different formulas
+        formula1 = "value1 + value2"  # Should cache as first entry
+        formula2 = "value3 * value4"  # Should cache as second entry
+
+        result1 = handler.evaluate(formula1, context1)
+        result2 = handler.evaluate(formula2, context2)
 
         # Both should succeed
-        assert result1["success"] is True
-        assert result2["success"] is True
+        assert result1 == 15  # 5 + 10 = 15
+        assert result2 == 24  # 8 * 3 = 24
 
-        # Should have separate cache entries
-        stats = evaluator.get_compilation_cache_stats()
-        if stats:
-            assert stats["total_entries"] >= 2
+        # Should have separate cache entries for different formulas
+        cache_stats = handler._compilation_cache.get_statistics()
+        assert cache_stats["total_entries"] >= 2

@@ -6,6 +6,7 @@ from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import CircularDependencyError
+from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_reserved_words
 
 _LOGGER = logging.getLogger(__name__)
@@ -99,7 +100,9 @@ class AttributeDependencyManager:
         """
         # Start with base context
         context = base_context.copy() if base_context else {}
-        context["state"] = main_sensor_value
+        # ARCHITECTURE FIX: Use ReferenceValueManager for state token
+        entity_id = sensor_config.entity_id if sensor_config else "state"
+        ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
 
         # Get evaluation order
         evaluation_order = self.get_evaluation_order(sensor_config)

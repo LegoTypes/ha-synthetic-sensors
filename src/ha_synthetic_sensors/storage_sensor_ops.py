@@ -11,7 +11,7 @@ from dataclasses import asdict
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .config_models import ComputedVariable, ExceptionHandler, FormulaConfig, SensorConfig
+from .config_models import AlternateStateHandler, ComputedVariable, FormulaConfig, SensorConfig
 from .exceptions import SensorUpdateError, SyntheticSensorsError
 
 if TYPE_CHECKING:
@@ -272,7 +272,7 @@ class SensorOpsHandler:
         _LOGGER.debug("Deleted sensor: %s", unique_id)
         return True
 
-    def serialize_sensor_config(self, sensor_config: SensorConfig) -> Any:
+    def serialize_sensor_config(self, sensor_config: SensorConfig) -> dict[str, Any]:
         """Serialize sensor configuration for storage.
 
         Args:
@@ -294,7 +294,10 @@ class SensorOpsHandler:
 
         # Convert to dict and handle sets
         config_dict = asdict(sensor_config)
-        return set_to_list(config_dict)
+        result = set_to_list(config_dict)
+        if isinstance(result, dict):
+            return result
+        return {}
 
     def deserialize_sensor_config(self, config_data: dict[str, Any]) -> SensorConfig:
         """Deserialize sensor configuration from storage.
@@ -317,21 +320,21 @@ class SensorOpsHandler:
                 return [list_to_set(item) for item in obj]
             return obj
 
-        def deserialize_exception_handler(handler_data: dict[str, Any]) -> ExceptionHandler:
+        def deserialize_alternate_state_handler(handler_data: dict[str, Any]) -> AlternateStateHandler:
             """Deserialize exception handler data."""
-            return ExceptionHandler(**handler_data)
+            return AlternateStateHandler(**handler_data)
 
         def deserialize_computed_variable(var_data: dict[str, Any]) -> ComputedVariable:
             """Deserialize computed variable data."""
             computed_var_data = var_data.copy()
-            if "exception_handler" in computed_var_data and computed_var_data["exception_handler"] is not None:
-                handler_data = computed_var_data["exception_handler"]
-                computed_var_data["exception_handler"] = deserialize_exception_handler(handler_data)
+            if "alternate_state_handler" in computed_var_data and computed_var_data["alternate_state_handler"] is not None:
+                handler_data = computed_var_data["alternate_state_handler"]
+                computed_var_data["alternate_state_handler"] = deserialize_alternate_state_handler(handler_data)
             return ComputedVariable(**computed_var_data)
 
         def deserialize_variables(variables_data: dict[str, Any]) -> dict[str, Any]:
             """Deserialize variables dictionary."""
-            variables = {}
+            variables: dict[str, Any] = {}
             for var_name, var_value in variables_data.items():
                 if isinstance(var_value, dict) and "formula" in var_value:
                     # This is a computed variable
@@ -343,10 +346,10 @@ class SensorOpsHandler:
 
         def deserialize_formula_config(formula_data: dict[str, Any]) -> FormulaConfig:
             """Deserialize formula configuration."""
-            # Handle exception handler deserialization
-            if "exception_handler" in formula_data and formula_data["exception_handler"] is not None:
-                handler_data = formula_data["exception_handler"]
-                formula_data["exception_handler"] = deserialize_exception_handler(handler_data)
+            # Handle alternate state handler deserialization
+            if "alternate_state_handler" in formula_data and formula_data["alternate_state_handler"] is not None:
+                handler_data = formula_data["alternate_state_handler"]
+                formula_data["alternate_state_handler"] = deserialize_alternate_state_handler(handler_data)
 
             # Handle computed variables in variables dict
             if formula_data.get("variables"):

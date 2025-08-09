@@ -1,0 +1,541 @@
+version: '1.0'
+global_settings:
+  device_identifier: "span-sim-001"
+  variables:
+    energy_grace_period_minutes: '15'
+  metadata:
+    attribution: Data from SPAN Panel
+sensors:
+  "span_span-sim-001_current_power":
+    entity_id: sensor.span_simulator_current_power
+    name: Current Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_feed_through_power":
+    entity_id: sensor.span_simulator_feed_through_power
+    name: Feed Through Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_main_meter_produced_energy":
+    entity_id: sensor.span_simulator_main_meter_produced_energy
+    name: Main Meter Produced Energy
+    metadata:
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 2
+    formula: state
+    UNAVAILABLE: state if within_grace else UNKNOWN
+    UNKNOWN: state if within_grace else UNKNOWN
+    variables:
+      within_grace:
+        formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
+        UNAVAILABLE: 'false'
+        UNKNOWN: 'false'
+    attributes:
+      tabs: panel
+      voltage: 240
+      grace_period_active:
+        formula: within_grace
+  "span_span-sim-001_main_meter_consumed_energy":
+    entity_id: sensor.span_simulator_main_meter_consumed_energy
+    name: Main Meter Consumed Energy
+    metadata:
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 2
+    formula: state
+    UNAVAILABLE: state if within_grace else UNKNOWN
+    UNKNOWN: state if within_grace else UNKNOWN
+    variables:
+      within_grace:
+        formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
+        UNAVAILABLE: 'false'
+        UNKNOWN: 'false'
+    attributes:
+      tabs: panel
+      voltage: 240
+      grace_period_active:
+        formula: within_grace
+  "span_span-sim-001_feed_through_produced_energy":
+    entity_id: sensor.span_simulator_feed_through_produced_energy
+    name: Feed Through Produced Energy
+    metadata:
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 2
+    formula: state
+    UNAVAILABLE: state if within_grace else UNKNOWN
+    UNKNOWN: state if within_grace else UNKNOWN
+    variables:
+      within_grace:
+        formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
+        UNAVAILABLE: 'false'
+        UNKNOWN: 'false'
+    attributes:
+      tabs: panel
+      voltage: 240
+      grace_period_active:
+        formula: within_grace
+  "span_span-sim-001_feed_through_consumed_energy":
+    entity_id: sensor.span_simulator_feed_through_consumed_energy
+    name: Feed Through Consumed Energy
+    metadata:
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 2
+    formula: state
+    UNAVAILABLE: state if within_grace else UNKNOWN
+    UNKNOWN: state if within_grace else UNKNOWN
+    variables:
+      within_grace:
+        formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
+        UNAVAILABLE: 'false'
+        UNKNOWN: 'false'
+    attributes:
+      tabs: panel
+      voltage: 240
+      grace_period_active:
+        formula: within_grace
+  "span_span-sim-001_master_bedroom_lights_power":
+    entity_id: sensor.span_simulator_circuit_1_power
+    name: Master Bedroom Lights Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [1]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_living_room_lights_power":
+    entity_id: sensor.span_simulator_circuit_2_power
+    name: Living Room Lights Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [2]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_kitchen_lights_power":
+    entity_id: sensor.span_simulator_circuit_3_power
+    name: Kitchen Lights Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [3]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_bedroom_lights_power":
+    entity_id: sensor.span_simulator_circuit_4_power
+    name: Bedroom Lights Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [4]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_bathroom_lights_power":
+    entity_id: sensor.span_simulator_circuit_5_power
+    name: Bathroom Lights Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [5]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_exterior_lights_power":
+    entity_id: sensor.span_simulator_circuit_6_power
+    name: Exterior Lights Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [6]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_master_bedroom_outlets_power":
+    entity_id: sensor.span_simulator_circuit_7_power
+    name: Master Bedroom Outlets Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [7]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_living_room_outlets_power":
+    entity_id: sensor.span_simulator_circuit_8_power
+    name: Living Room Outlets Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [8]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_kitchen_outlets_1_power":
+    entity_id: sensor.span_simulator_circuit_9_power
+    name: Kitchen Outlets 1 Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [9]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_kitchen_outlets_2_power":
+    entity_id: sensor.span_simulator_circuit_12_power
+    name: Kitchen Outlets 2 Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [12]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_office_outlets_power":
+    entity_id: sensor.span_simulator_circuit_11_power
+    name: Office Outlets Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [11]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_garage_outlets_power":
+    entity_id: sensor.span_simulator_circuit_12_power_2
+    name: Garage Outlets Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [12]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_laundry_outlets_power":
+    entity_id: sensor.span_simulator_circuit_13_power
+    name: Laundry Room Outlets Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [13]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_guest_room_outlets_power":
+    entity_id: sensor.span_simulator_circuit_14_power
+    name: Guest Room Outlets Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [14]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_refrigerator_power":
+    entity_id: sensor.span_simulator_circuit_15_power
+    name: Refrigerator Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [15]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_dishwasher_power":
+    entity_id: sensor.span_simulator_circuit_16_power
+    name: Dishwasher Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [16]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_washing_machine_power":
+    entity_id: sensor.span_simulator_circuit_17_power
+    name: Washing Machine Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [17]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_dryer_power":
+    entity_id: sensor.span_simulator_circuit_18_20_power
+    name: Electric Dryer Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [18:20]"
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_oven_power":
+    entity_id: sensor.span_simulator_circuit_19_21_power
+    name: Electric Oven Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [19:21]"
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_microwave_power":
+    entity_id: sensor.span_simulator_circuit_22_power
+    name: Microwave Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [22]"
+      voltage: 120
+      amperage:
+        formula: state / 120
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_main_hvac_power":
+    entity_id: sensor.span_simulator_circuit_23_25_power
+    name: Main HVAC Unit Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [23:25]"
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_heat_pump_backup_power":
+    entity_id: sensor.span_simulator_circuit_24_26_power
+    name: Heat Pump Backup Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [24:26]"
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+  "span_span-sim-001_ev_charger_garage_power":
+    entity_id: sensor.span_simulator_circuit_27_29_power
+    name: Garage EV Charger Power
+    metadata:
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+    formula: state
+    attributes:
+      tabs: "tabs [27:29]"
+      voltage: 240
+      amperage:
+        formula: state / 240
+        metadata:
+          unit_of_measurement: A
+          device_class: current
+          suggested_display_precision: 0
+

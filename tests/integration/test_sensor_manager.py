@@ -901,7 +901,11 @@ class TestSensorManagerExtended:
         main_formula = FormulaConfig(id="main", formula="main_formula")
         attr_formula = FormulaConfig(id="attr", formula="attr_formula")
 
-        sensor_config = SensorConfig(unique_id="multi_sensor", formulas=[main_formula, attr_formula])
+        sensor_config = SensorConfig(
+            unique_id="multi_sensor",
+            entity_id="sensor.multi_sensor",  # Provide explicit entity_id
+            formulas=[main_formula, attr_formula],
+        )
 
         with patch("ha_synthetic_sensors.sensor_manager.DynamicSensor") as MockDynamicSensor:
             mock_sensor = MagicMock()

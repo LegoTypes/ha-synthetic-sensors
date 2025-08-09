@@ -9,14 +9,56 @@ from typing import Any, NotRequired, TypedDict
 from homeassistant.core import State
 from homeassistant.helpers.typing import ConfigType, StateType
 
-# Type alias for evaluation context values
+
+# Universal reference/value pair class
+class ReferenceValue:
+    """Universal reference/value pair for all variables in evaluation context.
+
+    This preserves both the original reference and its resolved value for ALL variables,
+    allowing handlers to access either the original reference or the resolved value as needed.
+    """
+
+    def __init__(self, reference: str, value: StateType):
+        """Initialize a reference/value pair.
+
+        Args:
+            reference: Original reference (variable name, entity ID, etc.)
+            value: Resolved value (e.g., "25.5", 42, True)
+        """
+        self._reference = reference
+        self._value = value
+
+    @property
+    def reference(self) -> str:
+        """Get the original reference."""
+        return self._reference
+
+    @property
+    def value(self) -> StateType:
+        """Get the resolved value."""
+        return self._value
+
+    def __str__(self) -> str:
+        """String representation showing both reference and value."""
+        return f"ReferenceValue(reference='{self._reference}', value={self._value})"
+
+    def __repr__(self) -> str:
+        """Debug representation."""
+        return f"ReferenceValue(reference='{self._reference}', value={self._value!r})"
+
+
+# Type-safe evaluation context for handlers - STRICT: Only ReferenceValue objects for variables
+EvaluationContext = dict[str, ReferenceValue | Callable[..., Any] | State | ConfigType | StateType | None]
+
+# Context type for internal resolution phases (flexible during resolution)
 # Values in formula evaluation can be:
-# - Basic types: numbers, strings, booleans for entity values and variables
+# - ReferenceValue: universal reference/value pairs for all variables
 # - Callables: math functions that can be called in formulas
 # - State objects: HA State objects for attribute access (entity_id_state)
 # - Config/attribute data: uses HA's ConfigType (dict[str, Any])
+# - Basic types: ONLY during resolution phases, NOT for handlers
 # - None: for unavailable/missing values
-ContextValue = StateType | Callable[..., Any] | State | ConfigType | None
+ContextValue = ReferenceValue | Callable[..., Any] | State | ConfigType | StateType | None
 
 # Type alias for formula evaluation results
 FormulaResult = float | int | str | bool | None

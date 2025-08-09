@@ -181,7 +181,12 @@ class TestModificationSupport:
 
         final_settings = global_settings_handler.build_final_global_settings(modification_settings)
 
-        assert final_settings == modification_settings
+        expected_settings = {
+            "variables": {"new_var": "sensor.new"},
+            "device_class": "power",  # From existing global settings
+            "unit_of_measurement": "W",
+        }
+        assert final_settings == expected_settings
 
     def test_update_global_variables_for_entity_changes(self, global_settings_handler):
         """Test updating global variables for entity ID changes."""

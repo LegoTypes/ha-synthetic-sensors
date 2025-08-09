@@ -95,13 +95,19 @@ class SyntheticSensorsIntegration:
         self._initialized = False
         self._auto_config_path: Path | None = None
 
+        # Integration domain must come from the parent integration's config entry
+        ce_domain = getattr(config_entry, "domain", None)
+        if not isinstance(ce_domain, str) or not ce_domain:
+            raise IntegrationSetupError("Integration domain must be provided by the parent integration")
+        self._domain: str = ce_domain
+
     async def async_setup(self, add_entities_callback: AddEntitiesCallback) -> bool:
         """Set up the synthetic sensors integration."""
         try:
             _LOGGER.debug("Setting up synthetic sensor integration")
 
             # Initialize sensor manager with integration domain
-            manager_config = SensorManagerConfig(integration_domain="synthetic_sensors")
+            manager_config = SensorManagerConfig(integration_domain=self._domain)
             self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback, manager_config)
 
             # Initialize enhanced evaluator
@@ -237,7 +243,7 @@ class SyntheticSensorsIntegration:
         # Check if storage-based configuration exists
         try:
             # Create a temporary storage manager to check for existing data
-            storage_manager = StorageManager(self._hass)
+            storage_manager = StorageManager(self._hass, integration_domain=self._domain)
             await storage_manager.async_load()
 
             # If storage has any sensor sets, skip auto-discovery
@@ -402,6 +408,7 @@ async def async_create_sensor_manager(
     device_info: DeviceInfo | None = None,
     unique_id_prefix: str = "",
     data_provider_callback: Any = None,
+    device_identifier: str | None = None,
 ) -> SensorManager:
     """Create a sensor manager for external integrations.
 
@@ -415,6 +422,7 @@ async def async_create_sensor_manager(
         device_info: Device info for sensors (optional)
         unique_id_prefix: Prefix for unique IDs (optional)
         data_provider_callback: Callback for providing live data (optional)
+        device_identifier: Device identifier for global settings lookup (optional)
 
     Returns:
         SensorManager: Ready-to-use sensor manager
@@ -442,6 +450,7 @@ async def async_create_sensor_manager(
     # Create manager config for external integration
     manager_config = SensorManagerConfig(
         integration_domain=integration_domain,
+        device_identifier=device_identifier,
         device_info=device_info,
         unique_id_prefix=unique_id_prefix,
         lifecycle_managed_externally=True,

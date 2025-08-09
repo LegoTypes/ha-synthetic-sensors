@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, TypedDict
+from typing import Any, Protocol, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -21,7 +21,12 @@ from .exceptions import MissingDependencyError
 _LOGGER = logging.getLogger(__name__)
 
 
-# TypedDicts for name resolver results
+class ASTNode(Protocol):
+    """Protocol for AST nodes used in name resolution."""
+
+    id: str
+
+
 class VariableValidationResult(TypedDict):
     """Result of variable validation."""
 
@@ -105,7 +110,7 @@ class NameResolver:
 
         return normalized
 
-    def resolve_name(self, node: Any) -> float:
+    def resolve_name(self, node: ASTNode) -> float:
         """Resolve a variable name to its numeric value from Home Assistant.
 
         This function is called by simpleeval for each variable in the formula.
@@ -153,8 +158,8 @@ class NameResolver:
         # Convert state to numeric value
         try:
             numeric_value = float(entity_state.state)
-            self._logger.debug(
-                "Resolved %s='%s' -> %s=%s",
+            self._logger.error(
+                "NAME_RESOLVER DEBUG: Resolved %s='%s' -> %s=%s (RAW FLOAT!)",
                 variable_name,
                 entity_id,
                 variable_name,

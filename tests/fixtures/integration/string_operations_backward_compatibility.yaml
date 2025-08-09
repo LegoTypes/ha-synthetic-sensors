@@ -1,0 +1,30 @@
+# Used by: test_backward_compatibility_with_existing_formulas
+# Tests that existing numeric formulas continue to work unchanged
+version: "1.0"
+
+global_settings:
+  device_identifier: "compatibility_test_device"
+
+sensors:
+  existing_power_sensor:
+    name: "Existing Power Calculation"
+    formula: "sensor.panel_power * 1.1"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  existing_count_sensor:
+    name: "Existing Device Count"
+    formula: "count('device_class:power')"
+    metadata:
+      unit_of_measurement: "devices"
+      device_class: "enum"
+
+  existing_sum_sensor:
+    name: "Existing Power Sum"
+    formula: "sum('device_class:power')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

@@ -7,7 +7,9 @@ from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
+from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_reserved_words
+from ...type_definitions import ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -185,7 +187,9 @@ class GenericDependencyManager:
                     result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
                     if result is not None:
                         main_sensor_value = result
-                        context["state"] = main_sensor_value
+                        # ARCHITECTURE FIX: Use ReferenceValueManager for state token
+                        entity_id = sensor_config.entity_id if sensor_config else "state"
+                        ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
                         _LOGGER.debug("Main sensor value: %s", main_sensor_value)
                     else:
                         raise FormulaEvaluationError(f"Failed to evaluate main sensor for {sensor_config.unique_id}")
@@ -194,7 +198,9 @@ class GenericDependencyManager:
                     # Attribute evaluation
                     # Ensure state is in context for attribute formulas
                     if main_sensor_value is not None and "state" not in context:
-                        context["state"] = main_sensor_value
+                        # ARCHITECTURE FIX: Use ReferenceValueManager for state token in attributes
+                        entity_id = sensor_config.entity_id if sensor_config else "state"
+                        ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
 
                     result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
                     if result is not None:
@@ -223,7 +229,21 @@ class GenericDependencyManager:
                 registry_values = self._sensor_registry_phase.get_all_sensor_values()
                 for sensor_name, sensor_value in registry_values.items():
                     if sensor_value is not None:
-                        enhanced_context[sensor_name] = sensor_value
+                        # ARCHITECTURE FIX: Wrap sensor values in ReferenceValue objects
+                        # This ensures cross-sensor context uses ReferenceValue objects
+                        if isinstance(sensor_value, ReferenceValue):
+                            enhanced_context[sensor_name] = sensor_value
+                        else:
+                            # Wrap raw sensor values in ReferenceValue objects
+                            _LOGGER.debug(
+                                "DEPENDENCY_MANAGER_DEBUG: Setting %s = %s (type: %s)",
+                                sensor_name,
+                                sensor_value,
+                                type(sensor_value).__name__,
+                            )
+                            ReferenceValueManager.set_variable_with_reference_value(
+                                enhanced_context, sensor_name, sensor_name, sensor_value
+                            )
                         _LOGGER.debug("Added cross-sensor value '%s' = %s to evaluation context", sensor_name, sensor_value)
 
             # Use the evaluator's fallback method with enhanced context

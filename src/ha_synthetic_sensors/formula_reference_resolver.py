@@ -360,7 +360,7 @@ class FormulaReferenceResolver:
             attributes=resolved_attributes,
             dependencies=resolved_dependencies,
             variables=resolved_variables,
-            exception_handler=formula.exception_handler,  # Preserve exception handler
+            alternate_state_handler=formula.alternate_state_handler,  # Preserve alternate state handler
         )
 
         return resolved_formula

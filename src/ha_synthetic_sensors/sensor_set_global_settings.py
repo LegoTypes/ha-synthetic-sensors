@@ -6,21 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .config_types import GlobalSettingsDict
+from .constants_device import DEVICE_INFO_FIELDS
 from .exceptions import SyntheticSensorsError
 
-# Device info field names (shared constant to avoid duplication)
-DEVICE_INFO_FIELDS = [
-    "device_identifier",
-    "device_name",
-    "device_manufacturer",
-    "device_model",
-    "device_sw_version",
-    "device_hw_version",
-    "suggested_area",
-]
-
 if TYPE_CHECKING:
-    from .config_models import SensorConfig
     from .storage_manager import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,7 +42,7 @@ class SensorSetGlobalSettings:
         global_settings: dict[str, Any] = sensor_set_data.get("global_settings", {})
         return global_settings
 
-    async def async_set_global_settings(self, global_settings: GlobalSettingsDict, current_sensors: list[SensorConfig]) -> None:
+    async def async_set_global_settings(self, global_settings: GlobalSettingsDict, current_sensors: list[Any]) -> None:
         """
         Set global settings for this sensor set.
 
@@ -68,7 +57,7 @@ class SensorSetGlobalSettings:
         # Update global settings in storage
         await self._update_global_settings(global_settings)
 
-    async def async_update_global_settings(self, updates: dict[str, Any], current_sensors: list[SensorConfig]) -> None:
+    async def async_update_global_settings(self, updates: dict[str, Any], current_sensors: list[Any]) -> None:
         """
         Update specific global settings while preserving others.
 
@@ -107,20 +96,22 @@ class SensorSetGlobalSettings:
 
     def build_final_global_settings(self, modification_global_settings: dict[str, Any] | None) -> dict[str, Any]:
         """
-        Build final global settings after applying modifications.
+        Build final global settings for a modification.
 
         Args:
-            modification_global_settings: Global settings from modification (None = no change)
+            modification_global_settings: Global settings from modification
 
         Returns:
-            Final global settings after modification
+            Final global settings dictionary
         """
         if modification_global_settings is None:
-            # No change to global settings
             return self.get_global_settings()
 
-        # Use the modification's global settings
-        return modification_global_settings
+        current_global_settings = self.get_global_settings()
+        final_global_settings = current_global_settings.copy()
+        final_global_settings.update(modification_global_settings)
+
+        return final_global_settings
 
     def update_global_variables_for_entity_changes(
         self, variables: dict[str, Any], entity_id_changes: dict[str, str]
@@ -183,140 +174,154 @@ class SensorSetGlobalSettings:
 
     async def async_update_global_settings_partial(self, updates: dict[str, Any]) -> None:
         """
-        Update specific parts of global settings while preserving others.
+        Update specific global settings while preserving others.
 
         Args:
             updates: Dictionary of global setting updates to merge
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist or validation fails
         """
-        if not self._sensor_set_exists():
-            raise SyntheticSensorsError(f"Sensor set {self.sensor_set_id} does not exist")
+        current_global_settings = self.get_global_settings()
+        updated_global_settings = current_global_settings.copy()
+        updated_global_settings.update(updates)
 
-        current_sensors = self._get_current_sensors()
-        await self.async_update_global_settings(updates, current_sensors)
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = updated_global_settings  # type: ignore[assignment]
+        await self.async_set_global_settings(typed_global_settings, self._get_current_sensors())
 
     async def async_delete_global_settings(self) -> bool:
         """
-        Delete all global settings for this sensor set.
+        Delete global settings for this sensor set.
 
         Returns:
-            True if global settings were deleted, False if none existed
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist
+            True if deleted, False if no global settings existed
         """
-        if not self._sensor_set_exists():
-            raise SyntheticSensorsError(f"Sensor set {self.sensor_set_id} does not exist")
-
-        current_settings = self.get_global_settings()
-        if not current_settings:
+        data = self.storage_manager.data
+        sensor_set_data = data["sensor_sets"].get(self.sensor_set_id)
+        if sensor_set_data is None:
             return False
 
-        empty_settings: GlobalSettingsDict = {}
-        await self._update_global_settings(empty_settings)
+        if "global_settings" not in sensor_set_data:
+            return False
+
+        # Delete global settings
+        del sensor_set_data["global_settings"]
+        sensor_set_data["updated_at"] = self.storage_manager.get_current_timestamp()
+
+        await self.storage_manager.async_save()
+
+        _LOGGER.debug("Deleted global settings for sensor set %s", self.sensor_set_id)
         return True
 
     # Variable-specific CRUD operations
 
     async def async_set_global_variable(self, variable_name: str, variable_value: str | int | float) -> None:
         """
-        Set a specific global variable.
+        Set a global variable for this sensor set.
 
         Args:
             variable_name: Name of the variable to set
-            variable_value: Value of the variable
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist or validation fails
+            variable_value: Value to set for the variable
         """
-        current_settings = self.read_global_settings()
-        variables = current_settings.get("variables", {}).copy()
-        variables[variable_name] = variable_value
+        current_global_settings = self.get_global_settings()
+        if "variables" not in current_global_settings:
+            current_global_settings["variables"] = {}
 
-        updates = {"variables": variables}
-        await self.async_update_global_settings_partial(updates)
+        current_global_settings["variables"][variable_name] = variable_value
+
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = current_global_settings  # type: ignore[assignment]
+        await self.async_set_global_settings(typed_global_settings, self._get_current_sensors())
 
     def get_global_variable(self, variable_name: str) -> str | int | float | None:
         """
-        Get a specific global variable value.
+        Get a global variable value for this sensor set.
 
         Args:
             variable_name: Name of the variable to get
 
         Returns:
-            Variable value if found, None otherwise
+            Variable value or None if not found
         """
-        current_settings = self.read_global_settings()
-        variables = current_settings.get("variables", {})
-        return variables.get(variable_name)
+        global_settings = self.get_global_settings()
+        variables = global_settings.get("variables", {})
+        value = variables.get(variable_name)
+        if isinstance(value, (str | int | float)) or value is None:
+            return value
+        return None
 
     async def async_delete_global_variable(self, variable_name: str) -> bool:
         """
-        Delete a specific global variable.
+        Delete a global variable for this sensor set.
 
         Args:
             variable_name: Name of the variable to delete
 
         Returns:
-            True if variable was deleted, False if it didn't exist
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist
+            True if deleted, False if variable didn't exist
         """
-        current_settings = self.read_global_settings()
-        variables = current_settings.get("variables", {})
+        current_global_settings = self.get_global_settings()
+        variables = current_global_settings.get("variables", {})
 
         if variable_name not in variables:
             return False
 
-        variables = variables.copy()
         del variables[variable_name]
 
-        updates = {"variables": variables}
-        await self.async_update_global_settings_partial(updates)
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = current_global_settings  # type: ignore[assignment]
+        await self.async_set_global_settings(typed_global_settings, self._get_current_sensors())
+
+        _LOGGER.debug("Deleted global variable %s for sensor set %s", variable_name, self.sensor_set_id)
         return True
 
     def list_global_variables(self) -> dict[str, str | int | float]:
         """
-        List all global variables.
+        List all global variables for this sensor set.
 
         Returns:
-            Dictionary of all global variables
+            Dictionary of variable names to values
         """
-        current_settings = self.read_global_settings()
-        return current_settings.get("variables", {}).copy()
+        global_settings = self.get_global_settings()
+        variables = global_settings.get("variables", {})
+        # Filter to only include valid variable types
+        result: dict[str, str | int | float] = {}
+        for key, value in variables.items():
+            if isinstance(value, (str | int | float)):
+                result[key] = value
+        return result
 
     # Device settings CRUD operations
 
     async def async_set_device_info(self, device_info: dict[str, str]) -> None:
         """
-        Set device information in global settings.
+        Set device information for this sensor set.
 
         Args:
-            device_info: Dictionary containing device information fields
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist or validation fails
+            device_info: Device information dictionary
         """
-        await self.async_update_global_settings_partial(device_info)
+        current_global_settings = self.get_global_settings()
+
+        # Update device info fields
+        for field in DEVICE_INFO_FIELDS:
+            if field in device_info:
+                current_global_settings[field] = device_info[field]
+
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = current_global_settings  # type: ignore[assignment]
+        await self.async_set_global_settings(typed_global_settings, self._get_current_sensors())
 
     def get_device_info(self) -> dict[str, str]:
         """
-        Get device information from global settings.
+        Get device information for this sensor set.
 
         Returns:
-            Dictionary containing device information
+            Dictionary of device information fields
         """
-        current_settings = self.read_global_settings()
-        device_fields = DEVICE_INFO_FIELDS
+        global_settings = self.get_global_settings()
+        device_info = {}
 
-        device_info: dict[str, str] = {}
-        for field in device_fields:
-            value = current_settings.get(field)
-            if value is not None:
-                device_info[field] = str(value)
+        for field in DEVICE_INFO_FIELDS:
+            if field in global_settings:
+                device_info[field] = global_settings[field]
 
         return device_info
 
@@ -324,43 +329,50 @@ class SensorSetGlobalSettings:
 
     async def async_set_global_metadata(self, metadata: dict[str, Any]) -> None:
         """
-        Set global metadata.
+        Set global metadata for this sensor set.
 
         Args:
-            metadata: Dictionary containing metadata
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist or validation fails
+            metadata: Global metadata dictionary
         """
-        updates = {"metadata": metadata}
-        await self.async_update_global_settings_partial(updates)
+        current_global_settings = self.get_global_settings()
+        current_global_settings["metadata"] = metadata
+
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = current_global_settings  # type: ignore[assignment]
+        await self.async_set_global_settings(typed_global_settings, self._get_current_sensors())
 
     def get_global_metadata(self) -> dict[str, Any]:
         """
-        Get global metadata.
+        Get global metadata for this sensor set.
 
         Returns:
-            Dictionary containing global metadata
+            Global metadata dictionary (empty dict if none)
         """
-        current_settings = self.read_global_settings()
-        return current_settings.get("metadata", {}).copy()
+        global_settings = self.get_global_settings()
+        metadata = global_settings.get("metadata", {})
+        if isinstance(metadata, dict):
+            return metadata
+        return {}
 
     async def async_delete_global_metadata(self) -> bool:
         """
-        Delete all global metadata.
+        Delete global metadata for this sensor set.
 
         Returns:
-            True if metadata was deleted, False if none existed
-
-        Raises:
-            SyntheticSensorsError: If sensor set doesn't exist
+            True if deleted, False if no metadata existed
         """
-        current_settings = self.read_global_settings()
-        if "metadata" not in current_settings or not current_settings["metadata"]:
+        current_global_settings = self.get_global_settings()
+
+        if "metadata" not in current_global_settings:
             return False
 
-        updates: dict[str, Any] = {"metadata": {}}
-        await self.async_update_global_settings_partial(updates)
+        del current_global_settings["metadata"]
+
+        # Cast to GlobalSettingsDict since it's compatible
+        typed_global_settings: GlobalSettingsDict = current_global_settings  # type: ignore[assignment]
+        await self.async_set_global_settings(typed_global_settings, self._get_current_sensors())
+
+        _LOGGER.debug("Deleted global metadata for sensor set %s", self.sensor_set_id)
         return True
 
     # Helper methods
@@ -370,6 +382,6 @@ class SensorSetGlobalSettings:
         data = self.storage_manager.data
         return self.sensor_set_id in data["sensor_sets"]
 
-    def _get_current_sensors(self) -> list[SensorConfig]:
+    def _get_current_sensors(self) -> list[Any]:
         """Get current sensors for validation."""
         return self.storage_manager.list_sensors(sensor_set_id=self.sensor_set_id)

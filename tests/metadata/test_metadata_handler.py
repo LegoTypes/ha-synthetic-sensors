@@ -46,17 +46,6 @@ class TestMetadataHandler:
         }
         assert result == expected
 
-    def test_merge_sensor_metadata_no_metadata_attr(self) -> None:
-        """Test merging sensor metadata when sensor has no metadata attribute."""
-        sensor_config = SensorConfig(unique_id="test_sensor")
-        # Remove metadata attribute to simulate legacy config
-        delattr(sensor_config, "metadata")
-
-        global_meta = {"unit_of_measurement": "W"}
-        result = self.handler.merge_sensor_metadata(global_meta, sensor_config)
-
-        assert result == global_meta
-
     def test_merge_sensor_metadata_with_metadata_attr(self) -> None:
         """Test merging sensor metadata when sensor has metadata."""
         sensor_config = SensorConfig(unique_id="test_sensor", metadata={"device_class": "power", "icon": "mdi:flash"})

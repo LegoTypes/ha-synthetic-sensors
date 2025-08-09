@@ -25,13 +25,15 @@ class EntityReferenceResolver(VariableResolver):
     def can_resolve(self, variable_name: str, variable_value: str | Any) -> bool:
         """Determine if this resolver can handle entity references."""
         if isinstance(variable_value, str):
-            # Check if it looks like an entity ID using centralized validation
-            # Get hass from dependency handler if available
+            # Check if it looks like an entity ID (basic format check)
+            # This allows both HA entities and integration entities to be tried
+            if "." in variable_value and variable_value.split(".")[0].isalpha():
+                return True
+
+            # Also check HA registry if available for additional validation
             hass = getattr(self._dependency_handler, "hass", None) if self._dependency_handler else None
-            if hass is None:
-                # If no hass available, just check basic format
-                return "." in variable_value and variable_value.split(".")[0].isalpha()
-            return is_valid_entity_id(variable_value, hass)
+            if hass is not None:
+                return is_valid_entity_id(variable_value, hass)
         return False
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:

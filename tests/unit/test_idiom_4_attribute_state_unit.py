@@ -176,13 +176,25 @@ class TestIdiom4AttributeState:
                 # According to the design guide, both sensor key and entity ID self-references
                 # should be replaced with 'state' tokens in attributes
                 assert "daily_cost" in attributes
-                assert attributes["daily_cost"] == "state * 24"
+                daily_val = attributes["daily_cost"]
+                if isinstance(daily_val, dict):
+                    assert daily_val.get("formula") == "state * 24"
+                else:
+                    assert daily_val == "state * 24"
 
                 assert "weekly_cost" in attributes
-                assert attributes["weekly_cost"] == "state * 24 * 7"
+                weekly_val = attributes["weekly_cost"]
+                if isinstance(weekly_val, dict):
+                    assert weekly_val.get("formula") == "state * 24 * 7"
+                else:
+                    assert weekly_val == "state * 24 * 7"
 
                 assert "monthly_cost" in attributes
-                assert attributes["monthly_cost"] == "state * 24 * 30"
+                monthly_val = attributes["monthly_cost"]
+                if isinstance(monthly_val, dict):
+                    assert monthly_val.get("formula") == "state * 24 * 30"
+                else:
+                    assert monthly_val == "state * 24 * 30"
 
                 print(f"✅ Entity ID self-reference replacement test passed!")
                 print(f"   Original formula contained: sensor.entity_id_attribute_test * 24")

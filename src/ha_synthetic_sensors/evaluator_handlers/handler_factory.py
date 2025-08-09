@@ -1,11 +1,17 @@
 """Factory for creating and managing formula evaluation handlers."""
 
+from collections.abc import Callable
 import logging
+from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import HomeAssistant
+
+from ..constants_handlers import ERROR_NO_HANDLER_FOR_FORMULA, HANDLER_TYPE_METADATA, HANDLER_TYPE_NUMERIC
+from ..type_definitions import ContextValue
 from .base_handler import FormulaHandler
-from .boolean_handler import BooleanHandler
-from .numeric_handler import NumericHandler
-from .string_handler import StringHandler
+
+if TYPE_CHECKING:
+    pass
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13,19 +19,40 @@ _LOGGER = logging.getLogger(__name__)
 class HandlerFactory:
     """Factory for creating and managing formula evaluation handlers."""
 
-    def __init__(self) -> None:
-        """Initialize the handler factory with default handlers."""
+    def __init__(
+        self,
+        expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None,
+        hass: HomeAssistant | None = None,
+    ) -> None:
+        """Initialize the handler factory.
+
+        Args:
+            expression_evaluator: Callback for handlers to delegate complex expression evaluation
+            hass: Home Assistant instance for handlers that need access to entity states
+        """
         self._handlers: dict[str, FormulaHandler] = {}
         self._handler_types: dict[str, type[FormulaHandler]] = {}
+        self._expression_evaluator = expression_evaluator
+        self._hass = hass
 
-        # Register default handlers
-        self._register_default_handlers()
+        # Register default handler types for lazy instantiation
+        self._register_default_handler_types()
 
-    def _register_default_handlers(self) -> None:
-        """Register the default set of handlers."""
-        self.register_handler("string", StringHandler())
-        self.register_handler("numeric", NumericHandler())
-        self.register_handler("boolean", BooleanHandler())
+    def _register_default_handler_types(self) -> None:
+        """Register the default set of handler types for lazy instantiation.
+
+        CLEAN SLATE: Only register handlers that are actually used:
+        - MetadataHandler: For metadata() function calls
+        - NumericHandler: For compilation cache and exception handler fallback
+        """
+        # WFF: The nature of the handler factory warrants this import-outside-toplevel
+        # Import handlers lazily to avoid circular imports
+        # pylint: disable=import-outside-toplevel
+        from .metadata_handler import MetadataHandler
+        from .numeric_handler import NumericHandler
+
+        self.register_handler_type(HANDLER_TYPE_METADATA, MetadataHandler)  # For metadata() function calls
+        self.register_handler_type(HANDLER_TYPE_NUMERIC, NumericHandler)  # For compilation cache and fallback
 
     def register_handler(self, name: str, handler: FormulaHandler) -> None:
         """Register a handler with the factory."""
@@ -45,21 +72,48 @@ class HandlerFactory:
 
         # Then check for handler types and instantiate
         if name in self._handler_types:
-            handler = self._handler_types[name]()
-            self._handlers[name] = handler  # Cache the instance
-            return handler
+            handler = self._create_handler_instance(name)
+            if handler:
+                self._handlers[name] = handler  # Cache the instance
+                return handler
 
         return None
 
+    def _create_handler_instance(self, name: str) -> FormulaHandler | None:
+        """Create a handler instance with proper dependency injection."""
+        if name not in self._handler_types:
+            return None
+        handler_type = self._handler_types[name]
+
+        # Check if this is the metadata handler that needs hass instance
+        if name == HANDLER_TYPE_METADATA:
+            return handler_type(expression_evaluator=self._expression_evaluator, hass=self._hass)
+
+        # All other handlers accept expression_evaluator as a standard parameter
+        return handler_type(expression_evaluator=self._expression_evaluator)
+
     def get_handler_for_formula(self, formula: str) -> FormulaHandler | None:
         """Get the appropriate handler for a given formula."""
-        # Try each handler to see which one can handle this formula
+        # Try each instantiated handler first
         for handler in self._handlers.values():
             if handler.can_handle(formula):
                 return handler
 
-        # If no handler can handle it, return the numeric handler as default
-        return self.get_handler("numeric")
+        # If no instantiated handler can handle it, try instantiating other registered types
+        for name, _ in self._handler_types.items():
+            if name not in self._handlers:
+                # Instantiate the handler to test if it can handle this formula
+                maybe_handler = self._create_handler_instance(name)
+                if maybe_handler is not None and maybe_handler.can_handle(formula):
+                    # Cache it since it can handle this type of formula
+                    # Now we know maybe_handler is definitely not None
+                    valid_handler: FormulaHandler = maybe_handler
+                    self._handlers[name] = valid_handler
+                    return valid_handler
+
+        # If no handler can handle it, this indicates a routing problem
+        # The formula should have been routable to at least one handler
+        raise ValueError(ERROR_NO_HANDLER_FOR_FORMULA.format(formula=formula))
 
     def get_all_handlers(self) -> dict[str, FormulaHandler]:
         """Get all registered handlers."""
@@ -69,4 +123,4 @@ class HandlerFactory:
         """Clear all registered handlers."""
         self._handlers.clear()
         self._handler_types.clear()
-        self._register_default_handlers()
+        self._register_default_handler_types()

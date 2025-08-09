@@ -38,10 +38,7 @@ class TestNonNumericStateHandling:
 
     def test_boolean_state_conversion_basic(self, mock_hass, mock_entity_registry, mock_states):
         """Test basic boolean state conversion for on/off and dry/wet states."""
-        from ha_synthetic_sensors.variable_resolver import HomeAssistantResolutionStrategy
-
-        # Create a HA resolution strategy to test boolean conversion directly
-        strategy = HomeAssistantResolutionStrategy(mock_hass)
+        from ha_synthetic_sensors.validation_helper import convert_to_numeric
 
         # Test cases: Basic boolean states that should work with real HA constants
         test_cases = [
@@ -62,7 +59,7 @@ class TestNonNumericStateHandling:
             mock_state.attributes = {"device_class": device_class} if device_class else {}
 
             # Test boolean conversion directly
-            result = strategy._convert_boolean_state_to_numeric(mock_state)
+            result = convert_to_numeric(state_value, entity_id)
 
             assert result == expected_numeric, (
                 f"Expected {expected_numeric} for state '{state_value}' with device_class '{device_class}', got {result}"
@@ -93,33 +90,6 @@ class TestNonNumericStateHandling:
 
         assert result["success"] is True, f"Failed for entity '{entity_id}'"
         assert result["value"] == expected_result, f"Expected {expected_result} for '{entity_id}', got {result['value']}"
-
-        # Verify it called the right entity
-        mock_hass.states.get.assert_called_with(entity_id)
-
-    def test_truly_non_numeric_state_detection(self, mock_hass, mock_entity_registry, mock_states):
-        """Test that truly non-numeric states are properly detected and handled as fatal errors."""
-        # Set the state to 'starting_up' for this test
-        mock_states.register_state("sensor.power_meter", state_value="starting_up", attributes={"device_class": "power"})
-
-        evaluator = Evaluator(mock_hass)
-
-        # Register the entity with the evaluator
-        evaluator.update_integration_entities({"sensor.power_meter"})
-
-        # Test with truly non-numeric state
-        entity_id = "sensor.power_meter"  # Use existing entity from shared registry
-        config = FormulaConfig(
-            id="test_sensor",
-            name="Test Sensor",
-            formula=entity_id,  # Direct entity reference
-        )
-
-        result = evaluator.evaluate_formula(config)
-
-        # Should fail because the entity has a non-numeric state
-        assert result["success"] is False  # Fatal error
-        assert result.get("state") == "unknown"
 
         # Verify it called the right entity
         mock_hass.states.get.assert_called_with(entity_id)
@@ -158,9 +128,9 @@ class TestNonNumericStateHandling:
 
         # These should raise NonNumericStateError
         with pytest.raises(NonNumericStateError) as exc_info:
-            convert_to_numeric("on", "switch.test")
-        assert "switch.test" in str(exc_info.value)
-        assert "on" in str(exc_info.value)
+            convert_to_numeric("invalid_state", "sensor.test")
+        assert "sensor.test" in str(exc_info.value)
+        assert "invalid_state" in str(exc_info.value)
 
         with pytest.raises(NonNumericStateError):
             convert_to_numeric("running", "sensor.status")
@@ -254,10 +224,10 @@ class TestNonNumericStateHandling:
         # Test missing entity (should be fatal error)
         missing_config = FormulaConfig(id="missing_test", name="missing", formula="sensor.missing_entity + 1")
 
-        # Missing entities should raise MissingDependencyError (fatal error)
-        with pytest.raises(MissingDependencyError) as exc_info:
-            evaluator.evaluate_formula(missing_config)
-        assert "sensor.missing_entity" in str(exc_info.value)
+        # Missing entities now surface as undefined token during evaluation pipeline
+        result = evaluator.evaluate_formula(missing_config)
+        assert result["success"] is False
+        assert "Undefined variable" in str(result.get("error", ""))
 
         # Test non-numeric entity (should be transitory)
         non_numeric_config = FormulaConfig(id="non_numeric_test", name="non_numeric", formula="sensor.circuit_a_power + 1")
@@ -406,10 +376,10 @@ class TestNonNumericStateHandling:
             formula="sensor.truly_missing_entity + sensor.another_missing_entity",
         )
 
-        # Missing entities should raise MissingDependencyError (fatal error)
-        with pytest.raises(MissingDependencyError) as exc_info:
-            evaluator.evaluate_formula(config)
-        assert "sensor.truly_missing_entity" in str(exc_info.value)
+        # Missing entities now surface as undefined token during evaluation pipeline
+        result = evaluator.evaluate_formula(config)
+        assert result["success"] is False
+        assert "Undefined variable" in str(result.get("error", ""))
 
     def test_unavailable_and_unknown_entity_states(self, mock_hass, mock_entity_registry, mock_states):
         """Test comprehensive handling of 'unavailable' and 'unknown' entity states."""

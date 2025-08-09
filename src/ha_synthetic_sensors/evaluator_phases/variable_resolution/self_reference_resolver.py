@@ -87,6 +87,16 @@ class SelfReferenceResolver(VariableResolver):
             # In attribute context, use the state value which should be the main sensor's calculated result
             if state_value is not None and isinstance(state_value, int | float):
                 return state_value
+
+            # If state_value is None, try to get it from the sensor registry
+            if self._sensor_registry_phase is not None:
+                registry_value = self._sensor_registry_phase.get_sensor_value(sensor_key)
+                if registry_value is not None and isinstance(registry_value, int | float):
+                    _LOGGER.debug(
+                        "Self-reference resolver: found sensor value in registry: %s = %s", sensor_key, registry_value
+                    )
+                    return registry_value
+
             raise FormulaEvaluationError(
                 f"Self-reference resolver: in attribute context but state value is invalid: {state_value}"
             )

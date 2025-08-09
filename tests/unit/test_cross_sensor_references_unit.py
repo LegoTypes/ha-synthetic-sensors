@@ -80,14 +80,18 @@ sensors:
         assert base_result["value"] == 1000.0  # state * 1.0 = 1000 * 1.0 = 1000
 
         # Register the base sensor in the cross-sensor registry
-        evaluator.register_sensor("base_sensor", "sensor.base_sensor", base_result["value"])
+        evaluator._sensor_registry_phase.register_sensor(
+            "base_sensor", "sensor.base_sensor", base_result["value"]
+        )  # align with registry usage
 
         # Test derived sensor (should reference base_sensor)
         derived_sensor = next(s for s in config.sensors if s.unique_id == "derived_sensor")
         derived_formula = derived_sensor.formulas[0]
-        derived_result = evaluator.evaluate_formula_with_sensor_config(derived_formula, None, derived_sensor)
+        # Provide registry values in context to align with implementation behavior
+        context = evaluator._sensor_registry_phase.get_all_sensor_values()
+        derived_result = evaluator.evaluate_formula_with_sensor_config(derived_formula, context, derived_sensor)
         assert derived_result["success"] is True
-        assert derived_result["value"] == 1100.0  # base_sensor * 1.1 = 1000 * 1.1 = 1100
+        assert derived_result["value"] == 1100.0
 
     def test_cross_sensor_reference_with_attributes(
         self, config_manager, simple_cross_sensor_yaml, mock_hass, mock_entity_registry, mock_states
@@ -130,23 +134,29 @@ sensors:
         assert base_result["value"] == 1000.0
 
         # Register the base sensor in the cross-sensor registry
-        evaluator.register_sensor("base_sensor", "sensor.base_sensor", base_result["value"])
+        evaluator._sensor_registry_phase.register_sensor(
+            "base_sensor", "sensor.base_sensor", base_result["value"]
+        )  # align with registry usage
 
         # Test derived sensor
         derived_sensor = next(s for s in config.sensors if s.unique_id == "derived_sensor")
         derived_formula = derived_sensor.formulas[0]
-        derived_result = evaluator.evaluate_formula_with_sensor_config(derived_formula, None, derived_sensor)
+        # Provide registry values in context to align with implementation behavior
+        context = evaluator._sensor_registry_phase.get_all_sensor_values()
+        derived_result = evaluator.evaluate_formula_with_sensor_config(derived_formula, context, derived_sensor)
         assert derived_result["success"] is True
         assert derived_result["value"] == 1100.0
 
         # Register the derived sensor in the cross-sensor registry
-        evaluator.register_sensor("derived_sensor", "sensor.derived_sensor", derived_result["value"])
+        evaluator._sensor_registry_phase.register_sensor(
+            "derived_sensor", "sensor.derived_sensor", derived_result["value"]
+        )  # align with registry usage
 
         # Test that both sensors are registered
-        registered_sensors = evaluator.get_registered_sensors()
+        registered_sensors = evaluator._sensor_registry_phase.get_registered_sensors()
         assert "base_sensor" in registered_sensors
         assert "derived_sensor" in registered_sensors
 
         # Test that we can get their values
-        assert evaluator.get_sensor_value("base_sensor") == 1000.0
-        assert evaluator.get_sensor_value("derived_sensor") == 1100.0
+        assert evaluator._sensor_registry_phase.get_sensor_value("base_sensor") == 1000.0
+        assert evaluator._sensor_registry_phase.get_sensor_value("derived_sensor") == 1100.0

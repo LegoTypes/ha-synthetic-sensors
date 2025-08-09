@@ -6,7 +6,7 @@ from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import BackingEntityResolutionError
-from ...type_definitions import ContextValue, DataProviderResult
+from ...type_definitions import ContextValue, DataProviderResult, ReferenceValue
 from .base_resolver import VariableResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,7 +55,19 @@ class StateResolver(VariableResolver):
         if "state" in context:
             state_value = context["state"]
             _LOGGER.debug("State resolver: resolved 'state' from context to value '%s'", state_value)
-            return state_value
+
+            # If it's already a ReferenceValue, return it directly
+            if isinstance(state_value, ReferenceValue):
+                return state_value
+
+            # Convert raw value to ReferenceValue for consistency
+            # Use 'state' as the reference since that's what was requested
+            # Ensure the value is of the correct type for ReferenceValue
+            if isinstance(state_value, str | int | float | bool) or state_value is None:
+                return ReferenceValue(reference="state", value=state_value)
+
+            # Convert complex types to string representation
+            return ReferenceValue(reference="state", value=str(state_value))
 
         # If not in context, attempt backing entity resolution for main formulas
         sensor_config_raw = context.get("sensor_config")
@@ -131,14 +143,15 @@ class StateResolver(VariableResolver):
                 "State resolver: Backing entity '%s' has None state value, treating as unknown",
                 backing_entity_id,
             )
-            return "unknown"
+            return ReferenceValue(reference=backing_entity_id, value="unknown")
 
         _LOGGER.debug(
             "State resolver: Successfully resolved backing entity '%s' state to '%s'",
             backing_entity_id,
             state_value,
         )
-        return state_value
+        # Return ReferenceValue for backing entity state
+        return ReferenceValue(reference=backing_entity_id, value=state_value)
 
     def _should_resolve_sensor_own_state(
         self, sensor_config: SensorConfig | None, formula_config: FormulaConfig | None
@@ -178,7 +191,8 @@ class StateResolver(VariableResolver):
                 "State resolver: Sensor '%s' not found in HA, treating as initial state (value: 0)",
                 entity_id,
             )
-            return 0  # Default initial state for new sensors
+            # Return ReferenceValue for initial state
+            return ReferenceValue(reference=entity_id or "unknown", value=0)
 
         # Extract numeric value from the state
         state_value = hass_state.state
@@ -187,7 +201,8 @@ class StateResolver(VariableResolver):
                 "State resolver: Sensor '%s' has unknown/unavailable state, treating as 0",
                 entity_id,
             )
-            return 0
+            # Return ReferenceValue for unknown/unavailable state
+            return ReferenceValue(reference=entity_id or "unknown", value=0)
 
         # Try to convert to numeric value
         try:
@@ -197,19 +212,23 @@ class StateResolver(VariableResolver):
                 entity_id,
                 numeric_value,
             )
-            return numeric_value
+            # Return ReferenceValue for numeric state
+            return ReferenceValue(reference=entity_id or "unknown", value=numeric_value)
         except (ValueError, TypeError):
             # Handle boolean-like states (on/off, true/false, etc.)
             if isinstance(state_value, str):
                 state_lower = state_value.lower()
                 if state_lower in ("on", "true", "open", "locked", "home", "detected"):
-                    return 1.0
+                    # Return ReferenceValue for boolean true state
+                    return ReferenceValue(reference=entity_id or "unknown", value=1.0)
                 if state_lower in ("off", "false", "closed", "unlocked", "away", "clear"):
-                    return 0.0
+                    # Return ReferenceValue for boolean false state
+                    return ReferenceValue(reference=entity_id or "unknown", value=0.0)
 
             _LOGGER.warning(
                 "State resolver: Cannot convert sensor's own state '%s' (value: '%s') to numeric, defaulting to 0",
                 entity_id,
                 state_value,
             )
-            return 0
+            # Return ReferenceValue for default fallback state
+            return ReferenceValue(reference=entity_id or "unknown", value=0)

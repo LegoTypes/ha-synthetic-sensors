@@ -1,0 +1,24 @@
+# Test fixture for simple date arithmetic integration tests
+# Used by: test_date_arithmetic_integration.py::test_simple_date_functions
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_simple_date"
+
+sensors:
+  # Test basic date conversion
+  test_date_conversion:
+    name: "Test Date Conversion"
+    formula: "date('2025-01-01')"
+    metadata:
+      device_class: "date"
+
+  # Test date with variable
+  test_date_variable:
+    name: "Test Date Variable"
+    formula: "date(start_date)"
+    variables:
+      start_date: "2025-01-15"
+    metadata:
+      device_class: "date"

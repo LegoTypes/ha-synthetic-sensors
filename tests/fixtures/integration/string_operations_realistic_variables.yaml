@@ -1,0 +1,32 @@
+version: '1.0'
+global_settings:
+  device_identifier: realistic_variables_test_device
+sensors:
+  device_name_analysis_sensor:
+    name: Device Name Analysis
+    formula: '''Name: '' + trim(device_name) + '' | Contains Temp: '' + ''Temp'' in
+      device_name + '' | Length: '' + len(device_name)'
+    variables:
+      device_name: sensor.living_room_temperature.device_name
+    metadata:
+      unit_of_measurement: ''
+      device_class: enum
+  status_processing_sensor:
+    name: Status Processing
+    formula: '''Status: '' + replace(upper(status), ''_'', '' '') + '' | Starts Online:
+      '' + startswith(status, ''online'')'
+    variables:
+      status: sensor.device_status
+    metadata:
+      unit_of_measurement: ''
+      device_class: enum
+  multi_device_comparison_sensor:
+    name: Multi Device Comparison
+    formula: '''Temp Length: '' + len(temp_name) + '' | Humidity Length: '' + len(humidity_name)
+      + '' | Same Type: '' + ''Sensor'' in temp_name'
+    variables:
+      temp_name: sensor.living_room_temperature.device_name
+      humidity_name: sensor.kitchen_humidity.device_name
+    metadata:
+      unit_of_measurement: ''
+      device_class: enum

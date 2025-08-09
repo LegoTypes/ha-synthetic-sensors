@@ -1,0 +1,27 @@
+# Test fixture for basic date arithmetic integration tests
+# Used by: test_date_arithmetic_integration.py::test_basic_duration_functions
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_date_arithmetic"
+
+sensors:
+  # Test duration functions return proper strings
+  test_days_function:
+    name: "Test Days Function"
+    formula: "days(30)"
+    metadata:
+      unit_of_measurement: ""
+
+  test_hours_function:
+    name: "Test Hours Function"
+    formula: "hours(24)"
+    metadata:
+      unit_of_measurement: ""
+
+  test_minutes_function:
+    name: "Test Minutes Function"
+    formula: "minutes(60)"
+    metadata:
+      unit_of_measurement: ""

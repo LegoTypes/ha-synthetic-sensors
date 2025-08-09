@@ -1,0 +1,20 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_metadata_literals"
+  variables:
+    external_sensor: "sensor.literal_external_power_meter"
+  metadata:
+    attribution: "Metadata Function Literals Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # Simple metadata test for literals test
+  metadata_last_changed_sensor:
+    name: "Metadata Last Changed Test"
+    formula: "metadata(power_entity, 'last_changed')"
+    variables:
+      power_entity: "sensor.literal_power_meter"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "timestamp"

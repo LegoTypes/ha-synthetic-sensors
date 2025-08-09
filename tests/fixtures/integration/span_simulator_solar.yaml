@@ -1,0 +1,72 @@
+version: '1.0'
+global_settings:
+  device_identifier: "span-sim-001"
+  variables:
+    energy_grace_period_minutes: '15'
+  metadata:
+    attribution: Data from SPAN Panel
+sensors:
+  "span_span-sim-001_solar_current_power":
+    entity_id: sensor.solar_current_power
+    name: Solar Current Power
+    metadata:
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+      unit_of_measurement: W
+    formula: sensor.span_simulator_unmapped_tab_30_power + sensor.span_simulator_unmapped_tab_32_power
+    attributes:
+      amperage:
+        formula: (sensor.span_simulator_unmapped_tab_30_power + sensor.span_simulator_unmapped_tab_32_power) / 240
+        metadata:
+          device_class: current
+          suggested_display_precision: 0
+          unit_of_measurement: A
+      tabs: "tabs [30:32]"
+      voltage: 240
+
+  "span_span-sim-001_solar_produced_energy":
+    entity_id: sensor.solar_produced_energy
+    name: Solar Produced Energy
+    metadata:
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 2
+      unit_of_measurement: Wh
+    formula: sensor.span_simulator_unmapped_tab_30_energy_produced + sensor.span_simulator_unmapped_tab_32_energy_produced
+    UNAVAILABLE: state if within_grace else UNKNOWN
+    UNKNOWN: state if within_grace else UNKNOWN
+    variables:
+      within_grace:
+        formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
+        UNAVAILABLE: 'false'
+        UNKNOWN: 'false'
+    attributes:
+      grace_period_active:
+        formula: within_grace
+      tabs: "tabs [30:32]"
+      voltage: 240
+
+  "span_span-sim-001_solar_consumed_energy":
+    entity_id: sensor.solar_consumed_energy
+    name: Solar Consumed Energy
+    metadata:
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 2
+      unit_of_measurement: Wh
+    formula: sensor.span_simulator_unmapped_tab_30_energy_consumed + sensor.span_simulator_unmapped_tab_32_energy_consumed
+    UNAVAILABLE: state if within_grace else UNKNOWN
+    UNKNOWN: state if within_grace else UNKNOWN
+    variables:
+      within_grace:
+        formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
+        UNAVAILABLE: 'false'
+        UNKNOWN: 'false'
+    attributes:
+      grace_period_active:
+        formula: within_grace
+      tabs: "tabs [30:32]"
+      voltage: 240
+
+

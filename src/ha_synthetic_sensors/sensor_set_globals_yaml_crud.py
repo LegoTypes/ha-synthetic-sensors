@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Any
 import yaml as yaml_lib
 
 from .config_types import GlobalSettingsDict
+from .constants_device import DEVICE_INFO_FIELDS
 from .exceptions import SyntheticSensorsError
 from .schema_validator import validate_global_settings_only
-from .sensor_set_global_settings import DEVICE_INFO_FIELDS
 
 if TYPE_CHECKING:
     from .sensor_set import SensorSet

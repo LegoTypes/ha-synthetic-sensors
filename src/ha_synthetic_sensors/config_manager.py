@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
-from .config_models import ComputedVariable, Config, ExceptionHandler, FormulaConfig, SensorConfig
+from .config_models import AlternateStateHandler, ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .config_yaml_converter import ConfigYamlConverter
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector
@@ -358,7 +358,7 @@ class ConfigManager:
         sensor.metadata = sensor_data.get("metadata", {})
 
         # Parse main formula (required)
-        formula = self._parse_single_formula(sensor_key, sensor_data)
+        formula = self._parse_single_formula(sensor_key, sensor_data, global_settings)
         sensor.formulas.append(formula)
 
         # Parse calculated attributes if present - only create formula entries for attributes with explicit formula structure
@@ -373,14 +373,14 @@ class ConfigManager:
 
         return sensor
 
-    def _parse_exception_handler(self, handler_data: dict[str, Any]) -> ExceptionHandler | None:
+    def _parse_alternate_state_handler(self, handler_data: dict[str, Any]) -> AlternateStateHandler | None:
         """Parse exception handler from YAML data.
 
         Args:
             handler_data: Dictionary containing UNAVAILABLE and/or UNKNOWN keys
 
         Returns:
-            ExceptionHandler object or None if no handlers found
+            AlternateStateHandler object or None if no handlers found
         """
         unavailable_handler = handler_data.get("UNAVAILABLE")
         unknown_handler = handler_data.get("UNKNOWN")
@@ -388,7 +388,7 @@ class ConfigManager:
         if not unavailable_handler and not unknown_handler:
             return None
 
-        return ExceptionHandler(unavailable=unavailable_handler, unknown=unknown_handler)
+        return AlternateStateHandler(unavailable=unavailable_handler, unknown=unknown_handler)
 
     def _parse_variables(self, variables_data: dict[str, Any]) -> dict[str, str | int | float | ComputedVariable]:
         """Parse variables dictionary, handling computed variables with formula key and exception handlers.
@@ -411,14 +411,14 @@ class ConfigManager:
                         raise ValueError(f"Variable '{var_name}' has empty formula expression")
 
                     # Parse exception handler if present
-                    exception_handler = self._parse_exception_handler(var_value)
+                    alternate_state_handler = self._parse_alternate_state_handler(var_value)
 
                     # Create ComputedVariable object
                     # Note: Dependencies will be resolved during context building phase
                     parsed_variables[var_name] = ComputedVariable(
                         formula=str(formula_expr).strip(),
                         dependencies=set(),  # Will be populated during dependency resolution
-                        exception_handler=exception_handler,
+                        alternate_state_handler=alternate_state_handler,
                     )
                 elif "UNAVAILABLE" in var_value or "UNKNOWN" in var_value:
                     # This appears to be a simple variable with exception handlers
@@ -437,12 +437,15 @@ class ConfigManager:
 
         return parsed_variables
 
-    def _parse_single_formula(self, sensor_key: str, sensor_data: SensorConfigDict) -> FormulaConfig:
+    def _parse_single_formula(
+        self, sensor_key: str, sensor_data: SensorConfigDict, global_settings: GlobalSettingsDict | None = None
+    ) -> FormulaConfig:
         """Parse a single formula sensor configuration (v1.0 format).
 
         Args:
             sensor_key: Sensor key (used as base for formula ID)
             sensor_data: Sensor configuration dictionary
+            global_settings: Global settings containing variables
 
         Returns:
             FormulaConfig: Parsed formula configuration
@@ -455,7 +458,8 @@ class ConfigManager:
         variables = self._parse_variables(sensor_data.get("variables", {}))
 
         # Validate computed variable references
-        validation_errors = validate_computed_variable_references(variables, sensor_key)
+        global_variables = (global_settings or {}).get("variables", {})
+        validation_errors = validate_computed_variable_references(variables, sensor_key, global_variables)
         if validation_errors:
             error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
             self._logger.error(error_msg)
@@ -468,8 +472,8 @@ class ConfigManager:
         attributes: dict[str, AttributeValue] = {}
         for attr_name, attr_config in sensor_data.get("attributes", {}).items():
             if isinstance(attr_config, dict) and "formula" in attr_config:
-                # Extract formula string from AttributeConfigDict
-                attributes[attr_name] = attr_config["formula"]
+                # Preserve the entire AttributeConfigDict structure instead of flattening
+                attributes[attr_name] = cast(AttributeValue, attr_config)
             elif isinstance(attr_config, str | int | float):
                 # Handle literal values (str, int, float) - these are compatible with AttributeValue
                 attributes[attr_name] = attr_config
@@ -477,8 +481,8 @@ class ConfigManager:
                 # Handle other types by converting to string
                 attributes[attr_name] = str(attr_config)
 
-        # Parse formula-level exception handler if present
-        formula_exception_handler = self._parse_exception_handler(cast(dict[str, Any], sensor_data))
+        # Parse formula-level alternate state handler if present
+        formula_alternate_state_handler = self._parse_alternate_state_handler(cast(dict[str, Any], sensor_data))
 
         return FormulaConfig(
             id=sensor_key,  # Use sensor key as formula ID for single-formula sensors
@@ -487,7 +491,7 @@ class ConfigManager:
             attributes=attributes,
             variables=variables,
             metadata=sensor_data.get("metadata", {}),
-            exception_handler=formula_exception_handler,
+            alternate_state_handler=formula_alternate_state_handler,
         )
 
     def _parse_attribute_formula(
@@ -527,14 +531,25 @@ class ConfigManager:
         if not attr_formula:
             raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have 'formula' field")
 
-        # Only use attribute-specific variables during YAML parsing
-        # Global and parent variable inheritance will happen later during evaluation
-        # This prevents global variables from being processed by cross-reference resolution
+        # Parse attribute-specific variables
         attr_variables = attr_config.get("variables", {})
         formula_variables = self._parse_variables(attr_variables if isinstance(attr_variables, dict) else {})
 
+        # CRITICAL FIX: Inherit computed variables from parent sensor
+        # Attribute formulas need access to computed variables defined at the sensor level
+        parent_variables = sensor_data.get("variables", {})
+        if parent_variables:
+            parsed_parent_variables = self._parse_variables(parent_variables if isinstance(parent_variables, dict) else {})
+            # Add parent variables to formula variables (attribute-specific variables take precedence)
+            for var_name, var_value in parsed_parent_variables.items():
+                if var_name not in formula_variables:
+                    formula_variables[var_name] = var_value
+
         # Validate computed variable references in attribute variables
-        validation_errors = validate_computed_variable_references(formula_variables, f"{sensor_key}.{attr_name}")
+        global_variables = (global_settings or {}).get("variables", {})
+        validation_errors = validate_computed_variable_references(
+            formula_variables, f"{sensor_key}.{attr_name}", global_variables
+        )
         if validation_errors:
             error_msg = f"Computed variable validation failed: {'; '.join(validation_errors)}"
             self._logger.error(error_msg)
@@ -544,8 +559,8 @@ class ConfigManager:
         # Entity IDs in attribute formulas will be resolved directly during evaluation
         # Global and parent variables will be inherited during evaluation phase
 
-        # Parse attribute-level exception handler if present
-        attr_exception_handler = self._parse_exception_handler(cast(dict[str, Any], attr_config))
+        # Parse attribute-level alternate state handler if present
+        attr_alternate_state_handler = self._parse_alternate_state_handler(cast(dict[str, Any], attr_config))
 
         return FormulaConfig(
             id=f"{sensor_key}_{attr_name}",  # Use sensor key + attribute name as ID
@@ -554,7 +569,7 @@ class ConfigManager:
             attributes={},
             variables=formula_variables,
             metadata=attr_config.get("metadata", {}),
-            exception_handler=attr_exception_handler,
+            alternate_state_handler=attr_alternate_state_handler,
         )
 
     async def async_reload_config(self) -> Config:

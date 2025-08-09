@@ -13,6 +13,7 @@ from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.evaluator_config import CircuitBreakerConfig, RetryConfig
 from ha_synthetic_sensors.exceptions import MissingDependencyError
+from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
 @pytest.fixture
@@ -398,9 +399,13 @@ class TestErrorHandling:
         # Get evaluation context
         context = evaluator.get_evaluation_context(sample_formula_config)
 
-        # Verify that variables are resolved to their actual values
+        # Verify that variables are resolved to ReferenceValue objects
         # The context building phase now properly resolves entity references
         assert "temp" in context
         assert "humidity" in context
-        assert context["temp"] == 25.0  # Resolved value, not entity ID
-        assert context["humidity"] == 60.0  # Resolved value, not entity ID
+        assert isinstance(context["temp"], ReferenceValue)
+        assert isinstance(context["humidity"], ReferenceValue)
+        assert context["temp"].value == 25.0  # Resolved value, not entity ID
+        assert context["humidity"].value == 60.0  # Resolved value, not entity ID
+        assert context["temp"].reference == "sensor.temperature"
+        assert context["humidity"].reference == "sensor.humidity"

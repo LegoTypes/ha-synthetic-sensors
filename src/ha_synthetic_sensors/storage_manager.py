@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .config_models import Config, SensorConfig
+from .config_models import DEFAULT_DOMAIN, Config, SensorConfig
 from .config_types import GlobalSettingsDict
 from .entity_change_handler import EntityChangeHandler
 from .entity_registry_listener import EntityRegistryListener
@@ -93,19 +93,39 @@ class StorageManager:
     while maintaining compatibility with existing config structures.
     """
 
-    def __init__(self, hass: HomeAssistant, storage_key: str = STORAGE_KEY, enable_entity_listener: bool = True) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        storage_key: str = STORAGE_KEY,
+        enable_entity_listener: bool = True,
+        integration_domain: str = DEFAULT_DOMAIN,
+    ) -> None:
         """Initialize storage manager.
 
         Args:
             hass: Home Assistant instance
             storage_key: Storage key for Home Assistant storage
             enable_entity_listener: Whether to enable entity registry listener
+            integration_domain: Integration domain for entity registration
         """
         self.hass = hass
         self._storage_key = storage_key
         self._store: Store[StorageData] = Store(hass, STORAGE_VERSION, storage_key)
         self._data: StorageData | None = None
         self._lock = asyncio.Lock()
+
+        # Parent integration domain used for entity registry pre-registration
+        # Auto-detect from storage_key if not explicitly provided
+        if integration_domain == DEFAULT_DOMAIN and storage_key != STORAGE_KEY:
+            # Extract domain from storage_key (e.g., "span_panel_synthetic" -> "span_panel")
+            if storage_key.endswith("_synthetic"):
+                detected_domain = storage_key[: -len("_synthetic")]
+                _LOGGER.info("Auto-detected integration domain '%s' from storage_key '%s'", detected_domain, storage_key)
+                self.integration_domain = detected_domain
+            else:
+                self.integration_domain = integration_domain
+        else:
+            self.integration_domain = integration_domain
 
         # Entity change handling components
         self._entity_change_handler = EntityChangeHandler()
@@ -471,6 +491,10 @@ class StorageManager:
                 sensor_set_id=sensor_set_id,
                 device_identifier=device_identifier,
             )
+
+        # Ensure entity index is properly rebuilt after all sensors and global settings are stored
+        sensor_set = self.get_sensor_set(sensor_set_id)
+        sensor_set.rebuild_entity_index()
 
     def prepare_sensor_set_creation_params(
         self, config: Config, sensor_set_id: str, device_identifier: str | None = None

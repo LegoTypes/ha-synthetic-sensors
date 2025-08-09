@@ -6,7 +6,6 @@ from typing import Any
 
 from ...config_models import SensorConfig
 from ...dependency_parser import DependencyParser
-from ...exceptions import CircularDependencyError
 from .base_manager import DependencyManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -269,8 +268,9 @@ class CrossSensorDependencyManager(DependencyManager):
 
         # Check for circular dependencies
         if len(result) != len(all_sensors):
-            remaining = [sensor for sensor in all_sensors if sensor not in result]
-            raise CircularDependencyError(remaining)
+            # POLICY: Cross-sensor cycles are non-fatal; do not log to avoid noise.
+            # Return partial order; runtime will use last-known values.
+            pass
 
         _LOGGER.debug("Cross-sensor evaluation order: %s", result)
         return result
@@ -317,9 +317,10 @@ class CrossSensorDependencyManager(DependencyManager):
             if sensor not in visited and has_cycle(sensor) and sensor not in circular_refs:
                 circular_refs.append(sensor)
 
+        # POLICY: Cross-sensor cycles are allowed; emit a warning and return the list without raising.
         if circular_refs:
-            raise CircularDependencyError(circular_refs)
-
+            # WFF Valid warning for HA states, typical in HA integrations
+            _LOGGER.warning("Circular cross-sensor dependency detected among: %s", sorted(set(circular_refs)))
         return circular_refs
 
     def _validate_cross_sensor_dependencies(
@@ -336,10 +337,11 @@ class CrossSensorDependencyManager(DependencyManager):
         """
         issues: list[str] = []
 
-        # Check for circular dependencies
+        # Check for circular dependencies (non-fatal)
         circular_refs = self._detect_cross_sensor_circular_references(sensor_dependencies, sensor_registry)
         if circular_refs:
-            issues.append(f"Circular dependencies detected: {', '.join(circular_refs)}")
+            # POLICY: Do not include non-fatal cycles in issues to avoid noise.
+            pass
 
         # Check for missing sensor references
         if self._sensor_registry_phase:

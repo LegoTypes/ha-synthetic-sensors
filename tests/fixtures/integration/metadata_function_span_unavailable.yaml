@@ -1,0 +1,35 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_metadata_span_unavailable"
+  variables:
+    external_sensor: "sensor.span_unavailable_external_power_meter"
+    energy_grace_period_minutes: 30
+  metadata:
+    attribution: "Metadata Function SPAN Unavailable Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # SPAN energy sensor for unavailable entity testing
+  span_example_with_unavailable_backing_entity:
+    name: "SPAN Energy Sensor Grace Period"
+    entity_id: "sensor.span_unavailable_test_consumed_energy"
+    formula: "state"
+    variables:
+      last_valid_value:
+        formula: "state"
+      last_valid_change:
+        formula: "metadata(state, 'last_changed')"
+      grace_period_active:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"
+      source_entity:
+        formula: "state"
+      grace_period_minutes:
+        formula: "energy_grace_period_minutes"
+    attributes:
+      last_valid_value: "last_valid_value"
+      last_valid_change: "last_valid_change"
+      grace_period_active: "grace_period_active"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"

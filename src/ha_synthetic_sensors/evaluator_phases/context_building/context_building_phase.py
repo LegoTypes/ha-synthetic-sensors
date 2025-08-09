@@ -4,16 +4,11 @@ import logging
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
-from ...exceptions import MissingDependencyError
-from ...type_definitions import ContextValue, DataProviderCallback
+from ...exceptions import DataValidationError, MissingDependencyError
+from ...reference_value_manager import ReferenceValueManager
+from ...type_definitions import ContextValue, DataProviderCallback, ReferenceValue
 from ...utils_config import resolve_config_variables
-from ...variable_resolver import (
-    ContextResolutionStrategy,
-    HomeAssistantResolutionStrategy,
-    IntegrationResolutionStrategy,
-    VariableResolutionStrategy,
-    VariableResolver,
-)
+from ..variable_resolution.resolver_factory import VariableResolverFactory
 from .builder_factory import ContextBuilderFactory
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,6 +35,7 @@ class ContextBuildingPhase:
         self._data_provider_callback: DataProviderCallback | None = None
         self._dependency_handler: Any = None
         self._sensor_to_backing_mapping: dict[str, str] = {}
+        self._global_settings: dict[str, Any] | None = None
 
     def set_evaluator_dependencies(
         self,
@@ -54,6 +50,18 @@ class ContextBuildingPhase:
         self._dependency_handler = dependency_handler
         self._sensor_to_backing_mapping = sensor_to_backing_mapping
 
+    def set_global_settings(self, global_settings: dict[str, Any] | None) -> None:
+        """Set global settings to make global variables available during context building.
+
+        This ensures that global variables are available when computed variables are
+        evaluated, fixing the empty context issue.
+        """
+        self._global_settings = global_settings
+        _LOGGER.debug(
+            "Context building phase: set global settings with %d variables",
+            len(global_settings.get("variables", {})) if global_settings else 0,
+        )
+
     def build_evaluation_context(
         self,
         dependencies: set[str],
@@ -64,88 +72,179 @@ class ContextBuildingPhase:
         """Build the complete evaluation context for formula evaluation."""
         eval_context: dict[str, ContextValue] = {}
 
+        # Add Home Assistant instance for metadata handler access
+        if self._hass is not None:
+            eval_context["_hass"] = self._hass
+
         # Add Home Assistant constants to evaluation context (lowest priority)
         self._add_ha_constants_to_context(eval_context)
 
-        # Create variable resolver
-        resolver = self._create_variable_resolver(context)
+        # Create modern resolver factory
+        resolver_factory = self._create_resolver_factory(context)
 
         # Add context variables first (highest priority)
         self._add_context_variables(eval_context, context)
 
+        # CRITICAL FIX: Add current sensor entity_id to context for metadata(state, ...) support
+        # This ensures the metadata handler can resolve 'state' token to the current sensor's entity_id
+        if sensor_config and sensor_config.entity_id:
+            self._add_entity_to_context(
+                eval_context,
+                "current_sensor_entity_id",
+                ReferenceValue(reference="sensor_config.entity_id", value=sensor_config.entity_id),
+                "current_sensor",
+            )
+            _LOGGER.debug("Added current sensor entity_id to context: %s", sensor_config.entity_id)
+
+        # Add global variables BEFORE resolving computed variables
+        # This ensures global variables are available when computed variables are evaluated
+        self._add_global_variables_to_context(eval_context)
+
         # Resolve entity dependencies
-        self._resolve_entity_dependencies(eval_context, dependencies, resolver)
+        self._resolve_entity_dependencies(eval_context, dependencies, resolver_factory)
 
         # Resolve config variables (can override entity values)
-        # Create a new resolver with the current eval_context to include resolved entities
-        resolver_with_context = self._create_variable_resolver(eval_context)
-        self._resolve_config_variables(eval_context, config, resolver_with_context, sensor_config)
+        # Use the same resolver factory as context is managed within individual resolvers
+        self._resolve_config_variables(eval_context, config, resolver_factory, sensor_config)
 
         _LOGGER.debug("Context building phase: built context with %d variables", len(eval_context))
         return eval_context
 
-    def _create_variable_resolver(self, context: dict[str, ContextValue] | None) -> VariableResolver:
-        """Create variable resolver with appropriate strategies."""
-        strategies: list[VariableResolutionStrategy] = []
+    def _create_resolver_factory(self, context: dict[str, ContextValue] | None) -> VariableResolverFactory:
+        """Create modern variable resolver factory for direct resolution."""
 
-        # Context resolution (highest priority)
-        if context:
-            strategies.append(ContextResolutionStrategy(context))
+        resolver_factory = VariableResolverFactory(
+            hass=self._hass,
+            data_provider_callback=self._data_provider_callback,
+            sensor_to_backing_mapping=self._sensor_to_backing_mapping,
+        )
 
-        # Integration resolution (for data provider callback)
-        if self._dependency_handler and self._dependency_handler.data_provider_callback:
-            strategies.append(
-                IntegrationResolutionStrategy(self._dependency_handler.data_provider_callback, self._dependency_handler)
-            )
+        # Configure the dependency handler for entity resolution
+        if self._dependency_handler:
+            resolver_factory.set_dependency_handler(self._dependency_handler)
 
-        # Home Assistant resolution (lowest priority, always included if hass available)
-        if self._hass:
-            strategies.append(HomeAssistantResolutionStrategy(self._hass))
-
-        return VariableResolver(strategies)
+        return resolver_factory
 
     def _add_context_variables(self, eval_context: dict[str, ContextValue], context: dict[str, ContextValue] | None) -> None:
         """Add context variables to evaluation context."""
         if context:
-            eval_context.update(context)
+            # ARCHITECTURE FIX: Ensure all context values are ReferenceValue objects
+            # This prevents raw value injection during context merging
+            for key, value in context.items():
+                if key.startswith("_"):
+                    # Skip internal registry keys
+                    eval_context[key] = value
+                elif isinstance(value, ReferenceValue):
+                    # Already a ReferenceValue - use directly
+                    eval_context[key] = value
+                else:
+                    # Wrap intermediate raw values with ReferenceValue from computed variable results
+                    if isinstance(value, (int | float | str | bool)):
+                        _LOGGER.debug(
+                            "Converting raw value '%s'=%s (type: %s) to ReferenceValue for context",
+                            key,
+                            value,
+                            type(value).__name__,
+                        )
+                        ReferenceValueManager.set_variable_with_reference_value(eval_context, key, key, value)
+                    else:
+                        # ERROR: Other raw values should not exist at this point
+                        _LOGGER.error(
+                            "CONTEXT_BUG: Raw value '%s'=%s (type: %s) found in context - this indicates an upstream bug",
+                            key,
+                            value,
+                            type(value).__name__,
+                        )
+                        # Fail fast to expose the problem
+                        raise TypeError(
+                            f"Raw value found in context: {key}={value}. Context should only contain ReferenceValue objects."
+                        )
+
+    def _add_global_variables_to_context(self, eval_context: dict[str, ContextValue]) -> None:
+        """Add global variables to the evaluation context before computed variable resolution.
+
+        This is critical for fixing the empty context issue - global variables must be
+        available BEFORE computed variables are evaluated.
+        """
+        if not self._global_settings:
+            _LOGGER.debug("Context building: No global settings available")
+            return
+
+        global_vars = self._global_settings.get("variables", {})
+        if not global_vars:
+            _LOGGER.debug("Context building: No global variables to add")
+            return
+
+        for var_name, var_value in global_vars.items():
+            # Store global variable as ReferenceValue with original value
+            # Let the handler/type analyzer system handle conversion during evaluation
+            ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_name, var_value)
+            _LOGGER.debug("Context building: Added global variable '%s' = %s", var_name, var_value)
 
     def _resolve_entity_dependencies(
-        self, eval_context: dict[str, ContextValue], dependencies: set[str], resolver: VariableResolver
+        self, eval_context: dict[str, ContextValue], dependencies: set[str], resolver_factory: VariableResolverFactory
     ) -> None:
-        """Resolve entity dependencies using variable resolver."""
+        """Resolve entity dependencies using modern variable resolver factory."""
         for entity_id in dependencies:
-            resolved_value, exists, _ = resolver.resolve_variable(entity_id, entity_id)
-            if exists and resolved_value is not None:
-                self._add_entity_to_context(eval_context, entity_id, resolved_value, "entity_dependency")
-            else:
-                # Defensive coding: This should have been caught in Phase 1, but raise exception as backup
-                raise MissingDependencyError(f"Failed to resolve entity dependency: {entity_id}")
+            try:
+                resolved_value = resolver_factory.resolve_variable(
+                    variable_name=entity_id, variable_value=entity_id, context=eval_context
+                )
+                if resolved_value is not None:
+                    self._add_entity_to_context(eval_context, entity_id, resolved_value, "entity_dependency")
+                else:
+                    # Entity could not be resolved
+                    raise MissingDependencyError(f"Failed to resolve entity dependency: {entity_id}")
+            except Exception as e:
+                # Log the specific error and re-raise as MissingDependencyError
+                _LOGGER.debug("Entity dependency resolution failed for '%s': %s", entity_id, e)
+                raise MissingDependencyError(f"Failed to resolve entity dependency: {entity_id}") from e
 
     def _add_entity_to_context(
         self, eval_context: dict[str, ContextValue], entity_id: str, value: ContextValue, source: str
     ) -> None:
         """Add entity to evaluation context."""
-        eval_context[entity_id] = value
+        # Use centralized ReferenceValueManager for type safety
+        # If value is already a ReferenceValue, use it directly
+        if isinstance(value, ReferenceValue):
+            eval_context[entity_id] = value
+        else:
+            # Create ReferenceValue for entity
+            ReferenceValueManager.set_variable_with_reference_value(
+                eval_context,
+                entity_id,
+                entity_id,
+                value,  # entity_id is both name and reference
+            )
         _LOGGER.debug("Added entity %s to context from %s: %s", entity_id, source, value)
 
     def _resolve_config_variables(
         self,
         eval_context: dict[str, ContextValue],
         config: FormulaConfig | None,
-        resolver: VariableResolver,
+        resolver_factory: VariableResolverFactory,
         sensor_config: SensorConfig | None = None,
     ) -> None:
-        """Resolve config variables using variable resolver."""
+        """Resolve config variables using modern variable resolver factory."""
 
         def resolver_callback(var_name: str, var_value: Any, context: dict[str, ContextValue], sensor_cfg: Any) -> Any:
             # For non-string values (numeric literals), add directly to context
             if not isinstance(var_value, str):
                 return var_value
 
-            # Use resolver to resolve entity references (strings only)
-            resolved_value, exists, _ = resolver.resolve_variable(var_name, var_value)
-            if exists and resolved_value is not None:
-                return resolved_value
+            # Use modern resolver factory which returns ReferenceValue objects directly
+            try:
+                resolved_value = resolver_factory.resolve_variable(
+                    variable_name=var_name, variable_value=var_value, context=context
+                )
+                if resolved_value is not None:
+                    # Modern resolver returns ReferenceValue objects directly
+                    return resolved_value
+            except DataValidationError:
+                # Re-raise fatal data validation errors - these should not be suppressed
+                raise
+            except Exception as e:
+                _LOGGER.debug("Config variable resolution failed for '%s': %s", var_name, e)
 
             # Fallback to adding as-is if resolution fails
             return var_value

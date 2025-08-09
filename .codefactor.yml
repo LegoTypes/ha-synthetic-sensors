@@ -1,3 +1,16 @@
+version: 2
+
+# Exclude tests from CodeFactor analysis entirely
+exclude_patterns:
+  - tests/**
+  - **/tests/**
+  - **/test_*.py
+  - **/*_test.py
+
+# Only rate implementation code
+ratings:
+  paths:
+    - src/**
 engines:
   pep8:
     enabled: true

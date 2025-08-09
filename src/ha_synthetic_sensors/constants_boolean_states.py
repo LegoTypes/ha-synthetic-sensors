@@ -33,6 +33,7 @@ def get_true_states() -> set[Any]:
     # Add HA's fundamental boolean states
     ha_basic_states = {
         _get_constant("STATE_ON"),
+        _get_constant("STATE_HOME"),  # Device tracker: home
     }
 
     # Only add truly generic boolean representations not covered by HA
@@ -53,6 +54,7 @@ def get_false_states() -> set[Any]:
     # Add HA's fundamental boolean states
     ha_basic_states = {
         _get_constant("STATE_OFF"),
+        _get_constant("STATE_NOT_HOME"),  # Device tracker: not_home
     }
 
     # Only add truly generic boolean representations not covered by HA

@@ -736,6 +736,14 @@ def mock_entity_registry():
                 self._entities[entity_id] = mock_entity
                 print(f"📝 Manual registry: Added entity {entity_id}")
 
+        def remove_entity(self, entity_id):
+            """Helper method to remove entities for testing isolation."""
+            if entity_id in self._entities:
+                del self._entities[entity_id]
+                print(f"🗑️ Manual registry: Removed entity {entity_id}")
+                return True
+            return False
+
         def async_get(self, entity_id):
             """Mock the async_get method that HA uses to retrieve entities."""
             return self._entities.get(entity_id)
@@ -1105,6 +1113,39 @@ def mock_config_entry():
     entry.data = {"name": "test_integration"}
     entry.entry_id = "test_entry_id"
     return entry
+
+
+@pytest.fixture
+def mock_device_registry():
+    """Create a mock device registry that works with the synthetic sensors system."""
+    mock_registry = MagicMock()
+
+    # Create a mock device entry
+    mock_device_entry = MagicMock()
+    mock_device_entry.name = "Test Device"
+    mock_device_entry.identifiers = {("ha_synthetic_sensors", "test_device_123")}
+
+    # Set up the registry to return our mock device
+    mock_registry.devices = MagicMock()
+    mock_registry.async_get_device.return_value = mock_device_entry
+
+    return mock_registry
+
+
+@pytest.fixture
+def mock_async_add_entities():
+    """Create a mock async_add_entities callback that properly tracks entity additions."""
+    mock_callback = MagicMock()
+
+    def mock_callback_impl(entities):
+        # Store the entities for verification
+        mock_callback.added_entities = entities
+        return None
+
+    mock_callback.side_effect = mock_callback_impl
+    mock_callback.added_entities = []  # Initialize for easy access
+
+    return mock_callback
 
 
 @pytest.fixture

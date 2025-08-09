@@ -81,6 +81,36 @@ def _register_backing_entities_and_mappings(
         logger.debug("No backing entities provided - sensors will use HA entity references or direct values")
 
 
+def rebind_backing_entities(
+    sensor_manager: SensorManager,
+    backing_entity_ids: set[str],
+    change_notifier: DataProviderChangeNotifier | None,
+    *,
+    trigger_initial_update: bool = True,
+    logger: logging.Logger | None = None,
+) -> None:
+    """Rebind data-provider entities and optionally trigger a coarse update.
+
+    Common helper for integrations to call after initial setup or CRUD operations
+    (e.g., adding solar or named circuits) so newly added sensors evaluate immediately.
+    """
+    log = logger or logging.getLogger(__name__)
+    if not backing_entity_ids:
+        return
+
+    try:
+        sensor_manager.register_data_provider_entities(backing_entity_ids, change_notifier)
+    except Exception as err:
+        log.warning("Failed to register backing entities with notifier: %s", err)
+        return
+
+    if trigger_initial_update and change_notifier is not None:
+        try:
+            change_notifier(backing_entity_ids)
+        except Exception as err:
+            log.warning("Failed to trigger initial update after rebind: %s", err)
+
+
 def _log_configuration_details(config: Any, device_identifier: str) -> None:
     """Log detailed configuration information."""
     if not config or not config.sensors:
@@ -169,9 +199,11 @@ async def async_setup_synthetic_sensors(
         add_entities_callback=async_add_entities,
         device_info=device_info,
         data_provider_callback=data_provider_callback,
+        device_identifier=device_identifier,
     )
 
     # Register backing entities if provided and non-empty
+    backing_entity_ids: set[str] | None = None
     if sensor_to_backing_mapping:
         backing_entity_ids = set(sensor_to_backing_mapping.values())
         if backing_entity_ids:  # Only register if we have actual entities
@@ -196,6 +228,24 @@ async def async_setup_synthetic_sensors(
 
     await sensor_manager.load_configuration(config)
     logger.info("Configuration loaded successfully")
+
+    # Trigger an initial coarse update if backing entities were provided
+    initial_backing_ids: set[str] = set()
+    if backing_entity_ids is not None:
+        initial_backing_ids = backing_entity_ids
+    elif sensor_to_backing_mapping is not None:
+        initial_backing_ids = set(sensor_to_backing_mapping.values())
+
+    if change_notifier and initial_backing_ids:
+        logger.debug(
+            "Triggering initial coarse update for %d backing entities",
+            len(initial_backing_ids),
+        )
+        try:
+            change_notifier(initial_backing_ids)
+        except Exception as err:
+            logger.warning("Initial coarse update failed: %s", err)
+
     logger.info("=== END SYNTHETIC SENSORS SETUP DEBUG ===")
 
     return sensor_manager
@@ -256,13 +306,38 @@ async def async_setup_synthetic_sensors_with_entities(
         integration_data = hass.data.get(config_entry.domain, {}).get(config_entry.entry_id, {})
         device_info = integration_data.get("device_info")
 
+    # CRITICAL: Validate domain consistency to prevent entity registration conflicts
+    # Tests may pass a MagicMock for config_entry.domain; only validate when domain is a real string
+    logger.info("=== DOMAIN VALIDATION ===")
+    logger.info("Config entry domain: %s", getattr(config_entry, "domain", None))
+    logger.info("Storage manager integration domain: %s", storage_manager.integration_domain)
+
+    integration_domain_obj = getattr(config_entry, "domain", None)
+    integration_domain = (
+        integration_domain_obj if isinstance(integration_domain_obj, str) else storage_manager.integration_domain
+    )
+
+    if isinstance(integration_domain_obj, str) and storage_manager.integration_domain != integration_domain:
+        logger.error(
+            "DOMAIN MISMATCH: StorageManager integration_domain '%s' != ConfigEntry domain '%s'",
+            storage_manager.integration_domain,
+            integration_domain,
+        )
+        raise ValueError(
+            f"Domain mismatch: StorageManager expects '{storage_manager.integration_domain}' "
+            f"but ConfigEntry has '{integration_domain}'. This will cause entity registration conflicts."
+        )
+
+    logger.info("Using integration domain: %s", integration_domain)
+
     # Create sensor manager using the simple helper
     sensor_manager = await async_create_sensor_manager(
         hass=hass,
-        integration_domain=config_entry.domain,
+        integration_domain=integration_domain,
         add_entities_callback=async_add_entities,
         device_info=device_info,
         data_provider_callback=data_provider_callback,
+        device_identifier=device_identifier,
     )
 
     # Register backing entities and mappings
@@ -368,7 +443,7 @@ async def async_setup_synthetic_integration(
     """
 
     # Setup StorageManager
-    storage_manager = StorageManager(hass, f"{integration_domain}_synthetic")
+    storage_manager = StorageManager(hass, f"{integration_domain}_synthetic", integration_domain=integration_domain)
     await storage_manager.async_load()
 
     # Get/Create SensorSet from StorageManager
@@ -463,46 +538,10 @@ async def async_setup_synthetic_integration_with_auto_backing(
 
     Returns:
         Tuple of (StorageManager, SensorManager): Both configured and ready
-
-    Example:
-        ```python
-        # In your sensor.py platform - backing entities are handled automatically!
-        from ha_synthetic_sensors import async_setup_synthetic_integration_with_auto_backing, SensorConfig, FormulaConfig
-
-        async def async_setup_entry(hass, config_entry, async_add_entities):
-            # Your native sensors first
-            async_add_entities(native_sensors)
-
-            # Define your synthetic sensor configurations
-            sensor_configs = [
-                SensorConfig(
-                    unique_id="main_power",
-                    name="Main Power",
-                    entity_id="sensor.span_main_power",
-                    device_identifier=device_id,
-                    formulas=[FormulaConfig(
-                        id="main",
-                        formula="source_value",
-                        variables={"source_value": "sensor.span_backing_main_power"}  # Backing entity auto-detected!
-                    )]
-                )
-            ]
-
-            # One call sets up everything - backing entities are extracted automatically!
-            storage_manager, sensor_manager = await async_setup_synthetic_integration_with_auto_backing(
-                hass=hass,
-                config_entry=config_entry,
-                async_add_entities=async_add_entities,
-                integration_domain=DOMAIN,
-                device_identifier=coordinator.device_id,
-                sensor_configs=sensor_configs,
-                data_provider_callback=create_data_provider(coordinator),
-            )
-        ```
     """
 
     # Setup StorageManager
-    storage_manager = StorageManager(hass, f"{integration_domain}_synthetic")
+    storage_manager = StorageManager(hass, f"{integration_domain}_synthetic", integration_domain=integration_domain)
     await storage_manager.async_load()
 
     # Get/Create SensorSet from StorageManager

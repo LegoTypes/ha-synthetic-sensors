@@ -1,12 +1,17 @@
+# Fixture for complex variable resolution integration tests
+# - variable inheritance across global -> sensor -> attribute
+# - entity attribute access patterns
+
 version: "1.0"
 
 global_settings:
-  device_identifier: "test_device_123"
   variables:
     global_multiplier: 2.5
     global_base: "sensor.global_base_power"
   metadata:
     attribution: "Variable Resolution Test"
+    global_base: sensor.global_base_power  # inherited default used by sensors
+  device_identifier: "test_device_123"
 
 sensors:
   variable_inheritance_sensor:
@@ -25,7 +30,7 @@ sensors:
       override_test:
         formula: "local_multiplier * override_value"
         variables:
-          local_multiplier: 5.0  # Different name to avoid conflict
+          local_multiplier: 5.0
           override_value: 50
         metadata:
           unit_of_measurement: "W"

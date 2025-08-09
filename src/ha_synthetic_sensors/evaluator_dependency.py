@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from .collection_resolver import CollectionResolver
 from .dependency_parser import DependencyParser
 from .exceptions import DataValidationError
-from .variable_resolver import HomeAssistantResolutionStrategy
+from .validation_helper import convert_to_numeric
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
@@ -395,9 +395,8 @@ class EvaluatorDependency:
 
         # Try to convert to numeric or boolean-like states
         try:
-            # This will handle numeric values and boolean conversions per our variable resolver
-            strategy = HomeAssistantResolutionStrategy(self._hass)
-            strategy.get_numeric_state(state)
+            # This will handle numeric values and boolean conversions
+            convert_to_numeric(state.state, state.entity_id)
             return "ok"
         except Exception:
             # Truly non-numeric states that can't be converted - truly fatal (config error)

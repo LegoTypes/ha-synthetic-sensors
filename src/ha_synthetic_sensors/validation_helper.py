@@ -136,7 +136,20 @@ def convert_to_numeric(state: Any, entity_id: str) -> float:
     if state is None:
         raise NonNumericStateError(entity_id, "None")
 
+    # Try direct numeric conversion first
     try:
         return float(state)
-    except (ValueError, TypeError) as e:
-        raise NonNumericStateError(entity_id, str(state)) from e
+    except (ValueError, TypeError):
+        pass
+
+    # Handle boolean-like states for binary sensors
+    if isinstance(state, str):
+        state_lower = state.lower()
+        # Standard Home Assistant binary sensor states
+        if state_lower in ("on", "true", "open", "locked", "home", "detected", "moist", "wet"):
+            return 1.0
+        if state_lower in ("off", "false", "closed", "unlocked", "away", "clear", "not_moist", "dry"):
+            return 0.0
+
+    # If no conversion possible, raise error
+    raise NonNumericStateError(entity_id, str(state))

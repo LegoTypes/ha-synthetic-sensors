@@ -51,6 +51,28 @@ class ConditionParsingError(FormulaEvaluationError):
         super().__init__(f"Condition parsing error in '{condition}': {details}")
 
 
+# Fatal evaluation context errors - these should NEVER be caught and masked
+class FatalEvaluationError(SyntheticSensorsError):
+    """Base class for fatal evaluation errors that indicate system-level problems."""
+
+
+class EmptyEvaluationContextError(FatalEvaluationError):
+    """Fatal error: formula evaluation attempted with empty context.
+
+    This indicates a fundamental system error where variables should be available
+    but the evaluation context is completely empty. This should never be masked
+    by UNAVAILABLE fallbacks - it's a critical system failure.
+    """
+
+    def __init__(self, formula: str, context_type: str = "computed variable"):
+        self.formula = formula
+        self.context_type = context_type
+        super().__init__(
+            f"FATAL: {context_type} formula '{formula}' evaluated with empty context {{}}. "
+            f"This indicates a critical system error - required variables are missing from evaluation context."
+        )
+
+
 class DependencyError(FormulaEvaluationError):
     """Base class for dependency-related errors."""
 

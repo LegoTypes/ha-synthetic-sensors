@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
-from .cache import FormulaCache
-
-if TYPE_CHECKING:
-    from .cache import CacheConfig
-    from .config_models import FormulaConfig
-    from .type_definitions import CacheStats, ContextValue, EvaluationResult
+from .cache import CacheConfig, FormulaCache
+from .config_models import FormulaConfig
+from .type_definitions import CacheStats, ContextValue, EvaluationResult, ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,9 +109,19 @@ class EvaluatorCache:
 
         filtered = {}
         for key, value in context.items():
+            # Skip internal keys that start with underscore
+            if key.startswith("_"):
+                continue
             # Only cache simple, serializable values
             if isinstance(value, str | int | float | bool):
                 filtered[key] = value
+            elif isinstance(value, ReferenceValue):
+                # Handle ReferenceValue objects by extracting their resolved value
+                resolved_value = value.value
+                if isinstance(resolved_value, str | int | float | bool):
+                    filtered[key] = resolved_value
+                    # Note: Cache key now includes entity_id implicitly through the value
+                    # Entity ID renames will cause cache misses, which is correct behavior
             elif hasattr(value, "state") and value is not None:
                 # Handle Home Assistant State objects
                 state_value = value.state

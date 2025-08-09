@@ -1,0 +1,109 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_date_arithmetic_comprehensive"
+  variables:
+    # Global date variables for testing
+    project_start_date: "2025-01-01"
+    maintenance_interval_months: 6
+
+sensors:
+  # Test 1: Basic date arithmetic with duration functions
+  future_date_calculator:
+    name: "Future Date Calculator"
+    formula: "date(project_start_date) + days(30)"
+    metadata:
+      device_class: "date"
+      friendly_name: "30 Days From Project Start"
+
+  # Test 2: Multiple duration arithmetic
+  complex_date_calculation:
+    name: "Complex Date Calculation"
+    formula: "date(project_start_date) + weeks(4) + days(3) + hours(12)"
+    metadata:
+      device_class: "date"
+      friendly_name: "4 weeks, 3 days, 12 hours from start"
+
+  # Test 3: Date differences (should return numeric days)
+  project_duration:
+    name: "Project Duration"
+    formula: "date(end_date) - date(project_start_date)"
+    variables:
+      end_date: "2025-03-15"
+    metadata:
+      unit_of_measurement: "d"
+      device_class: "duration"
+      friendly_name: "Days between start and end"
+
+  # Test 4: Maintenance scheduling with variables
+  next_maintenance_due:
+    name: "Next Maintenance Due"
+    formula: "date(last_service_date) + months(maintenance_interval_months)"
+    variables:
+      last_service_date: "2024-07-01"
+    metadata:
+      device_class: "date"
+      friendly_name: "Next scheduled maintenance"
+
+  # Test 5: Cross-sensor reference with date arithmetic
+  milestone_tracker:
+    name: "Milestone Tracker"
+    formula: "date(project_start_date) + days(progress_days)"
+    variables:
+      progress_days: 45
+    attributes:
+      # Reference the future_date_calculator sensor
+      days_until_milestone:
+        formula: "date(future_date_calculator) - date(now())"
+        metadata:
+          unit_of_measurement: "d"
+          friendly_name: "Days until 30-day milestone"
+
+      # Show relative timing
+      is_milestone_reached:
+        formula: "date(now()) >= date(future_date_calculator) ? 1 : 0"
+        metadata:
+          device_class: "connectivity"
+          friendly_name: "Has 30-day milestone been reached"
+
+  # Test 6: Practical Home Assistant use case - recent activity
+  activity_monitor:
+    name: "Activity Monitor"
+    formula: "1"  # Simple base value
+    variables:
+      last_activity_time: "2025-01-10T14:30:00"
+    attributes:
+      hours_since_last_activity:
+        formula: "date(now()) - date(last_activity_time)"
+        metadata:
+          unit_of_measurement: "h"
+          device_class: "duration"
+          friendly_name: "Hours since last activity"
+
+      is_recent_activity:
+        formula: "date(last_activity_time) >= date(now()) - hours(24) ? 1 : 0"
+        metadata:
+          device_class: "connectivity"
+          friendly_name: "Activity within last 24 hours"
+
+  # Test 7: Business logic with conditional date arithmetic
+  schedule_optimizer:
+    name: "Schedule Optimizer"
+    formula: "date(base_schedule_date) + days(optimization_offset)"
+    variables:
+      base_schedule_date: "2025-02-01"
+      optimization_offset: 5
+    attributes:
+      # Conditional date calculation
+      optimal_start_time:
+        formula: "date(base_schedule_date) + (optimization_offset > 3 ? days(7) : days(3))"
+        metadata:
+          device_class: "date"
+          friendly_name: "Optimized schedule start"
+
+      # Business hours calculation
+      next_business_day:
+        formula: "date(base_schedule_date) + days(1) + hours(9)"
+        metadata:
+          device_class: "timestamp"
+          friendly_name: "Next business day at 9 AM"

@@ -301,12 +301,20 @@ class TestConvertToNumeric:
 
         assert "Entity 'test.entity' has non-numeric state 'None'" in str(exc_info.value)
 
-    def test_convert_to_numeric_non_numeric_string(self):
-        """Test numeric conversion with non-numeric string."""
-        with pytest.raises(NonNumericStateError) as exc_info:
-            convert_to_numeric("on", "test.entity")
+    def test_convert_to_numeric_boolean_like_string(self):
+        """Test numeric conversion with boolean-like string."""
+        # Boolean-like strings should convert to numeric values
+        result = convert_to_numeric("on", "test.entity")
+        assert result == 1.0
 
-        assert "Entity 'test.entity' has non-numeric state 'on'" in str(exc_info.value)
+        result = convert_to_numeric("off", "test.entity")
+        assert result == 0.0
+
+        result = convert_to_numeric("true", "test.entity")
+        assert result == 1.0
+
+        result = convert_to_numeric("false", "test.entity")
+        assert result == 0.0
 
     def test_convert_to_numeric_empty_string(self):
         """Test numeric conversion with empty string."""
@@ -387,17 +395,17 @@ class TestValidationHelperIntegration:
         numeric_value = convert_to_numeric(validated["value"], "test.entity")
         assert numeric_value == 42.5
 
-    def test_data_provider_invalid_numeric_flow(self):
-        """Test flow with invalid numeric value from data provider."""
-        # Non-numeric data provider result
+    def test_data_provider_boolean_like_flow(self):
+        """Test flow with boolean-like value from data provider."""
+        # Boolean-like data provider result
         provider_result = {"value": "on", "exists": True}
 
         validated = validate_data_provider_result(provider_result, "test.entity")
         assert validated["value"] == "on"
 
-        # Should fail on numeric conversion
-        with pytest.raises(NonNumericStateError):
-            convert_to_numeric(validated["value"], "test.entity")
+        # Should convert to numeric value
+        result = convert_to_numeric(validated["value"], "test.entity")
+        assert result == 1.0
 
     def test_entity_state_validation_flow(self):
         """Test entity state validation and numeric conversion flow."""
@@ -446,7 +454,7 @@ class TestValidationHelperIntegration:
             convert_to_numeric(value, "test.entity")
 
         # Test values that should be invalid
-        invalid_values = [None, "on", "off", "unknown", "unavailable", "", "text", [], {}, object()]
+        invalid_values = [None, "unknown", "unavailable", "", "text", [], {}, object()]
 
         for value in invalid_values:
             assert is_valid_numeric_state(value) is False, f"Value {value} should be invalid numeric"

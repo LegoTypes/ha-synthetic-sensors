@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from ...shared_constants import get_reserved_words
-from ...type_definitions import ContextValue
+from ...type_definitions import ContextValue, ReferenceValue
 from .base_resolver import VariableResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,7 +55,13 @@ class AttributeReferenceResolver(VariableResolver):
             attribute_value = context.get(variable_name)
 
             if attribute_value is not None:
-                _LOGGER.debug("Attribute reference resolver: '%s' -> %s", variable_name, attribute_value)
+                # Handle ReferenceValue objects by extracting their value
+                # Local import to avoid circular import in type-only context
+                if isinstance(attribute_value, ReferenceValue):
+                    _LOGGER.debug(
+                        "Attribute reference resolver: '%s' -> ReferenceValue(%s)", variable_name, attribute_value.value
+                    )
+                    return attribute_value.value
                 return attribute_value
             _LOGGER.debug("Attribute reference resolver: attribute '%s' found but None", variable_name)
             return None

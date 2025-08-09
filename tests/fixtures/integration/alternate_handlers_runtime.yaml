@@ -1,0 +1,53 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_alternate_handlers_runtime"
+  variables:
+    grace_minutes: "15"  # string on purpose to verify analyzer numeric coercion
+  metadata:
+    attribution: "Alternate handlers + guard runtime test"
+
+sensors:
+  # Guard + metadata-only computed variable with unrelated unknown in context
+  guard_metadata_sensor:
+    name: "Guard Metadata Sensor"
+    entity_id: "sensor.guard_backing"
+    formula: "state"
+    UNAVAILABLE: "state if within_grace else UNKNOWN"
+    variables:
+      within_grace:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < grace_minutes"
+        UNAVAILABLE: false
+      # Unused variable with unknown state; should not trip the guard
+      unused_var: "sensor.unused_unknown"
+    attributes:
+      grace_period_active:
+        formula: "within_grace"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  # Literal numeric alternate handler
+  literal_alternate_sensor:
+    name: "Literal Alternate Sensor"
+    formula: "missing_value + 1"
+    UNAVAILABLE: 10
+    variables:
+      missing_value: "sensor.nonexistent_value"
+    metadata:
+      unit_of_measurement: "W"
+
+  # Object-form alternate handler with local variables
+  object_alternate_sensor:
+    name: "Object Alternate Sensor"
+    formula: "missing_value * 2"
+    UNAVAILABLE:
+      formula: "backup + 1"
+      variables:
+        backup: 5
+    variables:
+      missing_value: "sensor.nonexistent_value"
+    metadata:
+      unit_of_measurement: "W"
+
+

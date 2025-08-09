@@ -8,26 +8,39 @@ from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.exceptions import DataValidationError
 from ha_synthetic_sensors.type_definitions import DataProviderResult
-from ha_synthetic_sensors.variable_resolver import IntegrationResolutionStrategy
 
 
-def test_data_provider_returns_none() -> None:
+def test_data_provider_returns_none(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that when data provider callback returns None, it raises DataValidationError."""
-    mock_callback = MagicMock(return_value=None)
-    strategy = IntegrationResolutionStrategy(mock_callback)
+
+    def mock_bad_data_provider(entity_id: str) -> DataProviderResult:
+        return None  # type: ignore[return-value]
+
+    evaluator = Evaluator(mock_hass, data_provider_callback=mock_bad_data_provider)
+    evaluator.update_integration_entities({"sensor.test"})
+
+    config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
     with pytest.raises(DataValidationError, match="Data provider callback returned None.*fatal implementation error"):
-        strategy.resolve_variable("test_var", "sensor.test")
+        evaluator.evaluate_formula(config)
 
 
-def test_data_provider_returns_none_value() -> None:
+def test_data_provider_returns_none_value(mock_hass, mock_entity_registry, mock_states) -> None:
     """Test that when data provider returns None as value, it's handled gracefully."""
-    mock_callback = MagicMock(return_value={"value": None, "exists": True})
-    strategy = IntegrationResolutionStrategy(mock_callback)
+
+    def mock_data_provider(entity_id: str) -> DataProviderResult:
+        return {"value": None, "exists": True}
+
+    evaluator = Evaluator(mock_hass, data_provider_callback=mock_data_provider)
+    evaluator.update_integration_entities({"sensor.test"})
+
+    config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
     # Should handle None values gracefully by converting to "unknown"
-    result = strategy.resolve_variable("test_var", "sensor.test")
-    assert result[0] == "unknown"  # First element is the value
+    result = evaluator.evaluate_formula(config)
+    assert result["success"] is True
+    assert result["state"] == "unknown"
+    assert result["value"] is None
 
 
 def test_evaluator_handles_none_from_data_provider(mock_hass, mock_entity_registry, mock_states) -> None:

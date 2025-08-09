@@ -52,3 +52,32 @@ sensors:
       alarm_set: "binary_sensor.alarm_set"
     metadata:
       unit_of_measurement: "boolean"
+
+  # Test conditional expressions with boolean logic
+  test_conditional_boolean:
+    name: "Conditional Boolean Test"
+    formula: "'Secure' if not (door_open or window_open) else 'Unsecure'"
+    variables:
+      door_open: "binary_sensor.door_open"
+      window_open: "binary_sensor.window_open"
+    metadata:
+      unit_of_measurement: "text"
+
+  # Test boolean operations with string functions
+  test_boolean_with_strings:
+    name: "Boolean with String Operations"
+    formula: "contains(device_name, 'sensor') and startswith(device_name, 'temp')"
+    variables:
+      device_name: "sensor.temperature_sensor"
+    metadata:
+      unit_of_measurement: "boolean"
+
+  # Test HA-style boolean state preprocessing
+  test_ha_style_booleans:
+    name: "HA Style Boolean Test"
+    formula: "door_sensor and not window_sensor"
+    variables:
+      door_sensor: "binary_sensor.door_open"     # Will have 'on'/'off' states
+      window_sensor: "binary_sensor.window_open" # Will have 'on'/'off' states
+    metadata:
+      unit_of_measurement: "boolean"

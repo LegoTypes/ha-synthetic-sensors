@@ -316,16 +316,10 @@ class TestExceptionHandlingIntegration:
             attr_sensor = next((e for e in created_entities if e.unique_id == "attribute_formula_exceptions"), None)
             assert attr_sensor is not None, "Attribute exception sensor should exist"
 
-            # NOTE: This sensor currently has a configuration parsing issue where "sensor.working_entity"
-            # is incorrectly parsed as separate variables "sensor" and "working_entity".
-            # This is not an entity resolution issue (proven by working dependency resolver test).
-            # TODO: Fix YAML configuration parsing to properly recognize entity IDs in formulas
-            # For now, skip this assertion since the core functionality is proven to work.
-
-            # The sensor exists and the system handles the configuration issue gracefully
-            # assert attr_sensor.native_value is not None or attr_sensor.state is not None, (
-            #     "Attribute sensor should have computed main value from sensor.working_entity"
-            # )
+            # Test that the sensor computed a value from sensor.working_entity
+            assert attr_sensor.native_value is not None or attr_sensor.state is not None, (
+                "Attribute sensor should have computed main value from sensor.working_entity"
+            )
 
             # Attributes should also be computed via exception handlers
             if hasattr(attr_sensor, "extra_state_attributes") and attr_sensor.extra_state_attributes:
@@ -443,11 +437,8 @@ class TestExceptionHandlingIntegration:
             # global_factor: formula: "missing_global_entity * 1.5", UNAVAILABLE: "1.0", UNKNOWN: "0.8"
             complex_sensor = next((e for e in created_entities if e.unique_id == "complex_variable_exceptions"), None)
             assert complex_sensor is not None
-            # NOTE: This sensor has global variable inheritance issues in the test configuration
-            # The global_factor variable is not being inherited properly by sensors
-            # Core exception handling functionality is proven by other working sensors
-            # TODO: Fix global variable inheritance in configuration system
-            # assert complex_sensor.native_value is not None, "Complex sensor should compute via global exception handler"
+            # Test that the sensor computed a value using global variables
+            assert complex_sensor.native_value is not None, "Complex sensor should compute via global exception handler"
 
             # 2. Test nested multi-level exception handling
             # level_3 -> fallback_level_3 (100), level_2 -> fallback_level_2 (150), level_1 -> fallback_level_1 (200)

@@ -13,23 +13,29 @@ that may be in-memory objects.
 These idioms define the fundamental rules and behaviors for state and entity references in synthetic sensor formulas. They
 are the foundation for all formula evaluation and variable resolution in the package.
 
-## Definitions
+The system implements entities reference and values internally using a **ReferenceValue architecture** that ensures type
+safety and provides handlers with access to both entity references and resolved values. This architecture enables features
+like the `metadata()` function that require knowledge of the actual Home Assistant entity ID. For detailed implementation
+information, see the [ReferenceValue Architecture Implementation Guide](reference_value_architecture.md).
 
+## Synthetic Sensor Definitions
+
+- YAML provides the synthetic sensor definition with a main sensor formula at a minimum.
 - The pre-evaluation state refers to the sensor's last calculated value from the previous evaluation cycle.
-- A backing entity refers to synthetic sensor state represented in another object which could be an integration-owned object
-  registered as a backing entity for the synthetic sensor or a reference in the formula of the synthetic sensor to an HA
-  sensor. The integration is responsible for properly constructing sensor definitions and ensuring that references to other
-  entities are valid. When an integration starts up, the initial data in backing entities may not be fully populated, but the
-  registration of backing entities must be validated by the synthetic package such that a registration provides at least one
-  dictionary entry for any backing entities that are registered. If backing entities were provided but no entries exist, this
-  condition is a fatal error and an appropriate exception should be raised.
+- The pos-evaluation state refers to the sensor state after the formula is evaluated.
+- A backing entity refers to synthetic sensor state referenced through another object which could be an integration-owned
+  virtual object or a an HA registered sensor (whether owned by the integration or not). Backing entities are registered and
+  referenced by their entity_id.
+- A formula can be purely a calculated state and not have a backing entity in which case the state of the sensor is the
+  synthetic state itself.
+- The integration is responsible for properly constructing sensor definitions (YAML) and ensuring that references to other
+  entities within that YAML are valid. When an integration starts up, the initial data in backing entities (if any) should be
+  fully populated.
+- The registration of backing entities will be validated by the synthetic package such that a registration provides at least
+  one dictionary entry for any backing entities that are registered. If backing entities were provided but no entries exist,
+  this condition is a fatal error and an appropriate exception should be raised.
 
-## Home Assistant State Values
-
-The synthetic sensor package handles special Home Assistant state values that represent the status of entities rather than
-numeric or string data. These state values are treated as semantic states, not as string literals for formula evaluation.
-
-### Standard HA State Values
+## Standard HA State Values
 
 The following state values are recognized and handled consistently throughout the package:
 

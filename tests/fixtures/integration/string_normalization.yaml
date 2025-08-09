@@ -1,0 +1,122 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  # Basic normalization functions
+  test_normalize_whitespace:
+    name: "Normalize Whitespace Test"
+    formula: "normalize('  hello   world  ')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_normalize_tabs_newlines:
+    name: "Normalize Tabs and Newlines Test"
+    formula: "normalize('hello\\t\\nworld')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_clean_special_chars:
+    name: "Clean Special Characters Test"
+    formula: "clean('device@name#123!')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_clean_keep_spaces:
+    name: "Clean Keep Spaces Test"
+    formula: "clean('hello world 123')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_sanitize_spaces:
+    name: "Sanitize Spaces Test"
+    formula: "sanitize('hello world')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_sanitize_special_chars:
+    name: "Sanitize Special Characters Test"
+    formula: "sanitize('device-name@123')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Normalization with variables
+  test_normalize_with_variable:
+    name: "Normalize With Variable Test"
+    formula: "normalize('  Living Room Sensor  ')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_clean_with_variable:
+    name: "Clean With Variable Test"
+    formula: "clean('temp@sensor#1 device!')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_sanitize_with_variable:
+    name: "Sanitize With Variable Test"
+    formula: "sanitize('living-room/kitchen')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Nested normalization functions
+  test_nested_clean_normalize:
+    name: "Nested Clean Normalize Test"
+    formula: "normalize(clean('  hello@world!!  '))"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_nested_sanitize_normalize:
+    name: "Nested Sanitize Normalize Test"
+    formula: "normalize(sanitize('hello world!'))"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Concatenation with normalization
+  test_concatenation_with_normalize:
+    name: "Concatenation With Normalize Test"
+    formula: "'Cleaned: ' + normalize('  hello   world  ')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_concatenation_with_clean:
+    name: "Concatenation With Clean Test"
+    formula: "clean('device@name') + '_sensor'"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_concatenation_with_sanitize:
+    name: "Concatenation With Sanitize Test"
+    formula: "'sensor_' + sanitize('Living Room')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  # Complex expressions
+  test_complex_device_name_normalization:
+    name: "Complex Device Name Normalization Test"
+    formula: "sanitize(normalize(clean('  Smart@Device#1!!  ')))"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"
+
+  test_normalize_in_comparison_context:
+    name: "Normalize In Comparison Context Test"
+    formula: "normalize('  test device  ') + ' - ' + clean('status@ok!')"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "enum"

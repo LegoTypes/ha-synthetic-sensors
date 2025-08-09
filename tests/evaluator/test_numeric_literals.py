@@ -251,10 +251,10 @@ class TestNumericLiterals:
 
         mock_hass.states.get.side_effect = mock_states_get
 
-        # Current implementation handles gracefully (design guide says missing dependencies should be fatal)
+        # Clean Slate implementation correctly identifies type errors for invalid entities
         result = evaluator.evaluate_formula(config)
-        assert result["success"] is True  # Current behavior: handles gracefully
-        assert result.get("state") == "ok"  # Current behavior: treats as OK since formula is valid
+        assert result["success"] is False  # Clean Slate: type error when mixing string entity ID with number
+        assert "error" in result  # Should contain error about type mismatch
 
     def test_zero_and_negative_literals(
         self, mock_hass: HomeAssistant, mock_entity_registry, mock_states, numeric_literals_config_manager

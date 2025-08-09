@@ -1,0 +1,23 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_metadata_multiple"
+  variables:
+    external_sensor: "sensor.multiple_external_power_meter"
+  metadata:
+    attribution: "Metadata Function Multiple Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # Test multiple metadata function calls with complex formula logic
+  multiple_metadata_formula_test:
+    name: "Multiple Metadata Formula Test"
+    entity_id: "sensor.multiple_metadata_test"
+    formula: "both_recent and time_diff_minutes < 10"
+    variables:
+      time_diff_minutes:
+        formula: "minutes_between(metadata(external_sensor, 'last_changed'), metadata(state, 'last_changed'))"
+      both_recent:
+        formula: "time_diff_minutes < 10 and metadata(external_sensor, 'entity_id') == 'sensor.multiple_external_power_meter'"
+    metadata:
+      unit_of_measurement: ""

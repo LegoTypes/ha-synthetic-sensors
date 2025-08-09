@@ -353,14 +353,26 @@ class SensorSet(SensorSetYamlOperationsMixin):
     # Global Settings CRUD Operations
 
     async def async_create_global_settings(self, global_settings: GlobalSettingsDict) -> None:
-        """Create global settings for this sensor set (replaces any existing)."""
+        """
+        Create global settings for this sensor set (replaces any existing).
+
+        This triggers:
+        - Cache invalidation for affected entities
+        - Entity index rebuild to track new entity references
+        - Storage save
+        """
+        self._ensure_exists()
         await self._global_settings.async_create_global_settings(global_settings)
+
+        # Rebuild entity index to track new entity references
         self.rebuild_entity_index()
+
+        # Invalidate cache for sensors that might use these global variables
         if hasattr(self.storage_manager, "evaluator") and self.storage_manager.evaluator:
             await self.storage_manager.evaluator.async_invalidate_sensor_set_cache(self.sensor_set_id)
 
     def read_global_settings(self) -> GlobalSettingsDict:
-        """Read complete global settings for this sensor set."""
+        """Read global settings for this sensor set."""
         return self._global_settings.read_global_settings()
 
     async def async_update_global_settings_partial(self, updates: dict[str, Any]) -> None:
@@ -418,11 +430,11 @@ class SensorSet(SensorSetYamlOperationsMixin):
     # Global Metadata CRUD Operations
 
     async def async_set_global_metadata(self, metadata: dict[str, Any]) -> None:
-        """Set global metadata."""
+        """Set global metadata for this sensor set."""
         await self._global_settings.async_set_global_metadata(metadata)
 
     def get_global_metadata(self) -> dict[str, Any]:
-        """Get global metadata."""
+        """Get global metadata for this sensor set."""
         return self._global_settings.get_global_metadata()
 
     async def async_delete_global_metadata(self) -> bool:
