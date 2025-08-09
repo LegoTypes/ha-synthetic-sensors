@@ -7,7 +7,7 @@ This module contains the dataclass models that represent the parsed configuratio
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 
@@ -53,20 +53,31 @@ def _default_metadata() -> dict[str, Any]:
     return {}
 
 
+class AlternateFormulaObject(TypedDict, total=False):
+    """Object-form alternate handler with formula and optional variables."""
+
+    formula: str
+    variables: dict[str, str | int | float | bool]
+
+
+AlternateValue = str | int | float | bool | AlternateFormulaObject
+
+
 @dataclass
 class AlternateStateHandler:
     """Exception handler for formulas and variables when entities become unavailable or unknown."""
 
-    unavailable: str | None = None  # Formula to execute when dependencies are unavailable
-    unknown: str | None = None  # Formula to execute when dependencies are unknown
+    unavailable: AlternateValue | None = None
+    unknown: AlternateValue | None = None
 
     def __post_init__(self) -> None:
         """Validate the exception handler after initialization."""
         if not self.unavailable and not self.unknown:
             raise ValueError("AlternateStateHandler must have at least one handler (unavailable or unknown)")
-        if self.unavailable and not self.unavailable.strip():
+        # If string, ensure non-empty; literals/objects are accepted as-is
+        if isinstance(self.unavailable, str) and not self.unavailable.strip():
             raise ValueError("AlternateStateHandler unavailable formula cannot be whitespace only")
-        if self.unknown and not self.unknown.strip():
+        if isinstance(self.unknown, str) and not self.unknown.strip():
             raise ValueError("AlternateStateHandler unknown formula cannot be whitespace only")
 
 

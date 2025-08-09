@@ -1,6 +1,7 @@
 """Integration tests for dependency resolver functionality using public API."""
 
 import pytest
+import logging
 from unittest.mock import AsyncMock, Mock, patch
 
 # Use public API imports as shown in integration guide
@@ -650,7 +651,14 @@ sensors:
             await storage_manager.async_delete_sensor_set(sensor_set_id)
 
     async def test_circular_reference_detection(
-        self, mock_hass, mock_entity_registry, mock_states, mock_config_entry, mock_async_add_entities, mock_device_registry
+        self,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
+        mock_config_entry,
+        mock_async_add_entities,
+        mock_device_registry,
+        caplog,
     ):
         """Test detection and handling of circular references between sensors."""
         # Set up storage manager with proper mocking
@@ -682,10 +690,8 @@ sensors:
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
             assert result["sensors_imported"] == 3
 
-            # Set up sensor manager - this should detect circular references during setup
-            from ha_synthetic_sensors.exceptions import CircularDependencyError
-
-            with pytest.raises(CircularDependencyError, match="Circular dependency detected"):
+            # Set up sensor manager - circular references should emit a warning but not raise
+            with caplog.at_level(logging.WARNING):
                 sensor_manager = await async_setup_synthetic_sensors(
                     hass=mock_hass,
                     config_entry=mock_config_entry,
@@ -693,6 +699,10 @@ sensors:
                     storage_manager=storage_manager,
                     device_identifier="test_device_123",
                 )
+                assert sensor_manager is not None
+            assert any("Circular cross-sensor dependency detected" in rec.getMessage() for rec in caplog.records), (
+                "Expected a circular dependency warning to be logged"
+            )
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)

@@ -1,3 +1,34 @@
+from pathlib import Path
+
+import pytest
+
+from ha_synthetic_sensors.yaml_config_parser import YAMLConfigParser, trim_yaml_keys
+
+
+def test_trim_yaml_keys_trims_recursively() -> None:
+    data = {" a ": {" b ": [{" c ": 1}]}}
+    out = trim_yaml_keys(data)
+    assert list(out.keys()) == ["a"]
+    assert list(out["a"].keys()) == ["b"]
+
+
+def test_validate_raw_yaml_structure_happy_path() -> None:
+    parser = YAMLConfigParser()
+    yaml_str = """
+sensors:
+  s1:
+    formula: 1+1
+"""
+    # Should not raise
+    parser.validate_raw_yaml_structure(yaml_str)
+
+
+def test_validate_raw_yaml_structure_errors_on_bad_root() -> None:
+    parser = YAMLConfigParser()
+    with pytest.raises(ValueError):
+        parser.validate_raw_yaml_structure("- not a dict root")
+
+
 """Unit tests for yaml_config_parser.py module."""
 
 import tempfile

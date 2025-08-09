@@ -352,7 +352,17 @@ class SensorSetOpsHandler:
         for var_name, var_value in variables.items():
             if isinstance(var_value, str):
                 updated_variables[var_name] = self._replace_self_references_in_text(var_value, self_reference_patterns)
+            elif isinstance(var_value, ComputedVariable):
+                # Process ComputedVariable formula and alternate state handlers
+                updated_formula = self._replace_self_references_in_text(var_value.formula, self_reference_patterns)
+                updated_computed_var = ComputedVariable(
+                    formula=updated_formula,
+                    dependencies=var_value.dependencies.copy(),
+                    alternate_state_handler=var_value.alternate_state_handler,
+                )
+                updated_variables[var_name] = updated_computed_var
             else:
+                # Keep numeric values and other types unchanged
                 updated_variables[var_name] = var_value
         return updated_variables
 
@@ -603,7 +613,7 @@ class SensorSetOpsHandler:
                 # Let HA entity registry handle collision resolution
                 entry = entity_registry.async_get_or_create(
                     domain="sensor",
-                    platform="synthetic_sensors",
+                    platform=self.storage_manager.integration_domain,
                     unique_id=sensor_config.unique_id,
                     suggested_object_id=suggested_object_id,
                 )

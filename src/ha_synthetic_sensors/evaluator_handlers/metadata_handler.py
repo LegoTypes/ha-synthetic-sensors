@@ -48,6 +48,65 @@ class MetadataHandler(FormulaHandler):
         super().__init__(expression_evaluator=expression_evaluator, hass=hass)
         self._hass = hass
 
+    @classmethod
+    def process_metadata_functions(cls, formula: str, context: dict[str, ContextValue]) -> str:
+        """
+        Process metadata functions in a formula, preserving variable names for proper ReferenceValue lookup.
+
+        This is a shared method that can be called by:
+        - Variable resolution (for computed variables containing metadata)
+        - Formula router (for main/attribute formulas containing metadata)
+
+        Args:
+            formula: Formula that may contain metadata() calls
+            context: Evaluation context with ReferenceValue objects (should contain '_hass' key)
+
+        Returns:
+            Formula with metadata calls resolved to their results
+        """
+        if "metadata(" not in formula.lower():
+            return formula
+
+        try:
+            # Get hass instance from context (may be wrapped in ReferenceValue)
+            hass_value = context.get("_hass")
+            # Unwrap ReferenceValue if present
+            _maybe_hass = hass_value.value if isinstance(hass_value, ReferenceValue) else hass_value
+            # Duck-typing acceptance: any object exposing `.states` behaves like HomeAssistant
+            hass: HomeAssistant | None = _maybe_hass if hasattr(_maybe_hass, "states") else None  # type: ignore[assignment]
+            if hass is None:
+                # Missing hass is a fatal condition in real scenarios
+                raise ValueError(ERROR_METADATA_HASS_NOT_AVAILABLE)
+
+            # Create temporary handler instance to process the metadata
+            handler = cls(hass=hass)
+            if handler.can_handle(formula):
+                _LOGGER.debug("METADATA_HANDLER: Processing metadata functions in: %s", formula)
+                result = handler.evaluate(formula, context)
+                _LOGGER.debug("METADATA_HANDLER: Metadata processing result: %s", result)
+
+                # For entity_id metadata, return the entity ID string for formula evaluation
+                # The result is already the entity ID string we want
+                if "entity_id" in formula.lower() and isinstance(result, str):
+                    # Return the entity ID string directly for use in formulas
+                    return result
+
+                return str(result)
+
+        except Exception as e:
+            # If this is our special bug detection error, re-raise it with full stack trace
+            if "METADATA_HANDLER_BUG" in str(e):
+                _LOGGER.error("METADATA_HANDLER_BUG detected - raising exception for stack trace analysis")
+                raise
+            # Fatal: missing hass must not be silently ignored
+            if ERROR_METADATA_HASS_NOT_AVAILABLE in str(e):
+                _LOGGER.error("METADATA_HANDLER: %s", e)
+                raise
+            _LOGGER.warning("METADATA_HANDLER: Metadata processing failed for formula %s: %s", formula, e)
+            # Fall back to original formula if other metadata processing fails
+
+        return formula
+
     def can_handle(self, formula: str) -> bool:
         """Check if this handler can process the given formula.
 
@@ -106,13 +165,6 @@ class MetadataHandler(FormulaHandler):
                 entity_ref = params[0].strip()
                 metadata_key = params[1].strip().strip("'\"")  # Remove quotes from key
 
-                _LOGGER.error("METADATA_DEBUG: Raw entity_ref: %s, metadata_key: %s", entity_ref, metadata_key)
-                _LOGGER.error("METADATA_DEBUG: Context keys: %s", list(context.keys()) if context else "No context")
-                if context:
-                    for key, value in context.items():
-                        if not key.startswith("_"):
-                            _LOGGER.error("METADATA_DEBUG: %s = %s (type: %s)", key, value, type(value).__name__)
-
                 # The entity_ref might be a variable name or an entity ID
                 # If it's a variable name, we need to resolve it to the entity ID
                 # If it's already an entity ID, use it directly
@@ -121,10 +173,13 @@ class MetadataHandler(FormulaHandler):
                 # Get metadata value
                 metadata_value = self._get_metadata_value(resolved_entity_id, metadata_key)
 
-                # Return as quoted string for string values and datetime objects
+                # Return properly formatted value for formula substitution
+                # All metadata values should be quoted for safe evaluation in larger expressions
+                # Datetime objects need to be converted to ISO format strings
+                if hasattr(metadata_value, "isoformat"):  # datetime-like objects
+                    return f'"{metadata_value.isoformat()}"'
                 if isinstance(metadata_value, str):
                     return f'"{metadata_value}"'
-                # Convert to string and quote it for consistency
                 return f'"{metadata_value!s}"'
 
             # Use regex to find and replace metadata function calls
@@ -138,41 +193,6 @@ class MetadataHandler(FormulaHandler):
             _LOGGER.error("Error evaluating metadata formula '%s': %s", formula, e)
             raise
 
-    def _reverse_lookup_entity_from_value(self, value: str, context: dict[str, ContextValue] | None = None) -> str | None:
-        """Reverse lookup entity ID from a resolved value.
-
-        This is a workaround for the architecture issue where variables are resolved
-        to their values before the metadata handler can process them.
-
-        Args:
-            value: The resolved value to reverse lookup
-            context: Evaluation context that may contain current sensor info
-
-        Returns:
-            Entity ID if found, None otherwise
-        """
-        # Special handling for common state token values that indicate self-reference
-        if value in ["0", "0.0", "", "None"]:
-            # These are likely 'state' tokens resolving to initial/empty sensor state
-            # Try to find the current sensor entity ID from context
-            current_sensor_id = self._get_current_sensor_entity_id_from_context(context)
-            if current_sensor_id:
-                _LOGGER.debug("Mapped state token value '%s' to current sensor: %s", value, current_sensor_id)
-                return current_sensor_id
-
-        # Value-to-entity mapping based on test fixture for known entities
-        value_to_entity_mapping = {
-            "1000.0": "sensor.power_meter",  # power_entity resolves to original HA entity
-            "25.5": "sensor.temp_probe",  # temp_entity resolves to this
-            "750.0": "sensor.external_power_meter",  # external_sensor resolves to this
-        }
-
-        mapped_entity = value_to_entity_mapping.get(value)
-        if mapped_entity:
-            _LOGGER.debug("Reverse mapped value '%s' to entity: %s", value, mapped_entity)
-            return mapped_entity
-        return None
-
     def _get_current_sensor_entity_id_from_context(self, context: dict[str, ContextValue] | None = None) -> str | None:
         """Extract the current sensor's entity ID from evaluation context.
 
@@ -185,20 +205,34 @@ class MetadataHandler(FormulaHandler):
         if not context:
             return None
 
-        # Look for context keys that indicate the current sensor
-        # Common patterns: entity_id, current_entity, sensor_entity_id, etc.
-        for key, value in context.items():
-            if "entity" in key.lower() and isinstance(value, str) and value.startswith("sensor."):
-                _LOGGER.debug("Found current sensor entity ID from context key '%s': %s", key, value)
-                return value
+        entity_id = None
 
-        # Also check for sensor unique_id that can be converted to entity_id
-        for key, value in context.items():
-            if "unique" in key.lower() and isinstance(value, str):
-                # Convert unique_id to entity_id format
-                entity_id = f"sensor.{value}"
-                _LOGGER.debug("Converted unique_id '%s' to entity_id: %s", value, entity_id)
+        # PRIORITY 1: Check for the specific key added by context building phase
+        if "current_sensor_entity_id" in context:
+            value = context["current_sensor_entity_id"]
+            if isinstance(value, ReferenceValue) and isinstance(value.value, str):
+                entity_id = value.value
+            elif isinstance(value, str) and value.startswith("sensor."):
+                entity_id = value
+            if entity_id:
+                _LOGGER.debug("Found current sensor entity ID from context key 'current_sensor_entity_id': %s", entity_id)
                 return entity_id
+
+        # PRIORITY 2: Look for other context keys that indicate the current sensor
+        debug_key = None
+        for key, value in context.items():
+            if "entity" in key.lower():
+                debug_key = key
+                if isinstance(value, ReferenceValue) and isinstance(value.value, str) and value.value.startswith("sensor."):
+                    entity_id = value.value
+                    break
+                if isinstance(value, str) and value.startswith("sensor."):
+                    entity_id = value
+                    break
+
+        if entity_id:
+            _LOGGER.debug("Found current sensor entity ID from context key '%s': %s", debug_key, entity_id)
+            return entity_id
 
         _LOGGER.debug("Could not find current sensor entity ID in context")
         return None
@@ -223,6 +257,23 @@ class MetadataHandler(FormulaHandler):
             ValueError: If the entity reference cannot be resolved
         """
         clean_ref = entity_ref.strip().strip("'\"")
+
+        # CRITICAL: Check if entity_ref is a numeric value - this indicates premature value substitution
+        # and helps us identify where the variable resolution pipeline is going wrong
+        try:
+            float(clean_ref)
+            # If we can parse it as a number, this is a BUG in the resolution pipeline
+            raise ValueError(
+                f"METADATA_HANDLER_BUG: Received numeric value '{clean_ref}' as entity reference. "
+                f"This indicates premature value substitution in the variable resolution pipeline. "
+                f"Entity references should be variable names or entity IDs, not resolved values. "
+                f"Check the stack trace to see where this numeric value was substituted."
+            )
+        except ValueError as e:
+            if "METADATA_HANDLER_BUG" in str(e):
+                raise  # Re-raise our custom error
+            # Not a number, continue normal processing
+
         _LOGGER.debug("Resolving entity reference: '%s'", clean_ref)
 
         # Try variable resolution first
@@ -235,10 +286,7 @@ class MetadataHandler(FormulaHandler):
         if resolved_entity:
             return resolved_entity
 
-        # Handle sensor key conversions
-        resolved_entity = self._try_resolve_sensor_keys(clean_ref, context)
-        if resolved_entity:
-            return resolved_entity
+        # Handle sensor key conversions (disabled here; managed earlier in the pipeline)
 
         # If we can't resolve it, this is an error
         raise ValueError(
@@ -250,63 +298,52 @@ class MetadataHandler(FormulaHandler):
         if not context:
             return None
 
-        # Check legacy context first for backward compatibility during migration
-        legacy_context = context.get("_legacy_eval_context") if context else None
-        lookup_context = legacy_context if legacy_context else context
+        lookup_context = context
 
-        if not lookup_context or not isinstance(lookup_context, dict) or clean_ref not in lookup_context:
+        if not lookup_context or not isinstance(lookup_context, dict):
             return None
 
-        context_value = lookup_context[clean_ref]
+        # First, try direct variable lookup
+        if clean_ref in lookup_context:
+            context_value = lookup_context[clean_ref]
 
-        if isinstance(context_value, ReferenceValue):
-            # This is a ReferenceValue - for entity ID resolution, we need to determine what to return
-            ref_value_obj: ReferenceValue = context_value
-            reference = ref_value_obj.reference
-            value = ref_value_obj.value
-            _LOGGER.debug(
-                "✅ SUCCESS: Resolved variable '%s' to ReferenceValue with reference=%s, value=%s",
-                clean_ref,
-                reference,
-                value,
-            )
-            # For entity ID resolution:
-            # - If reference is an entity ID (contains '.'), return the reference
-            # - If reference is a global variable reference, return the resolved value (entity ID)
-            if reference and "." in reference and not reference.startswith("global_variable:"):
-                # This is an entity ID reference - return the entity ID
-                return reference
+            if isinstance(context_value, ReferenceValue):
+                # This is a ReferenceValue - extract the actual entity ID
+                ref_value_obj: ReferenceValue = context_value
+                reference = ref_value_obj.reference
+                value = ref_value_obj.value
+                _LOGGER.debug(
+                    "✅ SUCCESS: Resolved variable '%s' to ReferenceValue with reference=%s, value=%s",
+                    clean_ref,
+                    reference,
+                    value,
+                )
 
-            # This is a global variable or other reference - return the resolved value
-            return str(value)
+                # Use the reference as the entity ID
+                entity_id = reference
 
-        # Handle legacy raw values during migration to ReferenceValue system
-        return self._handle_legacy_context_value(clean_ref, context_value, context)
+                # Validate it looks like an entity ID
+                if "." in entity_id and entity_id.startswith(("sensor.", "switch.", "light.", "binary_sensor.")):
+                    return entity_id
 
-    def _handle_legacy_context_value(
-        self, clean_ref: str, context_value: ContextValue, context: dict[str, ContextValue]
-    ) -> str | None:
-        """Handle legacy raw values during migration to ReferenceValue system."""
-        _LOGGER.debug(
-            "LEGACY: Variable '%s' has raw value '%s' instead of ReferenceValue (migration needed)",
-            clean_ref,
-            context_value,
-        )
+                # If the reference isn't an entity ID, maybe the value is
+                if (
+                    isinstance(value, str)
+                    and "." in value
+                    and value.startswith(("sensor.", "switch.", "light.", "binary_sensor."))
+                ):
+                    return value
 
-        # Check if we can find the original entity reference in the entity registry
-        if "_entity_reference_registry" in context:
-            entity_registry = context["_entity_reference_registry"]
-            if isinstance(entity_registry, dict):
-                # Look for an entity that resolves to this value
-                for entity_key, ref_value in entity_registry.items():
-                    if isinstance(ref_value, ReferenceValue) and str(ref_value.value) == str(context_value):
-                        _LOGGER.debug("LEGACY: Found entity '%s' for value '%s' in registry", entity_key, context_value)
-                        return entity_key
+                # Neither reference nor value is a valid entity ID
+                raise ValueError(f"Variable '{clean_ref}' resolves to '{reference}'/'{value}' which is not a valid entity ID")
 
-        # Fallback: if the raw value looks like an entity ID, use it
-        if isinstance(context_value, str) and "." in context_value:
-            _LOGGER.debug("LEGACY: Using raw entity ID value: %s", context_value)
-            return context_value
+            # Accept plain string variables as direct entity IDs for unit tests and simple contexts
+            if isinstance(context_value, str):
+                if "." in context_value:
+                    return context_value
+                raise ValueError(f"Variable '{clean_ref}' has string value '{context_value}' which is not an entity_id")
+            # Otherwise it's an unexpected type
+            raise ValueError(f"Variable '{clean_ref}' has non-ReferenceValue type: {type(context_value).__name__}")
 
         return None
 
@@ -331,12 +368,10 @@ class MetadataHandler(FormulaHandler):
 
     def _resolve_state_token(self, context: dict[str, ContextValue] | None) -> str:
         """Resolve the 'state' token to current sensor entity ID."""
-        if context:
-            # Look for entity context variables that indicate the current sensor
-            for key, value in context.items():
-                if "entity" in key.lower() and isinstance(value, str) and "." in value:
-                    _LOGGER.debug("Resolved 'state' token to entity: %s", value)
-                    return str(value)
+        entity_id = self._get_current_sensor_entity_id_from_context(context)
+        if entity_id:
+            _LOGGER.debug("Resolved 'state' token to entity: %s", entity_id)
+            return entity_id
 
         # If no context or entity ID available, this is an error
         raise ValueError("'state' token used but current sensor entity ID not available in context")
@@ -361,6 +396,15 @@ class MetadataHandler(FormulaHandler):
                 _LOGGER.debug("Mapped variable '%s' to entity: %s", clean_ref, mapped_entity)
                 return mapped_entity
 
+        # Handle ReferenceValue objects properly
+        if isinstance(resolved_value, ReferenceValue):
+            # For entity_id metadata, we want the reference part (the entity ID)
+            if resolved_value.reference and "." in resolved_value.reference:
+                return resolved_value.reference
+            # Fallback to value if reference doesn't look like entity ID
+            if isinstance(resolved_value.value, str) and "." in resolved_value.value:
+                return resolved_value.value
+
         # Check if resolved value looks like an entity ID
         if isinstance(resolved_value, str) and "." in resolved_value:
             _LOGGER.debug("Variable '%s' resolved to entity ID: %s", clean_ref, resolved_value)
@@ -373,22 +417,9 @@ class MetadataHandler(FormulaHandler):
 
     def _try_resolve_sensor_keys(self, clean_ref: str, context: dict[str, ContextValue] | None) -> str | None:
         """Try to resolve sensor keys that should be converted to 'state'."""
-        sensor_keys = [
-            "metadata_last_changed_sensor",
-            "metadata_entity_id_sensor",
-            "metadata_cross_sensor_test",
-            "metadata_self_reference_sensor",
-            "metadata_mixed_test",
-            "metadata_grace_period_test",
-            "metadata_comparison_sensor",
-            "metadata_direct_state_test",
-            "metadata_mixed_reference_test",
-        ]
-
-        if clean_ref in sensor_keys:
-            _LOGGER.debug("Converting sensor key '%s' to 'state' token", clean_ref)
-            return self._resolve_entity_reference("state", context)
-
+        # This should not happen in the fully migrated system
+        # Cross-sensor reference replacement should convert sensor keys to 'state'
+        # before the metadata handler sees them
         return None
 
     def _get_metadata_value(self, entity_id: str, metadata_key: str) -> Any:

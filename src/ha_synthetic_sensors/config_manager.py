@@ -472,8 +472,8 @@ class ConfigManager:
         attributes: dict[str, AttributeValue] = {}
         for attr_name, attr_config in sensor_data.get("attributes", {}).items():
             if isinstance(attr_config, dict) and "formula" in attr_config:
-                # Extract formula string from AttributeConfigDict
-                attributes[attr_name] = attr_config["formula"]
+                # Preserve the entire AttributeConfigDict structure instead of flattening
+                attributes[attr_name] = cast(AttributeValue, attr_config)
             elif isinstance(attr_config, str | int | float):
                 # Handle literal values (str, int, float) - these are compatible with AttributeValue
                 attributes[attr_name] = attr_config
@@ -531,11 +531,19 @@ class ConfigManager:
         if not attr_formula:
             raise ValueError(f"Attribute '{attr_name}' in sensor '{sensor_key}' must have 'formula' field")
 
-        # Only use attribute-specific variables during YAML parsing
-        # Global and parent variable inheritance will happen later during evaluation
-        # This prevents global variables from being processed by cross-reference resolution
+        # Parse attribute-specific variables
         attr_variables = attr_config.get("variables", {})
         formula_variables = self._parse_variables(attr_variables if isinstance(attr_variables, dict) else {})
+
+        # CRITICAL FIX: Inherit computed variables from parent sensor
+        # Attribute formulas need access to computed variables defined at the sensor level
+        parent_variables = sensor_data.get("variables", {})
+        if parent_variables:
+            parsed_parent_variables = self._parse_variables(parent_variables if isinstance(parent_variables, dict) else {})
+            # Add parent variables to formula variables (attribute-specific variables take precedence)
+            for var_name, var_value in parsed_parent_variables.items():
+                if var_name not in formula_variables:
+                    formula_variables[var_name] = var_value
 
         # Validate computed variable references in attribute variables
         global_variables = (global_settings or {}).get("variables", {})

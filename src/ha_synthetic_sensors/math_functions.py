@@ -7,7 +7,7 @@ that can be used in formula evaluation, making them easily testable and maintain
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import math
 import re
 from typing import Any
@@ -252,24 +252,53 @@ class MathFunctions:
     # These functions enable metadata integration and enhanced routing
 
     @staticmethod
-    def minutes_between(start_datetime: datetime, end_datetime: datetime) -> float:
-        """Calculate minutes between two datetime objects.
+    def minutes_between(start_datetime: datetime | str, end_datetime: datetime | str) -> float:
+        """Calculate minutes between two datetime objects or ISO datetime strings.
 
         Designed for metadata formulas like:
         minutes_between(metadata(state, 'last_changed'), now())
 
         Args:
-            start_datetime: Start datetime
-            end_datetime: End datetime
+            start_datetime: Start datetime (datetime object or ISO string)
+            end_datetime: End datetime (datetime object or ISO string)
 
         Returns:
             Number of minutes between the datetimes
 
         Raises:
-            TypeError: If arguments are not datetime objects
+            TypeError: If arguments cannot be converted to datetime objects
+            ValueError: If datetime strings cannot be parsed
         """
+
+        # Convert strings to datetime objects if needed
+        if isinstance(start_datetime, str):
+            try:
+                # Handle both with and without timezone suffixes
+                if start_datetime.endswith("Z"):
+                    start_datetime = start_datetime.replace("Z", "+00:00")
+                start_datetime = datetime.fromisoformat(start_datetime)
+            except ValueError as e:
+                raise ValueError(f"Invalid start datetime string: {start_datetime}") from e
+
+        if isinstance(end_datetime, str):
+            try:
+                # Handle both with and without timezone suffixes
+                if end_datetime.endswith("Z"):
+                    end_datetime = end_datetime.replace("Z", "+00:00")
+                end_datetime = datetime.fromisoformat(end_datetime)
+            except ValueError as e:
+                raise ValueError(f"Invalid end datetime string: {end_datetime}") from e
+
+        # Handle timezone-aware vs timezone-naive datetime mismatch
+        # If one is timezone-aware and the other is naive, make both timezone-aware (assume UTC)
+        if start_datetime.tzinfo is None and end_datetime.tzinfo is not None:
+            start_datetime = start_datetime.replace(tzinfo=UTC)
+        elif start_datetime.tzinfo is not None and end_datetime.tzinfo is None:
+            end_datetime = end_datetime.replace(tzinfo=UTC)
+
         if not isinstance(start_datetime, datetime) or not isinstance(end_datetime, datetime):
-            raise TypeError("Both arguments must be datetime objects")
+            raise TypeError("Both arguments must be datetime objects or ISO datetime strings")
+
         return (end_datetime - start_datetime).total_seconds() / 60
 
     @staticmethod

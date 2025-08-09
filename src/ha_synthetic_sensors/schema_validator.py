@@ -346,12 +346,7 @@ class SchemaValidator:
             sensor_vars=sensor_vars,
         )
 
-        # Validate metadata function usage (no 'state' token as first parameter)
-        self._validate_metadata_function_usage(
-            formula_text,
-            f"sensors.{sensor_key}.formula",
-            errors,
-        )
+        # Metadata function validation removed - 'state' token is valid for metadata functions
 
     def _validate_sensor_attributes(
         self,
@@ -423,12 +418,7 @@ class SchemaValidator:
             other_attr_names=other_attr_names,
         )
 
-        # Validate metadata function usage (no 'state' token as first parameter)
-        self._validate_metadata_function_usage(
-            attr_formula,
-            f"sensors.{sensor_key}.attributes.{attr_name}.formula",
-            errors,
-        )
+        # Metadata function validation removed - 'state' token is valid for metadata functions
 
     def _extract_validation_context(self, config_data: dict[str, Any] | None) -> tuple[set[str], set[str]]:
         """Extract global variables and sensor keys from config data."""
@@ -854,40 +844,6 @@ class SchemaValidator:
                     )
                 )
 
-    def _validate_metadata_function_usage(
-        self,
-        formula: str,
-        path: str,
-        errors: list[ValidationError],
-    ) -> None:
-        """Validate that metadata functions don't use 'state' token as first parameter.
-
-        The 'state' token resolves to a value, but metadata() expects an entity ID.
-        This prevents invalid patterns like metadata(state, 'entity_id').
-
-        Args:
-            formula: Formula to validate
-            path: Path for error reporting
-            errors: List to append validation errors to
-        """
-        # Pattern to match metadata function calls: metadata(first_param, ...)
-        metadata_pattern = r"\bmetadata\s*\(\s*([^,\s]+)"
-
-        for match in re.finditer(metadata_pattern, formula):
-            first_param = match.group(1).strip().strip("'\"")
-
-            if first_param == "state":
-                errors.append(
-                    ValidationError(
-                        message="Invalid metadata function usage: 'state' token cannot be used as first parameter. "
-                        "The 'state' token resolves to a value, but metadata() expects an entity ID. "
-                        "Use an explicit entity ID instead (e.g., 'sensor.my_entity').",
-                        path=path,
-                        severity=ValidationSeverity.ERROR,
-                        suggested_fix="Replace 'state' with an explicit entity ID like 'sensor.my_entity'",
-                    )
-                )
-
     def _validate_variable_value(
         self,
         var_value: Any,
@@ -1191,14 +1147,62 @@ class SchemaValidator:
                                             "minLength": 1,
                                         },
                                         "UNAVAILABLE": {
-                                            "type": "string",
-                                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
-                                            "minLength": 1,
+                                            "oneOf": [
+                                                {"type": "string", "minLength": 1},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "formula": {"type": "string", "minLength": 1},
+                                                        "variables": {
+                                                            "type": "object",
+                                                            "patternProperties": {
+                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                    "oneOf": [
+                                                                        {"type": "string"},
+                                                                        {"type": "number"},
+                                                                        {"type": "boolean"},
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "additionalProperties": False,
+                                                        },
+                                                    },
+                                                    "required": ["formula"],
+                                                    "additionalProperties": False,
+                                                },
+                                            ],
+                                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                                         },
                                         "UNKNOWN": {
-                                            "type": "string",
-                                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
-                                            "minLength": 1,
+                                            "oneOf": [
+                                                {"type": "string", "minLength": 1},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "formula": {"type": "string", "minLength": 1},
+                                                        "variables": {
+                                                            "type": "object",
+                                                            "patternProperties": {
+                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                    "oneOf": [
+                                                                        {"type": "string"},
+                                                                        {"type": "number"},
+                                                                        {"type": "boolean"},
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "additionalProperties": False,
+                                                        },
+                                                    },
+                                                    "required": ["formula"],
+                                                    "additionalProperties": False,
+                                                },
+                                            ],
+                                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
                                         },
                                     },
                                     "required": ["formula"],
@@ -1382,14 +1386,62 @@ class SchemaValidator:
                                             "minLength": 1,
                                         },
                                         "UNAVAILABLE": {
-                                            "type": "string",
-                                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
-                                            "minLength": 1,
+                                            "oneOf": [
+                                                {"type": "string", "minLength": 1},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "formula": {"type": "string", "minLength": 1},
+                                                        "variables": {
+                                                            "type": "object",
+                                                            "patternProperties": {
+                                                                var_pattern: {
+                                                                    "oneOf": [
+                                                                        {"type": "string"},
+                                                                        {"type": "number"},
+                                                                        {"type": "boolean"},
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "additionalProperties": False,
+                                                        },
+                                                    },
+                                                    "required": ["formula"],
+                                                    "additionalProperties": False,
+                                                },
+                                            ],
+                                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                                         },
                                         "UNKNOWN": {
-                                            "type": "string",
-                                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
-                                            "minLength": 1,
+                                            "oneOf": [
+                                                {"type": "string", "minLength": 1},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "formula": {"type": "string", "minLength": 1},
+                                                        "variables": {
+                                                            "type": "object",
+                                                            "patternProperties": {
+                                                                var_pattern: {
+                                                                    "oneOf": [
+                                                                        {"type": "string"},
+                                                                        {"type": "number"},
+                                                                        {"type": "boolean"},
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "additionalProperties": False,
+                                                        },
+                                                    },
+                                                    "required": ["formula"],
+                                                    "additionalProperties": False,
+                                                },
+                                            ],
+                                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
                                         },
                                     },
                                     "required": ["formula"],
@@ -1672,14 +1724,50 @@ class SchemaValidator:
                 },
                 # Exception handlers for main formula
                 "UNAVAILABLE": {
-                    "type": "string",
-                    "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when main formula cannot be resolved",
-                    "minLength": 1,
+                    "oneOf": [
+                        {"type": "string", "minLength": 1},
+                        {"type": "number"},
+                        {"type": "boolean"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "formula": {"type": "string", "minLength": 1},
+                                "variables": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                        var_pattern: {"oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]}
+                                    },
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "required": ["formula"],
+                            "additionalProperties": False,
+                        },
+                    ],
+                    "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                 },
                 "UNKNOWN": {
-                    "type": "string",
-                    "description": "Exception handler for UNKNOWN state - formula or literal value to use when main formula is in unknown state",
-                    "minLength": 1,
+                    "oneOf": [
+                        {"type": "string", "minLength": 1},
+                        {"type": "number"},
+                        {"type": "boolean"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "formula": {"type": "string", "minLength": 1},
+                                "variables": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                        var_pattern: {"oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]}
+                                    },
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "required": ["formula"],
+                            "additionalProperties": False,
+                        },
+                    ],
+                    "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
                 },
                 "attributes": {
                     "type": "object",
@@ -1716,14 +1804,62 @@ class SchemaValidator:
                                             "minLength": 1,
                                         },
                                         "UNAVAILABLE": {
-                                            "type": "string",
-                                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
-                                            "minLength": 1,
+                                            "oneOf": [
+                                                {"type": "string", "minLength": 1},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "formula": {"type": "string", "minLength": 1},
+                                                        "variables": {
+                                                            "type": "object",
+                                                            "patternProperties": {
+                                                                var_pattern: {
+                                                                    "oneOf": [
+                                                                        {"type": "string"},
+                                                                        {"type": "number"},
+                                                                        {"type": "boolean"},
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "additionalProperties": False,
+                                                        },
+                                                    },
+                                                    "required": ["formula"],
+                                                    "additionalProperties": False,
+                                                },
+                                            ],
+                                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                                         },
                                         "UNKNOWN": {
-                                            "type": "string",
-                                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when variable is in unknown state",
-                                            "minLength": 1,
+                                            "oneOf": [
+                                                {"type": "string", "minLength": 1},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "formula": {"type": "string", "minLength": 1},
+                                                        "variables": {
+                                                            "type": "object",
+                                                            "patternProperties": {
+                                                                var_pattern: {
+                                                                    "oneOf": [
+                                                                        {"type": "string"},
+                                                                        {"type": "number"},
+                                                                        {"type": "boolean"},
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "additionalProperties": False,
+                                                        },
+                                                    },
+                                                    "required": ["formula"],
+                                                    "additionalProperties": False,
+                                                },
+                                            ],
+                                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
                                         },
                                     },
                                     "required": ["formula"],
@@ -1808,14 +1944,54 @@ class SchemaValidator:
                         },
                         # Exception handlers for attribute formula
                         "UNAVAILABLE": {
-                            "type": "string",
-                            "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when attribute formula cannot be resolved",
-                            "minLength": 1,
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                         },
                         "UNKNOWN": {
-                            "type": "string",
-                            "description": "Exception handler for UNKNOWN state - formula or literal value to use when attribute formula is in unknown state",
-                            "minLength": 1,
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
                         },
                         "variables": {
                             "type": "object",

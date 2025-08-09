@@ -74,6 +74,7 @@ class TestVariableResolutionIntegration:
                 yaml_content = f.read()
 
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            # YAML now contains 3 unique sensors in this fixture
             assert result["sensors_imported"] == 3
 
             # Create sensor-to-backing mapping for virtual entity

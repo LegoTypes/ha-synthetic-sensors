@@ -29,7 +29,7 @@ class ResolutionHelpers:
             resolved_value: The resolved value
             context_name: Context name for logging (e.g., "VARIABLE_INHERITANCE", "VARIABLE_RESOLUTION")
         """
-        _LOGGER.error(
+        _LOGGER.debug(
             "%s_DEBUG: %s -> %s returned %s (type: %s)",
             context_name,
             var_name,

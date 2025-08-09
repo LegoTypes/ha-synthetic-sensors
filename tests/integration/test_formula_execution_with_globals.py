@@ -2,7 +2,7 @@
 
 This test proves the computed variable validation fix works end-to-end:
 1. YAML parsing succeeds (validation fix)
-2. Formulas execute correctly with expected values (runtime fix)
+2. Formulas execute correctly with expected values
 3. Built-in functions work as expected
 4. The exact SPAN use case from the fix document works
 
@@ -118,16 +118,8 @@ class TestFormulaExecutionWithGlobals:
                     sensor_to_backing_mapping=sensor_to_backing_mapping,
                 )
 
-                print(f"✅ Runtime Fix: Global settings should now be available during evaluation")
-                print(f"✅ Device identifier: {device_identifier}")
-                print(
-                    f"✅ Global variables: {storage_manager.get_sensor_set(sensor_set_id).get_global_settings().get('variables', {})}"
-                )
-
                 assert sensor_manager is not None, "Sensor manager creation failed"
                 assert mock_async_add_entities.call_args_list, "No entities were added to HA"
-
-                print(f"🔧 Manually calling async_update_sensors to test runtime fix...")
 
                 # Update sensors to trigger formula evaluation
                 await sensor_manager.async_update_sensors()

@@ -6,12 +6,12 @@ import logging
 from typing import Any
 
 from .config_models import FormulaConfig, SensorConfig
+from .core_formula_evaluator import CoreFormulaEvaluator
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_error_handler import EvaluatorErrorHandler
 from .evaluator_handlers import HandlerFactory
-from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import BackingEntityResolutionError
-from .type_definitions import ContextValue, EvaluationResult, ReferenceValue
+from .type_definitions import ContextValue, EvaluationResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +35,8 @@ class FormulaExecutionEngine:
         self._handler_factory = handler_factory
         self._error_handler = error_handler
         self._enhanced_helper = enhanced_helper
+        # Create the core formula evaluator that implements CLEAN SLATE routing
+        self._core_evaluator = CoreFormulaEvaluator(handler_factory, enhanced_helper)
 
     def execute_formula_evaluation(
         self,
@@ -62,93 +64,12 @@ class FormulaExecutionEngine:
         Raises:
             ValueError: If evaluation fails
         """
-        _LOGGER.debug("🔥 CLEAN_SLATE_ROUTING: Executing formula: %s", resolved_formula)
+        _LOGGER.debug("🔥 FORMULA_EXECUTION_ENGINE: Delegating to core evaluator: %s", resolved_formula)
 
         original_formula = config.formula
 
-        try:
-            # CLEAN SLATE: Only 2 routing paths needed
-
-            # Path 1: Metadata functions (1% - requires HA integration)
-            if "metadata(" in resolved_formula.lower():
-                metadata_handler = self._handler_factory.get_handler("metadata")
-                if metadata_handler and metadata_handler.can_handle(original_formula):
-                    _LOGGER.debug("CLEAN_SLATE_ROUTING: Metadata path for formula: %s", original_formula)
-                    result = metadata_handler.evaluate(original_formula, handler_context)
-                    return result  # type: ignore[no-any-return]
-
-                raise ValueError(f"Metadata formula detected but handler not available: {original_formula}")
-
-            # Path 2: Enhanced SimpleEval (99% - everything else)
-            # Extract raw values for enhanced evaluation
-            enhanced_context = self._extract_values_for_enhanced_evaluation(handler_context)
-
-            success, result = self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)
-
-            if success:
-                _LOGGER.debug(
-                    "CLEAN_SLATE_ROUTING: Enhanced SimpleEval success for formula: %s -> %s", resolved_formula, result
-                )
-                # Handle all result types
-                if isinstance(result, int | float | str | bool):
-                    return result
-                if hasattr(result, "total_seconds"):  # timedelta
-                    # Convert timedelta to seconds for consistency
-                    return float(result.total_seconds())
-                if hasattr(result, "isoformat"):  # datetime/date
-                    return str(result.isoformat())  # Return as ISO string
-
-                # Convert unexpected types to string
-                return str(result)
-
-            # Enhanced SimpleEval failed - check if we have exception details
-            # The result now contains the exception if enhanced evaluation failed
-            if isinstance(result, Exception):
-                eval_error = result
-                error_msg = str(eval_error)
-
-                # Handle specific mathematical errors gracefully by raising appropriate exceptions
-                if isinstance(eval_error, ZeroDivisionError):
-                    raise ValueError("Division by zero in formula")
-                if isinstance(eval_error, NameError) or "undefined" in error_msg.lower() or "not defined" in error_msg.lower():
-                    raise ValueError(f"Undefined variable: {error_msg}")
-
-                # Other mathematical or evaluation errors
-                raise ValueError(f"Formula evaluation error: {error_msg}")
-
-            # No exception details available
-            raise ValueError("Formula evaluation failed: unable to process expression")
-
-        except Exception as err:
-            _LOGGER.error("Formula execution failed for %s: %s", resolved_formula, err)
-            raise
-
-    def _extract_values_for_enhanced_evaluation(self, context: dict[str, ContextValue]) -> dict[str, Any]:
-        """Extract raw values from ReferenceValue objects for enhanced SimpleEval evaluation.
-
-        Args:
-            context: Handler context containing ReferenceValue objects
-
-        Returns:
-            Dictionary with variable names mapped to their preprocessed values for enhanced SimpleEval
-        """
-        enhanced_context: dict[str, Any] = {}
-
-        for key, value in context.items():
-            if isinstance(value, ReferenceValue):
-                # Extract and preprocess the raw value for enhanced evaluation
-                raw_value = value.value
-
-                # Preprocess the value to ensure compatibility with enhanced SimpleEval
-                processed_value = EvaluatorHelpers.process_evaluation_result(raw_value)
-                enhanced_context[key] = processed_value
-
-                _LOGGER.debug("Enhanced context: %s = %s (from %s)", key, processed_value, raw_value)
-            else:
-                # Keep other context items as-is (functions, etc.)
-                enhanced_context[key] = value
-
-        return enhanced_context
+        # Delegate to the extracted core formula evaluator
+        return self._core_evaluator.evaluate_formula(resolved_formula, original_formula, handler_context)
 
     def handle_value_error(self, error: ValueError, formula_name: str) -> EvaluationResult:
         """Handle ValueError during formula evaluation."""

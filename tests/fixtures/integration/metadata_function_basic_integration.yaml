@@ -1,0 +1,110 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_metadata_basic"
+  variables:
+    external_sensor: "sensor.external_power_meter"
+  metadata:
+    attribution: "Metadata Function Basic Integration Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # Basic metadata function access - direct entity reference
+  metadata_last_changed_sensor:
+    name: "Metadata Last Changed Test"
+    formula: "metadata(power_entity, 'last_changed')"
+    variables:
+      power_entity: "sensor.basic_power_meter"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "timestamp"
+
+  # Entity ID access via metadata function
+  metadata_entity_id_sensor:
+    name: "Metadata Entity ID Test"
+    formula: "metadata(temp_entity, 'entity_id')"
+    variables:
+      temp_entity: "sensor.basic_temp_probe"
+    metadata:
+      unit_of_measurement: ""
+
+  # Cross-sensor metadata access using global variable
+  metadata_cross_sensor_test:
+    name: "Cross-Sensor Metadata Test"
+    formula: "metadata(external_sensor, 'entity_id')"
+    metadata:
+      unit_of_measurement: ""
+
+  # Sensor with computed variable using metadata
+  metadata_computed_variable_test:
+    name: "Computed Variable Metadata Test"
+    formula: "computed_entity_id"
+    variables:
+      base_entity: "sensor.basic_power_meter"
+      computed_entity_id:
+        formula: "metadata(base_entity, 'entity_id')"
+    metadata:
+      unit_of_measurement: ""
+
+  # Sensor with metadata in attribute formula
+  metadata_simple_attribute_test:
+    name: "Simple Attribute Metadata Test"
+    formula: "power_entity + 100"
+    variables:
+      power_entity: "sensor.basic_power_meter"
+      mixed_entity: "sensor.basic_power_meter"
+      doubled_value:
+        formula: "power_entity * 2"
+      entity_source:
+        formula: "metadata(mixed_entity, 'entity_id')"
+    attributes:
+      entity_source: "metadata(mixed_entity, 'entity_id')"
+    metadata:
+      unit_of_measurement: "W"
+
+  # SPAN Panel Grace Period Validation Test - demonstrates ACTUAL SPAN Panel pattern
+  # This shows using literal entity_id reference like SPAN Panel templates do
+  span_grace_period_validation_test:
+    name: "SPAN Grace Period Validation Test"
+    entity_id: "sensor.span_grace_period_test"
+    formula: "state"
+    # Test that literal entity IDs in metadata functions now work with validation fix
+    UNAVAILABLE: "state if within_grace else UNAVAILABLE"
+    variables:
+      within_grace:
+        formula: "minutes_between(metadata(sensor.span_grace_period_test, 'last_changed'), now()) < grace_period_minutes"
+        UNAVAILABLE: 'false'
+      grace_period_minutes: "15"
+    attributes:
+      grace_period_active:
+        formula: "within_grace"
+      source_entity:
+        formula: "metadata(sensor.span_grace_period_test, 'entity_id')"
+    metadata:
+      unit_of_measurement: "Wh"
+      device_class: "energy"
+      state_class: "total_increasing"
+
+  # Direct Attribute Reference Test - covers the bug case
+  # This tests direct variable references to computed variables containing metadata functions
+  direct_attribute_reference_test:
+    name: "Direct Attribute Reference Test"
+    entity_id: "sensor.metadata_self_reference_backing"
+    formula: "state"
+    variables:
+      computed_metadata_value:
+        formula: "metadata(state, 'last_changed')"
+      computed_grace_check:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < 30"
+    attributes:
+      # These are DIRECT references (no formula key) - this was the missing test case
+      last_changed_direct: computed_metadata_value
+      grace_active_direct: computed_grace_check
+      # Also test with formula for comparison
+      last_changed_formula:
+        formula: "computed_metadata_value"
+      grace_active_formula:
+        formula: "computed_grace_check"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

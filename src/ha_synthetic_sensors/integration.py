@@ -95,13 +95,19 @@ class SyntheticSensorsIntegration:
         self._initialized = False
         self._auto_config_path: Path | None = None
 
+        # Integration domain must come from the parent integration's config entry
+        ce_domain = getattr(config_entry, "domain", None)
+        if not isinstance(ce_domain, str) or not ce_domain:
+            raise IntegrationSetupError("Integration domain must be provided by the parent integration")
+        self._domain: str = ce_domain
+
     async def async_setup(self, add_entities_callback: AddEntitiesCallback) -> bool:
         """Set up the synthetic sensors integration."""
         try:
             _LOGGER.debug("Setting up synthetic sensor integration")
 
             # Initialize sensor manager with integration domain
-            manager_config = SensorManagerConfig(integration_domain="synthetic_sensors")
+            manager_config = SensorManagerConfig(integration_domain=self._domain)
             self._sensor_manager = SensorManager(self._hass, self._name_resolver, add_entities_callback, manager_config)
 
             # Initialize enhanced evaluator
@@ -237,7 +243,7 @@ class SyntheticSensorsIntegration:
         # Check if storage-based configuration exists
         try:
             # Create a temporary storage manager to check for existing data
-            storage_manager = StorageManager(self._hass)
+            storage_manager = StorageManager(self._hass, integration_domain=self._domain)
             await storage_manager.async_load()
 
             # If storage has any sensor sets, skip auto-discovery

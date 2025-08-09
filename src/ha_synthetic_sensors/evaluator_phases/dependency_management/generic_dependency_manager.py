@@ -235,7 +235,7 @@ class GenericDependencyManager:
                             enhanced_context[sensor_name] = sensor_value
                         else:
                             # Wrap raw sensor values in ReferenceValue objects
-                            _LOGGER.error(
+                            _LOGGER.debug(
                                 "DEPENDENCY_MANAGER_DEBUG: Setting %s = %s (type: %s)",
                                 sensor_name,
                                 sensor_value,

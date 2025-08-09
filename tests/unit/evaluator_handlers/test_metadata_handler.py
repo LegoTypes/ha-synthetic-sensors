@@ -44,8 +44,8 @@ class TestMetadataHandler:
         formula = "metadata(sensor.test_entity, 'last_changed')"
         result = handler.evaluate(formula)
 
-        # Should return quoted timestamp string
-        expected = f'"{test_timestamp}"'
+        # Should return ISO formatted timestamp string (quoted for formula evaluation)
+        expected = f'"{test_timestamp.isoformat()}"'
         assert result == expected
 
         # Verify hass.states.get was called correctly
@@ -67,7 +67,7 @@ class TestMetadataHandler:
         formula = "metadata(sensor.test_power, 'entity_id')"
         result = handler.evaluate(formula)
 
-        # Should return quoted entity_id string
+        # Should return entity_id string (quoted for safe formula evaluation)
         expected = '"sensor.test_power"'
         assert result == expected
 
@@ -89,7 +89,7 @@ class TestMetadataHandler:
 
         result = handler.evaluate(formula, context)
 
-        # Should resolve variable and return entity_id
+        # Should resolve variable and return entity_id (quoted for safe formula evaluation)
         expected = '"sensor.power_meter"'
         assert result == expected
 
@@ -169,7 +169,7 @@ class TestMetadataHandler:
         formula = "metadata(sensor.power, 'entity_id') + metadata(sensor.temp, 'entity_id')"
         result = handler.evaluate(formula)
 
-        # Should replace both calls
+        # Should replace both calls (quoted for safe formula evaluation)
         expected = '"sensor.power" + "sensor.temp"'
         assert result == expected
 

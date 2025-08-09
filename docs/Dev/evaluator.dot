@@ -1,0 +1,93 @@
+digraph G {
+    A [label="Formula Input", style=filled, fillcolor="#e1f5fe"]
+    B [label="Phase 0: Pre-Evaluation", style=filled, fillcolor="#f3e5f5"]
+    B1 [label="CircularReferenceValidator"]
+    B2 [label="Circuit Breaker Check"]
+    B3 [label="Cache Check"]
+    B4 [label="State Token Validation"]
+
+    C [label="Phase 1: Variable Resolution", style=filled, fillcolor="#e8f5e8"]
+    C1 [label="VariableResolverFactory"]
+    C2 [label="AttributeReferenceResolver"]
+    C3 [label="CrossSensorReferenceResolver"]
+    C4 [label="StateAttributeResolver"]
+    C5 [label="ConfigVariableResolver"]
+    C6 [label="ReferenceValueManager"]
+
+    D [label="Phase 2: Dependency Management", style=filled, fillcolor="#fff3e0"]
+    D1 [label="DependencyParser"]
+    D2 [label="CollectionResolver"]
+    D3 [label="EvaluatorDependency"]
+    D4 [label="ContextBuildingPhase"]
+
+    E [label="Phase 3: Formula Execution", style=filled, fillcolor="#fce4ec"]
+    E1 [label="HandlerFactory"]
+    E2 [label="NumericHandler\n(Default)"]
+    E3 [label="MetadataHandler"]
+
+    F [label="Phase 4: Result Processing", style=filled, fillcolor="#f1f8e9"]
+    F1 [label="EvaluatorResults"]
+    F2 [label="EvaluatorCache"]
+    F3 [label="ErrorHandler"]
+
+    V [label="Evaluation Result", style=filled, fillcolor="#e0f2f1"]
+    W [label="Unavailable State"]
+    X [label="Fatal Error"]
+    Y [label="Skip Evaluation"]
+    Z [label="Return Cached Result"]
+
+    A -> B
+    B -> B1
+    B -> B2
+    B -> B3
+    B -> B4
+
+    B1 -> C [label="No Circles"]
+    B2 -> C [label="Not Blocked"]
+    B3 -> C [label="Cache Miss"]
+    B4 -> C [label="Valid"]
+
+    B3 -> Z [label="Cache Hit"]
+    B2 -> Y [label="Blocked"]
+    B1 -> X [label="Circular Ref"]
+
+    C -> C1
+    C1 -> C2
+    C1 -> C3
+    C1 -> C4
+    C1 -> C5
+
+    C2 -> C6
+    C3 -> C6
+    C4 -> C6
+    C5 -> C6
+
+    C6 -> D [label="ReferenceValue Objects"]
+
+    D -> D1
+    D -> D2
+    D -> D3
+    D -> D4
+
+    D1 -> D3 [label="Dependencies"]
+    D2 -> D3 [label="Entity Lists"]
+    D3 -> D4 [label="Available"]
+    D3 -> W [label="Missing"]
+
+    D4 -> E [label="Complete Context"]
+
+    E -> E1
+    E1 -> E2 [label="Default"]
+    E1 -> E3 [label="Metadata"]
+
+    E2 -> F [label="SimpleEval"]
+    E3 -> F
+
+    F -> F1
+    F -> F2
+    F -> F3
+
+    F1 -> V [label="Success"]
+    F2 -> V [label="Cache Update"]
+    F3 -> V [label="Error Tracking"]
+}

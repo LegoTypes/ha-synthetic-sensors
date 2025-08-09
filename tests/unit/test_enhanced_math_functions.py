@@ -162,8 +162,8 @@ class TestEnhancedMathFunctions(unittest.TestCase):
 
     def test_error_handling(self):
         """Test proper error handling for invalid inputs."""
-        # Test type errors in calculation functions
-        with self.assertRaises(TypeError):
+        # Test value errors for invalid datetime strings
+        with self.assertRaises(ValueError):
             MathFunctions.minutes_between("not_datetime", datetime.now())
 
         with self.assertRaises(TypeError):

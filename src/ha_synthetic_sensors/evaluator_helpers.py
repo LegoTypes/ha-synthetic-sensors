@@ -109,11 +109,15 @@ class EvaluatorHelpers:
 
         # Handle string results
         if isinstance(result, str):
-            # Check for HA state values first
+            # Preserve HA state strings
             if is_ha_state_value(result):
                 return result
-            # Try to convert numeric strings to numbers
-            return EvaluatorHelpers.convert_string_to_number_if_possible(result)
+            # Use priority analyzer: boolean-first, then numeric
+            coerced = EvaluatorHelpers.preprocess_value_for_enhanced_eval(result)
+            if isinstance(coerced, int | float | bool):
+                return coerced
+            # Fallback to string
+            return str(coerced)
 
         # Handle unexpected types by converting to string
         return str(result)

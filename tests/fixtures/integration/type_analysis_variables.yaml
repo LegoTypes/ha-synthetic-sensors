@@ -1,3 +1,5 @@
+# Type analysis variables fixture used by integration tests
+
 version: "1.0"
 
 global_settings:

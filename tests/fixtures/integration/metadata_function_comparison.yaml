@@ -1,0 +1,20 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_metadata_comparison"
+  variables:
+    external_sensor: "sensor.comparison_external_power_meter"
+  metadata:
+    attribution: "Metadata Function Comparison Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # Test metadata functions with external entity metadata values
+  metadata_comparison_test:
+    name: "Comparison Metadata Test"
+    formula: "metadata(temp_entity, 'last_changed')"
+    variables:
+      temp_entity: "sensor.comparison_temp_probe"
+    metadata:
+      unit_of_measurement: ""
+      device_class: "timestamp"

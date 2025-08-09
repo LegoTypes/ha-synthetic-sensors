@@ -158,3 +158,30 @@ sensors:
     metadata:
       unit_of_measurement: "%"
       device_class: "power_factor"
+
+  # NEW: Sensor that tests computed variable inheritance from parent to attributes
+  # This tests the exact bug we fixed - attributes referencing parent computed variables
+  span_grace_period_sensor:
+    name: "SPAN Grace Period Sensor"
+    entity_id: sensor.span_test_meter
+    formula: state
+    variables:
+      # Computed variable defined at sensor level (parent)
+      within_grace:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < grace_period_minutes"
+        UNAVAILABLE: 'false'
+        UNKNOWN: 'false'
+      grace_period_minutes: 15
+    attributes:
+      # Direct reference to parent computed variable (this was broken before our fix)
+      grace_period_active:
+        formula: within_grace  # Should inherit 'within_grace' from parent sensor
+      # Formula reference to parent computed variable
+      grace_status:
+        formula: "'active' if within_grace else 'expired'"  # Should also inherit 'within_grace'
+      grace_minutes_remaining:
+        formula: "max(0, grace_period_minutes - minutes_between(metadata(state, 'last_changed'), now()))"
+    metadata:
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing

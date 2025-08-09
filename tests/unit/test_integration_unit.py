@@ -202,7 +202,9 @@ class TestIntegration:
         assert main_result["value"] == 250.0  # state * 0.25 = 1000 * 0.25 = 250
 
         # Test attribute formulas with context from main result
-        context = {"state": main_result["value"]}
+        # Include registry values for cross-sensor references along with current state
+        registry_context = evaluator._sensor_registry_phase.get_all_sensor_values()
+        context = {"state": main_result["value"], **registry_context}
 
         for i in range(1, len(attr_sensor.formulas)):
             attribute_formula = attr_sensor.formulas[i]

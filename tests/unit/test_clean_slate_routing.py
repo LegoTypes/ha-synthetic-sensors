@@ -88,7 +88,7 @@ class TestCleanSlateRouting(unittest.TestCase):
         # Mock metadata handler
         mock_metadata_handler = Mock()
         mock_metadata_handler.can_handle.return_value = True
-        mock_metadata_handler.evaluate.return_value = "2024-01-01T10:00:00"
+        mock_metadata_handler.evaluate.return_value = '"2024-01-01T10:00:00"'  # Quoted for safe evaluation
 
         with patch.object(self.evaluator._handler_factory, "get_handler", return_value=mock_metadata_handler):
             result = self.evaluator._execute_with_handler(config, "metadata(entity, 'last_changed')", {}, {}, None)
@@ -96,7 +96,7 @@ class TestCleanSlateRouting(unittest.TestCase):
             # Verify metadata handler was called
             mock_metadata_handler.can_handle.assert_called_with("metadata(entity, 'last_changed')")
             mock_metadata_handler.evaluate.assert_called_once()
-            self.assertEqual(result, "2024-01-01T10:00:00")
+            self.assertEqual(result, "2024-01-01T10:00:00")  # Should be unquoted string after evaluation
 
     def test_clean_slate_enhanced_simpleeval_failure(self):
         """Test that enhanced SimpleEval failure raises clear error (no fallback)."""
@@ -117,8 +117,8 @@ class TestCleanSlateRouting(unittest.TestCase):
             with self.assertRaises(ValueError) as context:
                 self.evaluator._execute_with_handler(config, "metadata(entity, 'attr')", {}, {}, None)
 
-            # Verify clear error message about metadata handler
-            self.assertIn("Metadata formula detected but handler not available", str(context.exception))
+            # In current architecture, missing handler results in undefined function error
+            self.assertIn("Function 'metadata' not defined", str(context.exception))
 
     def test_clean_slate_always_enabled(self):
         """Test that clean slate routing is always enabled (no disable option)."""

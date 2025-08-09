@@ -35,7 +35,7 @@ information, see the [ReferenceValue Architecture Implementation Guide](referenc
   one dictionary entry for any backing entities that are registered. If backing entities were provided but no entries exist,
   this condition is a fatal error and an appropriate exception should be raised.
 
-### Standard HA State Values
+## Standard HA State Values
 
 The following state values are recognized and handled consistently throughout the package:
 

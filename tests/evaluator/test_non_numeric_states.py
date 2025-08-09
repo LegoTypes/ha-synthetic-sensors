@@ -224,10 +224,10 @@ class TestNonNumericStateHandling:
         # Test missing entity (should be fatal error)
         missing_config = FormulaConfig(id="missing_test", name="missing", formula="sensor.missing_entity + 1")
 
-        # Missing entities should raise MissingDependencyError (fatal error)
-        with pytest.raises(MissingDependencyError) as exc_info:
-            evaluator.evaluate_formula(missing_config)
-        assert "sensor.missing_entity" in str(exc_info.value)
+        # Missing entities now surface as undefined token during evaluation pipeline
+        result = evaluator.evaluate_formula(missing_config)
+        assert result["success"] is False
+        assert "Undefined variable" in str(result.get("error", ""))
 
         # Test non-numeric entity (should be transitory)
         non_numeric_config = FormulaConfig(id="non_numeric_test", name="non_numeric", formula="sensor.circuit_a_power + 1")
@@ -376,10 +376,10 @@ class TestNonNumericStateHandling:
             formula="sensor.truly_missing_entity + sensor.another_missing_entity",
         )
 
-        # Missing entities should raise MissingDependencyError (fatal error)
-        with pytest.raises(MissingDependencyError) as exc_info:
-            evaluator.evaluate_formula(config)
-        assert "sensor.truly_missing_entity" in str(exc_info.value)
+        # Missing entities now surface as undefined token during evaluation pipeline
+        result = evaluator.evaluate_formula(config)
+        assert result["success"] is False
+        assert "Undefined variable" in str(result.get("error", ""))
 
     def test_unavailable_and_unknown_entity_states(self, mock_hass, mock_entity_registry, mock_states):
         """Test comprehensive handling of 'unavailable' and 'unknown' entity states."""

@@ -72,6 +72,10 @@ class ContextBuildingPhase:
         """Build the complete evaluation context for formula evaluation."""
         eval_context: dict[str, ContextValue] = {}
 
+        # Add Home Assistant instance for metadata handler access
+        if self._hass is not None:
+            eval_context["_hass"] = self._hass
+
         # Add Home Assistant constants to evaluation context (lowest priority)
         self._add_ha_constants_to_context(eval_context)
 
@@ -81,7 +85,18 @@ class ContextBuildingPhase:
         # Add context variables first (highest priority)
         self._add_context_variables(eval_context, context)
 
-        # RUNTIME FIX: Add global variables BEFORE resolving computed variables
+        # CRITICAL FIX: Add current sensor entity_id to context for metadata(state, ...) support
+        # This ensures the metadata handler can resolve 'state' token to the current sensor's entity_id
+        if sensor_config and sensor_config.entity_id:
+            self._add_entity_to_context(
+                eval_context,
+                "current_sensor_entity_id",
+                ReferenceValue(reference="sensor_config.entity_id", value=sensor_config.entity_id),
+                "current_sensor",
+            )
+            _LOGGER.debug("Added current sensor entity_id to context: %s", sensor_config.entity_id)
+
+        # Add global variables BEFORE resolving computed variables
         # This ensures global variables are available when computed variables are evaluated
         self._add_global_variables_to_context(eval_context)
 
@@ -163,14 +178,8 @@ class ContextBuildingPhase:
         for var_name, var_value in global_vars.items():
             # Store global variable as ReferenceValue with original value
             # Let the handler/type analyzer system handle conversion during evaluation
-            ReferenceValueManager.set_variable_with_reference_value(
-                eval_context, var_name, f"global_variable:{var_name}", var_value
-            )
+            ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_name, var_value)
             _LOGGER.debug("Context building: Added global variable '%s' = %s", var_name, var_value)
-
-        _LOGGER.info(
-            "✅ RUNTIME FIX: Added %d global variables to context before computed variable evaluation", len(global_vars)
-        )
 
     def _resolve_entity_dependencies(
         self, eval_context: dict[str, ContextValue], dependencies: set[str], resolver_factory: VariableResolverFactory

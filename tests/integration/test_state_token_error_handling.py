@@ -271,4 +271,9 @@ class TestStateTokenErrorHandling:
             # Verify attribute formulas are in the main formula's attributes
             assert main_formula.attributes is not None
             assert "amperage" in main_formula.attributes
-            assert main_formula.attributes["amperage"] == "state / 240"
+
+            # With structure preservation fix, attributes should be dictionaries with 'formula' key
+            amperage_attr = main_formula.attributes["amperage"]
+            assert isinstance(amperage_attr, dict), f"amperage should be a formula dict: {amperage_attr}"
+            assert "formula" in amperage_attr, f"amperage should have 'formula' key: {amperage_attr}"
+            assert amperage_attr["formula"] == "state / 240", f"amperage formula should be 'state / 240': {amperage_attr}"

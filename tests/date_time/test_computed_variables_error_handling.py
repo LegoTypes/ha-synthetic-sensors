@@ -173,7 +173,7 @@ class TestComputedVariableErrorHandling:
             resolve_config_variables(eval_context, config, mock_resolver)
 
         error_message = str(exc_info.value)
-        # Should mention the specific missing variable
-        assert "undefined1" in error_message
-        # Should mention missing dependencies
+        # Should mention missing dependencies for the failed computed variables
         assert any(keyword in error_message.lower() for keyword in ["missing", "dependency", "cannot be resolved"])
+        # Should mention at least one of the error variable names
+        assert any(var_name in error_message for var_name in ["error1", "error2"])

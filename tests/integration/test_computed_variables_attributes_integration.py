@@ -112,11 +112,12 @@ class TestComputedVariablesInAttributesIntegration:
         config = config_manager.load_from_dict(computed_vars_attributes_yaml)
 
         # Verify sensors were loaded
-        assert len(config.sensors) == 3
+        assert len(config.sensors) == 4  # Updated to include new SPAN grace period sensor
         sensor_names = [s.name for s in config.sensors]
         assert "Power Sensor with Computed Attributes" in sensor_names
         assert "Temperature with State-Dependent Computed Attributes" in sensor_names
         assert "Efficiency Sensor with Nested Computations" in sensor_names
+        assert "SPAN Grace Period Sensor" in sensor_names  # New test sensor
 
     def test_power_sensor_computed_variables_in_attributes_parsing(self, config_manager, computed_vars_attributes_yaml):
         """Test parsing of computed variables in power sensor attributes."""
@@ -199,6 +200,53 @@ class TestComputedVariablesInAttributesIntegration:
         assert rating_formula.variables["is_excellent"].formula == "state >= excellent_threshold"
         assert "state >=" in rating_formula.variables["is_good"].formula
 
+    def test_span_grace_period_computed_variable_inheritance(self, config_manager, computed_vars_attributes_yaml):
+        """Test that attribute formulas inherit computed variables from parent sensor (critical bug fix test)."""
+        config = config_manager.load_from_dict(computed_vars_attributes_yaml)
+
+        # Find the SPAN grace period sensor
+        span_sensor = next(s for s in config.sensors if s.unique_id == "span_grace_period_sensor")
+
+        # Main formula should have computed variables at sensor level
+        main_formula = span_sensor.formulas[0]
+        assert "within_grace" in main_formula.variables
+        assert isinstance(main_formula.variables["within_grace"], ComputedVariable)
+        assert "grace_period_minutes" in main_formula.variables
+
+        # CRITICAL TEST: Attribute formulas should inherit computed variables from parent
+        attr_formulas = span_sensor.formulas[1:]  # Skip main formula
+
+        # Find grace_period_active attribute formula
+        grace_active_formula = next(f for f in attr_formulas if f.id.endswith("_grace_period_active"))
+        # This should have inherited 'within_grace' from parent sensor
+        assert "within_grace" in grace_active_formula.variables, (
+            "Attribute formula should inherit 'within_grace' computed variable from parent sensor"
+        )
+        assert isinstance(grace_active_formula.variables["within_grace"], ComputedVariable)
+
+        # Find grace_status attribute formula
+        grace_status_formula = next(f for f in attr_formulas if f.id.endswith("_grace_status"))
+        # This should also have inherited 'within_grace' from parent sensor
+        assert "within_grace" in grace_status_formula.variables, (
+            "Attribute formula should inherit 'within_grace' computed variable from parent sensor"
+        )
+
+        # Find grace_minutes_remaining attribute formula
+        grace_remaining_formula = next(f for f in attr_formulas if f.id.endswith("_grace_minutes_remaining"))
+        # This should inherit 'grace_period_minutes' from parent sensor
+        assert "grace_period_minutes" in grace_remaining_formula.variables, (
+            "Attribute formula should inherit 'grace_period_minutes' variable from parent sensor"
+        )
+
+        # Verify the formulas are correct
+        assert grace_active_formula.formula == "within_grace"
+        assert grace_status_formula.formula == "'active' if within_grace else 'expired'"
+
+        print(f"✅ SUCCESS: All attribute formulas properly inherited computed variables from parent sensor")
+        print(f"   - grace_period_active inherits: {list(grace_active_formula.variables.keys())}")
+        print(f"   - grace_status inherits: {list(grace_status_formula.variables.keys())}")
+        print(f"   - grace_minutes_remaining inherits: {list(grace_remaining_formula.variables.keys())}")
+
     @pytest.mark.asyncio
     async def test_end_to_end_computed_variables_attributes_evaluation(
         self,
@@ -220,6 +268,10 @@ class TestComputedVariablesInAttributesIntegration:
         required_entities = {
             "sensor.raw_temperature": {"state": "20.5", "attributes": {"unit_of_measurement": "°C"}},
             "sensor.raw_power": {"state": "1800", "attributes": {"unit_of_measurement": "W"}},
+            "sensor.span_test_meter": {
+                "state": "1500.0",
+                "attributes": {"unit_of_measurement": "Wh"},
+            },  # For SPAN grace period sensor
         }
 
         try:
@@ -270,7 +322,9 @@ class TestComputedVariablesInAttributesIntegration:
 
                 # Import YAML with dependency resolution
                 result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-                assert result["sensors_imported"] == 3  # Should import all 3 sensors from the fixture
+                assert (
+                    result["sensors_imported"] == 4
+                )  # Should import all 4 sensors from the fixture (including new SPAN sensor)
 
                 # Set up synthetic sensors via public API
                 sensor_manager = await async_setup_synthetic_sensors(
@@ -296,6 +350,7 @@ class TestComputedVariablesInAttributesIntegration:
                             "sensor.temperature_sensor_with_state_dependent_attributes",
                             "sensor.power_sensor_with_computed_attributes",
                             "sensor.efficiency_sensor_with_nested_computed_vars",
+                            "sensor.span_grace_period_sensor",  # New SPAN test sensor
                         ]:
                             # Verify the entity has the expected attributes
                             assert hasattr(entity, "native_value"), f"Entity {entity.entity_id} missing native_value"
@@ -318,7 +373,7 @@ class TestComputedVariablesInAttributesIntegration:
         config = config_manager.load_from_dict(computed_vars_attributes_yaml)
 
         # Verify all sensors loaded correctly
-        assert len(config.sensors) == 3
+        assert len(config.sensors) == 4  # Updated for new SPAN sensor
 
         # Verify each sensor has expected number of formulas
         sensors_formula_counts = {}
@@ -329,6 +384,7 @@ class TestComputedVariablesInAttributesIntegration:
         assert sensors_formula_counts["power_sensor_with_computed_attributes"] == 4  # 1 main + 3 attrs
         assert sensors_formula_counts["temperature_sensor_with_state_dependent_attributes"] == 3  # 1 main + 2 attrs
         assert sensors_formula_counts["efficiency_sensor_with_nested_computed_vars"] == 3  # 1 main + 2 attrs
+        assert sensors_formula_counts["span_grace_period_sensor"] == 4  # 1 main + 3 attrs
 
         # Verify that regular (non-computed) variables still work
         power_sensor = next(s for s in config.sensors if s.unique_id == "power_sensor_with_computed_attributes")

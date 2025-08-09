@@ -4,6 +4,7 @@ This module centralizes formula-related constants including reserved words,
 HA state values, and other shared constants used across the evaluation system.
 """
 
+from .math_functions import MathFunctions
 from .shared_constants import BOOLEAN_LITERALS, MATH_FUNCTIONS, PYTHON_KEYWORDS, STRING_FUNCTIONS
 
 # Define categorization mapping for string functions
@@ -34,12 +35,16 @@ def _validate_string_function_categorization() -> None:
 # Perform validation at module import time
 _validate_string_function_categorization()
 
+# Get enhanced functions dynamically to include all available functions
+_ENHANCED_FUNCTIONS = set(MathFunctions.get_all_functions().keys())
+
 # Reserved words that should not be treated as variables in formulas
 # These are Python keywords, boolean literals, and function names
 FORMULA_RESERVED_WORDS: frozenset[str] = frozenset(
     PYTHON_KEYWORDS
     | BOOLEAN_LITERALS
     | MATH_FUNCTIONS
+    | _ENHANCED_FUNCTIONS  # Include all enhanced math functions like minutes_between
     | {
         "len",
         "abs",

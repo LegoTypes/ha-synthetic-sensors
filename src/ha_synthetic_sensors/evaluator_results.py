@@ -69,3 +69,32 @@ class EvaluatorResults:
             if key in ["cached", "unavailable_dependencies", "missing_dependencies"]:
                 result[key] = value  # type: ignore[literal-required]
         return result
+
+    @staticmethod
+    def create_success_from_result(result: float | int | str | bool) -> EvaluationResult:
+        """Create a success result from a typed evaluation value."""
+        if isinstance(result, int | float):
+            return EvaluatorResults.create_success_result(float(result))
+        return EvaluatorResults.create_success_result_with_state("ok", value=result)
+
+    @staticmethod
+    def from_dependency_phase_result(result: dict[str, Any]) -> EvaluationResult:
+        """Convert dependency-management phase result to an EvaluationResult shape."""
+        if "error" in result:
+            return EvaluatorResults.create_error_result(
+                result["error"], state=result["state"], missing_dependencies=result.get("missing_dependencies")
+            )
+        return EvaluatorResults.create_success_result_with_state(
+            result["state"], unavailable_dependencies=result.get("unavailable_dependencies")
+        )
+
+    @staticmethod
+    def create_success_from_ha_state(
+        ha_state_value: str, unavailable_dependencies: list[str] | None = None
+    ) -> EvaluationResult:
+        """Create a success result that reflects a detected HA state during resolution."""
+        return EvaluatorResults.create_success_result_with_state(
+            ha_state_value,
+            value=None,
+            unavailable_dependencies=unavailable_dependencies or [],
+        )

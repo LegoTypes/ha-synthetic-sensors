@@ -5,6 +5,8 @@ global_settings:
   variables:
     # Global variable with entity reference for testing
     external_sensor: "sensor.external_power_meter"
+    # Variable needed for SPAN energy sensor grace period test
+    energy_grace_period_minutes: 30
   metadata:
     attribution: "Metadata Function Integration Test"
     entity_registry_enabled_default: true
@@ -36,10 +38,10 @@ sensors:
     metadata:
       unit_of_measurement: ""
 
-  # Test 4: Sensor key self-reference test (see how this behaves)
+  # Test4: Sensor key self-reference test (see how this behaves)
   metadata_self_reference_test:
     name: "Self Reference Test"
-    entity_id: "sensor.power_meter"  # Explicit entity_id for self-reference
+    entity_id: "sensor.metadata_self_reference_test"  # Unique entity_id for self-reference
     formula: "metadata(metadata_self_reference_test, 'object_id')"  # Uses sensor key
     metadata:
       unit_of_measurement: ""
@@ -80,6 +82,8 @@ sensors:
     attributes:
       doubled_value:
         formula: "state * 2"  # Simple calculation without metadata
+      entity_source:
+        formula: "metadata(mixed_entity, 'entity_id')"  # Test metadata in attribute formula
     metadata:
       unit_of_measurement: "W"
 
@@ -92,3 +96,78 @@ sensors:
     metadata:
       unit_of_measurement: ""
       device_class: "timestamp"
+
+  # Test 7: Metadata function in computed variables (simplified)
+  metadata_computed_variable_test:
+    name: "Metadata in Computed Variable Test"
+    formula: "computed_entity_id"
+    variables:
+      base_entity: "sensor.power_meter"
+      computed_entity_id:
+        formula: "metadata(base_entity, 'entity_id')"
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 8: Computed variable without metadata (control test)
+  metadata_computed_control_test:
+    name: "Computed Variable Control Test"
+    formula: "computed_value"
+    variables:
+      base_entity: "sensor.power_meter"
+      computed_value:
+        formula: "base_entity * 2"
+    metadata:
+      unit_of_measurement: "W"
+
+  # Test 9: SPAN Panel Energy Sensor Grace Period Example (CORRECTED WORKING VERSION)
+  # This demonstrates the correct pattern for energy sensor grace period implementation
+  # Using proper simpleeval syntax: 'if/else' ternary and 'and/or' boolean operators
+  span_energy_sensor_grace_period_test:
+    name: "SPAN Energy Sensor Grace Period Test"
+    entity_id: "sensor.span_main_meter_consumed_energy"  # Explicit entity_id
+    formula: "state"  # Main formula uses 'state' token (backing entity value)
+    # UNAVAILABLE handler: Use computed variable approach (SHOULD WORK)
+    UNAVAILABLE: "state if within_grace else UNAVAILABLE"
+    variables:
+      within_grace:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"
+        UNAVAILABLE: 'false'
+    attributes:
+      # Track energy state information using proper syntax
+      last_valid_value:
+        formula: "state if (state >= 0 and state != None) else 0"
+      last_valid_change:
+        formula: "now() if (state >= 0 and state != None) else '1970-01-01T00:00:00+00:00'"
+      # Grace period status indicator using recommended minutes_between function
+      grace_period_active:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"
+      source_entity:
+        formula: "'sensor.span_main_meter_consumed_energy'"
+      grace_period_minutes:
+        formula: "energy_grace_period_minutes"
+    metadata:
+      unit_of_measurement: "Wh"
+      device_class: "energy"
+      state_class: "total_increasing"
+      suggested_display_precision: 2
+
+  # Test multiple metadata functions with complex formula logic
+  multiple_metadata_formula_test:
+    name: "Multiple Metadata Functions Test"
+    entity_id: "sensor.multiple_metadata_test"
+    formula: "state"
+    variables:
+      time_diff_minutes:
+        formula: "minutes_between(metadata(external_sensor, 'last_changed'), metadata(state, 'last_changed'))"
+        UNAVAILABLE: '0'
+      both_recent:
+        formula: "time_diff_minutes < 10 and metadata(external_sensor, 'entity_id') == 'sensor.external_power_meter'"
+        UNAVAILABLE: 'false'
+    attributes:
+      # Multiple metadata calls with arithmetic and boolean logic
+      complex_check:
+        formula: "minutes_between(metadata(external_sensor, 'last_changed'), now()) < 30 and metadata(state, 'entity_id') == metadata(external_sensor, 'entity_id')"
+      entity_comparison:
+        formula: "metadata(state, 'entity_id') + ' vs ' + metadata(external_sensor, 'entity_id')"
+      time_analysis:
+        formula: "str(minutes_between(metadata(state, 'last_changed'), metadata(external_sensor, 'last_changed'))) + ' minutes apart'"

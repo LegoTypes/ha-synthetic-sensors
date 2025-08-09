@@ -99,9 +99,16 @@ class TestCrossSensorIntegration:
             # Check that self-references use 'state' token
             daily_power_attr = base_power_attributes.get("daily_power")
             assert daily_power_attr is not None, "daily_power attribute should exist"
-            assert "state" in daily_power_attr, f"daily_power should use 'state' token: {daily_power_attr}"
-            assert "roundtrip_base_power_sensor" not in daily_power_attr, (
-                f"daily_power should not use sensor key: {daily_power_attr}"
+
+            # With structure preservation fix, attributes should be dictionaries with 'formula' key
+            assert isinstance(daily_power_attr, dict), f"daily_power should be a formula dict: {daily_power_attr}"
+            assert "formula" in daily_power_attr, f"daily_power should have 'formula' key: {daily_power_attr}"
+
+            # Check that the formula uses 'state' token (after self-reference resolution)
+            formula_value = daily_power_attr["formula"]
+            assert "state" in formula_value, f"daily_power formula should use 'state' token: {formula_value}"
+            assert "roundtrip_base_power_sensor" not in formula_value, (
+                f"daily_power formula should not use sensor key: {formula_value}"
             )
 
             # Verify variable resolution

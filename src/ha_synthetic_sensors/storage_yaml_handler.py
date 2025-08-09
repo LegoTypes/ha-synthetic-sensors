@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import yaml as yaml_lib
 
 from .config_models import FormulaConfig, SensorConfig
+from .constants_alternate import UNAVAILABLE_KEY, UNKNOWN_KEY
 
 if TYPE_CHECKING:
     from .storage_manager import StorageManager
@@ -261,8 +262,13 @@ class YamlHandler:
         """Add main formula details to sensor dictionary."""
         sensor_dict["formula"] = main_formula.formula
 
+        # Add main formula alternate state handlers first (sensor level)
+        if main_formula.alternate_state_handler:
+            self._add_alternate_state_handlers(sensor_dict, main_formula.alternate_state_handler)
+
+        # Add variables with proper serialization
         if main_formula.variables:
-            sensor_dict["variables"] = dict(main_formula.variables)
+            sensor_dict["variables"] = self._serialize_variables(main_formula.variables)
 
         # Add metadata if present (formula-level metadata overrides sensor-level metadata)
         metadata = self._extract_formula_metadata(main_formula)
@@ -274,3 +280,35 @@ class YamlHandler:
         existing_metadata = sensor_dict.get("metadata", {})
         merged_metadata = {**existing_metadata, **formula_metadata}
         sensor_dict["metadata"] = merged_metadata
+
+    def _add_alternate_state_handlers(self, sensor_dict: dict[str, Any], alternate_state_handler: Any) -> None:
+        """Add alternate state handlers to sensor dictionary with proper casing."""
+        if hasattr(alternate_state_handler, "unavailable") and alternate_state_handler.unavailable is not None:
+            sensor_dict[UNAVAILABLE_KEY] = alternate_state_handler.unavailable
+        if hasattr(alternate_state_handler, "unknown") and alternate_state_handler.unknown is not None:
+            sensor_dict[UNKNOWN_KEY] = alternate_state_handler.unknown
+
+    def _serialize_variables(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """Serialize variables dictionary, converting ComputedVariable objects to YAML format."""
+        serialized_variables = {}
+
+        for name, value in variables.items():
+            if hasattr(value, "formula"):  # ComputedVariable object
+                var_dict = {"formula": value.formula}
+
+                # Add alternate state handlers with proper casing
+                if hasattr(value, "alternate_state_handler") and value.alternate_state_handler:
+                    if (
+                        hasattr(value.alternate_state_handler, "unavailable")
+                        and value.alternate_state_handler.unavailable is not None
+                    ):
+                        var_dict[UNAVAILABLE_KEY] = value.alternate_state_handler.unavailable
+                    if hasattr(value.alternate_state_handler, "unknown") and value.alternate_state_handler.unknown is not None:
+                        var_dict[UNKNOWN_KEY] = value.alternate_state_handler.unknown
+
+                serialized_variables[name] = var_dict
+            else:
+                # Simple variable (string, int, float)
+                serialized_variables[name] = value
+
+        return serialized_variables

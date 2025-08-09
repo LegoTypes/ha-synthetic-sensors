@@ -1339,8 +1339,27 @@ sensors:
 
 ## Alternate State Handling
 
-Synthetic sensors support handling of `UNKNOWN` and `UNAVAILABLE` states through alternate state handling formulas. When a
-formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead.
+Synthetic sensors support handling of `UNKNOWN` and `UNAVAILABLE` states through alternate state handling formulas. Alternate
+handlers now support two shapes:
+
+- Literal value: boolean/number/string returned directly (typed via the analyzer)
+- Object with `formula:` and optional `variables:` evaluated via the standard pipeline
+
+Examples:
+
+```yaml
+UNAVAILABLE: false
+UNKNOWN: 0
+```
+
+```yaml
+UNAVAILABLE:
+  formula: "backup + 1"
+  variables:
+    backup: 5
+```
+
+When a formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead.
 
 - **UNAVAILABLE**: Triggered when an entity is unavailable or doesn't exist
 - **UNKNOWN**: Triggered when an entity exists but has an unknown state

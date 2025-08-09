@@ -6,15 +6,19 @@ and other configuration-related operations to eliminate code duplication.
 
 from collections.abc import Callable
 import logging
-import re
 from typing import Any
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+
+from .alternate_state_eval import evaluate_computed_alternate
 from .config_models import ComputedVariable, FormulaConfig
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import FatalEvaluationError, MissingDependencyError
 from .formula_compilation_cache import FormulaCompilationCache
+from .formula_evaluator_service import FormulaEvaluatorService
 from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
+from .math_functions import MathFunctions
 from .reference_value_manager import ReferenceValueManager
 from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS
 from .type_definitions import ContextValue, ReferenceValue
@@ -58,9 +62,9 @@ def _extract_values_for_simpleeval(eval_context: dict[str, ContextValue]) -> dic
         if isinstance(value, ReferenceValue):
             # Extract the value from ReferenceValue for SimpleEval
             extracted_value = value.value
-            # Apply the same preprocessing as main formulas for consistency
+            # Apply priority analyzer (boolean-first, then numeric) for consistency
             if isinstance(extracted_value, str):
-                extracted_value = EvaluatorHelpers.convert_string_to_number_if_possible(extracted_value)
+                extracted_value = EvaluatorHelpers.preprocess_value_for_enhanced_eval(extracted_value)
             simpleeval_context[key] = extracted_value
         else:
             # Keep other values as-is (functions, constants, etc.)
@@ -130,6 +134,7 @@ def validate_computed_variable_references(
     always_available.update(METADATA_FUNCTIONS)  # Add metadata functions
     always_available.update(DURATION_FUNCTIONS)  # Add duration functions
     always_available.update(DATETIME_FUNCTIONS)  # Add datetime functions
+    always_available.update(MathFunctions.get_all_functions().keys())  # Add enhanced math functions
     available_vars.update(always_available)
 
     # Check each computed variable for references to undefined variables
@@ -139,7 +144,8 @@ def validate_computed_variable_references(
             potential_refs = _extract_variable_references(formula)
 
             # Check for references to undefined variables
-            undefined_refs = [ref for ref in potential_refs if ref not in available_vars]
+            # Entity IDs (sensor.*, binary_sensor.*, etc.) are always valid references
+            undefined_refs = [ref for ref in potential_refs if ref not in available_vars and not _is_entity_id_reference(ref)]
 
             if undefined_refs:
                 error_msg = (
@@ -157,6 +163,68 @@ def validate_computed_variable_references(
                 )
 
     return errors
+
+
+def _is_entity_id_reference(reference: str) -> bool:
+    """Check if a reference looks like a valid entity ID.
+
+    Entity IDs typically follow the pattern: domain.object_id
+    Common domains include: sensor, binary_sensor, switch, light, etc.
+
+    Args:
+        reference: The reference string to check
+
+    Returns:
+        True if the reference appears to be a valid entity ID
+    """
+    if not isinstance(reference, str) or "." not in reference:
+        return False
+
+    # Common Home Assistant entity domains
+    valid_domains = {
+        "sensor",
+        "binary_sensor",
+        "switch",
+        "light",
+        "climate",
+        "cover",
+        "fan",
+        "lock",
+        "media_player",
+        "vacuum",
+        "camera",
+        "alarm_control_panel",
+        "device_tracker",
+        "person",
+        "zone",
+        "automation",
+        "script",
+        "scene",
+        "input_boolean",
+        "input_number",
+        "input_select",
+        "input_text",
+        "input_datetime",
+        "timer",
+        "counter",
+        "weather",
+        "sun",
+        "calendar",
+        "water_heater",
+        "humidifier",
+        "air_quality",
+        "button",
+        "number",
+        "select",
+        "text",
+    }
+
+    parts = reference.split(".", 1)
+    if len(parts) != 2:
+        return False
+
+    domain, object_id = parts
+    return domain in valid_domains and len(object_id) > 0
 
 
 # CLEAN SLATE: Removed exception handler fallback logic - deterministic system should not fallback to 0
@@ -244,7 +312,6 @@ def resolve_config_variables(
         resolver_callback: Callback function to resolve individual variables
         sensor_config: Optional sensor configuration for context
     """
-    _LOGGER.error("UTILS_CONFIG: resolve_config_variables called with resolver_callback: %s", resolver_callback)
     if not config or not config.variables:
         return
 
@@ -299,7 +366,6 @@ def _resolve_simple_variables(
             # Check if resolver already returned a ReferenceValue object
             if isinstance(resolved_value, ReferenceValue):
                 # Resolver already created ReferenceValue - use it directly
-                _LOGGER.error("UTILS_CONFIG: %s already ReferenceValue, setting directly: %s", var_name, resolved_value)
                 eval_context[var_name] = resolved_value
                 # Update the registry if needed
                 entity_registry_key = "_entity_reference_registry"
@@ -310,12 +376,6 @@ def _resolve_simple_variables(
                     entity_registry[resolved_value.reference] = resolved_value
             else:
                 # Resolver returned raw value - wrap in ReferenceValue
-                _LOGGER.error(
-                    "UTILS_CONFIG: %s raw value, wrapping: %s (type: %s)",
-                    var_name,
-                    resolved_value,
-                    type(resolved_value).__name__,
-                )
                 ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_value, resolved_value)
 
 
@@ -336,7 +396,9 @@ def _resolve_computed_variables(
 
     while remaining_vars and iteration < max_iterations:
         iteration += 1
-        made_progress = _process_computed_variables_iteration(remaining_vars, resolved_vars, eval_context, error_details_map)
+        made_progress = _process_computed_variables_iteration(
+            remaining_vars, resolved_vars, eval_context, error_details_map, config
+        )
 
         if not made_progress:
             _handle_no_progress_error(remaining_vars, error_details_map, eval_context)
@@ -350,6 +412,7 @@ def _process_computed_variables_iteration(
     resolved_vars: set[str],
     eval_context: dict[str, ContextValue],
     error_details_map: dict[str, dict[str, Any]],
+    parent_config: FormulaConfig | None,
 ) -> bool:
     """Process one iteration of computed variable resolution.
 
@@ -370,7 +433,7 @@ def _process_computed_variables_iteration(
 
         # Try to evaluate the computed variable formula with current context
         try:
-            success = _try_resolve_computed_variable(var_name, computed_var, eval_context)
+            success = _try_resolve_computed_variable(var_name, computed_var, eval_context, parent_config)
             if success:
                 del remaining_vars[var_name]
                 resolved_vars.add(var_name)
@@ -381,7 +444,7 @@ def _process_computed_variables_iteration(
         except Exception as err:
             # Check if this is a real evaluation error vs entity unavailable/unknown
             error_str = str(err).lower()
-            if any(pattern in error_str for pattern in ["unavailable", "unknown", "not found"]):
+            if any(pattern in error_str for pattern in [STATE_UNAVAILABLE, STATE_UNKNOWN]):
                 # Entity state issues - use YAML exception handlers
                 handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
                 if handled:
@@ -390,11 +453,6 @@ def _process_computed_variables_iteration(
                     made_progress = True
             else:
                 # Programming/formula errors - should not fallback to 0
-                _LOGGER.error(
-                    "COMPUTED_VAR_FAILURE: Programming/deterministic error in variable %s: %s - This should NOT use alternate state handlers",
-                    var_name,
-                    err,
-                )
                 # For now, still try alternate state handler but log as suspicious
                 handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
                 if handled:
@@ -413,67 +471,142 @@ def _process_computed_variables_iteration(
 
 
 def _try_resolve_computed_variable(
-    var_name: str, computed_var: ComputedVariable, eval_context: dict[str, ContextValue]
+    var_name: str,
+    computed_var: ComputedVariable,
+    eval_context: dict[str, ContextValue],
+    parent_config: FormulaConfig | None,
 ) -> bool:
-    """Try to resolve a single computed variable using the proper FormulaRouter and handler system.
+    """Try to resolve a single computed variable.
 
-    This ensures computed variables go through the same evaluation pathway as main formulas,
-    including proper type conversion via the type analyzer system.
+    This function delegates to the main evaluation system for proper formula evaluation.
+    Computed variables should use the same evaluation pipeline as main formulas.
+
+    For computed variables containing metadata functions, we use lazy ReferenceValue resolution
+    to preserve the original references for metadata processing.
 
     Returns:
         True if successfully resolved, False otherwise
     """
     _LOGGER.debug("Resolving computed variable %s with formula: %s", var_name, computed_var.formula)
 
-    # Use Enhanced SimpleEval for computed variables to access math functions like minutes(), hours(), etc.
-    enhanced_helper = _get_enhanced_helper()
-
-    # Extract values from ReferenceValue objects for Enhanced SimpleEval evaluation
-    enhanced_context = _extract_values_for_simpleeval(eval_context)
-
     try:
-        # Use Enhanced SimpleEval which has all the math functions (minutes, hours, etc.)
-        success, result = enhanced_helper.try_enhanced_eval(computed_var.formula, enhanced_context)
+        if _metadata_function_present(computed_var.formula):
+            return _resolve_metadata_computed_variable(var_name, computed_var, eval_context, parent_config)
 
-        if success:
-            _LOGGER.debug("Computed variable %s resolved to: %s", var_name, result)
-
-            # Apply the same result processing as main formulas
-            result = EvaluatorHelpers.process_evaluation_result(result)
-
-            # Store the result in the evaluation context
-            ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, computed_var.formula, result)
-            return True
-
-        # Enhanced SimpleEval failed - result contains the exception
-        _LOGGER.debug("Computed variable %s failed Enhanced SimpleEval: %s", var_name, result)
-
-        # Try to extract undefined variable names from the error for better error messages
-        if result is not None:
-            error_str = str(result)
-            # Look for SimpleEval NameNotDefined patterns like "'undefined1' is not defined"
-            name_match = re.search(r"'([^']+)' is not defined", error_str)
-            if name_match:
-                undefined_var = name_match.group(1)
-                _LOGGER.debug("Computed variable %s references undefined variable: %s", var_name, undefined_var)
-                # Store this information for later error reporting
-                # Use a separate tracking mechanism that doesn't interfere with ContextValue typing
-                if "_undefined_variables" not in eval_context:
-                    # We need to work around the ContextValue typing constraint
-                    # by storing the set as a string temporarily, then converting back
-                    eval_context["_undefined_variables"] = f"SET:{undefined_var}"
-                else:
-                    existing = eval_context["_undefined_variables"]
-                    if isinstance(existing, str) and existing.startswith("SET:"):
-                        vars_list = existing[4:].split(",") if existing != "SET:" else []
-                        vars_list.append(undefined_var)
-                        eval_context["_undefined_variables"] = f"SET:{','.join(vars_list)}"
-
-        return False
+        return _resolve_non_metadata_computed_variable(var_name, computed_var, eval_context, parent_config)
 
     except Exception as err:
         _LOGGER.debug("Computed variable %s failed to resolve: %s", var_name, err)
         return False
+
+
+def _resolve_entity_references_in_computed_variable(formula: str, eval_context: dict[str, ContextValue]) -> str:
+    """Deprecated: computed variables use unified evaluator pipeline; keep for compatibility."""
+    return formula
+
+
+def _metadata_function_present(formula: str) -> bool:
+    import re  # pylint: disable=import-outside-toplevel
+
+    metadata_pattern = re.compile(r"\bmetadata\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)")
+    return metadata_pattern.search(formula) is not None
+
+
+def _build_simple_variables_view(parent_config: FormulaConfig | None) -> dict[str, Any] | None:
+    if not parent_config or not parent_config.variables:
+        return None
+    variables_view: dict[str, Any] = {}
+    for key, value in parent_config.variables.items():
+        if isinstance(value, ComputedVariable):
+            continue
+        variables_view[key] = value
+    return variables_view
+
+
+def _entity_available_in_hass(eval_context: dict[str, ContextValue]) -> bool:
+    hass_val = eval_context.get("_hass")
+    hass = hass_val.value if isinstance(hass_val, ReferenceValue) else hass_val
+    current_sensor_val = eval_context.get("current_sensor_entity_id")
+    current_entity_id = current_sensor_val.value if isinstance(current_sensor_val, ReferenceValue) else current_sensor_val
+    if not (getattr(hass, "states", None) and isinstance(current_entity_id, str)):
+        return False
+    try:
+        return hass.states.get(current_entity_id) is not None  # type: ignore[union-attr]
+    except Exception:
+        return False
+
+
+def _evaluate_cv_via_pipeline(
+    formula: str,
+    eval_context: dict[str, ContextValue],
+    parent_config: FormulaConfig | None,
+) -> dict[str, Any]:
+    variables_view = _build_simple_variables_view(parent_config)
+    return FormulaEvaluatorService.evaluate_formula_via_pipeline(
+        formula,
+        eval_context,
+        variables=variables_view,
+        bypass_dependency_management=False,
+    )
+
+
+def _set_reference_value(eval_context: dict[str, ContextValue], var_name: str, formula: str, value: Any) -> None:
+    ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, formula, value)
+
+
+def _set_lazy_reference(eval_context: dict[str, ContextValue], var_name: str, formula: str) -> None:
+    lazy_reference = ReferenceValue(reference=formula, value=None)
+    ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, formula, lazy_reference)
+
+
+def _resolve_metadata_computed_variable(
+    var_name: str,
+    computed_var: ComputedVariable,
+    eval_context: dict[str, ContextValue],
+    parent_config: FormulaConfig | None,
+) -> bool:
+    _LOGGER.debug(
+        "Computed variable %s contains metadata functions - attempting gated evaluation via pipeline",
+        var_name,
+    )
+
+    if not _entity_available_in_hass(eval_context):
+        _set_lazy_reference(eval_context, var_name, computed_var.formula)
+        _LOGGER.debug("Computed variable %s stored as lazy ReferenceValue (awaiting HA readiness)", var_name)
+        return True
+
+    eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
+    if eval_result.get("success"):
+        result = eval_result["value"]
+        _set_reference_value(eval_context, var_name, computed_var.formula, result)
+        _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
+        return True
+
+    _LOGGER.debug(
+        "Computed variable %s pipeline evaluation failed or returned error: %s; will keep lazy",
+        var_name,
+        eval_result.get("error"),
+    )
+    _set_lazy_reference(eval_context, var_name, computed_var.formula)
+    return True
+
+
+def _resolve_non_metadata_computed_variable(
+    var_name: str,
+    computed_var: ComputedVariable,
+    eval_context: dict[str, ContextValue],
+    parent_config: FormulaConfig | None,
+) -> bool:
+    eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
+    if eval_result.get("success"):
+        result = eval_result["value"]
+        _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
+        _set_reference_value(eval_context, var_name, computed_var.formula, result)
+        return True
+
+    error_msg = str(eval_result.get("error"))
+    _LOGGER.debug("Computed variable %s failed via pipeline: %s", var_name, error_msg)
+    return False
 
 
 def _try_handle_computed_variable_error(
@@ -526,7 +659,7 @@ def _try_alternate_state_handler(
         return None
 
     # Determine which alternate state handler to use based on error type
-    handler_formula = None
+    handler_formula: Any | None = None
 
     # FATAL ERRORS: These should NEVER be masked by UNAVAILABLE fallbacks
     fatal_error_patterns = [
@@ -552,33 +685,28 @@ def _try_alternate_state_handler(
         return None  # Let the error propagate as fatal
 
     # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN fallbacks
-    if "unavailable" in error_str or "not defined" in error_str:
+    if STATE_UNAVAILABLE in error_str:
         handler_formula = computed_var.alternate_state_handler.unavailable
-    elif "unknown" in error_str:
+    elif STATE_UNKNOWN in error_str:
         handler_formula = computed_var.alternate_state_handler.unknown
+    # For other non-fatal errors, try unavailable handler first, then unknown
     else:
-        # For other non-fatal errors, try unavailable handler first, then unknown
         handler_formula = computed_var.alternate_state_handler.unavailable or computed_var.alternate_state_handler.unknown
 
     if not handler_formula:
         return None
 
     try:
-        # Use Enhanced SimpleEval for alternate state handlers too
-        enhanced_helper = _get_enhanced_helper()
-
-        # Extract values from ReferenceValue objects for Enhanced SimpleEval evaluation
-        enhanced_context = _extract_values_for_simpleeval(eval_context)
-
-        success, result = enhanced_helper.try_enhanced_eval(handler_formula, enhanced_context)
-
-        if success:
-            _LOGGER.debug("Resolved computed variable %s using alternate state handler: %s", var_name, result)
-            # Apply the same result processing as main formulas
-            return EvaluatorHelpers.process_evaluation_result(result)
-
-        _LOGGER.debug("Alternate state handler Enhanced SimpleEval failed for variable %s: %s", var_name, result)
-        return None
+        result = evaluate_computed_alternate(
+            handler_formula,
+            eval_context,
+            _get_enhanced_helper,
+            _extract_values_for_simpleeval,
+        )
+        if result is None:
+            _LOGGER.debug("Alternate state handler evaluation failed for variable %s", var_name)
+            return None
+        return result
 
     except Exception as handler_err:
         _LOGGER.debug("Alternate state handler for variable %s also failed: %s", var_name, handler_err)

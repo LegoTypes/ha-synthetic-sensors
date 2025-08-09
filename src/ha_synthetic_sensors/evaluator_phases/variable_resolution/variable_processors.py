@@ -36,8 +36,14 @@ class VariableProcessors:
                 value = eval_context[var_name]
                 # Extract value from ReferenceValue for formula substitution
                 if isinstance(value, ReferenceValue):
-                    return str(value.value)
-                # Convert to string representation for formula substitution
+                    raw_value = value.value
+                    # For strings, return the raw value without quotes to avoid double-quoting
+                    if isinstance(raw_value, str):
+                        return raw_value
+                    return str(raw_value)
+                # Convert to string representation for formula substitution, preserving string values
+                if isinstance(value, str):
+                    return value
                 return str(value)
             return match.group(0)  # Keep original if not found
 
