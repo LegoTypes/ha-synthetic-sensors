@@ -67,7 +67,6 @@ async def test_alternate_handlers_and_guard_runtime(
             config_entry=mock_config_entry,
             async_add_entities=mock_async_add_entities,
             storage_manager=storage_manager,
-            device_identifier="test_alternate_handlers_runtime",
         )
 
         # Collect created entities and set hass

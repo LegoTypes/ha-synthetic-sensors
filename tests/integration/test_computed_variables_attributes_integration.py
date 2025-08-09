@@ -332,7 +332,6 @@ class TestComputedVariablesInAttributesIntegration:
                     config_entry=mock_config_entry,
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
-                    device_identifier="computed_vars_test_device",  # Use device_identifier, not sensor_set_id
                 )
 
                 # Verify that entities were added

@@ -113,7 +113,6 @@ class TestFormulaExecutionWithGlobals:
                     config_entry=mock_config_entry,
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
-                    device_identifier=device_identifier,
                     data_provider_callback=create_data_provider_with_globals(),
                     sensor_to_backing_mapping=sensor_to_backing_mapping,
                 )

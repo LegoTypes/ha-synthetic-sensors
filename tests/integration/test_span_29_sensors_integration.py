@@ -125,7 +125,6 @@ class TestSpan29SensorsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="span-sim-001",
             )
 
             assert sensor_manager is not None

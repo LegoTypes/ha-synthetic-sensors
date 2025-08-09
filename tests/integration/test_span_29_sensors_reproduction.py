@@ -169,7 +169,6 @@ class TestSpan29SensorsReproduction:
                     config_entry=mock_config_entry,
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
-                    device_identifier=device_identifier,
                     data_provider_callback=data_provider,
                     change_notifier=change_notifier_callback,
                     sensor_to_backing_mapping=sensor_to_backing_mapping,

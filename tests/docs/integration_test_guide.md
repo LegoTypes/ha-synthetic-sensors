@@ -1295,8 +1295,8 @@ sensors:
 
 ### ✅ The Solution: Use the Template
 
-Copy `tests/integration/TEMPLATE_integration_test.py` and follow the comments. The template prevents all these mistakes
-and provides bulletproof assertions that tell you exactly what went wrong.
+Copy `tests/integration/TEMPLATE_integration_test.py` and follow the comments. The template prevents all these mistakes and
+provides bulletproof assertions that tell you exactly what went wrong.
 
 ---
 

@@ -96,7 +96,6 @@ class TestYourFeature:  # Replace with your test class name
                     config_entry=mock_config_entry,
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
-                    device_identifier=device_identifier,
                 )
 
                 # BULLETPROOF ASSERTION 2: Sensor manager must be created

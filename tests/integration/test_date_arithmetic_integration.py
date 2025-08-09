@@ -84,7 +84,6 @@ class TestDateArithmeticIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_date_arithmetic",
             )
 
             # Update sensors to trigger formula evaluation
@@ -185,7 +184,6 @@ class TestDateArithmeticIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_simple_date",
             )
 
             # Update sensors to trigger formula evaluation
@@ -276,7 +274,6 @@ class TestDateArithmeticIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_existing_datetime",
             )
 
             # Update sensors to trigger formula evaluation

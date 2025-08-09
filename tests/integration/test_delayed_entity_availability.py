@@ -62,7 +62,6 @@ async def test_delayed_entity_availability_with_dependency_tracking(
             config_entry=mock_config_entry,
             async_add_entities=mock_async_add_entities,
             storage_manager=storage_manager,
-            device_identifier="span-sim-001",
         )
 
         # PHASE 1 VERIFICATION: Initial update with missing entities
