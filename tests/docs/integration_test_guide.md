@@ -4,7 +4,7 @@ This guide explains how to properly set up integration tests that use the `ha-sy
 
 ## 🚀 Quick Start (Copy-Paste Template)
 
-**TL;DR: Copy `tests/integration/TEMPLATE_integration_test.py`, modify the TODO sections, and run.**
+**TL;DR: Copy `tests/integration/TEMPLATE_integration_test.py`, modify the appropriate comented sections, and run.**
 
 ### 1. Copy the Template
 
@@ -1295,7 +1295,7 @@ sensors:
 
 ### ✅ The Solution: Use the Template
 
-Copy `tests/integration/TEMPLATE_integration_test.py` and follow the TODO comments. The template prevents all these mistakes
+Copy `tests/integration/TEMPLATE_integration_test.py` and follow the comments. The template prevents all these mistakes
 and provides bulletproof assertions that tell you exactly what went wrong.
 
 ---

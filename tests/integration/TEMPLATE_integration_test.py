@@ -11,11 +11,11 @@ import pytest
 from ha_synthetic_sensors import StorageManager, async_setup_synthetic_sensors
 
 
-class TestYourFeature:  # TODO: Replace with your test class name
+class TestYourFeature:  # Replace with your test class name
     """Integration tests for your specific feature."""
 
     @pytest.mark.asyncio
-    async def test_your_feature_name(  # TODO: Replace with your test method name
+    async def test_your_feature_name(  # Replace with your test method name
         self,
         mock_hass,
         mock_entity_registry,
@@ -27,20 +27,20 @@ class TestYourFeature:  # TODO: Replace with your test class name
         """Test your specific feature end-to-end."""
 
         # =============================================================================
-        # TODO: CUSTOMIZE THIS SECTION FOR YOUR TEST
+        # CUSTOMIZE THIS SECTION FOR YOUR TEST
         # =============================================================================
 
         # 1. Set up your required entities (entities your YAML references)
         required_entities = {
             "sensor.input_entity": {"state": "100.0", "attributes": {"unit": "W"}},
             "sensor.other_entity": {"state": "50.0", "attributes": {"unit": "V"}},
-            # TODO: Add your entities here based on your YAML variables
+            # Add your entities here based on your YAML variables
         }
 
         # 2. Define your YAML file path and expected sensor count
-        yaml_file_path = "tests/fixtures/integration/your_test_fixture.yaml"  # TODO: Replace with your YAML file
-        expected_sensor_count = 1  # TODO: Set the number of sensors in your YAML
-        device_identifier = "test_device_your_feature"  # TODO: Must match your YAML global_settings
+        yaml_file_path = "tests/fixtures/integration/your_test_fixture.yaml"  # Replace with your YAML file
+        expected_sensor_count = 1  # Set the number of sensors in your YAML
+        device_identifier = "test_device_your_feature"  # Must match your YAML global_settings
 
         # =============================================================================
         # STANDARD SETUP (DON'T CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING)
@@ -126,13 +126,13 @@ class TestYourFeature:  # TODO: Replace with your test class name
                 entity_lookup = {entity.unique_id: entity for entity in all_entities}
 
                 # =============================================================================
-                # TODO: ADD YOUR SPECIFIC ASSERTIONS HERE
+                # ADD YOUR SPECIFIC ASSERTIONS HERE
                 # =============================================================================
 
                 # Example bulletproof assertions - customize for your sensors:
 
                 # Test specific sensor by unique_id
-                test_sensor = entity_lookup.get("your_sensor")  # TODO: Replace with your sensor ID
+                test_sensor = entity_lookup.get("your_sensor")  # Replace with your sensor ID
                 assert test_sensor is not None, (
                     f"Sensor 'your_sensor' not found. Available sensors: {list(entity_lookup.keys())}"
                 )
@@ -144,7 +144,7 @@ class TestYourFeature:  # TODO: Replace with your test class name
                 )
 
                 # Test specific expected value (customize calculation)
-                expected_value = 150.0  # TODO: Calculate based on your formula and input data
+                expected_value = 150.0  # Calculate based on your formula and input data
                 actual_value = float(test_sensor.native_value)
                 assert abs(actual_value - expected_value) < 0.001, (
                     f"Sensor 'your_sensor_unique_id' value wrong: expected {expected_value}, got {actual_value}"
@@ -152,7 +152,7 @@ class TestYourFeature:  # TODO: Replace with your test class name
 
                 # Test sensor attributes if relevant
                 if hasattr(test_sensor, "extra_state_attributes") and test_sensor.extra_state_attributes:
-                    # TODO: Add specific attribute tests
+                    # Add specific attribute tests
                     # Example: assert test_sensor.extra_state_attributes.get("unit_of_measurement") == "W"
                     pass
 

@@ -60,18 +60,6 @@ def test_attribute_formula_structure_preservation(mock_hass, mock_entity_registr
     grace_period_attr = main_attributes.get("grace_period_active")
     computed_value_attr = main_attributes.get("computed_value")
 
-    # The bug would cause these to be flattened to strings:
-    # grace_period_attr would be "within_grace" (WRONG)
-    # computed_value_attr would be "state * 2" (WRONG)
-
-    # TODO: This test currently documents the bug - once fixed, these assertions should pass
-    # For now, we document the current (buggy) behavior
-
-    # TEMPORARY: Document current buggy behavior
-    if isinstance(grace_period_attr, str):
-        pytest.skip("BUG: Attribute formulas are being flattened - this test documents the bug")
-
-    # FUTURE: Once bug is fixed, these should pass
     assert isinstance(grace_period_attr, dict), "Grace period attribute should preserve formula structure"
     assert "formula" in grace_period_attr, "Grace period attribute should have formula key"
     assert grace_period_attr["formula"] == "within_grace", "Grace period formula should be preserved"
