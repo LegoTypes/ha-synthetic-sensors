@@ -127,60 +127,7 @@ class TestExceptionHandlingIntegration:
             assert "undefined variable" in error_msg
 
             # Test passes - undefined variables are correctly caught during validation
-            return  # Skip the rest of the test since YAML loading failed as expected
-
-            # Set up synthetic sensors using Pattern 2 (HA Entity References only)
-            # System automatically falls back to HA entity lookups for all entities
-            sensor_manager = await async_setup_synthetic_sensors(
-                hass=mock_hass,
-                config_entry=mock_config_entry,
-                async_add_entities=mock_async_add_entities,
-                storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                # No data_provider_callback - uses HA entity lookups
-                # No change_notifier - automatic via HA state tracking
-                # No sensor_to_backing_mapping - entities from YAML variables
-            )
-
-            # Verify sensor manager was created
-            assert sensor_manager is not None
-            assert mock_async_add_entities.called
-
-            # Verify all sensors were created - this tests YAML parsing and schema validation
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            assert len(sensors) == 8, f"Expected 8 sensors, got {len(sensors)}"
-
-            # Verify all expected sensors were created with correct names
-            sensor_names = [sensor.name for sensor in sensors]
-            expected_sensors = [
-                "Main Formula Exception Handling",
-                "Complex Variable Exception Handling",
-                "Attribute Formula Exception Handling",
-                "Circular Dependency A with Exceptions",
-                "Circular Dependency B with Exceptions",
-                "Cross-Sensor Reference Exceptions",
-                "Multi-Level Nested Exceptions",
-                "Mixed Working and Failing References",
-            ]
-
-            for expected_name in expected_sensors:
-                assert expected_name in sensor_names, f"Missing sensor: {expected_name}"
-
-            # Verify sensors have been properly structured (integration test validates YAML parsing & schema)
-            main_formula_sensor = next((s for s in sensors if s.name == "Main Formula Exception Handling"), None)
-            assert main_formula_sensor is not None
-            # Verify the sensor has the expected structure with formulas
-            assert len(main_formula_sensor.formulas) > 0, "Sensor should have formula configurations"
-            assert main_formula_sensor.formulas[0].formula == "undefined_main_entity + 100", "Main formula should be correct"
-
-            # Test individual sensor creation (entities are created but may not update due to mock limitations)
-            # The key is that the sensor manager is created successfully with all exception handling sensors
-            assert sensor_manager is not None
-            managed_sensors = sensor_manager.managed_sensors
-            assert len(managed_sensors) == 8, f"All sensors should be managed by sensor manager, got {len(managed_sensors)}"
-
-            # Clean up
-            await storage_manager.async_delete_sensor_set(sensor_set_id)
+            return
 
     async def test_runtime_exception_handler_execution(
         self,
@@ -277,7 +224,6 @@ class TestExceptionHandlingIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
             )
 
             # Verify entities were created and have hass attribute set
@@ -425,7 +371,6 @@ class TestExceptionHandlingIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
             )
 
             # Trigger evaluation using the sensor manager - this properly handles update orchestration
@@ -532,25 +477,7 @@ class TestExceptionHandlingIntegration:
             # Verify the error message indicates undefined variables
             error_msg = str(exc_info.value)
             assert "undefined variable" in error_msg
-            return  # Skip the rest of the test since YAML loading failed as expected
-
-            sensor_manager = await async_setup_synthetic_sensors(
-                hass=mock_hass,
-                config_entry=mock_config_entry,
-                async_add_entities=mock_async_add_entities,
-                storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                # Use Pattern 2 - HA Entity References only
-            )
-
-            # Verify main formula exception handling sensor was created and has correct structure
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            main_formula_sensor = next((s for s in sensors if s.name == "Main Formula Exception Handling"), None)
-            assert main_formula_sensor is not None, "Main formula exception sensor not found"
-            assert len(main_formula_sensor.formulas) > 0, "Sensor should have formula configurations"
-            assert main_formula_sensor.formulas[0].formula == "undefined_main_entity + 100", "Main formula should be correct"
-
-            await storage_manager.async_delete_sensor_set(sensor_set_id)
+            return
 
     async def test_attribute_formula_exception_handling(
         self,
@@ -595,26 +522,7 @@ class TestExceptionHandlingIntegration:
             # Verify the error message indicates undefined variables
             error_msg = str(exc_info.value)
             assert "undefined variable" in error_msg
-            return  # Skip the rest of the test since YAML loading failed as expected
-
-            sensor_manager = await async_setup_synthetic_sensors(
-                hass=mock_hass,
-                config_entry=mock_config_entry,
-                async_add_entities=mock_async_add_entities,
-                storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                # Use Pattern 2 - HA Entity References only
-            )
-
-            # Verify attribute exception handling sensor was created with correct structure
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            attribute_sensor = next((s for s in sensors if s.name == "Attribute Formula Exception Handling"), None)
-            assert attribute_sensor is not None, "Attribute formula exception sensor not found"
-            # Verify the sensor has attributes with exception handlers (schema validation test)
-            assert len(attribute_sensor.formulas) > 0, "Sensor should have formula configurations"
-            assert attribute_sensor.formulas[0].formula == "sensor.working_entity", "Attribute formula should be correct"
-
-            await storage_manager.async_delete_sensor_set(sensor_set_id)
+            return
 
     async def test_circular_dependency_exception_handling(
         self,
@@ -659,24 +567,4 @@ class TestExceptionHandlingIntegration:
             # Verify the error message indicates undefined variables
             error_msg = str(exc_info.value)
             assert "undefined variable" in error_msg
-            return  # Skip the rest of the test since YAML loading failed as expected
-
-            sensor_manager = await async_setup_synthetic_sensors(
-                hass=mock_hass,
-                config_entry=mock_config_entry,
-                async_add_entities=mock_async_add_entities,
-                storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                # Use Pattern 2 - HA Entity References only
-            )
-
-            # Verify circular dependency sensors were created with exception handlers (schema validation)
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            circular_sensors = [s for s in sensors if "Circular Dependency" in s.name]
-            assert len(circular_sensors) == 2, "Both circular dependency sensors should be created"
-
-            # Verify both have correct structure and formulas
-            for circular_sensor in circular_sensors:
-                assert len(circular_sensor.formulas) > 0, f"Circular sensor {circular_sensor.name} should have formulas"
-
-            await storage_manager.async_delete_sensor_set(sensor_set_id)
+            return

@@ -69,7 +69,6 @@ class TestCoverageImprovementIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="async_test_device",
             )
 
             assert sensor_manager is not None
@@ -189,7 +188,6 @@ class TestCoverageImprovementIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="attr_resolution_device",
             )
 
             assert sensor_manager is not None
@@ -287,7 +285,6 @@ class TestCoverageImprovementIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="variable_resolver_device",
             )
 
             assert sensor_manager is not None

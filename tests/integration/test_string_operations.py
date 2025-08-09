@@ -72,7 +72,6 @@ class TestStringOperationsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="string_test_device",
             )
 
             # Update sensors to trigger formula evaluation
@@ -176,7 +175,6 @@ class TestStringOperationsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="string_validation_device",
             )
 
             # Update sensors to trigger formula evaluation
@@ -288,7 +286,6 @@ class TestStringOperationsIntegration:
                     config_entry=mock_config_entry,
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
-                    device_identifier="routing_test_device",
                 )
 
                 # Update sensors to trigger formula evaluation
@@ -423,11 +420,10 @@ class TestStringOperationsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="advanced_string_test_device",
-                data_provider_callback=data_provider,  # For backing entities
-                change_notifier=change_notifier_callback,  # Enable selective updates
-                # System automatically falls back to HA lookups for entities not in data provider
+                data_provider_callback=data_provider,
+                change_notifier=change_notifier_callback,
             )
+            # System automatically falls back to HA lookups for entities not in data provider
 
             # Verify sensors were created using public API
             assert sensor_manager is not None
@@ -649,7 +645,6 @@ class TestStringOperationsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="realistic_variables_test_device",
             )
 
             # Update sensors to trigger formula evaluation
@@ -762,7 +757,6 @@ class TestStringOperationsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
             )
 
             # Verify sensors were created via public API
@@ -904,11 +898,11 @@ class TestStringOperationsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_extended_functions",
-                data_provider_callback=data_provider,  # For virtual entities
-                change_notifier=change_notifier_callback,  # Enable selective updates
-                sensor_to_backing_mapping=sensor_to_backing_mapping,  # Map 'state' token
+                data_provider_callback=data_provider,
+                change_notifier=change_notifier_callback,
+                sensor_to_backing_mapping=sensor_to_backing_mapping,
             )
+            # Map 'state' token
 
             # Verify sensors were created using public API
             assert sensor_manager is not None

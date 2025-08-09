@@ -113,7 +113,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
             )
 
@@ -170,7 +169,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
             )
 
@@ -223,7 +221,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
             )
 
@@ -285,7 +282,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
             )
 
@@ -338,7 +334,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
             )
 
@@ -454,7 +449,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device_123",
                 sensor_configs=sensor_configs,
                 data_provider_callback=data_provider,
             )
@@ -556,7 +550,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
                 sensor_to_backing_mapping={"test_sensor": "sensor.backing_entity"},
             )
@@ -615,7 +608,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
                 sensor_to_backing_mapping={"test_sensor": "sensor.backing_entity"},
             )
@@ -679,7 +671,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
                 sensor_configs=[sensor_config],
                 sensor_set_name="Custom Sensor Set Name",
             )
@@ -746,9 +737,9 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_add_entities,
                 integration_domain="test_domain",
-                device_identifier="test_device",
-                sensor_configs=[new_sensor_config],  # New sensor config
+                sensor_configs=[new_sensor_config],
             )
+            # New sensor config
 
         # Verify the function completed successfully
         assert storage_manager is not None
@@ -808,9 +799,9 @@ class TestInitFunctions:
                     config_entry=mock_config_entry,
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
-                    device_identifier="test_device_123",
-                    backing_entity_ids=set(),  # Explicit empty set
+                    backing_entity_ids=set(),
                 )
+                # Explicit empty set
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)
@@ -861,9 +852,9 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                sensor_to_backing_mapping={},  # Empty mapping - will use natural fallback
+                sensor_to_backing_mapping={},
             )
+            # Empty mapping - will use natural fallback
 
             # Verify the sensor was set up successfully
             mock_async_add_entities.assert_called_once()
@@ -916,9 +907,8 @@ class TestInitFunctions:
                     config_entry=mock_config_entry,
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
-                    device_identifier="test_device_123",
-                    # No backing_entity_ids, no sensor_to_backing_mapping
                 )
+                # No backing_entity_ids, no sensor_to_backing_mapping
 
                 # Verify it succeeded and logged debug message
                 assert sensor_manager is not None
@@ -1017,7 +1007,6 @@ class TestInitFunctions:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
             )
 
             # Verify it succeeded

@@ -92,7 +92,6 @@ class TestIdiom1BackingEntityIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
                 data_provider_callback=data_provider,  # For virtual entities
                 change_notifier=change_notifier_callback,  # Enable selective updates
                 sensor_to_backing_mapping=sensor_to_backing_mapping,  # Map 'state' token
@@ -160,7 +159,6 @@ class TestIdiom1BackingEntityIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
             )

@@ -104,9 +104,7 @@ class TestComputedVariablesIntegration:
                 hass=mock_hass,
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
-                storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                # System automatically falls back to HA entity lookups when no data provider is specified
+                storage_manager=storage_manager,  # System automatically falls back to HA entity lookups when no data provider is specified
             )
 
             # Verify setup succeeded
@@ -189,12 +187,11 @@ class TestComputedVariablesIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                data_provider_callback=data_provider,  # For virtual entities
-                change_notifier=change_notifier_callback,  # For virtual updates
-                sensor_to_backing_mapping=sensor_to_backing_mapping,  # Map virtual entities
-                # HA entity fallback is now automatic - no parameter needed
+                data_provider_callback=data_provider,
+                change_notifier=change_notifier_callback,
+                sensor_to_backing_mapping=sensor_to_backing_mapping,
             )
+            # HA entity fallback is now automatic - no parameter needed
 
             # Verify setup
             assert sensor_manager is not None
@@ -263,9 +260,8 @@ class TestComputedVariablesIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                # HA entity fallback is now automatic - no parameter needed
             )
+            # HA entity fallback is now automatic - no parameter needed
 
             # Verify successful setup and evaluation
             assert sensor_manager is not None
@@ -343,9 +339,8 @@ class TestComputedVariablesIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_123",
-                # HA entity fallback is now automatic - no parameter needed
             )
+            # HA entity fallback is now automatic - no parameter needed
 
             # System should remain stable even with missing dependencies
             assert sensor_manager is not None

@@ -62,7 +62,6 @@ async def test_span_simulator_solar_direct_entity_refs(
             config_entry=mock_config_entry,
             async_add_entities=mock_async_add_entities,
             storage_manager=storage_manager,
-            device_identifier="span-sim-001",
         )
 
         # Force an update to evaluate formulas

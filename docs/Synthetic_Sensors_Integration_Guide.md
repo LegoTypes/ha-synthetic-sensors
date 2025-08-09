@@ -134,7 +134,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         config_entry=config_entry,
         async_add_entities=async_add_entities,
         storage_manager=storage_manager,
-        device_identifier=coordinator.device_id,
+        # If storage has multiple sensor sets, pass the target set id (optional)
+        # sensor_set_id="my_panel_sensors",
         data_provider_callback=create_data_provider_callback(coordinator),
         change_notifier=create_change_notifier_callback(sensor_manager),
     )
@@ -211,7 +212,7 @@ async def async_setup_synthetic_sensors(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
     storage_manager: StorageManager,
-    device_identifier: str,
+    sensor_set_id: str | None = None,                    # Optional: select specific set when multiple exist
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
     sensor_to_backing_mapping: dict[str, str] | None = None,    # Synthetic Sensor Key -> Backing entity_id
@@ -226,7 +227,7 @@ async def async_setup_synthetic_sensors_with_entities(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
     storage_manager: StorageManager,
-    device_identifier: str,
+    sensor_set_id: str | None = None,                    # Optional: select specific set when multiple exist
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,
     backing_entity_ids: set[str] | None = None,
@@ -241,7 +242,6 @@ async def async_setup_synthetic_integration(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
     integration_domain: str,
-    device_identifier: str,
     sensor_configs: list[SensorConfig],
     sensor_to_backing_mapping: dict[str, str] | None = None,   # Synthetic Sensor Key -> Backing entity_id
     data_provider_callback: DataProviderCallback | None = None,
@@ -258,7 +258,6 @@ async def async_setup_synthetic_integration_with_auto_backing(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
     integration_domain: str,
-    device_identifier: str,
     sensor_configs: list[SensorConfig],
     data_provider_callback: DataProviderCallback | None = None,
     change_notifier: DataProviderChangeNotifier | None = None,  # NEW
@@ -313,7 +312,7 @@ async def setup_with_yaml_import(
     await storage_manager.async_load()
 
     device_identifier = "your_device_id"
-    sensor_set_id = f"{device_identifier}_sensors"
+    sensor_set_id = "my_panel_sensors"
 
     # Create sensor set first
     await storage_manager.async_create_sensor_set(
@@ -460,7 +459,7 @@ sensor_manager = await async_setup_synthetic_sensors(
     config_entry=config_entry,
     async_add_entities=async_add_entities,
     storage_manager=storage_manager,
-    device_identifier=coordinator.device_id,
+    # device_identifier now provided via YAML global_settings
     data_provider_callback=create_data_provider_callback(coordinator),
     change_notifier=change_notifier_callback,  # Enable real-time selective updates
     sensor_to_backing_mapping=sensor_to_backing_mapping,  # Register your virtual entities
@@ -478,7 +477,7 @@ sensor_manager = await async_setup_synthetic_sensors(
     config_entry=config_entry,
     async_add_entities=async_add_entities,
     storage_manager=storage_manager,
-    device_identifier=coordinator.device_id,
+    # device_identifier now provided via YAML global_settings
     # No data_provider_callback - uses HA entity state lookups
     # No change_notifier - automatic via async_track_state_change_event
     # No sensor_to_backing_mapping - entities resolved from YAML variable references
@@ -496,12 +495,37 @@ sensor_manager = await async_setup_synthetic_sensors(
     config_entry=config_entry,
     async_add_entities=async_add_entities,
     storage_manager=storage_manager,
-    device_identifier=coordinator.device_id,
+    # device_identifier now provided via YAML global_settings
     data_provider_callback=create_data_provider_callback(coordinator),  # For virtual entities
     change_notifier=change_notifier_callback,  # For virtual entity updates
     sensor_to_backing_mapping=virtual_backing_mapping,  # Only virtual entities registered
 )
 ```
+
+## Selecting a Sensor Set When Multiple Exist
+
+When your StorageManager contains more than one sensor set (for example, one set per device), the convenience setup functions
+do not guess which set to use. Pass the target `sensor_set_id` explicitly:
+
+```python
+sensor_manager = await async_setup_synthetic_sensors_with_entities(
+    hass=hass,
+    config_entry=config_entry,
+    async_add_entities=async_add_entities,
+    storage_manager=storage_manager,
+    sensor_set_id="my_panel_sensors",  # select the exact set
+    data_provider_callback=data_provider,
+    change_notifier=change_notifier,
+    sensor_to_backing_mapping=mapping,
+)
+```
+
+If you omit `sensor_set_id`, exactly one sensor set must exist in storage or the call will raise an error. This ensures
+deterministic behavior in multi-device scenarios.
+
+Note: `sensor_set_id` can be any stable, unique string within the `StorageManager`. Using a device-based name is a convention
+for readability only. Device association and sensor unique IDs come from the YAML `global_settings.device_identifier`, not
+from `sensor_set_id`.
 
 ## Natural Fallback Behavior
 
@@ -1074,7 +1098,7 @@ async def setup_synthetic_configuration(
     await storage_manager.async_load()
 
     device_identifier = main_coordinator.data.serial_number
-    sensor_set_id = f"{device_identifier}_sensors"
+    sensor_set_id = "my_panel_sensors"
 
     # Create synthetic sensor coordinator
     synthetic_coord = SyntheticSensorCoordinator(hass, main_coordinator)
@@ -1181,7 +1205,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         config_entry=config_entry,
         async_add_entities=async_add_entities,
         storage_manager=storage_manager,
-        device_identifier=coordinator.data.serial_number,
         data_provider_callback=data_provider,
         change_notifier=change_notifier,  # Enable real-time selective updates
         sensor_to_backing_mapping=sensor_to_backing_mapping,  # Provide mapping
@@ -1540,7 +1563,7 @@ async def complete_yaml_workflow_example(
     await storage_manager.async_load()
 
     device_identifier = device_data.serial_number
-    sensor_set_id = f"{device_identifier}_sensors"
+    sensor_set_id = "my_panel_sensors"
 
     # Create or get existing sensor set
     if not storage_manager.sensor_set_exists(sensor_set_id):
@@ -2118,7 +2141,7 @@ async def complete_global_settings_workflow(
     """Complete example showing global settings integration with sensor set management."""
 
     device_identifier = device_data.serial_number
-    sensor_set_id = f"{device_identifier}_sensors"
+    sensor_set_id = "my_panel_sensors"
 
     # Create or get existing sensor set
     if not storage_manager.sensor_set_exists(sensor_set_id):

@@ -105,9 +105,7 @@ class TestDateTimeFunctionsIntegration:
                 hass=mock_hass,
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
-                storage_manager=storage_manager,
-                device_identifier="test_device_datetime_functions",
-                # No data_provider_callback means HA entity lookups are used automatically
+                storage_manager=storage_manager,  # No data_provider_callback means HA entity lookups are used automatically
             )
 
             # Verify setup
@@ -278,9 +276,8 @@ class TestDateTimeFunctionsIntegration:
                 config_entry=mock_config_entry,
                 async_add_entities=mock_async_add_entities,
                 storage_manager=storage_manager,
-                device_identifier="test_device_datetime_functions",
-                # No data_provider_callback means HA entity lookups are used automatically
             )
+            # No data_provider_callback means HA entity lookups are used automatically
 
             # Test that sensors can be created and evaluated without errors
             assert sensor_manager is not None
