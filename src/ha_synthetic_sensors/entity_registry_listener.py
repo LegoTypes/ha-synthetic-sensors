@@ -114,14 +114,12 @@ class EntityRegistryListener:
             if action != "update":
                 return
 
-            changes = event_data.get("changes", {})
-
-            # Check if entity_id changed
-            if "entity_id" not in changes:
+            # Check if entity_id changed - look for old_entity_id field
+            if "old_entity_id" not in event_data:
                 return
 
-            old_entity_id = changes["entity_id"]["old"]
-            new_entity_id = changes["entity_id"]["new"]
+            old_entity_id = event_data["old_entity_id"]
+            new_entity_id = event_data["entity_id"]
 
             # Check if any SensorSet is tracking this entity ID
             if not self._is_entity_tracked(old_entity_id):

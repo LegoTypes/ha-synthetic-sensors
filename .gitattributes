@@ -1,1 +1,2 @@
-coverage-*.xml filter=lfs diff=lfs merge=lfs -text
+# Coverage files (no longer using LFS)
+coverage-*.xml -text
