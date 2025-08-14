@@ -167,7 +167,7 @@ class TestEntityRegistryListener:
 
             event = Event(
                 "entity_registry_updated",
-                {"action": "update", "changes": {"entity_id": {"old": "sensor.old", "new": "sensor.new"}}},
+                {"action": "update", "entity_id": "sensor.new", "old_entity_id": "sensor.old", "changes": {}},
             )
 
             listener._handle_entity_registry_updated(event)
@@ -198,7 +198,7 @@ class TestEntityRegistryListener:
 
             event = Event(
                 "entity_registry_updated",
-                {"action": "update", "changes": {"entity_id": {"old": "sensor.old", "new": "sensor.new"}}},
+                {"action": "update", "entity_id": "sensor.new", "old_entity_id": "sensor.old", "changes": {}},
             )
 
             listener._handle_entity_registry_updated(event)
@@ -227,7 +227,7 @@ class TestEntityRegistryListener:
                 # Create valid event data that will trigger the _is_entity_tracked call
                 event = Event(
                     "entity_registry_updated",
-                    {"action": "update", "changes": {"entity_id": {"old": "sensor.old", "new": "sensor.new"}}},
+                    {"action": "update", "entity_id": "sensor.new", "old_entity_id": "sensor.old", "changes": {}},
                 )
 
                 # Should not raise an error, but log it and not create any async tasks

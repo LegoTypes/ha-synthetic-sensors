@@ -138,10 +138,12 @@ class TestExternalEntityIdChanges:
 
         mock_hass.states.get = mock_get_state
 
-        # Create entity registry event
+        # Create entity registry event (using correct HA event structure)
         event_data = {
             "action": "update",
-            "changes": {"entity_id": {"old": "sensor.main_power_meter", "new": "sensor.new_main_power_meter"}},
+            "entity_id": "sensor.new_main_power_meter",  # New entity ID
+            "old_entity_id": "sensor.main_power_meter",  # Old entity ID
+            "changes": {},  # Other fields that changed (not entity_id)
         }
         event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
 
@@ -187,7 +189,9 @@ class TestExternalEntityIdChanges:
         # Create and fire entity registry event
         event_data = {
             "action": "update",
-            "changes": {"entity_id": {"old": "sensor.local_power_meter", "new": "sensor.new_local_power_meter"}},
+            "entity_id": "sensor.new_local_power_meter",
+            "old_entity_id": "sensor.local_power_meter",
+            "changes": {},
         }
         event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
         mock_hass.bus.async_fire(event.event_type, event.data)
@@ -238,7 +242,9 @@ class TestExternalEntityIdChanges:
         # Create and fire entity registry event
         event_data = {
             "action": "update",
-            "changes": {"entity_id": {"old": "sensor.reference_power_meter", "new": "sensor.new_reference_power_meter"}},
+            "entity_id": "sensor.new_reference_power_meter",
+            "old_entity_id": "sensor.reference_power_meter",
+            "changes": {},
         }
         event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
         mock_hass.bus.async_fire(event.event_type, event.data)
@@ -296,7 +302,7 @@ class TestExternalEntityIdChanges:
 
         # Fire multiple events
         for old_entity_id, new_entity_id in entity_changes:
-            event_data = {"action": "update", "changes": {"entity_id": {"old": old_entity_id, "new": new_entity_id}}}
+            event_data = {"action": "update", "entity_id": new_entity_id, "old_entity_id": old_entity_id, "changes": {}}
             event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
             mock_hass.bus.async_fire(event.event_type, event.data)
 
@@ -328,7 +334,9 @@ class TestExternalEntityIdChanges:
         # Fire event for untracked entity
         event_data = {
             "action": "update",
-            "changes": {"entity_id": {"old": "sensor.untracked_entity", "new": "sensor.new_untracked_entity"}},
+            "entity_id": "sensor.new_untracked_entity",
+            "old_entity_id": "sensor.untracked_entity",
+            "changes": {},
         }
         event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
         mock_hass.bus.async_fire(event.event_type, event.data)
@@ -365,7 +373,9 @@ class TestExternalEntityIdChanges:
             # Fire entity registry event
             event_data = {
                 "action": "update",
-                "changes": {"entity_id": {"old": "sensor.main_power_meter", "new": "sensor.new_main_power_meter"}},
+                "entity_id": "sensor.new_main_power_meter",
+                "old_entity_id": "sensor.main_power_meter",
+                "changes": {},
             }
             event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
             mock_hass.bus.async_fire(event.event_type, event.data)
@@ -402,7 +412,7 @@ class TestExternalEntityIdChanges:
 
         # Fire all events simultaneously
         for old_id, new_id in entity_changes:
-            event_data = {"action": "update", "changes": {"entity_id": {"old": old_id, "new": new_id}}}
+            event_data = {"action": "update", "entity_id": new_id, "old_entity_id": old_id, "changes": {}}
             event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
             mock_hass.bus.async_fire(event.event_type, event.data)
 
@@ -475,7 +485,9 @@ class TestExternalEntityIdChanges:
         # Simulate entity ID change event
         event_data = {
             "action": "update",
-            "changes": {"entity_id": {"old": "sensor.test_power_meter", "new": "sensor.new_test_power_meter"}},
+            "entity_id": "sensor.new_test_power_meter",
+            "old_entity_id": "sensor.test_power_meter",
+            "changes": {},
         }
         event = Event(EVENT_ENTITY_REGISTRY_UPDATED, event_data)
         mock_hass.bus.async_fire(event.event_type, event.data)
