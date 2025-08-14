@@ -1,9 +1,9 @@
 [project]
 name = "ha-synthetic-sensors"
-version = "1.1.8"
+version = "1.1.9"
 description = "A Home Assistant package for creating synthetic sensors from YAML configuration with mathematical formulas"
 authors = [
-    {name = "SpanPanel"}
+    {name = "Bill Flood"}
 ]
 readme = "README.md"
 requires-python = ">=3.13.2,<3.14"
@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/SpanPanel/ha-synthetic-sensors"
-Issues = "https://github.com/SpanPanel/ha-synthetic-sensors/issues"
+Homepage = "https://github.com/LegoTypes/ha-synthetic-sensors"
+Issues = "https://github.com/LegoTypes/ha-synthetic-sensors/issues"
 
 [tool.poetry]
 packages = [

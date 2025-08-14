@@ -1,14 +1,14 @@
 # HA Synthetic Sensors
 
-[![GitHub Release](https://img.shields.io/github/v/release/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://github.com/SpanPanel/ha-synthetic-sensors/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://github.com/LegoTypes/ha-synthetic-sensors/releases)
 [![PyPI Version](https://img.shields.io/pypi/v/ha-synthetic-sensors?style=flat-square)](https://pypi.org/project/ha-synthetic-sensors/)
 [![Python Version](https://img.shields.io/pypi/pyversions/ha-synthetic-sensors?style=flat-square)](https://pypi.org/project/ha-synthetic-sensors/)
-[![License](https://img.shields.io/github/license/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://github.com/SpanPanel/ha-synthetic-sensors/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://github.com/LegoTypes/ha-synthetic-sensors/blob/main/LICENSE)
 
-[![CI Status](https://img.shields.io/github/actions/workflow/status/SpanPanel/ha-synthetic-sensors/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/SpanPanel/ha-synthetic-sensors/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://codecov.io/gh/SpanPanel/ha-synthetic-sensors)
-[![Code Quality](https://img.shields.io/codefactor/grade/github/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://www.codefactor.io/repository/github/spanpanel/ha-synthetic-sensors)
-[![Security](https://img.shields.io/snyk/vulnerabilities/github/SpanPanel/ha-synthetic-sensors?style=flat-square)](https://snyk.io/test/github/SpanPanel/ha-synthetic-sensors)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/LegoTypes/ha-synthetic-sensors/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/LegoTypes/ha-synthetic-sensors/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://codecov.io/gh/LegoTypes/ha-synthetic-sensors)
+[![Code Quality](https://img.shields.io/codefactor/grade/github/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://www.codefactor.io/repository/github/legotypes/ha-synthetic-sensors)
+[![Security](https://img.shields.io/snyk/vulnerabilities/github/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://snyk.io/test/github/LegoTypes/ha-synthetic-sensors)
 
 [![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&style=flat-square)](https://github.com/pre-commit/pre-commit)
 [![Linting: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://github.com/astral-sh/ruff)
@@ -56,7 +56,7 @@ pip install ha-synthetic-sensors
 For development setup:
 
 ```bash
-git clone https://github.com/SpanPanel/ha-synthetic-sensors
+git clone https://github.com/LegoTypes/ha-synthetic-sensors
 cd ha-synthetic-sensors
 poetry install --with dev
 ./setup-hooks.sh
@@ -155,4 +155,4 @@ For configuration validation issues, development setup problems, and general tro
 Contributions are welcome! Please see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for development
 setup and contribution guidelines.
 
-- GitHub: [https://github.com/SpanPanel/ha-synthetic-sensors](https://github.com/SpanPanel/ha-synthetic-sensors)
+- GitHub: [https://github.com/LegoTypes/ha-synthetic-sensors](https://github.com/LegoTypes/ha-synthetic-sensors)
