@@ -57,6 +57,7 @@ For development setup:
 
 ```bash
 git clone https://github.com/LegoTypes/ha-synthetic-sensors
+git clone https://github.com/LegoTypes/ha-synthetic-sensors
 cd ha-synthetic-sensors
 poetry install --with dev
 ./setup-hooks.sh
@@ -140,19 +141,10 @@ data:
 
 ## Syntax Documentation
 
-For detailed syntax examples and advanced usage patterns, see the [Cookbook](docs/cookbook.md).
+For detailed syntax examples and advanced usage patterns, see the
+[Cookbook](https://github.com/LegoTypes/ha-synthetic-sensors/blob/main/docs/cookbook.md).
 
 ## Integration Documentation
 
 For detailed implementation examples, API documentation, and integration patterns, see the
-[Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md).
-
-## Troubleshooting
-
-For configuration validation issues, development setup problems, and general troubleshooting, see the
-[Troubleshooting Guide](docs/troubleshooting.md).
-
-Contributions are welcome! Please see the [Integration Guide](docs/Synthetic_Sensors_Integration_Guide.md) for development
-setup and contribution guidelines.
-
-- GitHub: [https://github.com/LegoTypes/ha-synthetic-sensors](https://github.com/LegoTypes/ha-synthetic-sensors)
+[Integration Guide](https://github.com/LegoTypes/ha-synthetic-sensors/blob/main/docs/Synthetic_Sensors_Integration_Guide.md).
