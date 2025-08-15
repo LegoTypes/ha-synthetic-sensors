@@ -81,7 +81,6 @@ class CoreFormulaEvaluator:
         Raises:
             ValueError: If evaluation fails
         """
-        _LOGGER.debug("CORE_FORMULA_EVALUATOR: Evaluating formula: %s", resolved_formula)
 
         try:
             # Only 2 routing paths needed simpleeval for 99% of cases and then other handlers (like metadata)
@@ -107,7 +106,6 @@ class CoreFormulaEvaluator:
             #   convention today. Future handlers should do the same.
             pre_sub_formula = resolved_formula
             resolved_formula = self._substitute_values_in_formula(resolved_formula, handler_context)
-            _LOGGER.debug("Phase 3 (Value Resolution) Result: %s", resolved_formula)
 
             # Extract raw values for enhanced evaluation
             enhanced_context = self._extract_values_for_enhanced_evaluation(handler_context, pre_sub_formula)
@@ -123,9 +121,6 @@ class CoreFormulaEvaluator:
             success, result = self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)
 
             if success:
-                _LOGGER.debug(
-                    "CORE_FORMULA_EVALUATOR: Enhanced SimpleEval success for formula: %s -> %s", resolved_formula, result
-                )
                 # Normalize result to a single return
                 final_result: float | int | str | bool
                 if isinstance(result, (int | float | str | bool)):

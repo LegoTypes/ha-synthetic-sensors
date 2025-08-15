@@ -64,7 +64,6 @@ class FormulaExecutionEngine:
         Raises:
             ValueError: If evaluation fails
         """
-        _LOGGER.debug("🔥 FORMULA_EXECUTION_ENGINE: Delegating to core evaluator: %s", resolved_formula)
 
         original_formula = config.formula
 

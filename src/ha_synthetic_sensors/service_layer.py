@@ -415,9 +415,6 @@ class ServiceLayer:
             dependencies = self._evaluator.get_formula_dependencies(formula)
             variables = dependencies  # In this context, they're the same
 
-            _LOGGER.debug("Formula evaluation result: %s = %s", formula, result)
-            _LOGGER.debug("Variables: %s, Dependencies: %s", variables, dependencies)
-
             # Store result in hass data for potential retrieval
             if "synthetic_sensors_eval" not in self._hass.data:
                 self._hass.data["synthetic_sensors_eval"] = {}

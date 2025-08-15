@@ -369,7 +369,6 @@ class CrossSensorDependencyManager(DependencyManager):
             "circular_references": circular_refs,
         }
 
-        _LOGGER.debug("Cross-sensor dependency validation: %s", result)
         return result
 
     def get_manager_name(self) -> str:
