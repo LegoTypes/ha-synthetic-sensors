@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://github.com/LegoTypes/ha-synthetic-sensors/blob/main/LICENSE)
 
 [![CI Status](https://img.shields.io/github/actions/workflow/status/LegoTypes/ha-synthetic-sensors/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/LegoTypes/ha-synthetic-sensors/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://codecov.io/gh/LegoTypes/ha-synthetic-sensors)
+
 [![Code Quality](https://img.shields.io/codefactor/grade/github/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://www.codefactor.io/repository/github/legotypes/ha-synthetic-sensors)
 [![Security](https://img.shields.io/snyk/vulnerabilities/github/LegoTypes/ha-synthetic-sensors?style=flat-square)](https://snyk.io/test/github/LegoTypes/ha-synthetic-sensors)
 

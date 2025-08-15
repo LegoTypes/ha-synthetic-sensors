@@ -25,6 +25,7 @@ from .config_types import GlobalSettingsDict
 from .entity_change_handler import EntityChangeHandler
 from .entity_registry_listener import EntityRegistryListener
 from .exceptions import SyntheticSensorsError
+from .friendly_name_listener import FriendlyNameListener
 from .sensor_set_factory import create_sensor_set
 
 if TYPE_CHECKING:
@@ -98,6 +99,7 @@ class StorageManager:
         hass: HomeAssistant,
         storage_key: str = STORAGE_KEY,
         enable_entity_listener: bool = True,
+        enable_friendly_name_listener: bool = True,
         integration_domain: str = DEFAULT_DOMAIN,
     ) -> None:
         """Initialize storage manager.
@@ -106,6 +108,7 @@ class StorageManager:
             hass: Home Assistant instance
             storage_key: Storage key for Home Assistant storage
             enable_entity_listener: Whether to enable entity registry listener
+            enable_friendly_name_listener: Whether to enable friendly name listener
             integration_domain: Integration domain for entity registration
         """
         self.hass = hass
@@ -130,7 +133,9 @@ class StorageManager:
         # Entity change handling components
         self._entity_change_handler = EntityChangeHandler()
         self._entity_registry_listener: EntityRegistryListener | None = None
+        self._friendly_name_listener: FriendlyNameListener | None = None
         self._enable_entity_listener = enable_entity_listener
+        self._enable_friendly_name_listener = enable_friendly_name_listener
         self._logger = _LOGGER.getChild(self.__class__.__name__)
 
         # Cache for SensorSet instances to ensure consistency
@@ -177,6 +182,10 @@ class StorageManager:
                 if self._enable_entity_listener:
                     await self._start_entity_registry_listener()
 
+                # Start friendly name listener after loading (if enabled)
+                if self._enable_friendly_name_listener:
+                    await self._start_friendly_name_listener()
+
             except Exception as err:
                 _LOGGER.error("Failed to load synthetic sensor storage: %s", err)
                 # Initialize empty storage on error
@@ -190,6 +199,7 @@ class StorageManager:
     async def async_unload(self) -> None:
         """Unload storage manager and cleanup entity change components."""
         await self._stop_entity_registry_listener()
+        await self._stop_friendly_name_listener()
         self._logger.debug("Storage manager unloaded")
 
     async def _start_entity_registry_listener(self) -> None:
@@ -213,6 +223,28 @@ class StorageManager:
             await self._entity_registry_listener.async_stop()
             self._entity_registry_listener = None
             self._logger.debug("Stopped entity registry listener")
+
+    async def _start_friendly_name_listener(self) -> None:
+        """Start the friendly name listener for tracking entity friendly name changes."""
+        if self._friendly_name_listener is not None:
+            self._logger.warning("Friendly name listener already started")
+            return
+
+        self._friendly_name_listener = FriendlyNameListener(
+            self.hass,
+            self,  # StorageManager instance
+            self._entity_change_handler,
+        )
+
+        await self._friendly_name_listener.async_start()
+        self._logger.debug("Started friendly name listener")
+
+    async def _stop_friendly_name_listener(self) -> None:
+        """Stop the friendly name listener."""
+        if self._friendly_name_listener:
+            await self._friendly_name_listener.async_stop()
+            self._friendly_name_listener = None
+            self._logger.debug("Stopped friendly name listener")
 
     def register_evaluator(self, evaluator: Evaluator) -> None:
         """Register an evaluator for entity change notifications."""
@@ -243,6 +275,11 @@ class StorageManager:
         """Get the entity change handler."""
         return self._entity_change_handler
 
+    @property
+    def friendly_name_listener(self) -> FriendlyNameListener | None:
+        """Get the friendly name listener."""
+        return self._friendly_name_listener
+
     def is_entity_tracked(self, entity_id: str) -> bool:
         """Check if an entity is being tracked for changes."""
         data = self._ensure_loaded()
@@ -254,6 +291,16 @@ class StorageManager:
                 sensor_config = self.deserialize_sensor_config(config_data)
                 if entity_id in sensor_config.get_all_dependencies():
                     return True
+
+        # Check if any sensor set global variables reference this entity
+        for sensor_set_data in data["sensor_sets"].values():
+            global_settings = sensor_set_data.get("global_settings", {})
+            if isinstance(global_settings, dict):
+                variables = global_settings.get("variables", {})
+                if isinstance(variables, dict):
+                    for var_value in variables.values():
+                        if isinstance(var_value, str) and var_value == entity_id:
+                            return True
 
         return False
 
