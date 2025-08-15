@@ -375,12 +375,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                     # Extract attribute name from formula ID
                     attr_name = self._extract_attribute_name(formula)
                     self._calculated_attributes[attr_name] = attr_result["value"]
-                    _LOGGER.debug(
-                        "Calculated attribute '%s' for sensor %s: %s",
-                        attr_name,
-                        self.entity_id,
-                        attr_result["value"],
-                    )
                 else:
                     # Let the exception handler below catch and log the error
                     raise RuntimeError(f"Attribute evaluation failed for {formula.id}")
@@ -634,21 +628,9 @@ class SensorManager:
         integration_domain = self._manager_config.integration_domain
         lookup_identifier = (integration_domain, device_identifier)
 
-        _LOGGER.debug(
-            "DEVICE_LOOKUP_DEBUG: Looking for device with identifier %s in integration domain %s",
-            device_identifier,
-            integration_domain,
-        )
-
         device_entry = self._device_registry.async_get_device(identifiers={lookup_identifier})
 
         if device_entry:
-            _LOGGER.debug(
-                "DEVICE_LOOKUP_DEBUG: Found existing device - ID: %s, Name: %s, Identifiers: %s",
-                device_entry.id,
-                device_entry.name,
-                device_entry.identifiers,
-            )
             return DeviceInfo(
                 identifiers={(integration_domain, device_identifier)},
                 name=device_entry.name,
@@ -803,11 +785,6 @@ class SensorManager:
 
     async def load_configuration(self, config: Config) -> None:
         """Load a new configuration and update sensors accordingly."""
-        _LOGGER.debug(
-            "DUPLICATE_DEBUG: loading configuration with %d sensors (setup_complete=%s)",
-            len(config.sensors),
-            self._setup_complete,
-        )
 
         # Guard against multiple initial setups on fresh instances
         if self._setup_complete and not self._current_config:
@@ -991,19 +968,12 @@ class SensorManager:
         # Create one entity per sensor
         for sensor_config in config.sensors:
             if sensor_config.enabled:
-                # CRITICAL FIX: Check if sensor already exists to prevent duplicate registration
+                # Check if sensor already exists to prevent duplicate registration
                 if sensor_config.unique_id in self._sensors_by_unique_id:
-                    _LOGGER.debug("DUPLICATE_DEBUG: Sensor %s already exists in tracker, skipping", sensor_config.unique_id)
-                    _LOGGER.debug("DUPLICATE_DEBUG: Current sensors in tracker: %s", list(self._sensors_by_unique_id.keys()))
                     continue
 
                 try:
                     sensor = await self._create_sensor_entity(sensor_config)
-                    _LOGGER.debug(
-                        "DUPLICATE_DEBUG: Created sensor - unique_id: %s, entity_id: %s",
-                        sensor_config.unique_id,
-                        sensor.entity_id,
-                    )
 
                     # Check for entity_id collision
                     if sensor.entity_id in self._sensors_by_entity_id:
@@ -1027,13 +997,7 @@ class SensorManager:
 
         # Add entities to Home Assistant
         if new_entities:
-            _LOGGER.debug(
-                "DUPLICATE_DEBUG: _create_all_sensors calling async_add_entities with %d entities: %s",
-                len(new_entities),
-                [e.entity_id for e in new_entities],
-            )
             self._add_entities_callback(new_entities)
-            _LOGGER.debug("Created %d sensor entities with enhanced cross-sensor integration", len(new_entities))
         else:
             # Only raise error if no sensors exist at all, not if all were already created
             if not self._sensors_by_unique_id:
@@ -1044,11 +1008,6 @@ class SensorManager:
         device_info = None
 
         if sensor_config.device_identifier:
-            _LOGGER.debug(
-                "DEVICE_ASSOCIATION_DEBUG: Creating sensor with device_identifier: %s",
-                sensor_config.device_identifier,
-            )
-
             # First try to find existing device
             device_info = self._get_existing_device_info(sensor_config.device_identifier)
 
@@ -1148,13 +1107,7 @@ class SensorManager:
 
         # Add new entities
         if new_entities:
-            _LOGGER.debug(
-                "DUPLICATE_DEBUG: _update_existing_sensors calling async_add_entities with %d entities: %s",
-                len(new_entities),
-                [e.entity_id for e in new_entities],
-            )
             self._add_entities_callback(new_entities)
-            _LOGGER.debug("Added %d new sensor entities", len(new_entities))
 
     async def _update_sensor_config(self, old_config: SensorConfig, new_config: SensorConfig) -> None:
         """Update an existing sensor with new configuration."""
@@ -1173,9 +1126,6 @@ class SensorManager:
                 new_sensor = await self._create_sensor_entity(new_config)
                 self._sensors_by_unique_id[new_sensor.config_unique_id] = new_sensor
                 self._sensors_by_entity_id[new_sensor.entity_id] = new_sensor
-                _LOGGER.debug(
-                    "DUPLICATE_DEBUG: _update_sensor_config calling async_add_entities with 1 entity: %s", new_sensor.entity_id
-                )
                 self._add_entities_callback([new_sensor])
 
     async def _remove_all_sensors(self) -> None:
@@ -1417,8 +1367,6 @@ class SensorManager:
                 self._logger.error(error_msg)
                 raise ValueError(error_msg)
 
-            self._logger.debug("Cross-sensor dependency validation passed for %d sensors", len(sensor_configs))
-
         except Exception as e:
             self._logger.error("Cross-sensor dependency validation error: %s", e)
             raise
@@ -1622,11 +1570,6 @@ class SensorManager:
 
         if affected_sensor_configs:
             await self.async_update_sensors(affected_sensor_configs)
-            _LOGGER.debug(
-                "Updated %d sensors affected by changes to backing entities: %s",
-                len(affected_sensor_configs),
-                changed_entity_ids,
-            )
         else:
             _LOGGER.debug("No sensors affected by changes to backing entities: %s", changed_entity_ids)
 
@@ -1655,7 +1598,6 @@ class SensorManager:
                         and var_value in self._registered_entities
                     ):
                         backing_entities.add(var_value)
-                        _LOGGER.debug("Found backing entity %s for sensor %s", var_value, sensor_config.unique_id)
 
             # Check for 'state' token that gets resolved to backing entities
             if (
@@ -1665,9 +1607,6 @@ class SensorManager:
             ):
                 backing_entity_id = self._sensor_to_backing_mapping[sensor_config.unique_id]
                 backing_entities.add(backing_entity_id)
-                _LOGGER.debug(
-                    "Found backing entity %s for sensor %s via state token", backing_entity_id, sensor_config.unique_id
-                )
 
         return backing_entities
 
@@ -1723,7 +1662,6 @@ class SensorManager:
                 sensor = await self._create_sensor_entity(sensor_config)
                 self._sensors_by_unique_id[sensor_config.unique_id] = sensor
                 self._sensors_by_entity_id[sensor.entity_id] = sensor
-                _LOGGER.debug("DUPLICATE_DEBUG: add_sensor calling async_add_entities with 1 entity: %s", sensor.entity_id)
                 self._add_entities_callback([sensor])
                 _LOGGER.debug("Added sensor %s with automatic backing entity registration", sensor_config.unique_id)
                 return True

@@ -84,8 +84,6 @@ class FormulaRouter:
         # Use a routing chain to reduce return statements
         result = self._route_by_priority(formula)
 
-        self._logger.debug("Formula routed to %s evaluator: %s", result.evaluator_type.value, formula)
-
         return result
 
     def _route_by_priority(self, formula: str) -> RoutingResult:

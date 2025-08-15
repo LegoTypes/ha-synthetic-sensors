@@ -356,12 +356,6 @@ class Evaluator(FormulaEvaluator):
         resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
             config.formula, sensor_config, eval_context, config
         )
-        _LOGGER.debug(
-            "Evaluator: formula '%s' resolved to '%s' with context: %s",
-            config.formula,
-            resolution_result.resolved_formula,
-            eval_context,
-        )
 
         # Check if HA state was detected during variable resolution
         ha_state = resolution_result.ha_state_value if resolution_result.has_ha_state else None
