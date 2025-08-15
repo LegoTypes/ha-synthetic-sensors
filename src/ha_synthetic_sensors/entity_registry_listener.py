@@ -1,4 +1,5 @@
 """Entity registry listener for tracking entity ID changes that affect synthetic sensors."""
+# pylint: disable=duplicate-code  # Entity tracking logic intentionally duplicated in FriendlyNameListener
 
 from __future__ import annotations
 
@@ -94,7 +95,7 @@ class EntityRegistryListener:
         self.entity_change_handler.unregister_integration_callback(change_callback)
 
     @callback
-    def _handle_entity_registry_updated(self, event: Event) -> None:
+    def _handle_entity_registry_updated(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
         """
         Handle entity registry update events.
 
@@ -114,12 +115,13 @@ class EntityRegistryListener:
             if action != "update":
                 return
 
-            # Check if entity_id changed - look for old_entity_id field
-            if "old_entity_id" not in event_data:
+            # Check if entity_id changed - get old and new entity IDs
+            old_entity_id = event_data.get("old_entity_id")
+            if not old_entity_id or not isinstance(old_entity_id, str):
                 return
-
-            old_entity_id = event_data["old_entity_id"]
-            new_entity_id = event_data["entity_id"]
+            new_entity_id = event_data.get("entity_id")
+            if not new_entity_id or not isinstance(new_entity_id, str):
+                return
 
             # Check if any SensorSet is tracking this entity ID
             if not self._is_entity_tracked(old_entity_id):
@@ -134,8 +136,14 @@ class EntityRegistryListener:
         except Exception as e:
             self._logger.error("Error handling entity registry update: %s", e)
 
-    def _is_entity_tracked(self, entity_id: str) -> bool:
-        """Check if any SensorSet is tracking this entity ID."""
+    def _is_entity_tracked(self, entity_id: str) -> bool:  # pylint: disable=duplicate-code
+        """Check if any SensorSet is tracking this entity ID.
+
+        Note: This method is intentionally duplicated in FriendlyNameListener
+        because both listeners need identical entity tracking behavior, and the
+        sensor set approach correctly handles all entity types (global variables,
+        sensor variables, and attribute variables) unlike the storage manager approach.
+        """
         for sensor_set_id in self.storage_manager.list_sensor_sets():
             sensor_set = self.storage_manager.get_sensor_set(sensor_set_id.sensor_set_id)
             if sensor_set.is_entity_tracked(entity_id):
