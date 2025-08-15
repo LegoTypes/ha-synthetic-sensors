@@ -836,6 +836,24 @@ class SensorManager:
         old_config = self._current_config
         self._current_config = config
 
+        # Set global settings before sensor creation to fix boot-time evaluation
+        # This ensures global variables are available during the first evaluation in async_added_to_hass
+        if config.global_settings:
+            # Update global settings on the evaluator's variable resolution phase
+            variable_resolution_phase = getattr(self._evaluator, "_variable_resolution_phase", None)
+            if variable_resolution_phase and hasattr(variable_resolution_phase, "set_global_settings"):
+                variable_resolution_phase.set_global_settings(config.global_settings)
+
+            # Also update global settings on the context building phase
+            # This ensures global variables are available BEFORE computed variables are evaluated
+            context_building_phase = getattr(self._evaluator, "_context_building_phase", None)
+            if context_building_phase and hasattr(context_building_phase, "set_global_settings"):
+                context_building_phase.set_global_settings(config.global_settings)
+                self._logger.debug(
+                    "Set global settings at boot: %s",
+                    list(config.global_settings.get("variables", {}).keys()),
+                )
+
         try:
             # Determine what needs to be updated
             if old_config:
