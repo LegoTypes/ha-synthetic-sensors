@@ -14,6 +14,13 @@ import yaml
 
 from .config_manager import ConfigManager
 from .config_models import FormulaConfig
+from .constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
+from .constants_metadata import (
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_ICON,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+)
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
 from .sensor_manager import SensorManager
@@ -103,10 +110,10 @@ UPDATE_SENSOR_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.entity_id,
         vol.Optional("formula"): cv.string,
-        vol.Optional("unit_of_measurement"): cv.string,
-        vol.Optional("device_class"): cv.string,
-        vol.Optional("state_class"): cv.string,
-        vol.Optional("icon"): cv.string,
+        vol.Optional(METADATA_PROPERTY_UNIT_OF_MEASUREMENT): cv.string,
+        vol.Optional(METADATA_PROPERTY_DEVICE_CLASS): cv.string,
+        vol.Optional(METADATA_PROPERTY_STATE_CLASS): cv.string,
+        vol.Optional(METADATA_PROPERTY_ICON): cv.string,
         vol.Optional("enabled"): cv.boolean,
         vol.Optional("attributes"): dict,
         vol.Optional("availability_formula"): cv.string,
@@ -409,7 +416,8 @@ class ServiceLayer:
 
             # Evaluate formula
             eval_result = self._evaluator.evaluate_formula(config, context)
-            result = eval_result["value"] if eval_result["success"] else 0.0
+            eval_result_dict = cast(dict[str, Any], eval_result)
+            result = eval_result_dict[RESULT_KEY_VALUE] if eval_result_dict[RESULT_KEY_SUCCESS] else 0.0
 
             # Get dependencies (variables and dependencies are the same in this context)
             dependencies = self._evaluator.get_formula_dependencies(formula)
@@ -593,8 +601,8 @@ class ServiceLayer:
                         "name": sensor.name,
                         "state": sensor.native_value,
                         "available": sensor.available,
-                        "unit_of_measurement": sensor.native_unit_of_measurement,
-                        "device_class": sensor.device_class,
+                        METADATA_PROPERTY_UNIT_OF_MEASUREMENT: sensor.native_unit_of_measurement,
+                        METADATA_PROPERTY_DEVICE_CLASS: sensor.device_class,
                         "attributes": sensor.extra_state_attributes,
                         "formula": formula_str,
                         "dependencies": dependencies,

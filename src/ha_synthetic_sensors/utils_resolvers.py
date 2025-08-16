@@ -5,9 +5,13 @@ to eliminate code duplication between different resolver classes.
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
+
+from homeassistant.core import STATE_UNKNOWN
+from homeassistant.helpers.typing import StateType
 
 from .constants_boolean_states import FALSE_STATES, TRUE_STATES
+from .constants_evaluation_results import RESULT_KEY_VALUE
 from .constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
 from .data_validation import validate_data_provider_result
 from .exceptions import DataValidationError, MissingDependencyError
@@ -43,14 +47,14 @@ def resolve_via_data_provider_entity(dependency_handler: Any, entity_id: str, or
         validated_result = validate_data_provider_result(result, f"data provider for '{entity_id}'")
 
         if validated_result.get("exists"):
-            value = validated_result.get("value")
+            value = validated_result.get(RESULT_KEY_VALUE)
             if value is None:
                 _LOGGER.debug(
                     "Entity resolver: entity '%s' exists but has None value, returning unknown state",
                     entity_id,
                 )
                 # Return unknown state wrapped in ReferenceValue
-                return ReferenceValue(reference=entity_id, value="unknown")
+                return ReferenceValue(reference=entity_id, value=STATE_UNKNOWN)
 
             # Handle special Home Assistant state values
             if isinstance(value, str) and (is_ha_state_value(value) or is_ha_unknown_equivalent(value)):
@@ -61,11 +65,12 @@ def resolve_via_data_provider_entity(dependency_handler: Any, entity_id: str, or
 
             _LOGGER.debug("Entity resolver: resolved '%s' to %s", entity_id, value)
 
-            # ARCHITECTURE FIX: Create ReferenceValue object for data provider lookups
+            # Create ReferenceValue object for data provider lookups
             # This ensures that data provider lookups return ReferenceValue objects
-            return ReferenceValue(reference=entity_id, value=value)
+            typed_value = cast(StateType, value)
+            return ReferenceValue(reference=entity_id, value=typed_value)
     except DataValidationError:
-        # Re-raise fatal errors according to the guide
+        # Re-raise fatal errors
         raise
     except Exception as e:
         _LOGGER.warning("Error resolving entity reference '%s' via data provider: %s", entity_id, e)

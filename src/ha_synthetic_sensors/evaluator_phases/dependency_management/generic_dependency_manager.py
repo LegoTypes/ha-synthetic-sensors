@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
 from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_reserved_words
@@ -250,8 +251,8 @@ class GenericDependencyManager:
             result = evaluator.fallback_to_normal_evaluation(formula, enhanced_context, sensor_config)
 
             # Extract the value from the result
-            if result and result.get("success") and result.get("value") is not None:
-                return result["value"]
+            if result and result.get(RESULT_KEY_SUCCESS) and result.get(RESULT_KEY_VALUE) is not None:
+                return result[RESULT_KEY_VALUE]
             return None
 
         except Exception as e:

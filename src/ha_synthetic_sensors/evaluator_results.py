@@ -1,9 +1,21 @@
 """Result creation utilities for formula evaluation."""
 
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
+from .constants_evaluation_results import (
+    ERROR_RESULT_KEYS,
+    RESULT_KEY_ERROR,
+    RESULT_KEY_MISSING_DEPENDENCIES,
+    RESULT_KEY_STATE,
+    RESULT_KEY_SUCCESS,
+    RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
+    RESULT_KEY_VALUE,
+    STATE_OK,
+    STATE_UNAVAILABLE as EVAL_STATE_UNAVAILABLE,
+    SUCCESS_RESULT_KEYS,
+)
 from .type_definitions import EvaluationResult
 
 
@@ -20,11 +32,12 @@ class EvaluatorResults:
         Returns:
             Success evaluation result
         """
-        return {
-            "success": True,
-            "value": result,
-            "state": "ok",
+        base_fields = {
+            RESULT_KEY_SUCCESS: True,
+            RESULT_KEY_VALUE: result,
+            RESULT_KEY_STATE: STATE_OK,
         }
+        return cast(EvaluationResult, base_fields)
 
     @staticmethod
     def create_success_result_with_state(state: str, **kwargs: Any) -> EvaluationResult:
@@ -37,19 +50,20 @@ class EvaluatorResults:
         Returns:
             Success evaluation result with custom state
         """
-        result: EvaluationResult = {
-            "success": True,
-            "value": None,
-            "state": state,
+        # Build base result using only constants
+        base_fields = {
+            RESULT_KEY_SUCCESS: True,
+            RESULT_KEY_VALUE: None,
+            RESULT_KEY_STATE: state,
         }
-        # Add any additional fields from kwargs
-        for key, value in kwargs.items():
-            if key in ["unavailable_dependencies", "missing_dependencies", "value"]:
-                result[key] = value  # type: ignore[literal-required]
-        return result
+
+        # Add valid additional fields
+        valid_kwargs = {k: v for k, v in kwargs.items() if k in SUCCESS_RESULT_KEYS}
+
+        return cast(EvaluationResult, {**base_fields, **valid_kwargs})
 
     @staticmethod
-    def create_error_result(error_message: str, state: str = "unavailable", **kwargs: Any) -> EvaluationResult:
+    def create_error_result(error_message: str, state: str = EVAL_STATE_UNAVAILABLE, **kwargs: Any) -> EvaluationResult:
         """Create an error evaluation result.
 
         Args:
@@ -60,34 +74,37 @@ class EvaluatorResults:
         Returns:
             Error evaluation result
         """
-        result: EvaluationResult = {
-            "success": False,
-            "error": error_message,
-            "value": None,
-            "state": state,
+        # Build base result using only constants
+        base_fields = {
+            RESULT_KEY_SUCCESS: False,
+            RESULT_KEY_ERROR: error_message,
+            RESULT_KEY_VALUE: None,
+            RESULT_KEY_STATE: state,
         }
-        # Add any additional fields from kwargs that are valid for EvaluationResult
-        for key, value in kwargs.items():
-            if key in ["cached", "unavailable_dependencies", "missing_dependencies"]:
-                result[key] = value  # type: ignore[literal-required]
-        return result
+
+        # Add valid additional fields
+        valid_kwargs = {k: v for k, v in kwargs.items() if k in ERROR_RESULT_KEYS}
+
+        return cast(EvaluationResult, {**base_fields, **valid_kwargs})
 
     @staticmethod
     def create_success_from_result(result: float | int | str | bool) -> EvaluationResult:
         """Create a success result from a typed evaluation value."""
         if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))
-        return EvaluatorResults.create_success_result_with_state("ok", value=result)
+        return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
 
     @staticmethod
     def from_dependency_phase_result(result: dict[str, Any]) -> EvaluationResult:
         """Convert dependency-management phase result to an EvaluationResult shape."""
-        if "error" in result:
+        if RESULT_KEY_ERROR in result:
             return EvaluatorResults.create_error_result(
-                result["error"], state=result["state"], missing_dependencies=result.get("missing_dependencies")
+                result[RESULT_KEY_ERROR],
+                state=result[RESULT_KEY_STATE],
+                **{RESULT_KEY_MISSING_DEPENDENCIES: result.get(RESULT_KEY_MISSING_DEPENDENCIES)},
             )
         return EvaluatorResults.create_success_result_with_state(
-            result["state"], unavailable_dependencies=result.get("unavailable_dependencies")
+            result[RESULT_KEY_STATE], **{RESULT_KEY_UNAVAILABLE_DEPENDENCIES: result.get(RESULT_KEY_UNAVAILABLE_DEPENDENCIES)}
         )
 
     @staticmethod
@@ -102,7 +119,5 @@ class EvaluatorResults:
         )
 
         return EvaluatorResults.create_success_result_with_state(
-            normalized_state,
-            value=None,
-            unavailable_dependencies=unavailable_dependencies or [],
+            normalized_state, **{RESULT_KEY_VALUE: None, RESULT_KEY_UNAVAILABLE_DEPENDENCIES: unavailable_dependencies or []}
         )

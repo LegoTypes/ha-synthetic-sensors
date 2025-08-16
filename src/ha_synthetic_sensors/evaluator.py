@@ -8,11 +8,19 @@ import re
 from typing import Any, cast
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.typing import StateType
 
 from .alternate_state_eval import evaluate_formula_alternate
 from .cache import CacheConfig
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
+from .constants_evaluation_results import (
+    RESULT_KEY_ERROR,
+    RESULT_KEY_STATE,
+    RESULT_KEY_SUCCESS,
+    RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
+    RESULT_KEY_VALUE,
+)
 from .constants_formula import is_reserved_word
 from .dependency_parser import DependencyParser
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
@@ -465,11 +473,11 @@ class Evaluator(FormulaEvaluator):
             return None
 
         # Convert the phase result to an EvaluationResult and handle error counting
-        if "error" in result:
+        if RESULT_KEY_ERROR in result:
             self._error_handler.increment_error_count(formula_name)
-            return EvaluatorResults.create_error_result(result["error"], state=result["state"])
+            return EvaluatorResults.create_error_result(result[RESULT_KEY_ERROR], state=result[RESULT_KEY_STATE])
         return EvaluatorResults.create_success_result_with_state(
-            result["state"], unavailable_dependencies=result.get("unavailable_dependencies")
+            result[RESULT_KEY_STATE], unavailable_dependencies=result.get(RESULT_KEY_UNAVAILABLE_DEPENDENCIES)
         )
 
     def _needs_dependency_resolution(self, config: FormulaConfig, sensor_config: SensorConfig) -> bool:
@@ -919,6 +927,7 @@ class Evaluator(FormulaEvaluator):
         # Evaluate the expression using the main evaluation pipeline
         result = self.evaluate_formula(temp_config, context)
 
-        if result["success"]:
-            return result["value"]
+        result_dict = cast(dict[str, Any], result)
+        if result_dict[RESULT_KEY_SUCCESS]:
+            return cast(StateType, result_dict[RESULT_KEY_VALUE])
         raise ValueError(f"Failed to evaluate expression '{expression}': {result.get('error', 'Unknown error')}")

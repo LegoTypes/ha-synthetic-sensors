@@ -14,6 +14,12 @@ import yaml as yaml_lib
 
 from .config_models import FormulaConfig, SensorConfig
 from .constants_alternate import UNAVAILABLE_KEY, UNKNOWN_KEY
+from .constants_metadata import (
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_ICON,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+)
 
 if TYPE_CHECKING:
     from .storage_manager import StorageManager
@@ -178,14 +184,14 @@ class YamlHandler:
         """Extract legacy metadata fields from formula configuration."""
         legacy_metadata = {}
 
-        if hasattr(formula, "unit_of_measurement") and formula.unit_of_measurement:
-            legacy_metadata["unit_of_measurement"] = formula.unit_of_measurement
-        if hasattr(formula, "device_class") and formula.device_class:
-            legacy_metadata["device_class"] = formula.device_class
-        if hasattr(formula, "state_class") and formula.state_class:
-            legacy_metadata["state_class"] = formula.state_class
-        if hasattr(formula, "icon") and formula.icon:
-            legacy_metadata["icon"] = formula.icon
+        if hasattr(formula, METADATA_PROPERTY_UNIT_OF_MEASUREMENT) and getattr(formula, METADATA_PROPERTY_UNIT_OF_MEASUREMENT):
+            legacy_metadata[METADATA_PROPERTY_UNIT_OF_MEASUREMENT] = getattr(formula, METADATA_PROPERTY_UNIT_OF_MEASUREMENT)
+        if hasattr(formula, METADATA_PROPERTY_DEVICE_CLASS) and getattr(formula, METADATA_PROPERTY_DEVICE_CLASS):
+            legacy_metadata[METADATA_PROPERTY_DEVICE_CLASS] = getattr(formula, METADATA_PROPERTY_DEVICE_CLASS)
+        if hasattr(formula, METADATA_PROPERTY_STATE_CLASS) and getattr(formula, METADATA_PROPERTY_STATE_CLASS):
+            legacy_metadata[METADATA_PROPERTY_STATE_CLASS] = getattr(formula, METADATA_PROPERTY_STATE_CLASS)
+        if hasattr(formula, METADATA_PROPERTY_ICON) and getattr(formula, METADATA_PROPERTY_ICON):
+            legacy_metadata[METADATA_PROPERTY_ICON] = getattr(formula, METADATA_PROPERTY_ICON)
 
         return legacy_metadata if legacy_metadata else None
 

@@ -12,6 +12,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
 from .alternate_state_eval import evaluate_computed_alternate
 from .config_models import ComputedVariable, FormulaConfig
+from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import FatalEvaluationError, MissingDependencyError
@@ -576,8 +577,8 @@ def _resolve_metadata_computed_variable(
         return True
 
     eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
-    if eval_result.get("success"):
-        result = eval_result["value"]
+    if eval_result.get(RESULT_KEY_SUCCESS):
+        result = eval_result[RESULT_KEY_VALUE]
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
         _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
         return True
@@ -585,7 +586,7 @@ def _resolve_metadata_computed_variable(
     _LOGGER.debug(
         "Computed variable %s pipeline evaluation failed or returned error: %s; will keep lazy",
         var_name,
-        eval_result.get("error"),
+        eval_result.get(RESULT_KEY_ERROR),
     )
     _set_lazy_reference(eval_context, var_name, computed_var.formula)
     return True
@@ -598,13 +599,13 @@ def _resolve_non_metadata_computed_variable(
     parent_config: FormulaConfig | None,
 ) -> bool:
     eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
-    if eval_result.get("success"):
-        result = eval_result["value"]
+    if eval_result.get(RESULT_KEY_SUCCESS):
+        result = eval_result[RESULT_KEY_VALUE]
         _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
         return True
 
-    error_msg = str(eval_result.get("error"))
+    error_msg = str(eval_result.get(RESULT_KEY_ERROR))
     _LOGGER.debug("Computed variable %s failed via pipeline: %s", var_name, error_msg)
     return False
 

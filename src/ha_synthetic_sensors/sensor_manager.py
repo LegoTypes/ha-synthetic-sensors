@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -20,6 +20,19 @@ from homeassistant.util import dt as dt_util, slugify
 
 from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
+from .constants_evaluation_results import (
+    RESULT_KEY_ERROR,
+    RESULT_KEY_STATE,
+    RESULT_KEY_SUCCESS,
+    RESULT_KEY_VALUE,
+    STATE_UNKNOWN as EVAL_STATE_UNKNOWN,
+)
+from .constants_metadata import (
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_ICON,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+)
 from .core_formula_evaluator import MissingStateError
 from .cross_sensor_reference_manager import CrossSensorReferenceManager
 from .evaluator import Evaluator
@@ -184,12 +197,12 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     def _apply_metadata_to_sensor(self, metadata: dict[str, Any]) -> None:
         """Apply metadata properties to the sensor entity."""
         # Apply core metadata properties to sensor entity
-        self._attr_native_unit_of_measurement = metadata.get("unit_of_measurement")
-        self._attr_state_class = metadata.get("state_class")
-        self._attr_icon = metadata.get("icon")
+        self._attr_native_unit_of_measurement = metadata.get(METADATA_PROPERTY_UNIT_OF_MEASUREMENT)
+        self._attr_state_class = metadata.get(METADATA_PROPERTY_STATE_CLASS)
+        self._attr_icon = metadata.get(METADATA_PROPERTY_ICON)
 
         # Convert device_class string to enum if needed
-        device_class = metadata.get("device_class")
+        device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS)
         if device_class:
             try:
                 self._attr_device_class = SensorDeviceClass(device_class)
@@ -200,7 +213,12 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # Apply additional metadata properties as HA sensor attributes
         # Skip the ones we've already handled above
-        handled_keys = {"unit_of_measurement", "state_class", "icon", "device_class"}
+        handled_keys = {
+            METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+            METADATA_PROPERTY_STATE_CLASS,
+            METADATA_PROPERTY_ICON,
+            METADATA_PROPERTY_DEVICE_CLASS,
+        }
         for key, value in metadata.items():
             if key not in handled_keys:
                 attr_name = f"_attr_{key}"
@@ -361,20 +379,22 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 attr_context: dict[str, Any] | None = None
 
                 # Add the main result value to context if available
-                if main_result["success"] and main_result["value"] is not None:
+                main_result_dict = cast(dict[str, Any], main_result)
+                if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None:
                     attr_context = {}
                     # ARCHITECTURE FIX: Use ReferenceValueManager for state token in attributes
                     ReferenceValueManager.set_variable_with_reference_value(
-                        attr_context, "state", self.entity_id or "state", main_result["value"]
+                        attr_context, "state", self.entity_id or "state", main_result_dict[RESULT_KEY_VALUE]
                     )
 
                 # Evaluate the attribute formula using same pipeline as main formulas
                 attr_result = self._evaluator.evaluate_formula_with_sensor_config(formula, attr_context, self._config)
 
-                if attr_result["success"] and attr_result["value"] is not None:
+                attr_result_dict = cast(dict[str, Any], attr_result)
+                if attr_result_dict[RESULT_KEY_SUCCESS] and attr_result_dict[RESULT_KEY_VALUE] is not None:
                     # Extract attribute name from formula ID
                     attr_name = self._extract_attribute_name(formula)
-                    self._calculated_attributes[attr_name] = attr_result["value"]
+                    self._calculated_attributes[attr_name] = attr_result_dict[RESULT_KEY_VALUE]
                 else:
                     # Let the exception handler below catch and log the error
                     raise RuntimeError(f"Attribute evaluation failed for {formula.id}")
@@ -390,8 +410,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
     def _handle_main_result(self, main_result: EvaluationResult) -> None:
         """Handle the main formula evaluation result."""
-        if main_result["success"] and main_result["value"] is not None:
-            self._attr_native_value = main_result["value"]
+        main_result_dict = cast(dict[str, Any], main_result)
+        if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None:
+            self._attr_native_value = main_result_dict[RESULT_KEY_VALUE]
             self._attr_available = True
             self._last_update = dt_util.utcnow()
 
@@ -404,12 +425,12 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # Notify sensor manager of successful update
             self._sensor_manager.on_sensor_updated(
                 self._config.unique_id,
-                main_result["value"],
+                main_result_dict[RESULT_KEY_VALUE],
                 self._calculated_attributes.copy(),
             )
             return
 
-        if main_result["success"] and main_result.get("state") == "unknown":
+        if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict.get(RESULT_KEY_STATE) == EVAL_STATE_UNKNOWN:
             # Handle case where evaluation succeeded but dependencies are unavailable
             # Set sensor to unknown state per design guide (all unavailable states default to STATE_UNKNOWN)
             self._attr_native_value = None
@@ -423,7 +444,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # Handle evaluation failure
         self._attr_available = False
-        error_msg = main_result.get("error", "Unknown evaluation error")
+        error_msg = main_result.get(RESULT_KEY_ERROR, "Unknown evaluation error")
         # Treat formula evaluation failure as a fatal error
         _LOGGER.error("Formula evaluation failed for %s: %s", self.entity_id, error_msg)
         raise FormulaEvaluationError(f"Formula evaluation failed for {self.entity_id}: {error_msg}")
