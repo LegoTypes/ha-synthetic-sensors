@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+
 from .type_definitions import EvaluationResult
 
 
@@ -93,8 +95,14 @@ class EvaluatorResults:
         ha_state_value: str, unavailable_dependencies: list[str] | None = None
     ) -> EvaluationResult:
         """Create a success result that reflects a detected HA state during resolution."""
+        # According to design guide, all unavailable states default to STATE_UNKNOWN
+        # Normalize the state value - all problematic states become STATE_UNKNOWN
+        normalized_state = (
+            STATE_UNKNOWN if ha_state_value in [STATE_UNAVAILABLE, STATE_UNKNOWN] or ha_state_value is None else ha_state_value
+        )
+
         return EvaluatorResults.create_success_result_with_state(
-            ha_state_value,
+            normalized_state,
             value=None,
             unavailable_dependencies=unavailable_dependencies or [],
         )

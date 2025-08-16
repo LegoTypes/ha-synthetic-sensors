@@ -350,7 +350,7 @@ class Evaluator(FormulaEvaluator):
 
         # Ensure eval_context is not None (should be guaranteed by the helper method)
         if eval_context is None:
-            return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unavailable")
+            return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
 
         # Use enhanced variable resolution with HA state detection
         resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
@@ -528,7 +528,7 @@ class Evaluator(FormulaEvaluator):
 
             # Ensure eval_context is not None
             if eval_context is None:
-                return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unavailable")
+                return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
 
             # Evaluate the formula with dependency-resolved context
             result = self._execute_formula_evaluation(config, eval_context, complete_context, config.id, sensor_config)
@@ -568,7 +568,7 @@ class Evaluator(FormulaEvaluator):
 
         # Ensure eval_context is not None
         if eval_context is None:
-            return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unavailable")
+            return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
 
         # Evaluate the formula
         result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)

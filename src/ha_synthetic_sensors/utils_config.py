@@ -444,7 +444,7 @@ def _process_computed_variables_iteration(
         except Exception as err:
             # Check if this is a real evaluation error vs entity unavailable/unknown
             error_str = str(err).lower()
-            if any(pattern in error_str for pattern in [STATE_UNAVAILABLE, STATE_UNKNOWN]):
+            if STATE_UNKNOWN in error_str:
                 # Entity state issues - use YAML exception handlers
                 handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
                 if handled:

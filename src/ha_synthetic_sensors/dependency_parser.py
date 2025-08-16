@@ -546,18 +546,117 @@ class DependencyParser:
                     if type_match:
                         # Normalize spaces in pattern for consistent replacement later
                         # Store pattern with normalized format (no space after colon)
-                        normalized_pattern = type_match.group(1).strip()
+                        raw_pattern = type_match.group(1).strip()
+
+                        # Check for space-separated exclusions within the pattern (e.g., "door|window !state:off")
+                        pattern_parts, inline_exclusions = self._extract_inline_exclusions(raw_pattern)
+
+                        # Normalize repeated query type prefixes (e.g., device_class:door|device_class:window -> door|window)
+                        normalized_pattern = self._normalize_repeated_prefixes(query_type, pattern_parts)
+
+                        # Combine exclusions from both sources
+                        all_exclusions = exclusions + inline_exclusions
+
                         queries.append(
                             DynamicQuery(
                                 query_type=query_type,
                                 pattern=normalized_pattern,
                                 function=function_name,
-                                exclusions=exclusions,
+                                exclusions=all_exclusions,
                             )
                         )
                         break  # Only match the first pattern type
 
         return queries
+
+    def _normalize_repeated_prefixes(self, query_type: str, pattern: str) -> str:
+        """Normalize patterns with repeated query type prefixes.
+
+        For example:
+        - device_class:door|device_class:window|device_class:motion -> door|window|motion
+        - area:kitchen|area:living_room -> kitchen|living_room
+        - label:tag1|label:tag2 -> tag1|tag2
+
+        Args:
+            query_type: The query type (device_class, area, label, etc.)
+            pattern: The raw pattern that may contain repeated prefixes
+
+        Returns:
+            Normalized pattern with repeated prefixes removed
+        """
+        if "|" not in pattern:
+            # Single item, no normalization needed
+            return pattern
+
+        # Split by pipe and process each part
+        parts = pattern.split("|")
+        normalized_parts = []
+
+        for part in parts:
+            part = part.strip()
+            # Check if this part has the query type prefix
+            prefix = f"{query_type}:"
+            if part.startswith(prefix):
+                # Remove the prefix, keeping only the value
+                normalized_part = part[len(prefix) :].strip()
+                normalized_parts.append(normalized_part)
+            else:
+                # No prefix, keep as is
+                normalized_parts.append(part)
+
+        return "|".join(normalized_parts)
+
+    def _extract_inline_exclusions(self, pattern: str) -> tuple[str, list[str]]:
+        """Extract inline exclusions from a pattern string.
+
+        Handles patterns like:
+        - "door|window|motion !state:unavailable|unknown|off"
+        - "door|window|motion !(state:unavailable|unknown|off)"
+
+        Args:
+            pattern: The raw pattern that may contain inline exclusions
+
+        Returns:
+            Tuple of (clean_pattern, exclusions_list)
+        """
+        # Look for space followed by ! to identify start of exclusions
+        # Handle both parenthesized and non-parenthesized exclusions
+        exclusion_match = re.search(r"\s+!\s*(\([^)]+\)|.+)$", pattern)
+        if not exclusion_match:
+            # No inline exclusions found
+            return pattern, []
+
+        # Split the pattern into main part and exclusions part
+        main_pattern = pattern[: exclusion_match.start()].strip()
+        exclusions_part = exclusion_match.group(1).strip()
+
+        # Handle parentheses - remove them if present
+        if exclusions_part.startswith("(") and exclusions_part.endswith(")"):
+            exclusions_part = exclusions_part[1:-1].strip()
+
+        # Parse the exclusions part - it can be like "state:unavailable|unknown|off"
+        exclusions = []
+
+        # Check if it's a typed exclusion (like state:value1|value2|value3)
+        if ":" in exclusions_part:
+            # Split by spaces to handle multiple exclusion types
+            exclusion_groups = exclusions_part.split()
+            for group in exclusion_groups:
+                if ":" in group:
+                    # This is a typed exclusion like "state:unavailable|unknown|off"
+                    exclusion_type, values = group.split(":", 1)
+                    # Split values by | and create individual exclusions
+                    for value in values.split("|"):
+                        exclusions.append(f"{exclusion_type}:{value.strip()}")
+                else:
+                    # This is a simple exclusion
+                    exclusions.append(group.strip())
+        else:
+            # Simple exclusions separated by |
+            for exclusion in exclusions_part.split("|"):
+                exclusions.append(exclusion.strip())
+
+        return main_pattern, exclusions
 
     def _parse_exclusions(self, exclusions_raw: str) -> list[str]:
         """Parse exclusion patterns from the raw exclusions string.

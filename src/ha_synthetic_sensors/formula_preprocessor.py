@@ -143,6 +143,56 @@ class FormulaPreprocessor:
 
         return entity_pattern.sub(replace_entity_ref, formula)
 
+    def _normalize_formula_patterns(self, formula: str) -> str:
+        """Normalize collection function patterns in the formula to handle repeated prefixes.
+
+        This converts patterns like:
+        count(device_class:door|device_class:window|device_class:motion)
+        to:
+        count(device_class:door|window|motion)
+
+        Args:
+            formula: Original formula string
+
+        Returns:
+            Formula with normalized patterns
+        """
+        # Pattern to match collection functions with repeated prefixes
+        # Matches: function(prefix:value1|prefix:value2|prefix:value3...)
+        pattern = re.compile(
+            r"\b(sum|avg|count|min|max|std|var)\s*\(\s*"
+            r"([a-zA-Z_]+):"  # First prefix (e.g., "device_class:")
+            r"([^)]+)"  # Everything until the closing paren
+            r"\)",
+            re.IGNORECASE,
+        )
+
+        def normalize_match(match: re.Match[str]) -> str:
+            function = match.group(1)
+            prefix = match.group(2)
+            content = match.group(3)
+
+            # Split by pipe and normalize each part
+            parts = content.split("|")
+            normalized_parts = []
+
+            for part in parts:
+                part = part.strip()
+                # Check if this part has the same prefix
+                if part.startswith(f"{prefix}:"):
+                    # Remove the prefix, keeping only the value
+                    normalized_part = part[len(prefix) + 1 :].strip()
+                    normalized_parts.append(normalized_part)
+                else:
+                    # No prefix or different prefix, keep as is
+                    normalized_parts.append(part)
+
+            # Reconstruct the function call with normalized pattern
+            normalized_content = "|".join(normalized_parts)
+            return f"{function}({prefix}:{normalized_content})"
+
+        return pattern.sub(normalize_match, formula)
+
     def _resolve_collection_functions(self, formula: str, exclude_entity_ids: set[str] | None = None) -> str:
         """Resolve collection functions in the formula.
 
@@ -154,13 +204,16 @@ class FormulaPreprocessor:
             Formula with collection functions resolved
         """
         try:
-            # Extract dynamic queries from the formula using the dependency parser
-            dynamic_queries = self._dependency_parser.extract_dynamic_queries(formula)
+            # First normalize the formula to handle repeated prefixes
+            normalized_formula = self._normalize_formula_patterns(formula)
+
+            # Extract dynamic queries from the normalized formula using the dependency parser
+            dynamic_queries = self._dependency_parser.extract_dynamic_queries(normalized_formula)
 
             if not dynamic_queries:
-                return formula  # No collection functions to resolve
+                return normalized_formula  # No collection functions to resolve
 
-            resolved_formula = formula
+            resolved_formula = normalized_formula
 
             for query in dynamic_queries:
                 resolved_formula = self._resolve_single_collection_query(resolved_formula, query, exclude_entity_ids)
@@ -217,12 +270,31 @@ class FormulaPreprocessor:
         Returns:
             Formula with pattern replaced by default value
         """
-        # Try to find the exact pattern in the formula with both single and double quotes
+        # Build a regex pattern that matches the function call with optional exclusions
+        escaped_function = re.escape(query.function)
+        escaped_query_type = re.escape(query.query_type)
+        escaped_pattern = re.escape(query.pattern)
+
+        # Create regex pattern that matches the function call with optional exclusions
+        regex_pattern = (
+            rf"\b{escaped_function}\s*\(\s*"
+            rf"(?:['\"]?{escaped_query_type}:\s*{escaped_pattern}['\"]?)"
+            rf"(?:\s+!\s*\([^)]+\)|(?:\s+![^)]+))?"  # Optional exclusions
+            rf"\s*\)"
+        )
+
+        # Try to replace using regex
+        if re.search(regex_pattern, formula):
+            return re.sub(regex_pattern, "0", formula)
+
+        # Fallback to exact pattern matching (original behavior)
         patterns_to_try = [
             f"{query.function}('{query.query_type}: {query.pattern}')",
             f'{query.function}("{query.query_type}: {query.pattern}")',
             f"{query.function}('{query.query_type}:{query.pattern}')",
             f'{query.function}("{query.query_type}:{query.pattern}")',
+            f"{query.function}({query.query_type}: {query.pattern})",  # Unquoted with space
+            f"{query.function}({query.query_type}:{query.pattern})",  # Unquoted without space
         ]
 
         # Replace with 0 as default value (as specified in README)
@@ -332,12 +404,36 @@ class FormulaPreprocessor:
         Returns:
             Formula with pattern replaced
         """
-        # Try to find the exact pattern in the formula with both single and double quotes
+        # Build a regex pattern that matches the function call with optional exclusions
+        # This handles patterns like:
+        # - count(device_class:door|window|motion)
+        # - count(device_class:door|window|motion !(state:unavailable|unknown|off))
+        # - count(device_class:door|window|motion !state:unavailable|unknown|off)
+
+        escaped_function = re.escape(query.function)
+        escaped_query_type = re.escape(query.query_type)
+        escaped_pattern = re.escape(query.pattern)
+
+        # Create regex pattern that matches the function call with optional exclusions
+        regex_pattern = (
+            rf"\b{escaped_function}\s*\(\s*"
+            rf"(?:['\"]?{escaped_query_type}:\s*{escaped_pattern}['\"]?)"
+            rf"(?:\s+!\s*\([^)]+\)|(?:\s+![^)]+))?"  # Optional exclusions
+            rf"\s*\)"
+        )
+
+        # Try to replace using regex
+        if re.search(regex_pattern, formula):
+            return re.sub(regex_pattern, replacement, formula)
+
+        # Fallback to exact pattern matching (original behavior)
         patterns_to_try = [
             f"{query.function}('{query.query_type}: {query.pattern}')",
             f'{query.function}("{query.query_type}: {query.pattern}")',
             f"{query.function}('{query.query_type}:{query.pattern}')",
             f'{query.function}("{query.query_type}:{query.pattern}")',
+            f"{query.function}({query.query_type}: {query.pattern})",  # Unquoted with space
+            f"{query.function}({query.query_type}:{query.pattern})",  # Unquoted without space
         ]
 
         # Replace whichever pattern exists in the formula

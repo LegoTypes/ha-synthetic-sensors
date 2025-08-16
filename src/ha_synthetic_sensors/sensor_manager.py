@@ -411,12 +411,12 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         if main_result["success"] and main_result.get("state") == "unknown":
             # Handle case where evaluation succeeded but dependencies are unavailable
-            # Set sensor unavailable per HA conventions for numeric sensors (unknown not valid for power sensors)
+            # Set sensor to unknown state per design guide (all unavailable states default to STATE_UNKNOWN)
             self._attr_native_value = None
             self._attr_available = False
             self._last_update = dt_util.utcnow()
             _LOGGER.debug(
-                "Sensor %s set to unavailable due to unknown dependencies",
+                "Sensor %s set to unknown due to unavailable dependencies",
                 self.entity_id,
             )
             return
@@ -467,13 +467,13 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 _LOGGER.debug("async_write_ha_state skipped in test env: %s", write_err)
 
         except MissingStateError as err:
-            # Missing state error: make sensor unavailable with None state
+            # Missing state error: make sensor unknown with None state
             self._attr_available = False
             self._attr_native_value = None
-            _LOGGER.debug("Sensor %s unavailable due to missing state: %s", self.entity_id, err.missing_value)
+            _LOGGER.debug("Sensor %s unknown due to missing state: %s", self.entity_id, err.missing_value)
             self.async_write_ha_state()
         except Exception as err:
-            # General exception: make sensor unavailable but keep previous state
+            # General exception: make sensor unknown but keep previous state
             self._attr_available = False
             _LOGGER.error("Error updating sensor %s: %s", self.entity_id, err)
             try:

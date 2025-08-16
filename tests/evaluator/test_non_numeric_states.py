@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from homeassistant.const import STATE_UNKNOWN
+
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.evaluator_config import CircuitBreakerConfig
@@ -114,9 +116,9 @@ class TestNonNumericStateHandling:
 
         result = evaluator.evaluate_formula(config)
 
-        # Should reflect the unavailable state
+        # Should reflect the unavailable state as unknown per design guide
         assert result["success"] is True  # Non-fatal - reflects state
-        assert result["state"] == "unavailable"  # Should reflect the actual state
+        assert result["state"] == STATE_UNKNOWN  # Should reflect as unknown per design guide
         assert result["value"] is None
 
         # Verify it called the right entity
@@ -159,10 +161,10 @@ class TestNonNumericStateHandling:
 
         config = FormulaConfig(id="mixed_test", name="mixed", formula="sensor.circuit_a_power + sensor.circuit_b_power")
 
-        # Should reflect unavailable state due to unavailable dependency
+        # Should reflect unavailable state as unknown due to unavailable dependency
         result = evaluator.evaluate_formula(config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
-        assert result.get("state") == "unavailable"  # Reflects unavailable dependency
+        assert result.get("state") == STATE_UNKNOWN  # Reflects unavailable dependency as unknown per design guide
         assert "sensor.circuit_b_power (sensor.circuit_b_power) is unavailable" in result.get("unavailable_dependencies", [])
 
     def test_circuit_breaker_for_non_numeric_states(self, mock_hass, mock_entity_registry, mock_states):
@@ -191,7 +193,7 @@ class TestNonNumericStateHandling:
         for _i in range(10):
             result = evaluator.evaluate_formula(config)
             assert result["success"] is True  # Non-fatal - reflects dependency state
-            assert result.get("state") == "unavailable"  # Reflects unavailable dependency
+            assert result.get("state") == STATE_UNKNOWN  # Reflects unavailable dependency as unknown per design guide
 
     def test_backward_compatibility_fallback(self, mock_hass, mock_entity_registry, mock_states):
         """Test that convert_to_numeric properly raises exception for non-numeric states."""
@@ -236,7 +238,7 @@ class TestNonNumericStateHandling:
         for _i in range(10):
             result = evaluator.evaluate_formula(non_numeric_config)
             assert result["success"] is True  # Non-fatal - reflects dependency state
-            assert result.get("state") == "unavailable"  # Reflects unavailable dependency
+            assert result.get("state") == STATE_UNKNOWN  # Reflects unavailable dependency as unknown per design guide
 
     def test_startup_race_condition_none_state(self, mock_hass, mock_entity_registry, mock_states):
         """Test handling of startup race condition where entities exist but have None state values (reflects as unavailable)."""
@@ -418,7 +420,7 @@ class TestNonNumericStateHandling:
 
         result = evaluator.evaluate_formula(unavailable_config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
-        assert result.get("state") == "unavailable"  # Reflects unavailable dependency
+        assert result.get("state") == STATE_UNKNOWN  # Reflects unavailable dependency as unknown per design guide
         assert "sensor.circuit_a_power (sensor.circuit_a_power) is unavailable" in result.get("unavailable_dependencies", [])
 
         # Test formula with unknown entity
@@ -430,7 +432,7 @@ class TestNonNumericStateHandling:
 
         result = evaluator.evaluate_formula(unknown_config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
-        assert result.get("state") == "unknown"  # Reflects unknown dependency
+        assert result.get("state") == STATE_UNKNOWN  # Reflects unknown dependency
         assert "sensor.circuit_b_power (sensor.circuit_b_power) is unknown" in result.get("unavailable_dependencies", [])
 
         # Test formula with valid entity
@@ -496,4 +498,6 @@ class TestNonNumericStateHandling:
 
         result = evaluator.evaluate_formula(startup_config)
         assert result["success"] is True
-        assert result.get("state") == "unavailable"  # Reflects worst dependency state (unavailable is worse than unknown)
+        assert (
+            result.get("state") == STATE_UNKNOWN
+        )  # Reflects worst dependency state (all unavailable states default to unknown)
