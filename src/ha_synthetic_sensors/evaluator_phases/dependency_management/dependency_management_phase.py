@@ -97,12 +97,13 @@ class DependencyManagementPhase:
     def validate_evaluation_context(self, eval_context: dict[str, ContextValue], formula_name: str) -> Any | None:
         """Validate that evaluation context has all required variables."""
         try:
-            # Check for any None values in the context that would break evaluation
+            # Allow None values to pass through to formula evaluation where alternate handlers can handle them
             none_variables = [var for var, value in eval_context.items() if value is None]
             if none_variables:
                 error_msg = f"Variables with None values: {', '.join(none_variables)}"
-                _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
-                return self._create_error_result(error_msg, "unavailable")
+                _LOGGER.warning(
+                    "Formula '%s': %s - allowing to pass through for alternate handler processing", formula_name, error_msg
+                )
             return None
         except Exception as err:
             _LOGGER.error("Formula '%s': Context validation error: %s", formula_name, err)

@@ -230,7 +230,7 @@ class TestErrors:
         result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
         # The result should indicate the evaluation completed but with None/unknown state
         assert result["success"] is True
-        assert result["value"] == "unknown"
+        assert result["value"] is None
 
     def test_invalid_variable_reference(self, config_manager, invalid_data_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test variable references entity that returns invalid data."""
@@ -275,7 +275,7 @@ class TestErrors:
         result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
         # The result should indicate the evaluation completed but with None/unknown state
         assert result["success"] is True
-        assert result["state"] == "unknown" or result["value"] is None
+        assert result["value"] is None
 
     def test_complex_error_scenario(self, config_manager, invalid_data_yaml, mock_hass, mock_entity_registry, mock_states):
         """Test complex error scenario with state token self-reference."""

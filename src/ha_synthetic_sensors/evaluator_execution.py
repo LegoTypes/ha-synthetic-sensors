@@ -62,7 +62,7 @@ class FormulaExecutionEngine:
         handler_context: dict[str, ContextValue],
         eval_context: dict[str, ContextValue],
         sensor_config: SensorConfig | None,
-    ) -> float | str | bool:
+    ) -> float | str | bool | None:
         """Execute formula evaluation with proper handler routing.
 
         This is the core evaluation method that handles the clean slate routing

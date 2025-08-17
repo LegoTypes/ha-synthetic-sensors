@@ -643,7 +643,7 @@ class Evaluator(FormulaEvaluator):
             _LOGGER.debug("Exception handler for formula %s also failed: %s", config.id, handler_err)
             return None
 
-    def _convert_handler_result(self, result: Any) -> bool | str | float | int:
+    def _convert_handler_result(self, result: Any) -> bool | str | float | int | None:
         """Convert exception handler result to appropriate type."""
         return EvaluatorHelpers.process_evaluation_result(result)
 
@@ -654,7 +654,7 @@ class Evaluator(FormulaEvaluator):
         context: dict[str, ContextValue] | None,
         cache_key_id: str,
         sensor_config: SensorConfig | None = None,
-    ) -> float | str | bool:
+    ) -> float | str | bool | None:
         """Execute the actual formula evaluation with proper multi-phase resolution and exception handling."""
         # PHASE 1: Variable resolution
         resolution_result, resolved_formula = self._resolve_formula_variables(config, sensor_config, eval_context)
@@ -702,17 +702,21 @@ class Evaluator(FormulaEvaluator):
         handler_context: dict[str, ContextValue],
         eval_context: dict[str, ContextValue],
         sensor_config: SensorConfig | None,
-    ) -> float | str | bool:
+    ) -> float | str | bool | None:
         """Execute formula using the shared formula evaluation service."""
         try:
             # Use the shared formula evaluation service
             result = FormulaEvaluatorService.evaluate_formula(resolved_formula, config.formula, handler_context)
 
-            # Check if the result is STATE_UNKNOWN or STATE_UNAVAILABLE and we have alternate handlers
-            if result in (STATE_UNKNOWN, STATE_UNAVAILABLE) and config.alternate_state_handler:
+            # Check if we need to use alternate state handler
+            # CRITICAL FIX: Check for None in addition to STATE_UNKNOWN and STATE_UNAVAILABLE
+            # This ensures that None values (which indicate missing/unavailable data) properly trigger
+            # alternate state handlers, preventing ValueError for numeric sensors that expect None or numeric values.
+            if (result is None or result in (STATE_UNKNOWN, STATE_UNAVAILABLE)) and config.alternate_state_handler:
                 # Create a fake error to trigger alternate handlers for the specific state
-                # Use the actual constants in the error message so the handler selection works correctly
-                fake_err = ValueError(str(result))
+                # CRITICAL FIX: Handle None results gracefully in error creation
+                # This prevents errors when creating fake errors for None values that trigger alternate handlers.
+                fake_err = ValueError(str(result) if result is not None else "None")
                 exception_result = self._try_formula_alternate_state_handler(config, eval_context, sensor_config, fake_err)
 
                 if exception_result is not None:
@@ -734,12 +738,12 @@ class Evaluator(FormulaEvaluator):
 
     def _finalize_result(
         self,
-        result: float | str | bool,
+        result: float | str | bool | None,
         config: FormulaConfig,
         context: dict[str, ContextValue] | None,
         cache_key_id: str,
         sensor_config: SensorConfig | None,
-    ) -> float | str | bool:
+    ) -> float | str | bool | None:
         """Validate result type and cache if appropriate."""
         if self._formula_processor is None:
             raise RuntimeError("Formula processor not initialized")

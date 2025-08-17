@@ -67,7 +67,7 @@ class CoreFormulaEvaluator:
         resolved_formula: str,
         original_formula: str,
         handler_context: dict[str, ContextValue],
-    ) -> float | str | bool:
+    ) -> float | str | bool | None:
         """Evaluate a formula using the CLEAN SLATE routing architecture.
 
         Args:
@@ -112,8 +112,11 @@ class CoreFormulaEvaluator:
 
             # Check if extraction found missing states that should trigger alternate handlers
             if enhanced_context is None:
-                # Return STATE_UNKNOWN to trigger alternate handlers
-                return STATE_UNKNOWN
+                # CRITICAL FIX: Return None instead of STATE_UNKNOWN to preserve None values for Home Assistant
+                # This prevents premature conversion of None to 'unknown' string, which causes ValueError
+                # for numeric sensors (energy, power, etc.) that expect numeric values or None, not strings.
+                # Home Assistant will handle None appropriately by converting to STATE_UNKNOWN internally.
+                return None
 
             success, result = self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)
 

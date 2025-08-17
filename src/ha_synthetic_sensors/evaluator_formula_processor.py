@@ -100,13 +100,16 @@ class FormulaProcessor:
 
     def finalize_result(
         self,
-        result: float | str | bool,
+        result: float | str | bool | None,
         config: FormulaConfig,
         context: dict[str, ContextValue] | None,
         cache_key_id: str,
         sensor_config: SensorConfig | None,
-    ) -> float | str | bool:
+    ) -> float | str | bool | None:
         """Finalize the evaluation result with any post-processing."""
+        # CRITICAL FIX: Accept None values to preserve them through the evaluation pipeline
+        # This ensures that None values (indicating missing/unavailable data) are properly
+        # handled throughout the evaluation process without premature conversion to strings.
         # Post-processing logic can be added here if needed
         _LOGGER.debug("Finalizing result for formula %s: %s", config.formula, result)
         return result

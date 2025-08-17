@@ -50,7 +50,7 @@ class FormulaEvaluatorService:
     @classmethod
     def evaluate_formula(
         cls, resolved_formula: str, original_formula: str, context: dict[str, ContextValue]
-    ) -> float | str | bool:
+    ) -> float | str | bool | None:
         """
         Evaluate a main sensor formula.
 

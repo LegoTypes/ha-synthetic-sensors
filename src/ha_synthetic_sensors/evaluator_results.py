@@ -88,8 +88,13 @@ class EvaluatorResults:
         return cast(EvaluationResult, {**base_fields, **valid_kwargs})
 
     @staticmethod
-    def create_success_from_result(result: float | int | str | bool) -> EvaluationResult:
+    def create_success_from_result(result: float | int | str | bool | None) -> EvaluationResult:
         """Create a success result from a typed evaluation value."""
+        # CRITICAL FIX: Handle None values by returning STATE_UNKNOWN with None value
+        # This preserves None values for Home Assistant while maintaining proper state handling.
+        # Home Assistant will handle None appropriately by converting to STATE_UNKNOWN internally.
+        if result is None:
+            return EvaluatorResults.create_success_result_with_state(STATE_UNKNOWN, **{RESULT_KEY_VALUE: None})
         if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))
         return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
