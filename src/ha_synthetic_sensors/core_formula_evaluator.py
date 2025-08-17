@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Any
 
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN
 
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_handlers import HandlerFactory
@@ -110,13 +110,10 @@ class CoreFormulaEvaluator:
             # Extract raw values for enhanced evaluation
             enhanced_context = self._extract_values_for_enhanced_evaluation(handler_context, pre_sub_formula)
 
-            # Check if extraction found missing states that should make sensor unavailable
+            # Check if extraction found missing states that should trigger alternate handlers
             if enhanced_context is None:
-                # Get the missing state value for the error message
-                state_value = handler_context.get("state")
-                missing_value = state_value.value if isinstance(state_value, ReferenceValue) else STATE_UNKNOWN
-                # Raise a specific exception to trigger unavailable state
-                raise MissingStateError(str(missing_value))
+                # Return STATE_UNKNOWN to trigger alternate handlers
+                return STATE_UNKNOWN
 
             success, result = self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)
 
@@ -178,24 +175,31 @@ class CoreFormulaEvaluator:
             except Exception:
                 referenced_names = None
 
-        # Check for missing state values that should trigger unavailable sensor state
+        # Check for missing state values that should trigger alternate handlers
         # Use Home Assistant constants for missing states
-        missing_states = [STATE_UNKNOWN, STATE_UNAVAILABLE]
+        missing_states = [STATE_UNKNOWN.lower(), "unavailable"]
+
+        # Check if this is an alternate state handler evaluation
+        is_alternate_handler = context.get("__is_alternate_handler__", False)
 
         for key, value in context.items():
+            # Skip the alternate handler marker
+            if key == "__is_alternate_handler__":
+                continue
             if isinstance(value, ReferenceValue):
                 # Extract and preprocess raw value using priority analyzer.
                 raw_value = value.value
                 # Scoped missing-state guard:
-                # Apply guard only when this variable is referenced in the pre-substitution formula
-                # (i.e., it will be value-substituted). Reference arguments to specialized handlers
-                # (e.g., metadata(entity_ref, ...)) should not trigger the guard by convention.
-                if (
+                # Apply guard when this variable is referenced in the pre-substitution formula
+                # For alternate handlers, allow 'state' to be unknown/unavailable since that's when they should run
+                # Also trigger for None values (truly missing)
+                should_apply_guard = (
                     (referenced_names is None or key in referenced_names)
-                    and isinstance(raw_value, str)
-                    and raw_value.lower() in missing_states
-                ):
-                    _LOGGER.debug("Found missing state '%s' = '%s', sensor should become unavailable", key, raw_value)
+                    and (raw_value is None or (isinstance(raw_value, str) and raw_value.lower() in missing_states))
+                    and not (is_alternate_handler and key == "state")
+                )
+                if should_apply_guard:
+                    _LOGGER.debug("Found missing state '%s' = '%s', triggering alternate handlers", key, raw_value)
                     return None
 
                 # Preprocess the value using priority analyzer (boolean-first, then numeric)

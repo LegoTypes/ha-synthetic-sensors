@@ -18,7 +18,7 @@ def evaluate_formula_alternate(
     eval_context: dict[str, Any],
     sensor_config: SensorConfig | None,
     config: FormulaConfig,
-    handler_factory: Any,
+    core_evaluator: Any,
     resolve_all_references_in_formula: Any,
 ) -> bool | str | float | int | None:
     """Evaluate sensor-level alternate handler for a formula.
@@ -37,29 +37,27 @@ def evaluate_formula_alternate(
             for key, val in local_vars.items():
                 temp_context[key] = val
 
+        # Add marker to indicate this is an alternate state handler evaluation
+        temp_context["__is_alternate_handler__"] = True
+
         resolved_handler_formula = resolve_all_references_in_formula(
             str(handler_formula["formula"]), sensor_config, temp_context, config
         )
-        handler = handler_factory.get_handler_for_formula(resolved_handler_formula)
-        if handler:
-            result = handler.evaluate(resolved_handler_formula, temp_context)
-        else:
-            numeric_handler = handler_factory.get_handler("numeric")
-            if not numeric_handler:
-                return None
-            result = numeric_handler.evaluate(resolved_handler_formula, temp_context)
+        # Use the normal evaluation path through CoreFormulaEvaluator
+        original_formula = str(handler_formula["formula"])
+        result = core_evaluator.evaluate_formula(resolved_handler_formula, original_formula, temp_context)
         return EvaluatorHelpers.process_evaluation_result(result)
 
     # String expression (back-compat)
     resolved_handler_formula = resolve_all_references_in_formula(str(handler_formula), sensor_config, eval_context, config)
-    handler = handler_factory.get_handler_for_formula(resolved_handler_formula)
-    if handler:
-        result = handler.evaluate(resolved_handler_formula, eval_context)
-    else:
-        numeric_handler = handler_factory.get_handler("numeric")
-        if not numeric_handler:
-            return None
-        result = numeric_handler.evaluate(resolved_handler_formula, eval_context)
+
+    # Add marker to indicate this is an alternate state handler evaluation
+    eval_context_with_marker = eval_context.copy()
+    eval_context_with_marker["__is_alternate_handler__"] = True
+
+    # Use the normal evaluation path through CoreFormulaEvaluator
+    original_formula = str(handler_formula)
+    result = core_evaluator.evaluate_formula(resolved_handler_formula, original_formula, eval_context_with_marker)
     return EvaluatorHelpers.process_evaluation_result(result)
 
 

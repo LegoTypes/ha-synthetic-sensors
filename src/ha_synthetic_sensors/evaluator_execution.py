@@ -50,6 +50,11 @@ class FormulaExecutionEngine:
         # Create the core formula evaluator that implements CLEAN SLATE routing
         self._core_evaluator = CoreFormulaEvaluator(handler_factory, enhanced_helper)
 
+    @property
+    def core_evaluator(self) -> CoreFormulaEvaluator:
+        """Get the core formula evaluator instance."""
+        return self._core_evaluator
+
     def execute_formula_evaluation(
         self,
         config: FormulaConfig,

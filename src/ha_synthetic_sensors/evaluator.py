@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any, cast
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import StateType
 
@@ -630,7 +631,7 @@ class Evaluator(FormulaEvaluator):
                     eval_context,
                     sensor_config,
                     config,
-                    self._handler_factory,
+                    self._execution_engine.core_evaluator,
                     self._resolve_all_references_in_formula,
                 )
                 if result is not None:
@@ -705,7 +706,22 @@ class Evaluator(FormulaEvaluator):
         """Execute formula using the shared formula evaluation service."""
         try:
             # Use the shared formula evaluation service
-            return FormulaEvaluatorService.evaluate_formula(resolved_formula, config.formula, handler_context)
+            result = FormulaEvaluatorService.evaluate_formula(resolved_formula, config.formula, handler_context)
+
+            # Check if the result is STATE_UNKNOWN or STATE_UNAVAILABLE and we have alternate handlers
+            if result in (STATE_UNKNOWN, STATE_UNAVAILABLE) and config.alternate_state_handler:
+                # Create a fake error to trigger alternate handlers for the specific state
+                # Use the actual constants in the error message so the handler selection works correctly
+                fake_err = ValueError(str(result))
+                exception_result = self._try_formula_alternate_state_handler(config, eval_context, sensor_config, fake_err)
+
+                if exception_result is not None:
+                    _LOGGER.debug(
+                        "Formula %s resolved using alternate handler for %s = %s", config.id, result, exception_result
+                    )
+                    return exception_result
+
+            return result
         except Exception as err:
             # Exception handler for compatibility (but clean slate should not need this)
             exception_result = self._try_formula_alternate_state_handler(config, eval_context, sensor_config, err)

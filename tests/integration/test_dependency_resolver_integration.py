@@ -445,6 +445,8 @@ sensors:
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
+    UNKNOWN:
+      formula: "0"  # Power sensors should return 0 when backing entity is None
 """
 
             # Import YAML
@@ -501,12 +503,12 @@ sensors:
             print(f"Sensor state after None value: {sensor_entity.state}")
             print(f"Sensor available: {sensor_entity.available}")
 
-            # HA Convention: None backing entity results in unavailable sensor (state=None, available=False)
-            # This is correct behavior for numeric sensors with device_class (HA validation requires numeric states)
-            assert sensor_entity.state is None, f"Expected None (unavailable), got '{sensor_entity.state}'"
-            assert sensor_entity.available is False, "Sensor should be unavailable when backing entity is None"
+            # Power sensors: None backing entity should trigger UNKNOWN alternate handler returning 0
+            # This is correct behavior for power sensors (0 power when device is offline)
+            assert sensor_entity.state == 0, f"Expected 0 (no power when offline), got '{sensor_entity.state}'"
+            assert sensor_entity.available is True, "Sensor should remain available with 0.0 power state"
 
-            print("✅ Phase 2: None value correctly results in unavailable sensor (HA convention)")
+            print("✅ Phase 2: None value correctly results in 0.0 power (alternate handler)")
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)
