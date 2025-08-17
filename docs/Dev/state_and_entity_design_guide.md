@@ -40,7 +40,8 @@ information, see the [ReferenceValue Architecture Implementation Guide](referenc
 The following state values are recognized and handled consistently throughout the package:
 
 - **`"unavailable"`**: Represents an entity that exists but is temporarily unavailable (e.g., device offline)
-- **`"None"`**: String representation that is converted to `"unavailable"` for consistency
+- **`"unknown"`**: Represents an entity that exists but has no known state value
+- **`"None"`**: String representation that is converted to `STATE_UNKNOWN` for consistency
 
 ### State Value Handling Rules
 
@@ -48,9 +49,9 @@ The following state values are recognized and handled consistently throughout th
 2. **Early Detection**: HA state values are detected during variable resolution phase, before formula evaluation begins
 3. **Invalid Expression Prevention**: Expressions like `"unavailable" + 10` are invalid and are detected early to prevent
    formula evaluation errors
-4. **State Reflection**: When a formula contains HA state values, the synthetic sensor immediately returns that state without
-   attempting formula evaluation
-5. **None Conversion**: `None` values from backing entities are treated as `"unavilable"` to allow for integration
+4. **State Reflection**: When a formula contains HA state values, the synthetic sensor immediately returns `STATE_UNKNOWN`
+   without attempting formula evaluation
+5. **None Conversion**: `None` values from backing entities are treated as `STATE_UNKNOWN` to allow for integration
    initialization
 6. **Enhanced Dependency Reporting**: Unavailable dependencies are reported with context including variable names and entity
    IDs
@@ -66,6 +67,7 @@ The following state values are recognized and handled consistently throughout th
 - **Architectural Integration**: HA state detection is integrated into the layered, compiler-like evaluation system
 - **VariableResolutionResult**: Enhanced variable resolution returns structured results with HA state detection
 - **Duplicate Prevention**: The system prevents duplicate dependency entries during variable resolution
+- **Default State**: All HA state values (None, "unavailable", "unknown") default to `STATE_UNKNOWN` for consistency
 
 ## State and Entity Idioms
 
@@ -81,7 +83,7 @@ The following state values are recognized and handled consistently throughout th
    directly to the backing entity.
 4. **Self-Reference Idiom** In main formulas, referencing the sensor by its key (e.g., `my_sensor`) or by its full entity ID
    (e.g., `sensor.my_sensor`) is equivalent to using the `state` token. All three resolve to the backing entity's state (if
-   present) or the sensor's previous value (if not). If the backing entity value is None, it is treated as "unavailable".
+   present) or the sensor's previous value (if not). If the backing entity value is None, it is treated as `STATE_UNKNOWN`.
 5. **Attribute Self-Reference Idiom** In attribute formulas, referencing the main sensor by its key or entity ID is
    equivalent to using the `state` token. All attribute forms resolve to the main sensor's calculated value
    (post-evaluation).
@@ -96,7 +98,7 @@ The following state values are recognized and handled consistently throughout th
 9. **Error Propagation Idiom** If a required entity or variable cannot be resolved, or if a data provider returns invalid
    data, a specific exception is raised (`BackingEntityResolutionError`, `MissingDependencyError`, or `DataValidationError`).
    Fatal errors are never silently converted to error results. However, None values from backing entities are treated as
-   "unavailable" rather than causing errors to allow for integration initialization.
+   `STATE_UNKNOWN` rather than causing errors to allow for integration initialization.
 10. **Consistent Reference Idiom** The same reference patterns (`state`, sensor key, entity ID) are supported in both main
     and attribute formulas, but their meaning is context-dependent (main formula = backing entity or previous value;
     attribute = main sensor's calculated value).
@@ -130,8 +132,8 @@ sensors:
     entity_id: sensor.panel_power # Entity exists but value is None
     formula: state * 2
     # Result:
-    #   state: "unavailable"
-    #   unavailable_dependencies: ["source_value (sensor.panel_power) is unavailable"]
+    #   state: "unknown"
+    #   unavailable_dependencies: ["source_value (sensor.panel_power) is unknown"]
 
   # Example: Variable reference with unavailable state
   efficiency_calc:
@@ -139,7 +141,7 @@ sensors:
       panel_power: sensor.panel_power # Entity state = "unavailable"
     formula: panel_power * 0.95
     # Result:
-    #   state: "unavailable"
+    #   state: "unknown"
     #   unavailable_dependencies: ["panel_power (sensor.panel_power) is unavailable"]
 
   # Example: Multiple unavailable dependencies
@@ -149,9 +151,9 @@ sensors:
       power2: sensor.solar_power # Entity state = "unavailable"
     formula: power1 + power2
     # Result:
-    #   state: "unknown" (first unavailable dependency determines state)
+    #   state: "unknown" (all unavailable dependencies default to STATE_UNKNOWN)
     #   unavailable_dependencies: [
-    #     "power1 (sensor.panel_power) is unavailable",
+    #     "power1 (sensor.panel_power) is unknown",
     #     "power2 (sensor.solar_power) is unavailable"
     #   ]
 ```
@@ -193,7 +195,7 @@ sensors:
 
 - **Behavior**: `state` resolves to the backing entity's current state value
 - **Evaluation**: The backing entity's state is fetched and used in the formula
-- **None Value Handling**: If the backing entity value is None, it is treated as "unavailable" to allow for integration
+- **None Value Handling**: If the backing entity value is None, it is treated as `STATE_UNKNOWN` to allow for integration
   initialization
 - **Error Handling**: If the backing entity is not registered or the registration contains no entries,
   `BackingEntityResolutionError` is raised
@@ -740,7 +742,7 @@ class BackingEntityResolutionError(MissingDependencyError):
 - Debug logging indicates how many backing entities were registered (including sensor key and backing entity_id)
 - If backing entities were provided but no entries exist, this condition is a fatal error and an appropriate exception is
   raised
-- If backing entities were provided, their values may be None and the package treats these None entries as "unavailable" to
+- If backing entities were provided, their values may be None and the package treats these None entries as `STATE_UNKNOWN` to
   allow for integration initialization
 
 **Triggers**:
@@ -751,7 +753,7 @@ class BackingEntityResolutionError(MissingDependencyError):
 - Backing entity exists but returns invalid data
 
 **Behavior**: Exception is raised and propagated (not converted to error result). Note: If a mapping exists but the value is
-None, this is treated as a transient condition and no exception is raised - the None value is converted to "unavailable".
+None, this is treated as a transient condition and no exception is raised - the None value is converted to `STATE_UNKNOWN`.
 
 ```yaml
 sensors:
@@ -761,10 +763,10 @@ sensors:
     formula: state * 2 # 'state' cannot be resolved
     # Result: BackingEntityResolutionError is raised
 
-  # Example: Valid backing entity with None value (treated as "unavailable")
+  # Example: Valid backing entity with None value (treated as STATE_UNKNOWN)
   valid_sensor_with_none:
     entity_id: sensor.span_panel_instantaneous_power # Entity exists but value is None
-    formula: state * 2 # 'state' resolves to "unknown" (None treated as "unavailable")
+    formula: state * 2 # 'state' resolves to "unknown" (None treated as STATE_UNKNOWN)
     # Result: Formula evaluates with "unknown" value, allowing for integration initialization
 
   # Example: Valid backing entity with populated value
@@ -843,13 +845,13 @@ sensors:
     variables:
       offline_sensor: sensor.offline_sensor  # Entity state = "unavailable"
     formula: offline_sensor + 10  # Resolves to "unavailable" + 10
-    # Result: Sensor state = "unavailable" (invalid expression detected)
+    # Result: Sensor state = "unknown" (invalid expression detected)
     # unavailable_dependencies: ["offline_sensor (sensor.offline_sensor) is unavailable"]
 
   # Example: Invalid expression with quoted HA state
   another_problematic_sensor:
     formula: "unavailable" + 10  # Direct invalid expression
-    # Result: Sensor state = "unavailable" (invalid expression detected)
+    # Result: Sensor state = "unknown" (invalid expression detected)
     # unavailable_dependencies: []
 ```
 
@@ -862,23 +864,22 @@ sensors:
 #### Behavior
 
 - **Early Detection**: Invalid expressions are detected during variable resolution phase
-- **State Reflection**: The sensor returns the appropriate HA state value immediately
+- **State Reflection**: The sensor returns `STATE_UNKNOWN` immediately
 - **No Formula Evaluation**: The formula is not evaluated to prevent mathematical errors
 - **Enhanced Reporting**: Dependencies are reported with context for debugging
 
 #### Examples of Invalid Expressions
 
 ```yaml
-# These expressions are invalid and will return HA states:
-formula: "unavailable" + 10        # Returns "unavailable"
-formula: "unknown" * 2             # Returns "unknown"
-formula: sensor.offline + 5        # Returns "unavailable" if sensor.offline is unavailable
-formula: "unavailable" / 100       # Returns "unavailable"
-formula: "unknown" - 50            # Returns "unknown"
+# These expressions are invalid and will return STATE_UNKNOWN:
+formula: "'unknown' * 2"             # Returns "unknown"
+formula: "sensor.offline + 5"        # Returns "unknown" if sensor.offline is unavailable
+formula: "'unavailable' / 100"       # Returns "unknown"
+formula: "'unknown' - 50"            # Returns "unknown"
 
 # These expressions are valid:
-formula: 100 + 200                 # Valid numeric expression
-formula: sensor.online + 10        # Valid if sensor.online returns numeric value
+formula: "100 + 200"                 # Valid numeric expression
+formula: "sensor.online + 10"        # Valid if sensor.online returns numeric value
 formula: "valid_string"            # Valid string literal (for attributes)
 ```
 
@@ -907,7 +908,7 @@ backing_entities = {
 **Validation Rules**:
 
 1. **Minimum Entry Requirement**: At least one dictionary entry must be provided for any backing entities that are registered
-2. **None Value Handling**: None values are treated as "unavailable" to allow for integration initialization
+2. **None Value Handling**: None values are treated as `STATE_UNKNOWN` to allow for integration initialization
 3. **Debug Logging**: The package logs how many backing entities were registered, including sensor key and backing entity_id
 4. **Fatal Error**: If backing entities were provided but no entries exist, a fatal exception is raised
 
@@ -918,12 +919,12 @@ backing_entities = {
 sensors:
   power_analyzer:
     entity_id: sensor.span_panel_instantaneous_power # Backing entity
-    formula: state * 1.1 # May initially resolve to "unknown" if backing entity is None
+    formula: "state * 1.1" # May initially resolve to "unknown" if backing entity is None
     metadata:
       unit_of_measurement: W
     # During integration startup:
     # 1. Backing entity is registered with None value
-    # 2. Formula evaluates with "unavailable" result
+    # 2. Formula evaluates with "unknown" result
     # 3. Integration later updates backing entity with actual value
     # 4. Formula evaluates with actual value
 ```
@@ -954,7 +955,7 @@ backing_entities = {}  # Empty dictionary
 ```python
 # This is valid during integration startup:
 backing_entities = {
-    "sensor.span_panel_instantaneous_power": None,  # Will be treated as "unavailable"
+    "sensor.span_panel_instantaneous_power": None,  # Will be treated as STATE_UNKNOWN
 }
 # Result: Formula evaluates with "unknown" value, allowing for later population
 ```
@@ -1010,7 +1011,7 @@ backing_entities = {
 sensors:
   voltage_analyzer:
     entity_id: sensor.span_panel_voltage  # Mapping exists but value is None
-    formula: state * 1.1  # 'state' resolves to "unknown" (None treated as "unavailable")
+    formula: "state * 1.1"  # 'state' resolves to "unknown" (None treated as STATE_UNKNOWN)
     # Result: Formula evaluates with "unknown" value (NO EXCEPTION)
 ```
 
@@ -1019,15 +1020,15 @@ for integration initialization where data may not be immediately available.
 
 #### Key Distinction Summary
 
-| Condition               | Mapping Exists | Value  | Result                    | Exception                      |
-| ----------------------- | -------------- | ------ | ------------------------- | ------------------------------ |
-| **Fatal Error**         | ❌ No          | N/A    | Cannot resolve            | `BackingEntityResolutionError` |
-| **Transient Condition** | ✅ Yes         | `None` | Resolves to "unavailable" | No exception                   |
+| Condition               | Mapping Exists | Value  | Result                      | Exception                      |
+| ----------------------- | -------------- | ------ | --------------------------- | ------------------------------ |
+| **Fatal Error**         | ❌ No          | N/A    | Cannot resolve              | `BackingEntityResolutionError` |
+| **Transient Condition** | ✅ Yes         | `None` | Resolves to `STATE_UNKNOWN` | No exception                   |
 
 This distinction is crucial for integration development:
 
 - **Fatal errors** indicate configuration problems that must be fixed
-- **Transient conditions** allow for graceful handling of initialization periods
+- **Transient conditions** allow for graceful handling of initialization periods where None values default to `STATE_UNKNOWN`
 
 ## Code Standards
 
@@ -1302,38 +1303,3 @@ This reflects the correct behavior where cross-sensor references are updated to 
 integration.
 
 ## Summary of Key Clarifications
-
-This guide has been updated to reflect important clarifications and agreements from implementation discussions:
-
-### HA State Value Handling
-
-1. **Invalid Expressions**: Expressions like `"unavailable" + 10` are invalid and are detected early during variable
-   resolution
-2. **Early Detection**: HA state values are detected during variable resolution phase, before formula evaluation begins
-3. **State Reflection**: When HA states are detected, the sensor immediately returns that state without attempting formula
-   evaluation
-4. **Enhanced Reporting**: Dependencies are reported with context: `"variable_name (entity_id) is state_value"`
-
-### Enhanced Dependency Reporting
-
-1. **Context-Rich Format**: Dependencies include both variable names and entity IDs for better debugging
-2. **Entity Mapping**: Variable resolution tracks entity mappings to provide accurate entity IDs
-3. **Duplicate Prevention**: The system prevents duplicate dependency entries
-4. **Integration Support**: Enhanced reporting helps integrations manage entities directly
-
-### Architectural Integration
-
-1. **VariableResolutionResult**: Enhanced variable resolution returns structured results with HA state detection
-2. **Layered Architecture**: HA state detection is integrated into the compiler-like evaluation system
-3. **Early Return**: Evaluator handles early HA state returns from variable resolution
-4. **Test Updates**: Test expectations updated to work with enhanced dependency reporting format
-
-### Implementation Results
-
-- **Test Improvement**: Reduced failures from 41 to 38, with 1250 tests passing (97% pass rate)
-- **Enhanced Debugging**: Better context for troubleshooting dependency issues
-- **Integration Support**: Improved entity management capabilities for integrations
-- **Error Prevention**: Invalid expressions are caught early, preventing formula evaluation errors
-
-These clarifications ensure that HA state values are handled consistently as semantic states rather than string literals,
-providing better error prevention and enhanced debugging capabilities throughout the synthetic sensor package.

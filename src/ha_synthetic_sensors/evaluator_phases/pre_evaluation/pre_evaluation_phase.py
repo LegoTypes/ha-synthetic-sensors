@@ -8,6 +8,12 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...constants_evaluation_results import (
+    RESULT_KEY_ERROR,
+    RESULT_KEY_MISSING_DEPENDENCIES,
+    RESULT_KEY_STATE,
+    RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
+)
 from ...evaluator_cache import EvaluatorCache
 from ...evaluator_dependency import EvaluatorDependency
 from ...evaluator_error_handler import EvaluatorErrorHandler
@@ -224,18 +230,18 @@ class PreEvaluationPhase:
 
     def _convert_dependency_result_to_evaluation_result(self, result: dict[str, Any], formula_name: str) -> EvaluationResult:
         """Convert dependency management phase result to EvaluationResult."""
-        if "error" in result:
+        if RESULT_KEY_ERROR in result:
             # Missing dependencies are fatal errors - increment error count for circuit breaker
-            if self._error_handler and result.get("missing_dependencies"):
+            if self._error_handler and result.get(RESULT_KEY_MISSING_DEPENDENCIES):
                 self._error_handler.increment_error_count(formula_name)
             return EvaluatorResults.create_error_result(
-                result["error"],
-                state=result["state"],
-                missing_dependencies=result.get("missing_dependencies"),
+                result[RESULT_KEY_ERROR],
+                state=result[RESULT_KEY_STATE],
+                missing_dependencies=result.get(RESULT_KEY_MISSING_DEPENDENCIES),
             )
         return EvaluatorResults.create_success_result_with_state(
-            result["state"],
-            unavailable_dependencies=result.get("unavailable_dependencies"),
+            result[RESULT_KEY_STATE],
+            unavailable_dependencies=result.get(RESULT_KEY_UNAVAILABLE_DEPENDENCIES),
         )
 
     def _validate_evaluation_context(self, eval_context: dict[str, ContextValue], formula_name: str) -> EvaluationResult | None:
@@ -248,11 +254,11 @@ class PreEvaluationPhase:
         if result is None:
             return None
         # Convert the phase result to an EvaluationResult and handle error counting
-        if "error" in result:
+        if RESULT_KEY_ERROR in result:
             if self._error_handler:
                 self._error_handler.increment_error_count(formula_name)
-            return EvaluatorResults.create_error_result(result["error"], state=result["state"])
+            return EvaluatorResults.create_error_result(result[RESULT_KEY_ERROR], state=result[RESULT_KEY_STATE])
         return EvaluatorResults.create_success_result_with_state(
-            result["state"],
-            unavailable_dependencies=result.get("unavailable_dependencies"),
+            result[RESULT_KEY_STATE],
+            unavailable_dependencies=result.get(RESULT_KEY_UNAVAILABLE_DEPENDENCIES),
         )

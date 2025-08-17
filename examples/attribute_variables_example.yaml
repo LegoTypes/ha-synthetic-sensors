@@ -1,7 +1,15 @@
+# The test for this fixture is tests/integration/test_attribute_variables_exa
 version: "1.0"
 
 # Comprehensive example showing attribute variables and their capabilities
 # This demonstrates how attributes can have their own variables section
+# Used by: tests/integration/test_attribute_variables_example_integration.py
+
+global_settings:
+  device_identifier: "test_device_attribute_variables"
+  device_name: "Main Solar Inverter"
+  device_manufacturer: "SolarTech"
+  device_model: "ST-5000"
 
 sensors:
   # Example 1: Basic attribute variables
@@ -9,8 +17,8 @@ sensors:
     name: "Energy Monitor"
     formula: "grid_power + solar_power"
     variables:
-      grid_power: "sensor.grid_meter_power"
-      solar_power: "sensor.solar_inverter_power"
+      grid_power: sensor.grid_meter_power
+      solar_power: sensor.solar_inverter_power
     attributes:
       # Attribute inherits grid_power and solar_power from parent
       power_balance:
@@ -22,8 +30,8 @@ sensors:
       battery_status:
         formula: "battery_level * battery_capacity / 100"
         variables:
-          battery_level: "sensor.battery_percentage"
-          battery_capacity: "sensor.battery_total_capacity"
+          battery_level: sensor.battery_percentage
+          battery_capacity: sensor.battery_total_capacity
         metadata:
           unit_of_measurement: "kWh"
 
@@ -31,7 +39,7 @@ sensors:
       efficiency_analysis:
         formula: "solar_power / (solar_power + grid_power) * panel_efficiency"
         variables:
-          panel_efficiency: "sensor.solar_panel_efficiency"
+          panel_efficiency: sensor.solar_panel_efficiency
         metadata:
           unit_of_measurement: "%"
 
@@ -52,9 +60,9 @@ sensors:
     name: "Temperature Analysis"
     formula: "indoor_temp + outdoor_temp"
     variables:
-      indoor_temp: "sensor.living_room_temperature"
-      outdoor_temp: "sensor.outdoor_temperature"
-      humidity: "sensor.living_room_humidity"
+      indoor_temp: sensor.living_room_temperature
+      outdoor_temp: sensor.outdoor_temperature
+      humidity: sensor.living_room_humidity
     attributes:
       # Uses sensor-level variables
       average_temp:
@@ -64,18 +72,18 @@ sensors:
 
       # Overrides sensor-level outdoor_temp with different entity
       temperature_difference:
-        formula: "indoor_temp - outdoor_temp"  # outdoor_temp here refers to attribute variable
+        formula: "indoor_temp - weather_station_temp"  # Use different variable name to avoid conflict
         variables:
-          outdoor_temp: "sensor.weather_station_temperature"  # Different entity than sensor level
+          weather_station_temp: sensor.weather_station_temperature  # Different entity than sensor level
         metadata:
           unit_of_measurement: "°C"
 
       # Uses attribute-specific variables only
       comfort_index:
-        formula: "if(comfort_temp > 20 and comfort_humidity < 60, 'Comfortable', 'Uncomfortable')"
+        formula: "'Comfortable' if comfort_temp > 20 and comfort_humidity < 60 else 'Uncomfortable'"
         variables:
-          comfort_temp: "sensor.bedroom_temperature"
-          comfort_humidity: "sensor.bedroom_humidity"
+          comfort_temp: sensor.bedroom_temperature
+          comfort_humidity: sensor.bedroom_humidity
         metadata:
           unit_of_measurement: ""
 
@@ -95,19 +103,24 @@ sensors:
     name: "Home Automation Hub"
     formula: "total_devices"
     variables:
-      total_devices: "sensor.total_smart_devices"
+      total_devices: sensor.total_smart_devices
     attributes:
       # Collection variables in attributes
       security_status:
-        formula: 'count("device_class:door|device_class:window|device_class:motion") - count("device_class:door|device_class:window|device_class:motion".state="unavailable")'
+        formula: "security_devices - untriggered_security_devices"
         metadata:
           unit_of_measurement: "active"
+        variables:
+          security_devices:
+            formula: "count(device_class:door|device_class:window|device_class:motion)"
+          untriggered_security_devices:
+            formula: "count(device_class:door|window|motion !state:unavailable|unknown|off)"
 
       # Numeric literals in attribute variables
       energy_cost_projection:
         formula: "current_usage * rate_per_kwh * hours_per_day * days_per_month"
         variables:
-          current_usage: "sensor.current_power_usage"
+          current_usage: sensor.current_power_usage
           rate_per_kwh: 0.12  # Literal: cost per kWh
           hours_per_day: 24   # Literal: hours
           days_per_month: 30  # Literal: days
@@ -116,19 +129,19 @@ sensors:
 
       # Simple pattern variables in attributes
       circuit_analysis:
-        formula: "sum(circuit_power_1) + sum(circuit_power_2)"
+        formula: "circuit_power_1 + circuit_power_2"
         variables:
-          circuit_power_1: "sensor.circuit_1_power"
-          circuit_power_2: "sensor.circuit_2_power"
+          circuit_power_1: sensor.circuit_1_power
+          circuit_power_2: sensor.circuit_2_power
         metadata:
           unit_of_measurement: "W"
 
       # State and attribute filtering
       low_battery_alert:
-        formula: "count(battery_sensor_1) + count(battery_sensor_2)"
+        formula: "battery_sensor_1 + battery_sensor_2"
         variables:
-          battery_sensor_1: "sensor.battery_1_level"
-          battery_sensor_2: "sensor.battery_2_level"
+          battery_sensor_1: sensor.battery_1_level
+          battery_sensor_2: sensor.battery_2_level
         metadata:
           unit_of_measurement: "devices"
 
@@ -147,22 +160,22 @@ sensors:
     name: "Solar Inverter Analysis"
     formula: "inverter_power"
     variables:
-      inverter_power: "sensor.solar_inverter_power"
+      inverter_power: sensor.solar_inverter_power
     attributes:
       # Weather correlation analysis
       weather_efficiency:
         formula: "inverter_power / (irradiance * panel_area) * 100"
         variables:
-          irradiance: "sensor.solar_irradiance"
+          irradiance: sensor.solar_irradiance
           panel_area: 50  # Literal: square meters of panels
         metadata:
           unit_of_measurement: "%"
 
       # Temperature impact on efficiency
       temp_efficiency:
-        formula: "if(panel_temp > optimal_temp, 100 - (panel_temp - optimal_temp) * temp_coeff, 100)"
+        formula: "100 - (panel_temp - optimal_temp) * temp_coeff if panel_temp > optimal_temp else 100"
         variables:
-          panel_temp: "sensor.solar_panel_temperature"
+          panel_temp: sensor.solar_panel_temperature
           optimal_temp: 25    # Literal: optimal temperature in Celsius
           temp_coeff: 0.4     # Literal: efficiency loss per degree
         metadata:
@@ -170,9 +183,9 @@ sensors:
 
       # Maintenance scheduling
       maintenance_due:
-        formula: "if(days_since_maintenance > maintenance_interval, 'Due', 'OK')"
+        formula: "'Due' if days_since_maintenance > maintenance_interval else 'OK'"
         variables:
-          days_since_maintenance: "sensor.days_since_solar_maintenance"
+          days_since_maintenance: sensor.days_since_solar_maintenance
           maintenance_interval: 180  # Literal: days between maintenance
         metadata:
           unit_of_measurement: ""
@@ -189,8 +202,3 @@ sensors:
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
-    # Device association
-    device_identifier: "solar_inverter_001"
-    device_name: "Main Solar Inverter"
-    device_manufacturer: "SolarTech"
-    device_model: "ST-5000"

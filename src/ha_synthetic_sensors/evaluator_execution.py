@@ -6,12 +6,24 @@ import logging
 from typing import Any
 
 from .config_models import FormulaConfig, SensorConfig
+from .constants_evaluation_results import (
+    ERROR_KEYWORD_DIVISION_BY_ZERO,
+    ERROR_KEYWORD_NAME,
+    ERROR_KEYWORD_NOT_DEFINED,
+    ERROR_KEYWORD_UNDEFINED,
+    ERROR_KEYWORD_VARIABLE,
+    RESULT_KEY_ERROR,
+    RESULT_KEY_SUCCESS,
+    RESULT_KEY_VALUE,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from .core_formula_evaluator import CoreFormulaEvaluator
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_error_handler import EvaluatorErrorHandler
 from .evaluator_handlers import HandlerFactory
 from .exceptions import BackingEntityResolutionError
-from .type_definitions import ContextValue, EvaluationResult
+from .type_definitions import ContextValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,33 +82,36 @@ class FormulaExecutionEngine:
         # Delegate to the extracted core formula evaluator
         return self._core_evaluator.evaluate_formula(resolved_formula, original_formula, handler_context)
 
-    def handle_value_error(self, error: ValueError, formula_name: str) -> EvaluationResult:
+    def handle_value_error(self, error: ValueError, formula_name: str) -> dict[str, Any]:
         """Handle ValueError during formula evaluation."""
         error_msg = str(error)
 
         # Enhanced error handling with more specific checks
-        if any(keyword in error_msg.lower() for keyword in ["undefined", "not defined", "name", "variable"]):
+        if any(
+            keyword in error_msg.lower()
+            for keyword in [ERROR_KEYWORD_UNDEFINED, ERROR_KEYWORD_NOT_DEFINED, ERROR_KEYWORD_NAME, ERROR_KEYWORD_VARIABLE]
+        ):
             # Variable/name resolution errors
             _LOGGER.warning("Variable resolution error in formula '%s': %s", formula_name, error_msg)
             self._error_handler.increment_error_count(formula_name)
-            return EvaluationResult(success=False, value="unavailable", error=error_msg)
+            return {RESULT_KEY_SUCCESS: False, RESULT_KEY_VALUE: STATE_UNAVAILABLE, RESULT_KEY_ERROR: error_msg}
 
-        if "division by zero" in error_msg.lower():
+        if ERROR_KEYWORD_DIVISION_BY_ZERO in error_msg.lower():
             # Mathematical errors that might be transitory
             _LOGGER.warning("Mathematical error in formula '%s': %s", formula_name, error_msg)
             self._error_handler.increment_transitory_error_count(formula_name)
-            return EvaluationResult(success=False, value="unknown", error=error_msg)
+            return {RESULT_KEY_SUCCESS: False, RESULT_KEY_VALUE: STATE_UNKNOWN, RESULT_KEY_ERROR: error_msg}
 
         # Default: treat as fatal error
         _LOGGER.warning("Fatal error in formula '%s': %s", formula_name, error_msg)
         self._error_handler.increment_error_count(formula_name)
-        return EvaluationResult(success=False, value="unavailable", error=error_msg)
+        return {RESULT_KEY_SUCCESS: False, RESULT_KEY_VALUE: STATE_UNAVAILABLE, RESULT_KEY_ERROR: error_msg}
 
-    def handle_backing_entity_error(self, error: BackingEntityResolutionError, formula_name: str) -> EvaluationResult:
+    def handle_backing_entity_error(self, error: BackingEntityResolutionError, formula_name: str) -> dict[str, Any]:
         """Handle BackingEntityResolutionError - these are always fatal (missing entities)."""
         _LOGGER.warning("Backing entity resolution error in formula '%s': %s", formula_name, error)
         self._error_handler.increment_error_count(formula_name)
-        return EvaluationResult(success=False, value="unavailable", error=str(error))
+        return {RESULT_KEY_SUCCESS: False, RESULT_KEY_VALUE: STATE_UNAVAILABLE, RESULT_KEY_ERROR: str(error)}
 
     def convert_handler_result(self, result: Any) -> bool | str | float | int:
         """Convert handler result to expected types."""

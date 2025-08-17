@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from ...config_models import SensorConfig
+from ...constants_metadata import METADATA_PROPERTY_DEVICE_CLASS
 from ...dependency_parser import DependencyParser
 from .base_manager import DependencyManager
 
@@ -184,7 +185,7 @@ class CrossSensorDependencyManager(DependencyManager):
         dependencies: set[str] = set()
 
         # Handle device_class pattern specifically (most common case)
-        if query.query_type == "device_class":
+        if query.query_type == METADATA_PROPERTY_DEVICE_CLASS:
             # Find all sensors in registry with matching device_class
             target_device_class = query.pattern.lower()
 
@@ -193,7 +194,7 @@ class CrossSensorDependencyManager(DependencyManager):
                     # Extract device_class from sensor metadata
                     metadata = sensor_data.get("metadata", {})
                     if isinstance(metadata, dict):
-                        sensor_device_class = metadata.get("device_class", "").lower()
+                        sensor_device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS, "").lower()
                         if sensor_device_class == target_device_class:
                             dependencies.add(sensor_name)
 

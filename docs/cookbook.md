@@ -405,7 +405,7 @@ sensors:
   # Data staleness detection
   power_data_freshness:
     name: "Power Data Freshness"
-    formula: "(now() - metadata(power_entity, 'last_changed')) < hours(1) ? 1 : 0" # Using metadata function to retrieve last_changed
+    formula: "(now() - metadata(power_entity, \"last_changed\")) < hours(1) ? 1 : 0" # Using metadata function to retrieve last_changed
     variables:
       power_entity: "sensor.power_meter"
     metadata: # metadata you set on your sensor
@@ -414,7 +414,7 @@ sensors:
   # Entity domain validation
   entity_type_check:
     name: "Entity Type Validation"
-    formula: "metadata(sensor.temp_probe, 'domain') == 'sensor' ? 1 : 0"
+    formula: "metadata(sensor.temp_probe, \"domain\") == \"sensor\" ? 1 : 0"
     metadata:
       unit_of_measurement: "binary"
 
@@ -427,14 +427,14 @@ sensors:
       efficiency_factor: 0.95
     attributes:
       source_name:
-        formula: "metadata(power_sensor, 'friendly_name')" # Retrieve friendly name
-      data_age_minutes:
-        formula: "(now() - metadata(power_sensor, 'last_changed')) / minutes(1)"
-        metadata:
-          unit_of_measurement: "min"
-          suggested_display_precision: 1
-      is_recent:
-        formula: "metadata(power_sensor, 'last_updated') > (now() - minutes(5)) ? 'Yes' : 'No'"
+        formula: "metadata(power_sensor, \"friendly_name\")" # Retrieve friendly name
+              data_age_minutes:
+          formula: "(now() - metadata(power_sensor, \"last_changed\")) / minutes(1)"
+          metadata:
+            unit_of_measurement: "min"
+            suggested_display_precision: 1
+        is_recent:
+          formula: "metadata(power_sensor, \"last_updated\") > (now() - minutes(5)) ? \"Yes\" : \"No\""
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -443,7 +443,7 @@ sensors:
   self_reference_metadata:
     name: "Self Reference Metadata"
     entity_id: "sensor.power_meter"
-    formula: "metadata(state, 'object_id')" # Uses state token to reference current sensor by entity_id
+    formula: "metadata(state, \"object_id\")" # Uses state token to reference current sensor by entity_id
     metadata:
       unit_of_measurement: ""
 ```
@@ -514,7 +514,7 @@ Compare datetime strings with full timezone support:
 sensors:
   recent_devices:
     name: "Recent Devices"
-    formula: count("attribute:last_seen>=cutoff_date")
+    formula: "count(attribute:last_seen>=cutoff_date)"
     variables:
       cutoff_date: "2024-01-01T00:00:00Z"
     metadata:
@@ -523,7 +523,7 @@ sensors:
 
   maintenance_due:
     name: "Maintenance Due"
-    formula: count("attribute:last_maintenance<cutoff_date|attribute:next_service<=recent_threshold")
+    formula: "count(attribute:last_maintenance<cutoff_date|attribute:next_service<=recent_threshold)"
     variables:
       cutoff_date: "2024-01-01T00:00:00Z"
       recent_threshold: "2024-06-01T12:00:00+00:00"
@@ -540,7 +540,7 @@ Compare semantic version strings with automatic parsing:
 sensors:
   compatible_firmware:
     name: "Compatible Firmware"
-    formula: count("attribute:firmware_version>=min_firmware")
+    formula: "count(attribute:firmware_version>=min_firmware)"
     variables:
       min_firmware: "v2.1.0"
     metadata:
@@ -549,7 +549,7 @@ sensors:
 
   upgrade_candidates:
     name: "Upgrade Candidates"
-    formula: "count('attribute:current_version<target_version') - count('attribute:min_supported_version>target_version')"
+    formula: "count(attribute:current_version<target_version) - count(attribute:min_supported_version>target_version)"
     variables:
       target_version: "v3.0.0"
     metadata:
@@ -565,7 +565,7 @@ Use `in` and `not in` operators for substring matching:
 sensors:
   living_room_devices:
     name: "Living Room Devices"
-    formula: count("attribute:name in living_filter")
+    formula: "count(attribute:name in living_filter)"
     variables:
       living_filter: "Living"
     metadata:
@@ -574,7 +574,7 @@ sensors:
 
   non_error_devices:
     name: "Non Error Devices"
-    formula: count("state not in error_pattern")
+    formula: "count(state not in error_pattern)"
     variables:
       error_pattern: "error"
     metadata:
@@ -583,7 +583,7 @@ sensors:
 
   multi_room_devices:
     name: "Multi Room Devices"
-    formula: count("attribute:name in 'Living'|attribute:name in 'Bedroom'")
+    formula: "count(attribute:name in 'Living'|attribute:name in 'Bedroom')"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:home-variant"
@@ -597,7 +597,7 @@ Standard numeric comparisons with support for floating-point precision:
 sensors:
   high_power_devices:
     name: "High Power Devices"
-    formula: count("attribute:power_rating>=high_threshold")
+    formula: "count(attribute:power_rating>=high_threshold)"
     variables:
       high_threshold: 800
     metadata:
@@ -606,7 +606,7 @@ sensors:
 
   efficient_devices:
     name: "Efficient Devices"
-    formula: count("attribute:efficiency_rating<=precision_value")
+    formula: "count(attribute:efficiency_rating<=precision_value)"
     variables:
       precision_value: 42.5
     metadata:
@@ -622,7 +622,7 @@ Compare values for exact matches or differences:
 sensors:
   active_devices:
     name: "Active Devices"
-    formula: count("state:==target_state")
+    formula: "count(state==target_state)"
     variables:
       target_state: "on"
     metadata:
@@ -631,7 +631,7 @@ sensors:
 
   non_auto_devices:
     name: "Non Auto Devices"
-    formula: count("attribute:mode!=target_mode")
+    formula: "count(attribute:mode!=target_mode)"
     variables:
       target_mode: "auto"
     metadata:
@@ -918,7 +918,7 @@ sensors:
     name: "Concatenation with Functions Test"
     formula: "'Device: ' + trim(device_name) + ' | Length: ' + len(device_name)"
     variables:
-      device_name: "sensor.device_name"
+      device_name: sensor.device_name # attribute reference
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
@@ -929,7 +929,7 @@ sensors:
     formula: "contains('Device: ' + device_type, prefix + ' Type')"
     variables:
       device_type: "sensor.device_type"
-      prefix: "sensor.type_prefix"
+      prefix: sensor.type_prefix # attribute reference
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
@@ -940,7 +940,7 @@ sensors:
     formula: "'Power: ' + str(power_value * 1.1) + 'W | Status: ' + upper(status)"
     variables:
       power_value: "sensor.power_reading"
-      status: "sensor.device_status"
+      status: sensor.device_status # attribute reference
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
@@ -1025,7 +1025,7 @@ sensors:
     name: "Next Maintenance"
     formula: "date(last_service_date) + months(6)"
     variables:
-      last_service_date: "sensor.last_maintenance_date"
+      last_service_date: sensor.last_maintenance_date # attribute reference
     metadata:
       device_class: "date"
 
@@ -1034,7 +1034,7 @@ sensors:
     name: "Project Deadline"
     formula: "date(start_date) + weeks(4) + days(3)"
     variables:
-      start_date: "sensor.project_start_date"
+      start_date: sensor.project_start_date # attribute reference
     metadata:
       device_class: "date"
 
@@ -1043,7 +1043,7 @@ sensors:
     name: "Days Since Created"
     formula: "date(now()) - date(created_timestamp)"
     variables:
-      created_timestamp: "sensor.creation_date"
+      created_timestamp: sensor.creation_date # attribute reference
     metadata:
       unit_of_measurement: "days"
       device_class: "duration"
@@ -1053,7 +1053,7 @@ sensors:
     name: "Maintenance Overdue"
     formula: "date(now()) > date(last_service) + months(12) ? 1 : 0"
     variables:
-      last_service: "sensor.last_maintenance_date"
+      last_service: sensor.last_maintenance_date # attribute reference
     metadata:
       unit_of_measurement: "binary"
       icon: "mdi:alert"
@@ -1082,8 +1082,7 @@ sensors:
   complex_schedule:
     name: "Complex Schedule"
     formula: "date(base_date) + months(3) + weeks(2) + days(5)"
-    variables:
-      base_date: "sensor.base_date"
+    variables: base_date:"sensor.base_date # attribute reference
     metadata:
       device_class: "date"
 
@@ -1102,7 +1101,7 @@ sensors:
     name: "UTC Conversion"
     formula: "date(local_time) + hours(offset)"
     variables:
-      local_time: "sensor.local_timestamp"
+      local_time: sensor.local_timestamp # attribute reference
       offset: -5
     metadata:
       device_class: "timestamp"
@@ -1112,7 +1111,7 @@ sensors:
     name: "Energy Period"
     formula: "date(now()) - date(period_start) + days(1)"
     variables:
-      period_start: "sensor.energy_period_start"
+      period_start: sensor.energy_period_start # attribute reference
     metadata:
       unit_of_measurement: "days"
       device_class: "duration"
@@ -1163,9 +1162,9 @@ sensors:
   # Basic collection patterns
   total_circuit_power:
     name: "Total Circuit Power"
-    formula: sum("regex:circuit_pattern")
+    formula: "sum(regex:circuit_pattern)"
     variables:
-      circuit_pattern: "input_text.circuit_regex_pattern"
+      circuit_pattern: input_text.circuit_regex_pattern
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1174,7 +1173,7 @@ sensors:
   # Collection with attribute comparisons - filter by thresholds
   high_power_devices:
     name: "High Power Devices"
-    formula: count("attribute:power_rating>=1000")
+    formula: "count("attribute:power_rating>=1000)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:flash"
@@ -1182,7 +1181,7 @@ sensors:
   # Collection with exclusions - exclude specific sensors
   power_without_kitchen:
     name: "Power Without Kitchen"
-    formula: sum("device_class:power", !"kitchen_oven", !"kitchen_fridge")
+    formula: "sum(device_class:power, !"kitchen_oven", !"kitchen_fridge")"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1191,7 +1190,7 @@ sensors:
   # Collection with pattern exclusions - exclude entire areas
   main_floor_power:
     name: "Main Floor Power"
-    formula: sum("device_class:power", !"area:basement", !"area:garage")
+    formula: "sum("device_class:power, !area:basement, !area:garage)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1200,7 +1199,7 @@ sensors:
   # OR patterns for multiple conditions
   security_monitoring:
     name: "Security Device Count"
-    formula: count("device_class:door|device_class:window|device_class:lock")
+    formula: "count(device_class:door|device_class:window|device_class:lock)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:security"
@@ -1208,7 +1207,7 @@ sensors:
   # Enhanced syntax examples with string containment
   room_devices:
     name: "Living Room Devices"
-    formula: count("attribute:name in 'Living'")
+    formula: "count(attribute:name in 'Living')"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:sofa"
@@ -1216,7 +1215,7 @@ sensors:
   # Version-based filtering
   updated_firmware:
     name: "Updated Firmware Devices"
-    formula: count("attribute:firmware_version>='v2.1.0'")
+    formula: "count(attribute:firmware_version>='v2.1.0')"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:update"
@@ -1224,7 +1223,7 @@ sensors:
   # Enhanced syntax examples
   active_devices:
     name: "Active Devices"
-    formula: count("state:on|active|connected")
+    formula: "count(state:on|active|connected)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:check-circle"
@@ -1232,7 +1231,7 @@ sensors:
   # Complex collection with mixed exclusions
   filtered_power_analysis:
     name: "Filtered Power Analysis"
-    formula: avg("device_class:power", !"high_power_device", !"area:utility_room")
+    formula: "avg(device_class:power, !high_power_device, !area:utility_room)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1248,7 +1247,7 @@ sensors:
   # Basic negation
   non_error_devices:
     name: "Non Error Devices"
-    formula: count("state:!error")
+    formula: "count(state!=error)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:shield-check"
@@ -1256,7 +1255,7 @@ sensors:
   # Multiple negations
   filtered_devices:
     name: "Filtered Devices"
-    formula: count("device_class:power", !"area:basement", !"high_power_device")
+    formula: "count(device_class:power !area:basement | !attribute:high_power_device)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:filter"
@@ -1264,7 +1263,7 @@ sensors:
   # Negation with patterns
   non_kitchen_power:
     name: "Non Kitchen Power"
-    formula: sum("device_class:power", !"area:kitchen")
+    formula: "sum(device_class:power, !area:kitchen)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1273,7 +1272,7 @@ sensors:
   # Complex negation patterns
   selective_devices:
     name: "Selective Devices"
-    formula: count("device_class:sensor", !"attribute:name in 'test'", !"area:utility")
+    formula: "count(device_class:sensor, !attribute:name in 'test', !area:utility)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:select"
@@ -1281,7 +1280,7 @@ sensors:
   # Negation with multiple conditions
   filtered_analysis:
     name: "Filtered Analysis"
-    formula: avg("device_class:power", !"state:off", !"attribute:maintenance_mode:true")
+    formula: "avg(device_class:power, !state:off, !attribute:maintenance_mode:true)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1318,14 +1317,15 @@ Collection functions support excluding entities using the `!` prefix:
 
 ### Calculations That Reference None, Unavailable, or Unknown States
 
-Handle entities that are not ready gracefully in dependency chains by using UNAVAILABLE or UNKONWN: Note that entities that
-cannot be referenced are fatal errors and checked on YAML import.
+Handle entities that are not ready gracefully in dependency chains by using UNAVAILABLE or UNKNOWN: Note that entities that
+cannot be referenced are fatal errors and checked on YAML import. All None, "unavailable", and "unknown" values default to
+`STATE_UNKNOWN` for consistency.
 
 ```yaml
 sensors:
   robust_dependency_sensor:
     name: "Robust Dependency Sensor"
-    formula: "primary_source + backup_source" # Resolves to None or unready state...
+    formula: "primary_source + backup_source" # Resolves to STATE_UNKNOWN if entities are unready...
     UNAVAILABLE: "fallback_calculation" # Use this calculation instead
     variables:
       primary_source: "sensor.primary_entity"
@@ -1360,9 +1360,10 @@ UNAVAILABLE:
 ```
 
 When a formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead.
+All None, "unavailable", and "unknown" values default to `STATE_UNKNOWN` for consistency.
 
-- **UNAVAILABLE**: Triggered when an entity is unavailable or doesn't exist
-- **UNKNOWN**: Triggered when an entity exists but has an unknown state
+- **UNAVAILABLE**: Triggered when an entity is unavailable or doesn't exist (defaults to `STATE_UNKNOWN`)
+- **UNKNOWN**: Triggered when an entity exists but has an unknown state (defaults to `STATE_UNKNOWN`)
 - **Fallback chains**: Alternate formulas can reference other entities that may also have alternate handling
 - **Nested handling**: Alternate formulas can themselves include alternate state handling
 - **Variable scope**: Alternate formulas inherit the same variable scope as the main formula
@@ -1421,4 +1422,5 @@ This example shows alternate state handling in:
 - **Attribute formulas** with independent fallback logic
 
 Alternate state handling ensures your synthetic sensors remain functional even when dependencies are unavailable, providing
-robust fallback mechanisms for critical calculations.
+robust fallback mechanisms for critical calculations. All problematic states (None, "unavailable", "unknown") default to
+`STATE_UNKNOWN` for consistent behavior.

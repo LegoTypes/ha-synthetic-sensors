@@ -2,17 +2,56 @@
 
 from typing import Any
 
-# Metadata property names
-METADATA_PROPERTY_UNIT_OF_MEASUREMENT = "unit_of_measurement"
-METADATA_PROPERTY_DEVICE_CLASS = "device_class"
-METADATA_PROPERTY_STATE_CLASS = "state_class"
-METADATA_PROPERTY_ICON = "icon"
-METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION = "suggested_display_precision"
-METADATA_PROPERTY_ENTITY_REGISTRY_ENABLED_DEFAULT = "entity_registry_enabled_default"
-METADATA_PROPERTY_ENTITY_REGISTRY_VISIBLE_DEFAULT = "entity_registry_visible_default"
-METADATA_PROPERTY_ASSUMED_STATE = "assumed_state"
-METADATA_PROPERTY_OPTIONS = "options"
-METADATA_PROPERTY_ENTITY_CATEGORY = "entity_category"
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.const import (
+    ATTR_ASSUMED_STATE,
+    ATTR_DEVICE_CLASS,
+    ATTR_ICON,
+    ATTR_UNIT_OF_MEASUREMENT,
+    CONF_ENTITY_CATEGORY,
+    PERCENTAGE,
+    UnitOfEnergy,
+    UnitOfPower,
+)
+from homeassistant.helpers.entity import EntityCategory
+
+# Metadata property names (pointing to HA constants where applicable)
+METADATA_PROPERTY_UNIT_OF_MEASUREMENT = ATTR_UNIT_OF_MEASUREMENT  # HA entity attribute
+METADATA_PROPERTY_DEVICE_CLASS = ATTR_DEVICE_CLASS  # HA entity property (SensorDeviceClass)
+METADATA_PROPERTY_STATE_CLASS = "state_class"  # HA entity property (SensorStateClass) - no HA constant
+METADATA_PROPERTY_ICON = ATTR_ICON  # HA entity property
+METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION = "suggested_display_precision"  # Custom property
+METADATA_PROPERTY_ENTITY_REGISTRY_ENABLED_DEFAULT = "entity_registry_enabled_default"  # HA entity registry
+METADATA_PROPERTY_ENTITY_REGISTRY_VISIBLE_DEFAULT = "entity_registry_visible_default"  # HA entity registry
+METADATA_PROPERTY_ASSUMED_STATE = ATTR_ASSUMED_STATE  # HA entity property
+METADATA_PROPERTY_OPTIONS = "options"  # Custom property
+METADATA_PROPERTY_ENTITY_CATEGORY = CONF_ENTITY_CATEGORY  # HA entity property (EntityCategory)
+
+# HA Constant Values (pointing to actual HA enum values)
+# These ensure we're always using the correct HA values
+HA_DEVICE_CLASS_POWER = SensorDeviceClass.POWER.value
+HA_DEVICE_CLASS_ENERGY = SensorDeviceClass.ENERGY.value
+HA_DEVICE_CLASS_TEMPERATURE = SensorDeviceClass.TEMPERATURE.value
+HA_DEVICE_CLASS_HUMIDITY = SensorDeviceClass.HUMIDITY.value
+HA_DEVICE_CLASS_BATTERY = SensorDeviceClass.BATTERY.value
+HA_DEVICE_CLASS_MONETARY = SensorDeviceClass.MONETARY.value
+
+HA_STATE_CLASS_MEASUREMENT = SensorStateClass.MEASUREMENT.value
+HA_STATE_CLASS_TOTAL = SensorStateClass.TOTAL.value
+HA_STATE_CLASS_TOTAL_INCREASING = SensorStateClass.TOTAL_INCREASING.value
+
+HA_ENTITY_CATEGORY_CONFIG = EntityCategory.CONFIG.value
+HA_ENTITY_CATEGORY_DIAGNOSTIC = EntityCategory.DIAGNOSTIC.value
+
+# Common HA Unit Values
+HA_UNIT_PERCENTAGE = PERCENTAGE
+HA_UNIT_POWER_WATT = UnitOfPower.WATT
+HA_UNIT_ENERGY_WATT_HOUR = UnitOfEnergy.WATT_HOUR
+
+# HA Enum Aliases (for validation and type safety)
+HA_DEVICE_CLASSES = SensorDeviceClass
+HA_STATE_CLASSES = SensorStateClass
+HA_ENTITY_CATEGORIES = EntityCategory
 
 # Metadata handler constants
 METADATA_FUNCTION_NAME = "metadata"
@@ -51,15 +90,13 @@ METADATA_BOOLEAN_PROPERTIES = [
     METADATA_PROPERTY_ASSUMED_STATE,
 ]
 
-# Entity category values
-ENTITY_CATEGORY_CONFIG = "config"
-ENTITY_CATEGORY_DIAGNOSTIC = "diagnostic"
-ENTITY_CATEGORY_SYSTEM = "system"
+# Entity category values (pointing to HA EntityCategory enum values)
+ENTITY_CATEGORY_CONFIG = HA_ENTITY_CATEGORY_CONFIG
+ENTITY_CATEGORY_DIAGNOSTIC = HA_ENTITY_CATEGORY_DIAGNOSTIC
 
 VALID_ENTITY_CATEGORIES = [
     ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
-    ENTITY_CATEGORY_SYSTEM,
 ]
 
 # Entity-only metadata properties
@@ -80,10 +117,10 @@ ENTITY_ONLY_METADATA_PROPERTIES: dict[str, str] = {
 # These properties can be safely used on both entities and attributes
 ATTRIBUTE_ALLOWED_METADATA_PROPERTIES: frozenset[str] = frozenset(
     {
-        "unit_of_measurement",  # Unit of measurement for the value
-        "suggested_display_precision",  # Number of decimal places to display
+        METADATA_PROPERTY_UNIT_OF_MEASUREMENT,  # Unit of measurement for the value
+        METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION,  # Number of decimal places to display
         "suggested_unit_of_measurement",  # Suggested unit for display
-        "icon",  # Icon to display in the UI
+        METADATA_PROPERTY_ICON,  # Icon to display in the UI
         "attribution",  # Data source attribution text
         # Custom properties (any property not in entity-only list is allowed)
     }
@@ -98,8 +135,8 @@ ALL_KNOWN_METADATA_PROPERTIES: frozenset[str] = frozenset(
 # These properties control entity registry behavior
 ENTITY_REGISTRY_METADATA_PROPERTIES: frozenset[str] = frozenset(
     {
-        "entity_registry_enabled_default",
-        "entity_registry_visible_default",
+        METADATA_PROPERTY_ENTITY_REGISTRY_ENABLED_DEFAULT,
+        METADATA_PROPERTY_ENTITY_REGISTRY_VISIBLE_DEFAULT,
     }
 )
 
@@ -107,7 +144,7 @@ ENTITY_REGISTRY_METADATA_PROPERTIES: frozenset[str] = frozenset(
 # These properties control how HA handles statistics and long-term data
 STATISTICS_METADATA_PROPERTIES: frozenset[str] = frozenset(
     {
-        "state_class",
+        METADATA_PROPERTY_STATE_CLASS,
         "last_reset",
     }
 )
@@ -116,9 +153,9 @@ STATISTICS_METADATA_PROPERTIES: frozenset[str] = frozenset(
 # These properties control how entities appear in the Home Assistant UI
 UI_METADATA_PROPERTIES: frozenset[str] = frozenset(
     {
-        "entity_category",
-        "icon",
-        "suggested_display_precision",
+        METADATA_PROPERTY_ENTITY_CATEGORY,
+        METADATA_PROPERTY_ICON,
+        METADATA_PROPERTY_SUGGESTED_DISPLAY_PRECISION,
         "suggested_unit_of_measurement",
     }
 )
@@ -127,8 +164,8 @@ UI_METADATA_PROPERTIES: frozenset[str] = frozenset(
 # These properties control core sensor behavior and state handling
 SENSOR_BEHAVIOR_METADATA_PROPERTIES: frozenset[str] = frozenset(
     {
-        "device_class",
-        "assumed_state",
+        METADATA_PROPERTY_DEVICE_CLASS,
+        METADATA_PROPERTY_ASSUMED_STATE,
         "available",
         "force_update",
     }
@@ -264,3 +301,84 @@ def validate_attribute_metadata_properties(metadata: dict[str, Any]) -> list[str
             errors.append(f"Invalid attribute metadata property '{property_name}': {reason}")
 
     return errors
+
+
+def get_ha_device_class_value(device_class: str) -> str | None:
+    """Get the HA device class enum value for a string device class.
+
+    Args:
+        device_class: Device class string to validate
+
+    Returns:
+        The validated device class string or None if invalid
+    """
+    try:
+        return HA_DEVICE_CLASSES(device_class).value
+    except ValueError:
+        return None
+
+
+def get_ha_state_class_value(state_class: str) -> str | None:
+    """Get the HA state class enum value for a string state class.
+
+    Args:
+        state_class: State class string to validate
+
+    Returns:
+        The validated state class string or None if invalid
+    """
+    try:
+        return HA_STATE_CLASSES(state_class).value
+    except ValueError:
+        return None
+
+
+def get_ha_entity_category_value(entity_category: str) -> str | None:
+    """Get the HA entity category enum value for a string entity category.
+
+    Args:
+        entity_category: Entity category string to validate
+
+    Returns:
+        The validated entity category string or None if invalid
+    """
+    try:
+        return HA_ENTITY_CATEGORIES(entity_category).value
+    except ValueError:
+        return None
+
+
+def is_valid_ha_device_class(device_class: str) -> bool:
+    """Check if a device class string is a valid HA device class.
+
+    Args:
+        device_class: Device class string to validate
+
+    Returns:
+        True if the device class is valid
+    """
+    return get_ha_device_class_value(device_class) is not None
+
+
+def is_valid_ha_state_class(state_class: str) -> bool:
+    """Check if a state class string is a valid HA state class.
+
+    Args:
+        state_class: State class string to validate
+
+    Returns:
+        True if the state class is valid
+    """
+    return get_ha_state_class_value(state_class) is not None
+
+
+def is_valid_ha_entity_category(entity_category: str) -> bool:
+    """Check if an entity category string is a valid HA entity category.
+
+    Args:
+        entity_category: Entity category string to validate
+
+    Returns:
+        True if the entity category is valid
+    """
+    return get_ha_entity_category_value(entity_category) is not None

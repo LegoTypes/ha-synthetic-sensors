@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...constants_evaluation_results import RESULT_KEY_VALUE
 from ...exceptions import BackingEntityResolutionError
 from ...type_definitions import ContextValue, DataProviderResult, ReferenceValue
 from .base_resolver import VariableResolver
@@ -136,7 +137,7 @@ class StateResolver(VariableResolver):
             )
 
         # Get the state value from the result (using "value" field from data provider)
-        state_value = result.get("value")
+        state_value = result.get(RESULT_KEY_VALUE)
         if state_value is None:
             # None values are treated as unknown to allow for integration initialization
             _LOGGER.debug(

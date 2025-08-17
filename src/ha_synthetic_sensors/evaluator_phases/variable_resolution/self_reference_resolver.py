@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from ...constants_evaluation_results import RESULT_KEY_VALUE
 from ...constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
 from ...data_validation import validate_data_provider_result
 from ...exceptions import DataValidationError, FormulaEvaluationError
@@ -214,7 +215,7 @@ class SelfReferenceResolver(VariableResolver):
             if not validated_result.get("exists"):
                 return None
 
-            value = validated_result.get("value")
+            value = validated_result.get(RESULT_KEY_VALUE)
             return self._process_resolved_value(value, backing_entity_id, original_reference, "data provider")
 
         except DataValidationError:

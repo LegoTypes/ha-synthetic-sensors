@@ -26,6 +26,11 @@ except ImportError:
     HAS_JSONSCHEMA = False
 
 from .constants_formula import FORMULA_RESERVED_WORDS
+from .constants_metadata import (
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+)
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
 from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS
@@ -199,7 +204,7 @@ class SchemaValidator:
             for sensor_key, sensor_config in sensors.items():
                 # Validate device class using HA's built-in validation
                 metadata = sensor_config.get("metadata", {})
-                device_class = metadata.get("device_class")
+                device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS)
                 if device_class:
                     self._validate_device_class(sensor_key, device_class, errors)
 
@@ -217,8 +222,8 @@ class SchemaValidator:
     ) -> None:
         """Validate state_class compatibility with device_class using HA's mappings."""
         metadata = sensor_config.get("metadata", {})
-        state_class = metadata.get("state_class")
-        device_class = metadata.get("device_class", "")
+        state_class = metadata.get(METADATA_PROPERTY_STATE_CLASS)
+        device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS, "")
 
         if not state_class or not device_class:
             return
@@ -663,8 +668,8 @@ class SchemaValidator:
     ) -> None:
         """Validate unit_of_measurement compatibility with device_class (ERROR level)."""
         metadata = sensor_config.get("metadata", {})
-        device_class = metadata.get("device_class")
-        unit = metadata.get("unit_of_measurement")
+        device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS)
+        unit = metadata.get(METADATA_PROPERTY_UNIT_OF_MEASUREMENT)
 
         if not device_class or not unit:
             return  # No validation needed if either is missing

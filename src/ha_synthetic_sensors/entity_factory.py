@@ -7,12 +7,27 @@ and entity descriptions.
 
 from dataclasses import dataclass
 import logging
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from homeassistant.core import HomeAssistant
 
 from .config_types import AttributeConfigDict, SensorConfigDict
+from .constants_metadata import (
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_ICON,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+)
 from .name_resolver import NameResolver
+
+# Entity creation result keys
+ENTITY_KEY_SUCCESS = "success"
+ENTITY_KEY_ENTITY = "entity"
+ENTITY_KEY_ERRORS = "errors"
+
+# Validation result keys
+VALIDATION_KEY_IS_VALID = "is_valid"
+VALIDATION_KEY_ERRORS = "errors"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -130,10 +145,10 @@ class EntityFactory:
         # Formula metadata takes priority over sensor metadata
         merged_metadata = {**sensor_metadata, **formula_metadata}
 
-        icon = merged_metadata.get("icon")
-        device_class = merged_metadata.get("device_class")
-        unit_of_measurement = merged_metadata.get("unit_of_measurement")
-        state_class = merged_metadata.get("state_class")
+        icon = merged_metadata.get(METADATA_PROPERTY_ICON)
+        device_class = merged_metadata.get(METADATA_PROPERTY_DEVICE_CLASS)
+        unit_of_measurement = merged_metadata.get(METADATA_PROPERTY_UNIT_OF_MEASUREMENT)
+        state_class = merged_metadata.get(METADATA_PROPERTY_STATE_CLASS)
 
         return EntityDescription(
             unique_id=unique_id,
@@ -168,9 +183,12 @@ class EntityFactory:
 
         try:
             entity = MockSensorEntity(sensor_config)
-            return {"success": True, "entity": entity, "errors": []}
+            # Build result using constants
+            success_fields = {ENTITY_KEY_SUCCESS: True, ENTITY_KEY_ENTITY: entity, ENTITY_KEY_ERRORS: []}
+            return cast(EntityCreationResult, success_fields)
         except Exception as e:
-            return {"success": False, "entity": None, "errors": [str(e)]}
+            error_fields = {ENTITY_KEY_SUCCESS: False, ENTITY_KEY_ENTITY: None, ENTITY_KEY_ERRORS: [str(e)]}
+            return cast(EntityCreationResult, error_fields)
 
     def validate_entity_configuration(self, sensor_config: SensorConfigDict) -> ValidationResult:
         """Validate entity configuration for completeness and correctness.
@@ -191,4 +209,5 @@ class EntityFactory:
         if not sensor_config.get("formula"):
             errors.append("Sensor must have 'formula' field")
 
-        return {"is_valid": len(errors) == 0, "errors": errors}
+        validation_fields = {VALIDATION_KEY_IS_VALID: len(errors) == 0, VALIDATION_KEY_ERRORS: errors}
+        return cast(ValidationResult, validation_fields)

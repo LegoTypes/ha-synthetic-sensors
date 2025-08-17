@@ -20,6 +20,9 @@ dmypy.json
 # ruff
 .ruff_cache/
 
+# Coverage
+htmlcov/
+
 # JetBrains
 .idea/
 

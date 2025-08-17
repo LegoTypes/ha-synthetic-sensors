@@ -37,6 +37,9 @@ def evaluate_formula_alternate(
             for key, val in local_vars.items():
                 temp_context[key] = val
 
+        # Add marker to indicate this is an alternate state handler evaluation
+        temp_context["__is_alternate_handler__"] = True
+
         resolved_handler_formula = resolve_all_references_in_formula(
             str(handler_formula["formula"]), sensor_config, temp_context, config
         )
@@ -52,14 +55,19 @@ def evaluate_formula_alternate(
 
     # String expression (back-compat)
     resolved_handler_formula = resolve_all_references_in_formula(str(handler_formula), sensor_config, eval_context, config)
+
+    # Add marker to indicate this is an alternate state handler evaluation
+    eval_context_with_marker = eval_context.copy()
+    eval_context_with_marker["__is_alternate_handler__"] = True
+
     handler = handler_factory.get_handler_for_formula(resolved_handler_formula)
     if handler:
-        result = handler.evaluate(resolved_handler_formula, eval_context)
+        result = handler.evaluate(resolved_handler_formula, eval_context_with_marker)
     else:
         numeric_handler = handler_factory.get_handler("numeric")
         if not numeric_handler:
             return None
-        result = numeric_handler.evaluate(resolved_handler_formula, eval_context)
+        result = numeric_handler.evaluate(resolved_handler_formula, eval_context_with_marker)
     return EvaluatorHelpers.process_evaluation_result(result)
 
 

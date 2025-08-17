@@ -115,7 +115,7 @@ class TestMetadataHandler:
 
         errors = self.handler.validate_metadata(metadata)
         assert len(errors) == 1
-        assert "entity_category must be one of: ['config', 'diagnostic', 'system']" in errors[0]
+        assert "entity_category must be one of: ['config', 'diagnostic']" in errors[0]
 
     def test_validate_metadata_not_dict(self) -> None:
         """Test validation when metadata is not a dictionary."""

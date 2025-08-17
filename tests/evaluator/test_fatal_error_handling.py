@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from homeassistant.const import STATE_UNKNOWN
+
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.exceptions import DataValidationError
@@ -65,7 +67,7 @@ def test_data_provider_returning_unavailable_state_handled_gracefully(mock_hass,
     result = evaluator.evaluate_formula(config)
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
-    assert result.get("state") == "unavailable"  # Reflects unavailable dependency
+    assert result.get("state") == STATE_UNKNOWN  # Reflects unavailable dependency as unknown per design guide
     # Check that the enhanced dependency reporting includes the entity ID
     deps = result.get("unavailable_dependencies", [])
     assert any("sensor.test" in dep for dep in deps), f"Expected 'sensor.test' in dependencies: {deps}"
