@@ -432,14 +432,26 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict.get(RESULT_KEY_STATE) == EVAL_STATE_UNKNOWN:
             # Handle case where evaluation succeeded but dependencies are unavailable
-            # Set sensor to unknown state per design guide (all unavailable states default to STATE_UNKNOWN)
-            self._attr_native_value = None
-            self._attr_available = False
-            self._last_update = dt_util.utcnow()
-            _LOGGER.debug(
-                "Sensor %s set to unknown due to unavailable dependencies",
-                self.entity_id,
-            )
+            # TARGETED FIX: For energy sensors, preserve None values and keep sensor available
+            # Energy sensors with device_class='energy' require None values when unavailable, not unavailable state
+            if self._is_energy_sensor() and main_result_dict[RESULT_KEY_VALUE] is None:
+                # Energy sensor with None value from alternate handler - keep available with None value
+                self._attr_native_value = None
+                self._attr_available = True  # Keep available so HA uses the None value
+                self._last_update = dt_util.utcnow()
+                _LOGGER.debug(
+                    "Energy sensor %s set to None value (staying available for HA energy sensor requirements)",
+                    self.entity_id,
+                )
+            else:
+                # Non-energy sensors: Set sensor to unknown state per design guide
+                self._attr_native_value = None
+                self._attr_available = False
+                self._last_update = dt_util.utcnow()
+                _LOGGER.debug(
+                    "Sensor %s set to unknown due to unavailable dependencies",
+                    self.entity_id,
+                )
             return
 
         # Handle evaluation failure
@@ -572,6 +584,22 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     async def async_update_sensor(self) -> None:
         """Update the sensor value and calculated attributes (public method)."""
         await self._async_update_sensor()
+
+    def _is_energy_sensor(self) -> bool:
+        """Check if this sensor is an energy sensor that requires None values.
+
+        Energy sensors with device_class='energy' and state_class='total_increasing'
+        require None values when unavailable, not "unknown" strings.
+
+        Returns:
+            True if this is an energy sensor that needs None value preservation
+        """
+        return (
+            hasattr(self, "_attr_device_class")
+            and self._attr_device_class == SensorDeviceClass.ENERGY
+            and hasattr(self, "_attr_state_class")
+            and self._attr_state_class == "total_increasing"
+        )
 
     def _extract_attribute_name(self, formula: FormulaConfig) -> str:
         """Extract attribute name from formula ID."""
