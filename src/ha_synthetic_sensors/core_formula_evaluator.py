@@ -182,7 +182,13 @@ class CoreFormulaEvaluator:
         # Use Home Assistant constants for missing states
         missing_states = [STATE_UNKNOWN, STATE_UNAVAILABLE]
 
+        # Check if this is an alternate state handler evaluation
+        is_alternate_handler = context.get("__is_alternate_handler__", False)
+
         for key, value in context.items():
+            # Skip the alternate handler marker
+            if key == "__is_alternate_handler__":
+                continue
             if isinstance(value, ReferenceValue):
                 # Extract and preprocess raw value using priority analyzer.
                 raw_value = value.value
@@ -190,11 +196,14 @@ class CoreFormulaEvaluator:
                 # Apply guard only when this variable is referenced in the pre-substitution formula
                 # (i.e., it will be value-substituted). Reference arguments to specialized handlers
                 # (e.g., metadata(entity_ref, ...)) should not trigger the guard by convention.
-                if (
+                # For alternate handlers, allow 'state' to be unknown/unavailable since that's when they should run
+                should_apply_guard = (
                     (referenced_names is None or key in referenced_names)
                     and isinstance(raw_value, str)
                     and raw_value.lower() in missing_states
-                ):
+                    and not (is_alternate_handler and key == "state")
+                )
+                if should_apply_guard:
                     _LOGGER.debug("Found missing state '%s' = '%s', sensor should become unavailable", key, raw_value)
                     return None
 
