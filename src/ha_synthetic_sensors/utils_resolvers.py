@@ -11,7 +11,7 @@ from homeassistant.core import STATE_UNKNOWN
 from homeassistant.helpers.typing import StateType
 
 from .constants_boolean_states import FALSE_STATES, TRUE_STATES
-from .constants_evaluation_results import RESULT_KEY_VALUE
+from .constants_evaluation_results import RESULT_KEY_EXISTS, RESULT_KEY_VALUE
 from .constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
 from .data_validation import validate_data_provider_result
 from .exceptions import DataValidationError, MissingDependencyError
@@ -46,7 +46,7 @@ def resolve_via_data_provider_entity(dependency_handler: Any, entity_id: str, or
         # Validate the data provider result according to the guide
         validated_result = validate_data_provider_result(result, f"data provider for '{entity_id}'")
 
-        if validated_result.get("exists"):
+        if validated_result.get(RESULT_KEY_EXISTS):
             value = validated_result.get(RESULT_KEY_VALUE)
             if value is None:
                 _LOGGER.debug(
@@ -105,7 +105,7 @@ def resolve_via_data_provider_attribute(
         result = data_provider_callback(entity_id)
         validated_result = validate_data_provider_result(result, f"data provider for '{entity_id}'")
 
-        if validated_result.get("exists"):
+        if validated_result.get(RESULT_KEY_EXISTS):
             # Check if the result has attributes
             attributes = validated_result.get("attributes", {})
             if isinstance(attributes, dict) and attribute_name in attributes:
