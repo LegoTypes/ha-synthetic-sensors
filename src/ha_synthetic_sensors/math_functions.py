@@ -477,6 +477,18 @@ class MathFunctions:
         return float(value)
 
     @staticmethod
+    def to_str(value: Any) -> str:
+        """Convert value to string representation.
+
+        Args:
+            value: Any value to convert to string
+
+        Returns:
+            String representation of the value
+        """
+        return str(value)
+
+    @staticmethod
     def upper(text: str) -> str:
         """Convert string to uppercase."""
         return str(text).upper()
@@ -571,6 +583,23 @@ class MathFunctions:
         text = re.sub(r"[\s\-@#!]+", "_", text)  # spaces, hyphens, @, #, ! → underscores
         text = re.sub(r"[^a-zA-Z0-9_]", "", text)  # remove any remaining special chars
         return text
+
+    @staticmethod
+    def metadata_result(value: Any) -> Any:
+        """Pass-through for pre-computed metadata results.
+
+        The metadata handler may rewrite formulas to metadata_result(X) where X is
+        either a context key (e.g., "_metadata_0") or, depending on upstream
+        substitution, the literal value. To be resilient and fast, simply return
+        the provided argument. SimpleEval will propagate it as-is.
+
+        Args:
+            value: Metadata payload or identifier
+
+        Returns:
+            The argument unchanged
+        """
+        return value
 
     @staticmethod
     def add_business_days(start_date: date | datetime, business_days: int) -> date | datetime:
@@ -718,7 +747,6 @@ class MathFunctions:
                 "format_friendly": MathFunctions.format_friendly,
                 "format_date": MathFunctions.format_date,
                 "datetime": datetime,
-                "date": date,
                 "timedelta": timedelta,
                 # Unit conversion functions for timedelta results
                 "as_minutes": MathFunctions.as_minutes,
@@ -726,6 +754,7 @@ class MathFunctions:
                 "as_hours": MathFunctions.as_hours,
                 "as_days": MathFunctions.as_days,
                 # String functions using function-call syntax (no dot notation)
+                "str": MathFunctions.to_str,
                 "upper": MathFunctions.upper,
                 "lower": MathFunctions.lower,
                 "title": MathFunctions.title,
@@ -769,6 +798,8 @@ class MathFunctions:
                 "range": range,
                 "enumerate": enumerate,
                 "zip": zip,
+                # Metadata result function for AST caching
+                "metadata_result": MathFunctions.metadata_result,
             }
         )
 

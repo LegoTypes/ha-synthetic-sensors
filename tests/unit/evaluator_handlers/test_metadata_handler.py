@@ -42,11 +42,13 @@ class TestMetadataHandler:
 
         # Test evaluation
         formula = "metadata(sensor.test_entity, 'last_changed')"
-        result = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula)
 
-        # Should return ISO formatted timestamp string (quoted for formula evaluation)
-        expected = f'"{test_timestamp.isoformat()}"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0)"
+        expected_metadata = {"_metadata_0": test_timestamp.isoformat()}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
         # Verify hass.states.get was called correctly
         mock_hass.states.get.assert_called_once_with("sensor.test_entity")
@@ -65,11 +67,13 @@ class TestMetadataHandler:
 
         # Test evaluation
         formula = "metadata(sensor.test_power, 'entity_id')"
-        result = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula)
 
-        # Should return entity_id string (quoted for safe formula evaluation)
-        expected = '"sensor.test_power"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0)"
+        expected_metadata = {"_metadata_0": "sensor.test_power"}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
     def test_metadata_function_with_variable_resolution(self):
         """Test metadata() function with variable context."""
@@ -87,11 +91,13 @@ class TestMetadataHandler:
         formula = "metadata(power_var, 'entity_id')"
         context = {"power_var": "sensor.power_meter"}
 
-        result = handler.evaluate(formula, context)
+        result, metadata_results = handler.evaluate(formula, context)
 
-        # Should resolve variable and return entity_id (quoted for safe formula evaluation)
-        expected = '"sensor.power_meter"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0)"
+        expected_metadata = {"_metadata_0": "sensor.power_meter"}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
         # Verify the resolved entity_id was used
         mock_hass.states.get.assert_called_once_with("sensor.power_meter")
@@ -167,11 +173,13 @@ class TestMetadataHandler:
 
         # Test formula with multiple metadata calls
         formula = "metadata(sensor.power, 'entity_id') + metadata(sensor.temp, 'entity_id')"
-        result = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula)
 
-        # Should replace both calls (quoted for safe formula evaluation)
-        expected = '"sensor.power" + "sensor.temp"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0) + metadata_result(_metadata_1)"
+        expected_metadata = {"_metadata_0": "sensor.power", "_metadata_1": "sensor.temp"}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
     def test_get_handler_info(self):
         """Test handler information methods."""

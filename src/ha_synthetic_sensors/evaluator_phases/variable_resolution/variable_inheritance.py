@@ -85,6 +85,7 @@ class VariableInheritanceHandler:
         """Process a single variable with all the necessary checks and resolution."""
         # Skip ComputedVariable instances - they are handled by resolve_config_variables
         if isinstance(var_value, ComputedVariable):
+            _LOGGER.debug("INHERITANCE_DEBUG: Skipping ComputedVariable '%s'", var_name)
             return
 
         # If this variable is used in .attribute patterns, override with entity ID

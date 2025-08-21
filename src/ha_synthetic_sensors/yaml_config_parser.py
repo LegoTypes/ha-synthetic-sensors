@@ -28,7 +28,19 @@ def trim_yaml_keys(obj: Any) -> Any:
         The processed object with trimmed keys
     """
     if isinstance(obj, dict):
-        return {key.strip() if isinstance(key, str) else key: trim_yaml_keys(value) for key, value in obj.items()}
+        processed: dict[Any, Any] = {}
+        for key, value in obj.items():
+            new_key = key.strip() if isinstance(key, str) else key
+            new_val = trim_yaml_keys(value)
+
+            # Phase-0 normalization: ensure any explicit 'formula' fields are strings.
+            # YAML may parse unquoted numeric literals (e.g., 0.0) as floats; convert them
+            # back to their string representation so downstream formula parsing sees a string.
+            if isinstance(new_key, str) and new_key == "formula" and new_val is not None and not isinstance(new_val, str):
+                new_val = str(new_val)
+
+            processed[new_key] = new_val
+        return processed
     if isinstance(obj, list):
         return [trim_yaml_keys(item) for item in obj]
     return obj

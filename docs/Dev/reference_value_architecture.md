@@ -3,8 +3,8 @@
 ## Overview
 
 The synthetic sensors system has migrated from using raw values in evaluation contexts to a type-safe **ReferenceValue**
-architecture. This change ensures that handlers have access to both the original entity reference (entity ID) and the
-resolved state value, enabling features like the `metadata()` function that need to know the actual Home Assistant entity ID.
+architecture. This change ensures that handlers have access to both the original entity reference (entity ID) and the resolved
+state value, enabling features like the `metadata()` function that need to know the actual Home Assistant entity ID.
 
 ## Key Changes
 
@@ -457,8 +457,8 @@ references to old entity IDs. When an entity ID changes:
 - **Caches are cleared** to force fresh resolution
 - **Next evaluation** creates new ReferenceValue objects with updated entity IDs from storage
 
-This design ensures **zero impact** from entity ID renaming - the system automatically adapts without any manual intervention
-or configuration changes.
+This design ensures **zero impact** from entity ID renaming - the system automatically adapts without any manual intervention or
+configuration changes.
 
 ## Impact on Different Components
 

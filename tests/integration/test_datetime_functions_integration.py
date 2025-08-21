@@ -65,7 +65,10 @@ class TestDateTimeFunctionsIntegration:
         """Test basic datetime functions integration with synthetic sensors."""
 
         # Set up test data - external datetime entity for comparison tests
-        mock_states["sensor.external_datetime_entity"] = self.create_mock_state("2025-07-30T12:00:00")
+        from datetime import datetime, timedelta
+
+        future_ts = (datetime.now() + timedelta(days=1)).replace(microsecond=0).isoformat()
+        mock_states["sensor.external_datetime_entity"] = self.create_mock_state(future_ts)
 
         # Set up storage manager with proper mocking (following the guide)
         with (

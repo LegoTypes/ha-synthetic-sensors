@@ -18,7 +18,7 @@ from ha_synthetic_sensors.utils_config import resolve_config_variables
 from .attribute_reference_resolver import AttributeReferenceResolver
 from .formula_helpers import FormulaHelpers
 from .resolution_helpers import ResolutionHelpers
-from .resolution_types import VariableResolutionResult
+from .resolution_types import HADependency, VariableResolutionResult
 from .resolver_factory import VariableResolverFactory
 from .variable_inheritance import VariableInheritanceHandler
 from .variable_processors import VariableProcessors
@@ -89,28 +89,16 @@ class VariableResolutionPhase:
         self._dependency_handler = dependency_handler
         # Also set the dependency handler on the resolver factory for other resolvers
         self._resolver_factory.set_dependency_handler(dependency_handler)
-        # Update the resolver factory with the current data provider callback for StateResolver
+        # Update the data provider callback on the existing factory instead of recreating it
         if hasattr(dependency_handler, "data_provider_callback"):
             current_data_provider = dependency_handler.data_provider_callback
-            # Update existing resolver factory with current data provider (preserve HA instance)
-            self._resolver_factory = VariableResolverFactory(
-                self._resolver_factory.sensor_to_backing_mapping, current_data_provider, self._hass
-            )
-            if self._sensor_registry_phase is not None:
-                self._resolver_factory.set_sensor_registry_phase(self._sensor_registry_phase)
-            # Re-set the dependency handler after recreating the factory
-            self._resolver_factory.set_dependency_handler(dependency_handler)
+            # Update the existing resolver factory's data provider callback
+            self._resolver_factory.update_data_provider_callback(current_data_provider)
 
     def update_data_provider_callback(self, data_provider_callback: Callable[[str], DataProviderResult] | None) -> None:
         """Update the data provider callback for the StateResolver."""
-        # Recreate the resolver factory with the updated data provider (preserve HA instance)
-        self._resolver_factory = VariableResolverFactory(
-            self._resolver_factory.sensor_to_backing_mapping, data_provider_callback, self._hass
-        )
-        if self._sensor_registry_phase is not None:
-            self._resolver_factory.set_sensor_registry_phase(self._sensor_registry_phase)
-        if hasattr(self, "_dependency_handler"):
-            self._resolver_factory.set_dependency_handler(self._dependency_handler)
+        # Update the existing resolver factory instead of recreating it
+        self._resolver_factory.update_data_provider_callback(data_provider_callback)
 
     def resolve_all_references_with_ha_detection(
         self,
@@ -126,7 +114,7 @@ class VariableResolutionPhase:
         """
         # Track entity mappings for enhanced dependency reporting
         entity_mappings: dict[str, str] = {}  # variable_name -> entity_id
-        unavailable_dependencies: list[str] = []
+        unavailable_dependencies: list[HADependency] = []
         entity_to_value_mappings: dict[str, str] = {}  # entity_reference -> resolved_value
         # Start with the original formula
         resolved_formula = formula
@@ -136,6 +124,7 @@ class VariableResolutionPhase:
         # Phase 2: Metadata Processing - process metadata() functions with ReferenceValues
         # Phase 3: Value Resolution - extract values from ReferenceValues for formula evaluation
         # Phase 4: Formula Evaluation - handled by CoreFormulaEvaluator
+
         # STEP 1: Resolve state.attribute references FIRST (before entity references)
         if sensor_config:
             resolved_formula = self._resolve_state_attribute_references(resolved_formula, sensor_config)
@@ -143,9 +132,17 @@ class VariableResolutionPhase:
         variables_needing_entity_ids = FormulaHelpers.identify_variables_for_attribute_access(resolved_formula, formula_config)
         # STEP 3: Resolve config variables with special handling for attribute access variables
         if formula_config:
+            # First do the attribute preservation (no tracking)
             self._resolve_config_variables_with_attribute_preservation(
                 eval_context, formula_config, variables_needing_entity_ids, sensor_config
             )
+            # Then do tracking for dependency collection
+            entity_mappings_from_config, ha_deps_from_config = self._resolve_config_variables_with_tracking(
+                eval_context, formula_config, sensor_config
+            )
+            # Collect dependencies from config variable resolution
+            unavailable_dependencies.extend(ha_deps_from_config)
+            entity_to_value_mappings.update(entity_mappings_from_config)
         # STEP 4: Resolve variable.attribute references (e.g., device.battery_level)
         # This must happen BEFORE simple variable resolution to catch attribute patterns
         resolved_formula = VariableProcessors.resolve_attribute_chains(
@@ -178,17 +175,17 @@ class VariableResolutionPhase:
         # Merge dependency hints without per-item duplication checks
         if simple_ha_deps:
             unavailable_dependencies = list({*unavailable_dependencies, *simple_ha_deps})
-        # STEP 8: Check for HA state values in the resolved formula
-        ha_state_result = FormulaHelpers.detect_ha_state_in_formula(
-            resolved_formula, unavailable_dependencies, entity_to_value_mappings
-        )
-        if ha_state_result:
-            return ha_state_result  # type: ignore[no-any-return]
-        # STEP 9: Continue with remaining resolution steps
+        # STEP 8: Continue with remaining resolution steps
         resolved_formula = VariableProcessors.resolve_variable_attribute_references(resolved_formula, eval_context)
         # Early return if no sensor config for the remaining steps
         if not sensor_config:
             _LOGGER.debug("Formula resolution (no sensor config): '%s' -> '%s'", formula, resolved_formula)
+            # Still check for HA state values even without sensor config
+            ha_state_result = FormulaHelpers.detect_ha_state_in_formula(
+                resolved_formula, unavailable_dependencies, entity_to_value_mappings
+            )
+            if ha_state_result:
+                return ha_state_result  # type: ignore[no-any-return]
             return VariableResolutionResult(
                 resolved_formula=resolved_formula,
                 entity_to_value_mappings=entity_to_value_mappings if entity_to_value_mappings else None,
@@ -199,7 +196,9 @@ class VariableResolutionPhase:
         if formula_config:
             extended_context["formula_config"] = formula_config  # type: ignore[assignment]
         # STEP 10: Resolve standalone 'state' references
-        resolved_formula = self._resolve_state_references(resolved_formula, sensor_config, extended_context)
+        resolved_formula, ha_deps_from_state = self._resolve_state_references(resolved_formula, sensor_config, extended_context)
+        # Collect dependencies from state resolution
+        unavailable_dependencies.extend(ha_deps_from_state)
 
         # CRITICAL FIX: Copy resolved variables back to the original eval_context
         # The _resolve_state_references method adds resolved variables to extended_context,
@@ -210,11 +209,8 @@ class VariableResolutionPhase:
         # STEP 11: Resolve cross-sensor references
         resolved_formula = self._resolve_cross_sensor_references(resolved_formula, eval_context, sensor_config, formula_config)
 
-        # Phase 2: Metadata Processing
-        # Now that all entity references are resolved to ReferenceValues in context,
-        # process metadata functions which can access the ReferenceValues
-        if "metadata(" in resolved_formula.lower():
-            resolved_formula = self._process_metadata_functions_with_reference_values(resolved_formula, eval_context)
+        # Phase 2: Metadata Processing is handled by CoreFormulaEvaluator
+        # Metadata functions are detected and handled by MetadataHandler in CoreFormulaEvaluator.
 
         # After metadata has consumed ReferenceValues, substitute dotted entity references
         # into concrete values in the formula to align with the lazy resolution architecture
@@ -222,17 +218,22 @@ class VariableResolutionPhase:
         # no longer contains raw entity_id tokens.
         # Do NOT suppress errors here: unresolved entity references must surface as
         # MissingDependencyError so dependency tracking/state reflection work correctly.
-        resolved_formula = self._resolve_entity_references(resolved_formula, eval_context)
+        resolved_formula, entity_mappings_from_entities, ha_deps_from_entities = self._resolve_entity_references_with_tracking(
+            resolved_formula, eval_context
+        )
+        # Collect dependencies from entity resolution
+        unavailable_dependencies.extend(ha_deps_from_entities)
+        entity_to_value_mappings.update(entity_mappings_from_entities)
 
         # Note: Phase 3 (Value Resolution) now happens in CoreFormulaEvaluator
         # before enhanced SimpleEval to keep it common across all formula types
 
-        # Final check for HA state values
-        final_ha_state_result = FormulaHelpers.detect_ha_state_in_formula(
+        # Check for HA state values in the fully resolved formula
+        ha_state_result = FormulaHelpers.detect_ha_state_in_formula(
             resolved_formula, unavailable_dependencies, entity_to_value_mappings
         )
-        if final_ha_state_result:
-            return final_ha_state_result  # type: ignore[no-any-return]
+        if ha_state_result:
+            return ha_state_result  # type: ignore[no-any-return]
         _LOGGER.debug("Formula resolution: '%s' -> '%s'", formula, resolved_formula)
         return VariableResolutionResult(
             resolved_formula=resolved_formula,
@@ -334,6 +335,7 @@ class VariableResolutionPhase:
         def resolve_metadata_call(match: re.Match[str]) -> str:
             entity_param = match.group(1).strip().strip("'\"")
             metadata_key = match.group(2).strip().strip("'\"")
+
             try:
                 # Create metadata handler with proper HASS access
                 metadata_handler = MetadataHandler(hass=self._hass)
@@ -378,14 +380,17 @@ class VariableResolutionPhase:
 
         def resolver_callback(var_name: str, var_value: Any, context: dict[str, ContextValue], _sensor_cfg: Any) -> Any:
             resolved_value = self._resolver_factory.resolve_variable(var_name, var_value, context)
-            # ARCHITECTURE FIX: Return ReferenceValue objects for entity references
+            # ARCHITECTURE FIX: Always return ReferenceValue objects
             # This ensures consistency with the handler-based architecture
-            if resolved_value is not None and isinstance(var_value, str):
-                if isinstance(resolved_value, ReferenceValue):
-                    return resolved_value
+            if isinstance(resolved_value, ReferenceValue):
+                return resolved_value
+
+            if isinstance(var_value, str):
                 # Wrap raw values in ReferenceValue objects using the entity ID as reference
                 return ReferenceValue(reference=var_value, value=resolved_value)
-            return resolved_value
+
+            # For non-string values (literals), use the variable name as reference
+            return ReferenceValue(reference=var_name, value=resolved_value)
 
         resolve_config_variables(eval_context, config, resolver_callback, sensor_config)
 
@@ -439,10 +444,12 @@ class VariableResolutionPhase:
 
     def _resolve_state_references(
         self, formula: str, sensor_config: SensorConfig, eval_context: dict[str, ContextValue]
-    ) -> str:
+    ) -> tuple[str, list[HADependency]]:
         """Resolve standalone 'state' references - Phase 1: Variable Resolution builds ReferenceValue in context only."""
+        ha_dependencies: list[HADependency] = []
+
         if "state" not in formula:
-            return formula
+            return formula, ha_dependencies
 
         # Phase 1: Variable Resolution - Build ReferenceValue in context without formula substitution
         # Use the resolver factory to resolve the state reference and store in context
@@ -450,12 +457,22 @@ class VariableResolutionPhase:
         if resolved_value is not None:
             # Store ReferenceValue in context for later phases
             eval_context["state"] = resolved_value
+
+            # Check if the resolved state value is None (backing entity offline)
+            actual_value = resolved_value.value if isinstance(resolved_value, ReferenceValue) else resolved_value
+            if actual_value is None:
+                # Get the backing entity ID for better dependency reporting
+                backing_entity_id = "unknown"
+                if isinstance(resolved_value, ReferenceValue):
+                    backing_entity_id = resolved_value.reference
+                ha_dependencies.append(HADependency(var="state", entity_id=backing_entity_id, state="unknown"))
+                _LOGGER.debug("State resolver: detected None value for state, adding unknown dependency")
         else:
             # This should not happen if StateResolver is working correctly
             raise MissingDependencyError("State token resolution returned None unexpectedly")
 
         # Return formula unchanged - no substitution in Phase 1 (Variable Resolution)
-        return formula
+        return formula, ha_dependencies
 
     def _resolve_entity_references(self, formula: str, eval_context: dict[str, ContextValue]) -> str:
         """Resolve entity references (e.g., sensor.temperature -> 23.5)."""
@@ -470,15 +487,20 @@ class VariableResolutionPhase:
             var_name = entity_id.replace(".", "_").replace("-", "_")
             if var_name in eval_context:
                 value = eval_context[var_name]
-                return str(value.value) if isinstance(value, ReferenceValue) else str(value)
+                actual_value = value.value if isinstance(value, ReferenceValue) else value
+                return "unknown" if actual_value is None else str(actual_value)
             if entity_id in eval_context:
                 value = eval_context[entity_id]
-                return str(value.value) if isinstance(value, ReferenceValue) else str(value)
+                actual_value = value.value if isinstance(value, ReferenceValue) else value
+                return "unknown" if actual_value is None else str(actual_value)
             # Use the resolver factory to resolve the entity reference
             resolved_value = self._resolver_factory.resolve_variable(entity_id, entity_id, eval_context)
             if resolved_value is not None:
                 # Extract value from ReferenceValue for entity resolution
                 actual_value = resolved_value.value if isinstance(resolved_value, ReferenceValue) else resolved_value
+                # Convert Python None to "unknown" for HA state detection
+                if actual_value is None:
+                    return "unknown"
                 return str(actual_value)
             raise MissingDependencyError(f"Failed to resolve entity reference '{entity_id}' in formula")
 
@@ -567,6 +589,9 @@ class VariableResolutionPhase:
             if isinstance(value, str):
                 # For string values, return them quoted for proper evaluation
                 return f'"{value}"'
+            # Convert Python None to "unknown" for HA state detection
+            if value is None:
+                return "unknown"
             return str(value)
         # Not a variable, return as-is
         return var_name
@@ -576,9 +601,38 @@ class VariableResolutionPhase:
         # variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
         # return variable_pattern.sub(replace_variable_ref, formula)
 
+    def _process_resolved_entity_value(
+        self, value: Any, var_name: str, entity_id: str, ha_dependencies: list[HADependency]
+    ) -> str:
+        """Process a resolved entity value and track HA state dependencies.
+
+        Args:
+            value: The resolved value (could be ReferenceValue or raw value)
+            var_name: Variable name for dependency tracking
+            entity_id: Entity ID for dependency tracking
+            ha_dependencies: List to append dependencies to
+
+        Returns:
+            String representation of the value for formula substitution
+        """
+        # Extract value from ReferenceValue for formula substitution
+        actual_value = value.value if isinstance(value, ReferenceValue) else value
+
+        # Check for Python None values (backing entities offline)
+        if actual_value is None:
+            ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state="unknown"))
+            return "unknown"
+
+        # Check if value is an HA state
+        if isinstance(actual_value, str) and is_ha_state_value(actual_value):
+            ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(actual_value)))
+            return str(actual_value)
+
+        return str(actual_value)
+
     def _resolve_entity_references_with_tracking(
         self, formula: str, eval_context: dict[str, ContextValue]
-    ) -> tuple[str, dict[str, str], list[str]]:
+    ) -> tuple[str, dict[str, str], list[HADependency]]:
         """Resolve entity references and track variable to entity mappings and HA states."""
         # Exclude state.attribute patterns and variable.attribute patterns where first part is not an entity domain
         # Only match domain.entity_name patterns (actual entity IDs)
@@ -597,7 +651,7 @@ class VariableResolutionPhase:
             )
         entity_pattern = self._get_entity_pattern_from_hass(hass)
         entity_mappings: dict[str, str] = {}
-        ha_dependencies: list[str] = []
+        ha_dependencies: list[HADependency] = []
 
         def replace_entity_ref(match: re.Match[str]) -> str:
             domain = match.group(1)
@@ -606,39 +660,30 @@ class VariableResolutionPhase:
             _LOGGER.debug(
                 "Entity reference match: domain='%s', entity_name='%s', entity_id='%s'", domain, entity_name, entity_id
             )
-            # First check if already resolved in context
+
+            # First check if already resolved in context (try variable name)
             var_name = entity_id.replace(".", "_").replace("-", "_")
             if var_name in eval_context:
                 value = eval_context[var_name]
                 # Only return the value if it's already resolved (not a raw entity ID)
                 if value != entity_id:
                     entity_mappings[var_name] = entity_id
-                    # Extract value from ReferenceValue for formula substitution
-                    actual_value = value.value if isinstance(value, ReferenceValue) else value
-                    # Check if value is an HA state
-                    if isinstance(actual_value, str) and is_ha_state_value(actual_value):
-                        ha_dependencies.append(f"{var_name} ({entity_id}) is {actual_value}")
-                    return str(actual_value)
+                    return self._process_resolved_entity_value(value, var_name, entity_id, ha_dependencies)
+
+            # Check if already resolved in context (try entity ID directly)
             if entity_id in eval_context:
                 value = eval_context[entity_id]
                 # Only return the value if it's already resolved (not a raw entity ID)
                 if value != entity_id:
                     entity_mappings[entity_id] = entity_id
-                    # Extract value from ReferenceValue for formula substitution
-                    actual_value = value.value if isinstance(value, ReferenceValue) else value
-                    # Check if value is an HA state
-                    if isinstance(actual_value, str) and is_ha_state_value(actual_value):
-                        ha_dependencies.append(f"{entity_id} ({entity_id}) is {actual_value}")
-                    return str(actual_value)
+                    return self._process_resolved_entity_value(value, entity_id, entity_id, ha_dependencies)
+
             # Use the resolver factory to resolve the entity reference
             resolved_value = self._resolver_factory.resolve_variable(entity_id, entity_id, eval_context)
             if resolved_value is not None:
                 entity_mappings[entity_id] = entity_id
-                # Extract value from ReferenceValue and check if it's an HA state
-                actual_value = resolved_value.value if isinstance(resolved_value, ReferenceValue) else resolved_value
-                if isinstance(actual_value, str) and is_ha_state_value(actual_value):
-                    ha_dependencies.append(f"{entity_id} ({entity_id}) is {actual_value}")
-                return str(actual_value)
+                return self._process_resolved_entity_value(resolved_value, entity_id, entity_id, ha_dependencies)
+
             raise MissingDependencyError(f"Failed to resolve entity reference '{entity_id}' in formula")
 
         _LOGGER.debug("Resolving entity references in formula: '%s'", formula)
@@ -680,13 +725,13 @@ class VariableResolutionPhase:
 
     def _track_entities_and_register_context(
         self, resolved_formula: str, eval_context: dict[str, ContextValue]
-    ) -> tuple[dict[str, str], list[str]]:
+    ) -> tuple[dict[str, str], list[HADependency]]:
         """Track entity references and pre-register dotted entities into context.
 
         Returns entity mappings and HA dependency messages.
         """
         entity_mappings_from_entities: dict[str, str] = {}
-        ha_deps_from_entities: list[str] = []
+        ha_deps_from_entities: list[HADependency] = []
         # Perform tracking without substituting values into the formula
         _, entity_mappings_from_entities, ha_deps_from_entities = self._resolve_entity_references_with_tracking(
             resolved_formula, eval_context
@@ -720,10 +765,10 @@ class VariableResolutionPhase:
 
     def _resolve_config_variables_with_tracking(
         self, eval_context: dict[str, ContextValue], config: FormulaConfig, sensor_config: SensorConfig | None = None
-    ) -> tuple[dict[str, str], list[str]]:
+    ) -> tuple[dict[str, str], list[HADependency]]:
         """Resolve config variables and track entity mappings and HA states."""
         entity_mappings: dict[str, str] = {}
-        ha_dependencies: list[str] = []
+        ha_dependencies: list[HADependency] = []
         self._initialize_entity_registry(eval_context)
         hass = self._get_hass_instance()
         for var_name, var_value in config.variables.items():
@@ -753,7 +798,7 @@ class VariableResolutionPhase:
         var_value: Any,
         eval_context: dict[str, ContextValue],
         entity_mappings: dict[str, str],
-        ha_dependencies: list[str],
+        ha_dependencies: list[HADependency],
         config: FormulaConfig,
         hass: Any,
     ) -> None:
@@ -773,7 +818,7 @@ class VariableResolutionPhase:
         var_value: Any,
         eval_context: dict[str, ContextValue],
         entity_mappings: dict[str, str],
-        ha_dependencies: list[str],
+        ha_dependencies: list[HADependency],
     ) -> bool:
         """Check if variable should be skipped because it's already resolved."""
         entity_registry_key = "_entity_reference_registry"
@@ -786,9 +831,12 @@ class VariableResolutionPhase:
             return False
         if existing_value != var_value:
             # Already resolved to a different value, check if it's an HA state
-            if isinstance(existing_value, str) and is_ha_state_value(existing_value):
+            if existing_value is None:
                 entity_id = entity_mappings.get(var_name, var_value if isinstance(var_value, str) else "unknown")
-                ha_dependencies.append(f"{var_name} ({entity_id}) is {existing_value}")
+                ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state="unknown"))
+            elif isinstance(existing_value, str) and is_ha_state_value(existing_value):
+                entity_id = entity_mappings.get(var_name, var_value if isinstance(var_value, str) else "unknown")
+                ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(existing_value)))
             _LOGGER.debug("Skipping config variable %s (already resolved to %s)", var_name, existing_value)
             return True
         return False
@@ -799,7 +847,7 @@ class VariableResolutionPhase:
         var_value: Any,
         eval_context: dict[str, ContextValue],
         entity_mappings: dict[str, str],
-        ha_dependencies: list[str],
+        ha_dependencies: list[HADependency],
         config: FormulaConfig,
     ) -> None:
         """Resolve variable and track its state."""
@@ -810,12 +858,20 @@ class VariableResolutionPhase:
                 ResolutionHelpers.log_and_set_resolved_variable(
                     eval_context, var_name, var_value, resolved_value, "VARIABLE_RESOLUTION"
                 )
-                # Check if resolved value is an HA state
-                if isinstance(resolved_value, str) and is_ha_state_value(resolved_value):
+                # Check if resolved value is an HA state (extract from ReferenceValue if needed)
+                actual_resolved_value = resolved_value.value if isinstance(resolved_value, ReferenceValue) else resolved_value
+                if actual_resolved_value is None:
                     entity_id_for_tracking = entity_mappings.get(
                         var_name, var_value if isinstance(var_value, str) else STATE_UNKNOWN
                     )
-                    ha_dependencies.append(f"{var_name} ({entity_id_for_tracking}) is {resolved_value}")
+                    ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id_for_tracking, state="unknown"))
+                elif isinstance(actual_resolved_value, str) and is_ha_state_value(actual_resolved_value):
+                    entity_id_for_tracking = entity_mappings.get(
+                        var_name, var_value if isinstance(var_value, str) else STATE_UNKNOWN
+                    )
+                    ha_dependencies.append(
+                        HADependency(var=var_name, entity_id=entity_id_for_tracking, state=str(actual_resolved_value))
+                    )
             else:
                 _LOGGER.debug(
                     "Config variable '%s' in formula '%s' resolved to None",
@@ -833,14 +889,14 @@ class VariableResolutionPhase:
 
     def _resolve_simple_variables_with_tracking(
         self, formula: str, eval_context: dict[str, ContextValue], existing_mappings: dict[str, str]
-    ) -> tuple[str, dict[str, str], list[str], dict[str, str]]:
+    ) -> tuple[str, dict[str, str], list[HADependency], dict[str, str]]:
         """Resolve simple variable references with first-class EntityReference support."""
         # NEW APPROACH: Don't extract values from ReferenceValue objects
         # Keep the original variable names in the formula and let handlers access ReferenceValue objects from context
         # Same negative look-ahead to avoid variable.attribute premature resolution
         variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)(?!\.)\b")
         entity_mappings: dict[str, str] = {}
-        ha_dependencies: list[str] = []
+        ha_dependencies: list[HADependency] = []
 
         def validate_variable_ref(match: re.Match[str]) -> str:
             var_name = match.group(1)
@@ -863,9 +919,13 @@ class VariableResolutionPhase:
                         value,
                     )
                     # Track dependencies for HA states
-                    if isinstance(value, str) and is_ha_state_value(value):
+                    if value is None:
                         entity_id = reference if "." in reference else existing_mappings.get(var_name, reference)
-                        ha_dependencies.append(f"{var_name} ({entity_id}) is {value}")
+                        ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state="unknown"))
+                        entity_mappings[var_name] = entity_id
+                    elif isinstance(value, str) and is_ha_state_value(value):
+                        entity_id = reference if "." in reference else existing_mappings.get(var_name, reference)
+                        ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
                         entity_mappings[var_name] = entity_id
 
                     # NEW APPROACH: Keep the variable name in the formula
@@ -875,9 +935,13 @@ class VariableResolutionPhase:
                 # Handle regular values (backward compatibility)
                 value = context_value if isinstance(context_value, str | int | float | None) else str(context_value)
                 # Check if value is an HA state
-                if isinstance(value, str) and is_ha_state_value(value):
+                if value is None:
                     entity_id = existing_mappings.get(var_name, "unknown")
-                    ha_dependencies.append(f"{var_name} ({entity_id}) is {value}")
+                    ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state="unknown"))
+                    entity_mappings[var_name] = entity_id
+                elif isinstance(value, str) and is_ha_state_value(value):
+                    entity_id = existing_mappings.get(var_name, "unknown")
+                    ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
                     entity_mappings[var_name] = entity_id
 
                 # NEW APPROACH: Keep the variable name in the formula
@@ -892,19 +956,6 @@ class VariableResolutionPhase:
 
         # Return empty entity_to_value_mappings since we're not doing substitution anymore
         return validated_formula, entity_mappings, ha_dependencies, {}
-
-    def _process_metadata_functions_with_reference_values(self, formula: str, eval_context: dict[str, ContextValue]) -> str:
-        """
-        PHASE 2: Process metadata functions with ReferenceValues in context.
-
-        This processes metadata() calls while ReferenceValues are still available
-        in the context, allowing metadata functions to access entity IDs.
-        The metadata functions are replaced with their results.
-        """
-
-        # Process metadata functions with the context containing ReferenceValues
-        processed_formula = MetadataHandler.process_metadata_functions(formula, eval_context)
-        return processed_formula
 
     def _resolve_config_variables_with_attribute_preservation(
         self,

@@ -49,23 +49,53 @@ class FormulaEvaluatorService:
 
     @classmethod
     def evaluate_formula(
-        cls, resolved_formula: str, original_formula: str, context: dict[str, ContextValue]
+        cls,
+        resolved_formula: str,
+        original_formula: str,
+        context: dict[str, ContextValue],
+        *,
+        allow_unresolved_states: bool = False,
     ) -> float | str | bool | None:
         """
-        Evaluate a main sensor formula.
+        Evaluate a main sensor formula using Phase 3 execution only.
+
+        This method is used by the main evaluator pipeline after Phases 0-2 have already
+        processed the formula (cache checks, variable resolution, dependency management).
+        It provides a direct execution path to avoid re-running the full pipeline.
+
+        ARCHITECTURAL REASONING:
+        - Main formulas go through the complete pipeline (Phases 0-4) in evaluator.py
+        - By the time they reach Phase 3 (execution), all preprocessing is complete
+        - Calling the full pipeline again would be redundant and inefficient
+        - This method provides a streamlined execution path for pre-processed formulas
+
+        PERFORMANCE BENEFITS:
+        - Avoids creating temporary FormulaConfig objects
+        - Skips redundant cache checks and variable resolution
+        - Eliminates duplicate dependency management processing
+        - Reduces memory allocation and processing overhead
 
         Args:
-            resolved_formula: Formula with variables resolved
-            original_formula: Original formula before variable resolution
+            resolved_formula: Formula with variables already resolved and substituted
+            original_formula: Original formula before variable resolution (for context)
             context: Evaluation context with ReferenceValue objects
 
         Returns:
-            Evaluated result
+            Evaluated result value
+
+        Used by:
+            - Main sensor formulas in evaluator.py _execute_with_handler()
+            - Alternate state handlers that need direct execution
         """
         if not cls._core_evaluator:
             raise RuntimeError("FormulaEvaluatorService not initialized")
 
         _LOGGER.debug("FORMULA_SERVICE: Evaluating main formula: %s", resolved_formula)
+
+        # Set the allow_unresolved_states flag on the core evaluator
+        cls._core_evaluator.set_allow_unresolved_states(allow_unresolved_states)
+
+        # Let AlternateStateDetected exceptions propagate to Phase 4 handler
         return cls._core_evaluator.evaluate_formula(resolved_formula, original_formula, context)
 
     @classmethod
@@ -76,13 +106,60 @@ class FormulaEvaluatorService:
         *,
         variables: dict[str, object] | None = None,
         bypass_dependency_management: bool = True,
+        allow_unresolved_states: bool = False,
     ) -> dict[str, object]:
-        """Evaluate a raw formula string via the full evaluator pipeline.
+        """
+        Evaluate a formula string via the complete evaluation pipeline (Phases 0-4).
 
-        This is used for computed-variable formulas so they follow the same
-        ordering and processing (metadata, conversions, resolution) as main/attribute formulas.
+        This method creates a temporary FormulaConfig and runs the full evaluation pipeline
+        including cache checks, variable resolution, dependency management, execution,
+        and result consolidation. Used for formulas that need complete processing.
 
-        Returns Evaluator EvaluationResult dict.
+        ARCHITECTURAL REASONING:
+        - Computed variables and attributes enter the evaluation system as formula strings
+        - They need the same processing as main formulas but don't go through the main pipeline
+        - Creating a temporary FormulaConfig ensures they get identical processing
+        - This maintains consistency across all formula types while allowing different entry points
+
+        WHY NOT USE evaluate_formula:
+        - These formulas haven't been processed through Phases 0-2 yet
+        - Variable resolution, cache checks, and dependency management are still needed
+        - The formula needs to be converted to a FormulaConfig for proper processing
+        - Full pipeline ensures consistent error handling and state management
+
+        NOTE ON TERMINOLOGY:
+        - "Raw" vs "processed" is misleading - all formulas start as strings
+        - The difference is WHEN processing occurs, not WHAT gets processed
+        - Main formulas: processed by evaluator.py pipeline, then executed here
+        - Other formulas: processed entirely within this method's pipeline
+
+        CACHING AND REUSE MECHANISM:
+        - This method is used for the FIRST evaluation of an attribute/variable
+        - Once evaluated, the result is cached in the evaluation context
+        - Subsequent references to the same attribute/variable use the cached value
+        - Cached values bypass the full pipeline - they're treated as "processed"
+        - This prevents redundant evaluations and ensures consistency
+
+        PERFORMANCE TRADE-OFFS:
+        - Higher overhead due to full pipeline execution
+        - Temporary object creation for FormulaConfig
+        - Necessary for formulas that need complete processing
+        - Acceptable cost for maintaining architectural consistency
+
+        Args:
+            formula: Formula string that needs full pipeline processing
+            context: Evaluation context with ReferenceValue objects
+            variables: Optional variables to include in temporary config
+            bypass_dependency_management: Whether to skip dependency management
+
+        Returns:
+            Complete EvaluationResult dictionary with success/error states
+
+        Used by:
+            - Computed variables that need full variable resolution and processing
+            - Attribute formulas that require complete pipeline execution
+            - Any formula that needs the same processing as main formulas but enters
+              the pipeline at a different point
         """
         if cls._evaluator is None:
             raise RuntimeError("FormulaEvaluatorService Evaluator not attached")
@@ -101,6 +178,7 @@ class FormulaEvaluatorService:
             formula=formula,
             variables=safe_variables,
             attributes={},
+            allow_unresolved_states=allow_unresolved_states,
         )
 
         result: dict[str, object] = cls._evaluator.evaluate_formula_with_sensor_config(

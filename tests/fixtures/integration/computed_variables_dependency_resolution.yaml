@@ -1,0 +1,21 @@
+# Integration test for computed variable dependency resolution
+# Tests: test_computed_variable_dependency_resolution_integration
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_computed_variables_dependencies"
+
+sensors:
+  dependency_test_sensor:
+    name: "Dependency Test Sensor"
+    formula: "final"
+    variables:
+      a: 10
+      b: 5
+      intermediate:
+        formula: "a + b"
+      final:
+        formula: "intermediate * 2"
+    metadata:
+      unit_of_measurement: "kWh"
+      device_class: "energy"

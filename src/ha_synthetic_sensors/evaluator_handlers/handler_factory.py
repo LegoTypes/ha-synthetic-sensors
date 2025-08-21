@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 
-from ..constants_handlers import ERROR_NO_HANDLER_FOR_FORMULA, HANDLER_TYPE_METADATA, HANDLER_TYPE_NUMERIC
+from ..constants_handlers import ERROR_NO_HANDLER_FOR_FORMULA, HANDLER_TYPE_METADATA
 from ..type_definitions import ContextValue
 from .base_handler import FormulaHandler
 
@@ -43,16 +43,14 @@ class HandlerFactory:
 
         CLEAN SLATE: Only register handlers that are actually used:
         - MetadataHandler: For metadata() function calls
-        - NumericHandler: For compilation cache and exception handler fallback
         """
         # WFF: The nature of the handler factory warrants this import-outside-toplevel
         # Import handlers lazily to avoid circular imports
         # pylint: disable=import-outside-toplevel
+
         from .metadata_handler import MetadataHandler
-        from .numeric_handler import NumericHandler
 
         self.register_handler_type(HANDLER_TYPE_METADATA, MetadataHandler)  # For metadata() function calls
-        self.register_handler_type(HANDLER_TYPE_NUMERIC, NumericHandler)  # For compilation cache and fallback
 
     def register_handler(self, name: str, handler: FormulaHandler) -> None:
         """Register a handler with the factory."""

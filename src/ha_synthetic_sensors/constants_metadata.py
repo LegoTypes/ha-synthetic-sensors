@@ -15,6 +15,8 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.entity import EntityCategory
 
+from .shared_constants import ENGINE_BASE_RESERVED_ATTRIBUTES, LAST_VALID_CHANGED_KEY, LAST_VALID_STATE_KEY
+
 # Metadata property names (pointing to HA constants where applicable)
 METADATA_PROPERTY_UNIT_OF_MEASUREMENT = ATTR_UNIT_OF_MEASUREMENT  # HA entity attribute
 METADATA_PROPERTY_DEVICE_CLASS = ATTR_DEVICE_CLASS  # HA entity property (SensorDeviceClass)
@@ -299,6 +301,16 @@ def validate_attribute_metadata_properties(metadata: dict[str, Any]) -> list[str
         if is_entity_only_property(property_name):
             reason = get_entity_only_property_reason(property_name)
             errors.append(f"Invalid attribute metadata property '{property_name}': {reason}")
+
+    # Disallow attribute names that collide with engine-managed last-valid keys
+    for engine_key in (LAST_VALID_STATE_KEY, LAST_VALID_CHANGED_KEY):
+        if engine_key in metadata:
+            errors.append(f"Attribute name '{engine_key}' is reserved by the engine and cannot be used")
+
+    # Disallow HA-managed extra state attribute collisions (engine reserves some base attribute names)
+    for reserved in ENGINE_BASE_RESERVED_ATTRIBUTES:
+        if reserved in metadata:
+            errors.append(f"Attribute name '{reserved}' is reserved by the engine and cannot be used as an attribute name")
 
     return errors
 

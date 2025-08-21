@@ -17,9 +17,8 @@ value by applying mathematical formulas to to other entities, allowing you to:
 
 ### Data Sources for Synthetic Sensors
 
-Synthetic sensors calculate their state using formulas that reference other sensor data. **The formula determines the
-synthetic sensor's final state value** - there is no requirement for a single "backing entity." Instead, synthetic sensors
-can:
+Synthetic sensors calculate their state using formulas that reference other sensor data. **The formula determines the synthetic
+sensor's final state value** - there is no requirement for a single "backing entity." Instead, synthetic sensors can:
 
 - **Use a dedicated state backing entity** (referenced via `state` token) as the primary data source
 - **Combine multiple existing sensors or attriubutes** using their entity IDs in formulas
@@ -504,8 +503,8 @@ sensor_manager = await async_setup_synthetic_sensors(
 
 ## Selecting a Sensor Set When Multiple Exist
 
-When your StorageManager contains more than one sensor set (for example, one set per device), the convenience setup functions
-do not guess which set to use. Pass the target `sensor_set_id` explicitly:
+When your StorageManager contains more than one sensor set (for example, one set per device), the convenience setup functions do
+not guess which set to use. Pass the target `sensor_set_id` explicitly:
 
 ```python
 sensor_manager = await async_setup_synthetic_sensors_with_entities(
@@ -524,8 +523,8 @@ If you omit `sensor_set_id`, exactly one sensor set must exist in storage or the
 deterministic behavior in multi-device scenarios.
 
 Note: `sensor_set_id` can be any stable, unique string within the `StorageManager`. Using a device-based name is a convention
-for readability only. Device association and sensor unique IDs come from the YAML `global_settings.device_identifier`, not
-from `sensor_set_id`.
+for readability only. Device association and sensor unique IDs come from the YAML `global_settings.device_identifier`, not from
+`sensor_set_id`.
 
 ## Natural Fallback Behavior
 
@@ -816,8 +815,7 @@ sensors:
 
 Attribute formulas are always evaluated after the main sensor state is calculated. Every attribute formula automatically has
 access to a special variable called `state`, which contains the freshly calculated value of the main sensor. This allows
-attribute formulas to reference the main sensor's value directly, along with any additional variables defined for the
-attribute.
+attribute formulas to reference the main sensor's value directly, along with any additional variables defined for the attribute.
 
 **Example:**
 
@@ -843,8 +841,8 @@ In this example:
 - The `with_multiplier` attribute is calculated as the main state times a custom multiplier (2.5).
 - Both attribute formulas use the `state` variable, which is the freshly calculated main sensor value.
 
-This pattern allows you to build complex attribute calculations that depend on the main sensor's value, ensuring consistency
-and flexibility in your synthetic sensor definitions.
+This pattern allows you to build complex attribute calculations that depend on the main sensor's value, ensuring consistency and
+flexibility in your synthetic sensor definitions.
 
 ```yaml
 # yaml_templates/power_sensor.yaml.txt

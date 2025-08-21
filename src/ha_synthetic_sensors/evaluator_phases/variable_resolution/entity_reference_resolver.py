@@ -16,10 +16,12 @@ class EntityReferenceResolver(VariableResolver):
 
     def __init__(self) -> None:
         """Initialize the entity reference resolver."""
+
         self._dependency_handler: Any = None
 
     def set_dependency_handler(self, dependency_handler: Any) -> None:
         """Set the dependency handler for entity resolution."""
+
         self._dependency_handler = dependency_handler
 
     def can_resolve(self, variable_name: str, variable_value: str | Any) -> bool:
@@ -38,7 +40,9 @@ class EntityReferenceResolver(VariableResolver):
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
         """Resolve an entity reference."""
+
         if not isinstance(variable_value, str):
+            _LOGGER.debug("ENTITY_RESOLVER_DEBUG: variable_value is not string, returning None")
             return None
 
         # Check if the entity is available in the context (already resolved)
@@ -47,9 +51,12 @@ class EntityReferenceResolver(VariableResolver):
             return context_result
 
         # Try data provider resolution first
+        _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Trying data provider resolution for '%s'", variable_value)
         data_provider_result = resolve_via_data_provider_entity(self._dependency_handler, variable_value, variable_value)
         if data_provider_result is not None:
+            _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Data provider resolved '%s' to %s", variable_value, data_provider_result)
             return data_provider_result
+        _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Data provider could not resolve '%s'", variable_value)
 
         # Try HASS state lookup
         hass_result = resolve_via_hass_entity(self._dependency_handler, variable_value, variable_value)
@@ -61,9 +68,10 @@ class EntityReferenceResolver(VariableResolver):
         if direct_result is not None:
             return direct_result
 
-        # Entity cannot be resolved - raise MissingDependencyError according to the reference guide
-        _LOGGER.debug("Entity reference resolver: could not resolve '%s'", variable_value)
-        raise MissingDependencyError(variable_value)
+        # Entity cannot be resolved - this is a missing dependency (fatal error)
+        # Missing entities should raise MissingDependencyError, not be converted to STATE_NONE
+        _LOGGER.debug("Entity reference resolver: could not resolve '%s', raising MissingDependencyError", variable_value)
+        raise MissingDependencyError(f"Entity '{variable_value}' not found")
 
     def _check_context_resolution(self, variable_value: str, context: dict[str, Any]) -> Any | None:
         """Check if the entity is already resolved in the context."""

@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, AsyncMock
 # Import the synthetic sensors components
 from ha_synthetic_sensors.enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from ha_synthetic_sensors.evaluator import Evaluator
-from ha_synthetic_sensors.evaluator_handlers.numeric_handler import NumericHandler
 from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
@@ -123,7 +122,6 @@ class CachePerformanceReporter:
         initial_stats = evaluator.get_compilation_cache_stats()
         print(f"Initial cache state:")
         print(f"   Enhanced Helper: {initial_stats['enhanced_helper']['total_entries']} entries")
-        print(f"   Numeric Handler: {initial_stats['numeric_handler']['total_entries']} entries")
         print(f"   Total entries: {initial_stats['total_entries']}")
 
         # Test enhanced evaluation stats
@@ -137,75 +135,6 @@ class CachePerformanceReporter:
             'initial_stats': initial_stats,
             'enhanced_stats': enhanced_stats
         }
-
-    def test_numeric_handler_cache(self) -> Dict[str, Any]:
-        """Test NumericHandler cache performance."""
-        print("\n\nTesting NumericHandler Cache Performance")
-        print("-" * 60)
-
-        # Test both enhanced and standard modes
-        handlers = {
-            'Enhanced': NumericHandler(use_enhanced_evaluation=True),
-            'Standard': NumericHandler(use_enhanced_evaluation=False)
-        }
-
-        results = {}
-
-        for mode, handler in handlers.items():
-            print(f"\nTesting {mode} NumericHandler")
-
-            # Test formula
-            formula = "value1 * rate + offset"
-            context = {
-                "value1": ReferenceValue("value1", 1000.0),
-                "rate": ReferenceValue("rate", 0.12),
-                "offset": ReferenceValue("offset", 50.0)
-            }
-
-            # Clear cache
-            if hasattr(handler, '_compilation_cache'):
-                handler._compilation_cache.clear()
-
-            # Test performance
-            cold_times = []
-            for _ in range(3):
-                start = time.perf_counter()
-                result = handler.evaluate(formula, context)
-                cold_time = time.perf_counter() - start
-                cold_times.append(cold_time)
-
-            warm_times = []
-            for _ in range(10):
-                start = time.perf_counter()
-                result = handler.evaluate(formula, context)
-                warm_time = time.perf_counter() - start
-                warm_times.append(warm_time)
-
-            avg_cold = statistics.mean(cold_times)
-            avg_warm = statistics.mean(warm_times)
-            speedup = avg_cold / avg_warm if avg_warm > 0 else float('inf')
-
-            # Get cache stats if available
-            cache_stats = {}
-            if hasattr(handler, '_compilation_cache'):
-                cache_stats = handler._compilation_cache.get_statistics()
-
-            results[mode] = {
-                'cold_time': avg_cold,
-                'warm_time': avg_warm,
-                'speedup': speedup,
-                'cache_stats': cache_stats,
-                'result': result
-            }
-
-            print(f"   Cold run: {avg_cold:.6f}s")
-            print(f"   Warm run: {avg_warm:.6f}s")
-            print(f"   Speedup: {speedup:.1f}x")
-            if cache_stats:
-                print(f"   Cache entries: {cache_stats.get('total_entries', 0)}")
-                print(f"   Hit rate: {cache_stats.get('hit_rate', 0):.1f}%")
-
-        return results
 
     def test_cache_memory_usage(self) -> Dict[str, Any]:
         """Test cache memory usage with many formulas."""
@@ -264,8 +193,7 @@ class CachePerformanceReporter:
             'final_stats': final_stats
         }
 
-    def print_summary(self, enhanced_results: Dict, evaluator_results: Dict,
-                     handler_results: Dict, memory_results: Dict):
+    def print_summary(self, enhanced_results: Dict, evaluator_results: Dict, memory_results: Dict):
         """Print a comprehensive summary."""
         print("\n\nPERFORMANCE SUMMARY")
         print("=" * 80)
@@ -280,12 +208,6 @@ class CachePerformanceReporter:
             print(f"   Average speedup: {avg_speedup:.1f}x")
             print(f"   Maximum speedup: {max_speedup:.1f}x")
             print(f"   Minimum speedup: {min_speedup:.1f}x")
-
-        # Handler Comparison
-        print(f"\nNumericHandler Comparison:")
-        for mode, results in handler_results.items():
-            if 'speedup' in results:
-                print(f"   {mode}: {results['speedup']:.1f}x speedup")
 
         # Memory Usage
         print(f"\nCache Scaling Results:")
@@ -314,16 +236,14 @@ class CachePerformanceReporter:
             # Run all tests
             enhanced_results = self.test_enhanced_helper_performance()
             evaluator_results = self.test_evaluator_integration()
-            handler_results = self.test_numeric_handler_cache()
             memory_results = self.test_cache_memory_usage()
 
             # Print summary
-            self.print_summary(enhanced_results, evaluator_results, handler_results, memory_results)
+            self.print_summary(enhanced_results, evaluator_results, memory_results)
 
             return {
                 'enhanced_helper': enhanced_results,
                 'evaluator_integration': evaluator_results,
-                'numeric_handler': handler_results,
                 'memory_usage': memory_results
             }
 

@@ -1,0 +1,19 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_last_good"
+
+sensors:
+  last_good_sensor:
+    name: "Last Good Sensor"
+    entity_id: "sensor.last_good_sensor"
+    formula: "state * 2"
+  last_good_reader:
+    name: "Last Good Reader"
+    entity_id: "sensor.last_good_reader"
+    # Read the last-good attribute from the first sensor via variable.attribute access
+    variables:
+      source: "sensor.last_good_sensor"
+    formula: "source.last_valid_state * 1"
+
+

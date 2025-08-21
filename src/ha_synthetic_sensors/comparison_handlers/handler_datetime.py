@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from ..constants_types import TypeCategory
 from ..exceptions import UnsupportedComparisonError
 from ..type_analyzer import DateTimeParser, OperandType
 from .base_handler import BaseComparisonHandler
 from .comparison_protocol import ComparisonTypeInfo
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class DateTimeComparisonHandler(BaseComparisonHandler):
@@ -97,6 +100,25 @@ class DateTimeComparisonHandler(BaseComparisonHandler):
 
     def _compare(self, actual_val: OperandType, expected_val: OperandType, op: str) -> bool:
         """Perform datetime comparison."""
+        # Add debug logging to capture values being compared for failing integration tests
+        try:
+            dt_left = self._to_datetime(actual_val) if self._can_convert_to_datetime(actual_val) else actual_val
+        except Exception:
+            dt_left = actual_val
+        try:
+            dt_right = self._to_datetime(expected_val) if self._can_convert_to_datetime(expected_val) else expected_val
+        except Exception:
+            dt_right = expected_val
+
+        _LOGGER.debug(
+            "DateTimeComparison: left_converted=%s (%s), right_converted=%s (%s), op=%s",
+            dt_left,
+            type(dt_left),
+            dt_right,
+            type(dt_right),
+            op,
+        )
+
         return self.compare_raw(actual_val, expected_val, op)
 
     def _to_datetime(self, value: OperandType) -> datetime:

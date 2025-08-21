@@ -213,3 +213,23 @@ __all__ = [
     "get_ha_domains",
     "get_reserved_words",
 ]
+
+# Last-good attribute names exposed on entities (engine-managed)
+LAST_VALID_STATE_KEY = "last_valid_state"
+LAST_VALID_CHANGED_KEY = "last_valid_changed"
+
+# Base extra state attribute names used by the engine for every sensor
+ENGINE_BASE_RESERVED_ATTRIBUTES: frozenset[str] = frozenset(
+    {
+        "formula",
+        "dependencies",
+        "last_update",
+        "sensor_category",
+    }
+)
+
+__all__ += [
+    "ENGINE_BASE_RESERVED_ATTRIBUTES",
+    "LAST_VALID_CHANGED_KEY",
+    "LAST_VALID_STATE_KEY",
+]

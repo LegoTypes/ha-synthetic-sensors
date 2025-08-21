@@ -268,8 +268,8 @@ assert sensor is not None and float(sensor.native_value) == 150.0, (
 
 ## Overview
 
-Integration tests for synthetic sensors should test the complete flow from YAML configuration through formula evaluation
-using the public API methods. This guide covers the essential patterns and common pitfalls.
+Integration tests for synthetic sensors should test the complete flow from YAML configuration through formula evaluation using
+the public API methods. This guide covers the essential patterns and common pitfalls.
 
 ## 🏆 GOLDEN RULE: Use Common Registry Fixtures
 
@@ -376,8 +376,8 @@ with patch("ha_synthetic_sensors.storage_manager.Store") as MockStore, \
 
 **Critical Details:**
 
-- Always use `enable_entity_listener=False` to avoid entity registry listener issues unless you test is testing event
-  listening (for entity_id changes, etc.)
+- Always use `enable_entity_listener=False` to avoid entity registry listener issues unless you test is testing event listening
+  (for entity_id changes, etc.)
 - Mock both Store and DeviceRegistry in the same context manager
 - Set `async_load.return_value = None` for empty initial storage
 
@@ -402,8 +402,8 @@ sensors:
       device_class: "power"
 ```
 
-**Why:** The `async_setup_synthetic_sensors` function filters sensors by `device_identifier`, so sensors must be associated
-with the right device.
+**Why:** The `async_setup_synthetic_sensors` function filters sensors by `device_identifier`, so sensors must be associated with
+the right device.
 
 ### 2. Load YAML into Storage Manager
 
@@ -475,8 +475,8 @@ sensor_manager = await async_setup_synthetic_sensors(
 
 ### Pattern 2: HA Entity References (For Cross-Integration Tests)
 
-Use when testing with existing HA entities. **Note:** The system automatically falls back to HA entity lookups when entities
-are not found in the data provider or backing mappings.
+Use when testing with existing HA entities. **Note:** The system automatically falls back to HA entity lookups when entities are
+not found in the data provider or backing mappings.
 
 ```python
 # Add entities to mock_states for HA lookup
@@ -500,8 +500,8 @@ sensor_manager = await async_setup_synthetic_sensors(
 
 ### Pattern 3: Hybrid (Virtual + HA Entities) - For Complex Tests
 
-Use when you need both virtual backing entities and references to existing HA entities. **Entity Resolution Order:** The
-system first checks the data provider and backing mappings, then automatically falls back to HA entity lookups if not found.
+Use when you need both virtual backing entities and references to existing HA entities. **Entity Resolution Order:** The system
+first checks the data provider and backing mappings, then automatically falls back to HA entity lookups if not found.
 
 ```python
 # Set up virtual backing entities
@@ -704,8 +704,8 @@ entities.
 
 ### 🏆 GOLDEN RULE: Use Registry Operations for Isolation
 
-**CRITICAL:** Always use the provided registry methods for entity manipulation. Never directly modify the internal
-`_entities` dictionary or mock objects.
+**CRITICAL:** Always use the provided registry methods for entity manipulation. Never directly modify the internal `_entities`
+dictionary or mock objects.
 
 **✅ DO:**
 
@@ -1137,8 +1137,8 @@ print(f"Collection resolver found: {entities}")
         entity.platform = mock_platform
     ```
 
-This guide provides the foundation for writing robust integration tests that properly exercise the synthetic sensors public
-API while avoiding common pitfalls.
+This guide provides the foundation for writing robust integration tests that properly exercise the synthetic sensors public API
+while avoiding common pitfalls.
 
 ### 📚 What Was Missing from the Original Guide
 
@@ -1307,8 +1307,7 @@ provides bulletproof assertions that tell you exactly what went wrong.
 - **[📖 Cookbook](../../docs/cookbook.md)** - Real-world YAML examples and patterns for all features
 - **[🔧 Integration Guide](../../docs/Synthetic_Sensors_Integration_Guide.md)** - Complete public API documentation and usage
   patterns
-- **[🏗️ Creating New Handlers Guide](../../docs/Dev/creating_new_handlers_guide.md)** - For developing custom function
-  handlers
+- **[🏗️ Creating New Handlers Guide](../../docs/Dev/creating_new_handlers_guide.md)** - For developing custom function handlers
 
 ### Advanced References
 

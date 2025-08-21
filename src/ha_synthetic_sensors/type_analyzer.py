@@ -4,84 +4,38 @@ from datetime import date, datetime, time
 import re
 from typing import Protocol, cast, runtime_checkable
 
-from .constants_types import BUILTIN_VALUE_TYPES, VALUE_ATTRIBUTE_NAMES, BuiltinValueType, MetadataDict, TypeCategory
+from .alternate_state_type_analyzer import AlternateStateTypeReducer, AlternateStateTypeResolver
+from .constants_types import (
+    BUILTIN_VALUE_TYPES,
+    VALUE_ATTRIBUTE_NAMES,
+    AttributeProvider,
+    BuiltinValueType,
+    MetadataAttributeProvider,
+    MetadataDict,
+    MetadataProvider,
+    OperandType,
+    TypeCategory,
+    UserType,
+    UserTypeReducer,
+)
 from .datetime_functions.duration_functions import Duration
 
 __all__ = [
     "AttributeProvider",
+    "BuiltinValueType",
     "MetadataAttributeProvider",
+    "MetadataDict",
     "MetadataProvider",
+    "OperandType",
     "StringCategorizer",
     "TypeAnalyzer",
     "TypeCategory",
     "UserType",
     "UserTypeReducer",
+    "UserTypeResolver",
 ]
 
-# === Core Protocols ===
-
-
-@runtime_checkable
-class MetadataProvider(Protocol):
-    """Protocol for objects that can provide metadata."""
-
-    def get_metadata(self) -> MetadataDict:
-        """Get metadata dictionary from this object."""
-
-
-@runtime_checkable
-class AttributeProvider(Protocol):
-    """Protocol for objects with attributes (like HA entities)."""
-
-    @property
-    def attributes(self) -> dict[str, str | int | float | bool | None]:
-        """Get attributes dictionary."""
-
-
-@runtime_checkable
-class MetadataAttributeProvider(Protocol):
-    """Protocol for objects with __metadata__ attribute."""
-
-    @property
-    def __metadata__(self) -> MetadataDict:
-        """Get metadata from __metadata__ attribute."""
-
-
-@runtime_checkable
-class UserType(Protocol):
-    """Protocol for user-defined types."""
-
-    def get_metadata(self) -> MetadataDict:
-        """Get metadata for this user type instance."""
-
-    def get_type_name(self) -> str:
-        """Get the type name for this user type."""
-
-
-@runtime_checkable
-class UserTypeReducer(Protocol):
-    """Protocol for user-defined type reducers."""
-
-    def can_reduce_to_numeric(self, value: UserType, metadata: MetadataDict) -> bool:
-        """Check if this user type can reduce to numeric."""
-
-    def try_reduce_to_numeric(self, value: UserType, metadata: MetadataDict) -> tuple[bool, float]:
-        """Try to reduce user type to numeric for formula evaluation."""
-
-    def reduce_same_type_pair(
-        self, left: UserType, right: UserType, _left_metadata: MetadataDict, _right_metadata: MetadataDict
-    ) -> "ReducedPairType":
-        """Reduce two values of the same user type to built-in types."""
-
-    def reduce_with_builtin_type(
-        self,
-        user_value: UserType,
-        builtin_value: BuiltinValueType,
-        _user_metadata: MetadataDict,
-        _builtin_type: TypeCategory,
-        reverse: bool = False,
-    ) -> "ReducedPairType":
-        """Reduce user type with built-in type to built-in types."""
+# === Extended Protocols (not in constants_types.py to avoid circular imports) ===
 
 
 @runtime_checkable
@@ -91,23 +45,12 @@ class UserTypeResolver(Protocol):
     def can_identify_from_metadata(self, metadata: MetadataDict) -> bool:
         """Check if metadata indicates this user type."""
 
-    def is_user_type_instance(self, value: "OperandType") -> bool:
+    def is_user_type_instance(self, value: OperandType) -> bool:
         """Type guard to check if a value is an instance of this user type."""
 
     def get_type_name(self) -> str:
         """Get the type name this resolver handles."""
 
-
-# === Type Definitions ===
-
-# Union type for operands - simplified to avoid redundancy
-OperandType = (
-    BuiltinValueType
-    | UserType  # User-defined types that implement the protocol
-    | MetadataProvider  # Objects that provide metadata via method
-    | AttributeProvider  # Objects with attributes (HA entities)
-    | MetadataAttributeProvider  # Objects with __metadata__
-)
 
 # Type for reduced pairs
 ReducedPairType = tuple[BuiltinValueType, BuiltinValueType, TypeCategory]
@@ -514,6 +457,17 @@ class MetadataTypeResolver:
 
     def identify_type_from_metadata(self, value: OperandType) -> UserTypeIdentification | None:
         """Identify user-defined type from metadata."""
+        # PRIORITY CHECK: Check high-priority resolvers directly (e.g., alternate states)
+        # This allows detection of values like None, "unavailable" without requiring metadata
+        high_priority_types = ["alternate_state"]
+        for type_name in high_priority_types:
+            if type_name in self._user_type_resolvers:
+                resolver = self._user_type_resolvers[type_name]
+                if resolver.is_user_type_instance(value):
+                    # Create minimal metadata for alternate state detection
+                    metadata = MetadataExtractor.extract_all_metadata(value) or {}
+                    return UserTypeIdentification(type_name=type_name, metadata=metadata, resolver=resolver)
+
         metadata = MetadataExtractor.extract_all_metadata(value)
 
         if not metadata:
@@ -695,6 +649,16 @@ class TypeAnalyzer:
 
     def __init__(self) -> None:
         self.type_reducer = TypeReducer()
+        self._register_builtin_user_types()
+
+    def _register_builtin_user_types(self) -> None:
+        """Register built-in user types with highest priority."""
+        # Register alternate state type with highest priority
+        alternate_state_reducer = AlternateStateTypeReducer()
+        alternate_state_resolver = AlternateStateTypeResolver()
+
+        self.register_user_type_reducer("alternate_state", alternate_state_reducer)
+        self.register_user_type_resolver("alternate_state", alternate_state_resolver)
 
     def register_user_type_reducer(self, type_name: str, reducer: UserTypeReducer) -> None:
         """Register a user-defined type reducer."""

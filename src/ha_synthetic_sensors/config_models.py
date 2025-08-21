@@ -65,20 +65,26 @@ AlternateValue = str | int | float | bool | AlternateFormulaObject
 
 @dataclass
 class AlternateStateHandler:
-    """Exception handler for formulas and variables when entities become unavailable or unknown."""
+    """Exception handler for formulas and variables when entities become unavailable, unknown, or None."""
 
     unavailable: AlternateValue | None = None
     unknown: AlternateValue | None = None
+    none: AlternateValue | None = None
+    fallback: AlternateValue | None = None  # Fallback handler when no specific handler matches
 
     def __post_init__(self) -> None:
         """Validate the exception handler after initialization."""
-        if not self.unavailable and not self.unknown:
-            raise ValueError("AlternateStateHandler must have at least one handler (unavailable or unknown)")
+        # For now, we'll be permissive and allow None handlers since they're valid for energy sensors
+        # The validation will be done at the YAML parsing level instead
         # If string, ensure non-empty; literals/objects are accepted as-is
         if isinstance(self.unavailable, str) and not self.unavailable.strip():
             raise ValueError("AlternateStateHandler unavailable formula cannot be whitespace only")
         if isinstance(self.unknown, str) and not self.unknown.strip():
             raise ValueError("AlternateStateHandler unknown formula cannot be whitespace only")
+        if isinstance(self.none, str) and not self.none.strip():
+            raise ValueError("AlternateStateHandler none formula cannot be whitespace only")
+        if isinstance(self.fallback, str) and not self.fallback.strip():
+            raise ValueError("AlternateStateHandler fallback formula cannot be whitespace only")
 
 
 @dataclass
@@ -88,6 +94,7 @@ class ComputedVariable:
     formula: str
     dependencies: set[str] = field(default_factory=set)
     alternate_state_handler: AlternateStateHandler | None = None  # Alternate state handling for UNAVAILABLE/UNKNOWN
+    allow_unresolved_states: bool = False  # Allow alternate states to proceed into formula evaluation
 
     def __post_init__(self) -> None:
         """Validate the computed variable after initialization."""
@@ -111,6 +118,7 @@ class FormulaConfig:
         default_factory=_default_variables
     )  # Variable name -> entity_id mappings, numeric literals, or computed variables
     alternate_state_handler: AlternateStateHandler | None = None  # Alternate state handling for UNAVAILABLE/UNKNOWN
+    allow_unresolved_states: bool = False  # Allow alternate states to proceed into formula evaluation
 
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""

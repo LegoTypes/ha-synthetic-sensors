@@ -3,6 +3,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from ...exceptions import MissingDependencyError
 from ...type_definitions import ContextValue, ReferenceValue
 from .base_resolver import VariableResolver
 
@@ -73,10 +74,16 @@ class ConfigVariableResolver(VariableResolver):
                         )
                         return resolved_value
 
-        # If no other resolver could handle it, return None
+                    _LOGGER.debug(
+                        "CONFIG_RESOLVER_DEBUG: Resolver %s returned None for '%s'",
+                        resolver.get_resolver_name(),
+                        variable_name,
+                    )
+
+        # If no other resolver could handle it, this is a missing dependency (fatal error)
         _LOGGER.debug(
-            "Config variable resolver: entity reference '%s' = %s (no resolver found)",
+            "Config variable resolver: entity reference '%s' = %s (no resolver found, raising MissingDependencyError)",
             variable_name,
             variable_value,
         )
-        return None
+        raise MissingDependencyError(f"Entity reference '{variable_value}' could not be resolved")

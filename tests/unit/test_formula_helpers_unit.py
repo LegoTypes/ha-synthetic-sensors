@@ -38,7 +38,13 @@ def test_detect_ha_state_in_formula_via_dependencies(deps: list[str], expected_s
 
 
 def test_detect_ha_state_in_formula_detects_quoted_unknown() -> None:
+    # Single state optimization only works when entire formula is a state value
+    # A formula like '"unknown" + 2' is not a single state, so should return None
     res = FormulaHelpers.detect_ha_state_in_formula('"unknown" + 2', [], {})
+    assert res is None  # Formula contains state but is not a single state
+
+    # Test that single quoted state is detected
+    res = FormulaHelpers.detect_ha_state_in_formula('"unknown"', [], {})
     assert res is not None and res.ha_state_value == "unknown"
 
 

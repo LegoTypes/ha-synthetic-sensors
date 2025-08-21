@@ -88,7 +88,8 @@ class TestCleanSlateRouting(unittest.TestCase):
         # Mock metadata handler
         mock_metadata_handler = Mock()
         mock_metadata_handler.can_handle.return_value = True
-        mock_metadata_handler.evaluate.return_value = '"2024-01-01T10:00:00"'  # Quoted for safe evaluation
+        # Return tuple format: (transformed_formula, metadata_results_dict)
+        mock_metadata_handler.evaluate.return_value = ("metadata_result(_metadata_0)", {"_metadata_0": "2024-01-01T10:00:00"})
 
         with patch.object(self.evaluator._handler_factory, "get_handler", return_value=mock_metadata_handler):
             result = self.evaluator._execute_with_handler(config, "metadata(entity, 'last_changed')", {}, {}, None)
@@ -102,8 +103,11 @@ class TestCleanSlateRouting(unittest.TestCase):
         """Test that enhanced SimpleEval failure raises clear error (no fallback)."""
         config = FormulaConfig(id="test_failure", name="Test Failure", formula="unsupported_operation()")
 
+        # Need to import AlternateStateDetected for the test
+        from ha_synthetic_sensors.exceptions import AlternateStateDetected
+
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(False, None)):
-            with self.assertRaises(ValueError) as context:
+            with self.assertRaises(AlternateStateDetected) as context:
                 self.evaluator._execute_with_handler(config, "unsupported_operation()", {}, {}, None)
 
             # Verify clear error message about formula evaluation failure
@@ -113,8 +117,11 @@ class TestCleanSlateRouting(unittest.TestCase):
         """Test that missing metadata handler raises clear error."""
         config = FormulaConfig(id="test_metadata_missing", name="Test Metadata Missing", formula="metadata(entity, 'attr')")
 
+        # Need to import AlternateStateDetected for the test
+        from ha_synthetic_sensors.exceptions import AlternateStateDetected
+
         with patch.object(self.evaluator._handler_factory, "get_handler", return_value=None):
-            with self.assertRaises(ValueError) as context:
+            with self.assertRaises(AlternateStateDetected) as context:
                 self.evaluator._execute_with_handler(config, "metadata(entity, 'attr')", {}, {}, None)
 
             # In current architecture, missing handler results in undefined function error

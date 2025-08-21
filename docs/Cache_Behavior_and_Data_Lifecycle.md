@@ -1,15 +1,15 @@
 # Cache Behavior and Data Lifecycle
 
-This document describes how the two-tier caching system works in the synthetic sensors package, the data lifecycle from
-backing entities through sensor evaluation, and how cross-sensor resolution is affected by caching.
+This document describes how the two-tier caching system works in the synthetic sensors package, the data lifecycle from backing
+entities through sensor evaluation, and how cross-sensor resolution is affected by caching.
 
 ## Overview
 
 The synthetic sensors package uses a **two-tier caching architecture** to optimize both formula compilation and evaluation
-performance. The cache is used to manage the complex formula evaluations that might otherwise cause unecessary lookups from
-the synthetic sensor states between update cycles. The synthetic sensors and attributes themselves are always fresh during
-update cycles and the cache is used to service requests to the synthetics from other sensors between update cycles.
-Understanding how this caching works is critical for proper integration, testing, and troubleshooting.
+performance. The cache is used to manage the complex formula evaluations that might otherwise cause unecessary lookups from the
+synthetic sensor states between update cycles. The synthetic sensors and attributes themselves are always fresh during update
+cycles and the cache is used to service requests to the synthetics from other sensors between update cycles. Understanding how
+this caching works is critical for proper integration, testing, and troubleshooting.
 
 ## Cache Performance Testing
 
@@ -27,8 +27,8 @@ This script tests and reports on:
 - Memory usage and scaling with hundreds of unique formulas
 - Performance metrics including cold vs warm evaluation times and speedup ratios
 
-**Test Dataset**: 6 formula types (simple math, duration arithmetic, statistical, mathematical functions), 400 unique
-formulas for scaling tests, 3 cold runs + 10 warm runs per formula, context variables with ReferenceValue objects.
+**Test Dataset**: 6 formula types (simple math, duration arithmetic, statistical, mathematical functions), 400 unique formulas
+for scaling tests, 3 cold runs + 10 warm runs per formula, context variables with ReferenceValue objects.
 
 **Formula Types Tested**:
 
@@ -68,9 +68,9 @@ simpleeval helper integration.
 
 ### Cache Layer 1: Formula Compilation Cache
 
-**Purpose**: Caches pre-parsed `SimpleEval` AST expressions to avoid re-parsing formulas **Performance**: 5-20x faster
-formula evaluation (measured 7.5-19.7x improvement) **Scope**: Per formula string (independent of context/variables)
-**Invalidation**: Only when formulas change or configuration reloads
+**Purpose**: Caches pre-parsed `SimpleEval` AST expressions to avoid re-parsing formulas **Performance**: 5-20x faster formula
+evaluation (measured 7.5-19.7x improvement) **Scope**: Per formula string (independent of context/variables) **Invalidation**:
+Only when formulas change or configuration reloads
 
 ```python
 # Example: Formula "a + b * 2" is parsed once, reused for all evaluations
@@ -80,8 +80,8 @@ result2 = compiled_formula.evaluate({"a": 10, "b": 5}) # 20.0
 # Same parsed AST used for both evaluations
 ```
 
-**Universal AST Caching**: Both SimpleEval evaluation (99% of formulas) and specialized package handlers use AST caching
-through the compilation cache. This ensures maximum performance regardless of evaluation path.
+**Universal AST Caching**: Both SimpleEval evaluation (99% of formulas) and specialized package handlers use AST caching through
+the compilation cache. This ensures maximum performance regardless of evaluation path.
 
 #### SimpleEval AST Caching Integration
 
@@ -119,8 +119,8 @@ class EnhancedSimpleEvalHelper:
 
 ### Cache Layer 2: Evaluation Result Cache (Cycle-Scoped)
 
-**Purpose**: Caches formula evaluation results to prevent redundant calculations **Scope**: Per unique combination of
-formula + context values **Invalidation**: Cycle-scoped behavior (disabled during updates, enabled after)
+**Purpose**: Caches formula evaluation results to prevent redundant calculations **Scope**: Per unique combination of formula +
+context values **Invalidation**: Cycle-scoped behavior (disabled during updates, enabled after)
 
 **Cycle-Scoped Behavior**:
 

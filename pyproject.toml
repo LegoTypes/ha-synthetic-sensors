@@ -10,7 +10,7 @@ requires-python = ">=3.13.2,<3.14"
 dependencies = [
     "simpleeval>=1.0.3,<2.0.0",  # Keep our own constraint for non-HA dependency
     "jsonschema>=4.24.0,<5.0.0",  # Keep our own constraint for non-HA dependency
-    "homeassistant>=2025.7.2,<2026.0.0",  # Required runtime dependency - brings pyyaml, voluptuous transitively
+    "homeassistant>=2025.8.2,<2026.0.0",  # Required runtime dependency - brings pyyaml, voluptuous transitively
     "aiofiles",  # For async file operations - not included with HA core
 ]
 
@@ -112,6 +112,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "examples.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "ha_synthetic_sensors.schema_validator"
 ignore_errors = true
 
 [tool.coverage.run]

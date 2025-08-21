@@ -157,11 +157,10 @@ Variables can be:
 
 ## Globals
 
-Global device information, variables, and metadata apply to all sensors in a sensor set. Globals _cannot_ have formulas.
-Globals alleviate the user from defining the same information in individual sensors like device or literals. Individual
-sensors and their attributes may contain the same global name but the value must also be the same to avoid conflicts in
-sensor formulas. This override restriction is the same concept as programming languages that disallow renaming from outer to
-innner scope.
+Global device information, variables, and metadata apply to all sensors in a sensor set. Globals _cannot_ have formulas. Globals
+alleviate the user from defining the same information in individual sensors like device or literals. Individual sensors and
+their attributes may contain the same global name but the value must also be the same to avoid conflicts in sensor formulas.
+This override restriction is the same concept as programming languages that disallow renaming from outer to innner scope.
 
 ### Global Settings Structure
 
@@ -349,8 +348,7 @@ sensors:
 - Attributes are calculated _second_ and have access to the sensor `state` variable
 - Attribute `state` tokens refers to the _calculated_ main sensor state
 - Attributes can reference other attributes
-- Attributes can define their own `variables` section for attribute-specific entity references or use the main sensors
-  variables
+- Attributes can define their own `variables` section for attribute-specific entity references or use the main sensors variables
 - Attributes can define their own `formula` section
 - Attributes can also reference other entities (like `sensor.max_power_capacity` above)
 
@@ -405,7 +403,7 @@ sensors:
   # Data staleness detection
   power_data_freshness:
     name: "Power Data Freshness"
-    formula: "(now() - metadata(power_entity, \"last_changed\")) < hours(1) ? 1 : 0" # Using metadata function to retrieve last_changed
+    formula: "1 if (now() - metadata(power_entity, \"last_changed\")) < hours(1) else 0" # Using metadata function to retrieve last_changed
     variables:
       power_entity: "sensor.power_meter"
     metadata: # metadata you set on your sensor
@@ -414,7 +412,7 @@ sensors:
   # Entity domain validation
   entity_type_check:
     name: "Entity Type Validation"
-    formula: "metadata(sensor.temp_probe, \"domain\") == \"sensor\" ? 1 : 0"
+    formula: "1 if metadata(sensor.temp_probe, \"domain\") == \"sensor\" else 0"
     metadata:
       unit_of_measurement: "binary"
 
@@ -455,10 +453,41 @@ sensors:
 - **State token**: `metadata(state, 'entity_id')` - References the current sensor's backing entity
 - **Global variables**: `metadata(external_sensor, 'domain')` - Uses global variable reference
 
+### Engine-managed last-good attributes
+
+The engine records the most recent valid (non-alternate) calculated result on each sensor as two extra state attributes that are
+exposed on the entity at runtime:
+
+- `last_valid_state` — the last valid calculated state (number or string)
+- `last_valid_changed` — ISO timestamp (string) when that value was recorded
+
+Access patterns (both work for these engine attributes):
+
+```yaml
+# Inline metadata form (convenient in formulas)
+within_grace:
+  formula: "minutes_between(metadata(state, 'last_valid_changed'), now()) < energy_grace_period_minutes"
+
+# Variable + direct attribute form (when you already have a variable)
+variables:
+  source: "sensor.span_panel_main_meter_produced_energy"
+formula: "minutes_between(source.last_valid_changed, now()) < energy_grace_period_minutes"
+```
+
+When to prefer which:
+
+- Use `metadata(entity, 'key')` when you want HA property fallback (it checks HA state properties such as `last_changed` first)
+  or when you need datetime normalization for date helpers.
+- Use `entity.attribute` (for example `source.last_valid_state`) when you already provide the entity as a variable and prefer
+  direct access to the stored value.
+
+Summary: for the synthetic engine-provided `last_valid_*` attributes both forms return the same values; `metadata()` adds
+HA-specific lookup/fallback and datetime normalization when that behavior is required.
+
 ### Metadata Dictionary
 
-The `metadata` dictionary provides extensible support for all Home Assistant sensor properties. This metadata is added
-directly to the sensor when the sensor is created in Home Assistant.
+The `metadata` dictionary provides extensible support for all Home Assistant sensor properties. This metadata is added directly
+to the sensor when the sensor is created in Home Assistant.
 
 ```yaml
 sensors:
@@ -497,8 +526,8 @@ sensors:
 
 ## Comparison Handlers
 
-The synthetic sensors library provides built-in comparison handlers for common data types, enabling sophisticated filtering
-and analysis in collection functions.
+The synthetic sensors library provides built-in comparison handlers for common data types, enabling sophisticated filtering and
+analysis in collection functions.
 
 For detailed documentation on creating and using custom comparison handlers, see the dedicated guide:
 
@@ -783,8 +812,7 @@ sensors:
 **Device Behavior:**
 
 - **New devices**: If a device with the `device_identifier` doesn't exist, it will be created with the provided information
-- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are
-  ignored)
+- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are ignored)
 - **No device association**: Sensors without `device_identifier` behave as standalone entities (default behavior)
 - **Entity ID generation**: When using device association, entity IDs automatically include the device name prefix (e.g.,
   `sensor.span_panel_main_power`)
@@ -1051,7 +1079,7 @@ sensors:
   # Conditional date arithmetic
   maintenance_overdue:
     name: "Maintenance Overdue"
-    formula: "date(now()) > date(last_service) + months(12) ? 1 : 0"
+    formula: "1 if date(now()) > date(last_service) + months(12) else 0"
     variables:
       last_service: sensor.last_maintenance_date # attribute reference
     metadata:
@@ -1089,7 +1117,7 @@ sensors:
   # Date arithmetic with conditional logic
   smart_maintenance:
     name: "Smart Maintenance"
-    formula: "date(last_service) + (is_critical ? months(3) : months(6))"
+    formula: "date(last_service) + (months(3) if is_critical else months(6))"
     variables:
       last_service: "sensor.last_service_date"
       is_critical: "binary_sensor.critical_equipment"
@@ -1318,15 +1346,22 @@ Collection functions support excluding entities using the `!` prefix:
 ### Calculations That Reference None, Unavailable, or Unknown States
 
 Handle entities that are not ready gracefully in dependency chains by using UNAVAILABLE or UNKNOWN: Note that entities that
-cannot be referenced are fatal errors and checked on YAML import. All None, "unavailable", and "unknown" values default to
-`STATE_UNKNOWN` for consistency.
+cannot be referenced are fatal errors and checked on YAML import.
+
+**State Value Handling**:
+
+- `None` values are `STATE_NONE` (Python None)
+- `"unavailable"` values are `STATE_UNAVAILABLE`
+- `"unknown"` values are `STATE_UNKNOWN`
+- Missing entities raise `MissingDependencyError` (fatal)
 
 ```yaml
 sensors:
   robust_dependency_sensor:
     name: "Robust Dependency Sensor"
     formula: "primary_source + backup_source" # Resolves to STATE_UNKNOWN if entities are unready...
-    UNAVAILABLE: "fallback_calculation" # Use this calculation instead
+    alternate_states:
+      UNAVAILABLE: "fallback_calculation" # Use this calculation instead
     variables:
       primary_source: "sensor.primary_entity"
       backup_source: "sensor.backup_entity"
@@ -1339,8 +1374,8 @@ sensors:
 
 ## Alternate State Handling
 
-Synthetic sensors support handling of `UNKNOWN` and `UNAVAILABLE` states through alternate state handling formulas. Alternate
-handlers now support two shapes:
+Synthetic sensors support handling of `UNKNOWN`, `UNAVAILABLE`, `NONE`, and `FALLBACK` states through alternate state handling
+formulas. Alternate handlers are grouped under the `alternate_states` key and support two shapes:
 
 - Literal value: boolean/number/string returned directly (typed via the analyzer)
 - Object with `formula:` and optional `variables:` evaluated via the standard pipeline
@@ -1348,26 +1383,61 @@ handlers now support two shapes:
 Examples:
 
 ```yaml
-UNAVAILABLE: false
-UNKNOWN: 0
+alternate_states:
+  UNAVAILABLE: false
+  UNKNOWN: 0
+  NONE: None
+  FALLBACK: 100
 ```
 
 ```yaml
-UNAVAILABLE:
-  formula: "backup + 1"
-  variables:
-    backup: 5
+alternate_states:
+  UNAVAILABLE:
+    formula: "backup + 1"
+    variables:
+      backup: 5
 ```
 
-When a formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead.
-All None, "unavailable", and "unknown" values default to `STATE_UNKNOWN` for consistency.
+When a formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead. If
+no alternate state handlers are defined, the evaluation will proceed with the original values.
 
-- **UNAVAILABLE**: Triggered when an entity is unavailable or doesn't exist (defaults to `STATE_UNKNOWN`)
-- **UNKNOWN**: Triggered when an entity exists but has an unknown state (defaults to `STATE_UNKNOWN`)
+- **UNAVAILABLE**: Triggered when an entity is unavailable or doesn't exist
+- **UNKNOWN**: Triggered when an entity exists but has an unknown state
+- **NONE**: Triggered when an entity returns None (useful for energy sensors)
+- **FALLBACK**: Catch-all handler for any alternate state when specific handlers aren't defined
 - **Fallback chains**: Alternate formulas can reference other entities that may also have alternate handling
 - **Nested handling**: Alternate formulas can themselves include alternate state handling
 - **Variable scope**: Alternate formulas inherit the same variable scope as the main formula
 - **Metadata**: Alternate formulas use the same metadata as the main formula
+
+### Early Detection vs. Formula Evaluation
+
+By default, alternate states are detected early during variable extraction and trigger handlers before formula evaluation. This
+prevents evaluation errors and provides predictable behavior. You can control this behavior using the `allow_unresolved_states`
+option:
+
+```yaml
+variables:
+  within_grace:
+    formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"
+    alternate_states:
+      UNAVAILABLE: false
+      UNKNOWN: false
+    allow_unresolved_states: true # Allow alternate states to proceed into formula evaluation
+```
+
+**Behavior Options:**
+
+- **`allow_unresolved_states: false`** (default): Alternate states are detected early during variable extraction and trigger
+  handlers immediately
+- **`allow_unresolved_states: true`**: Alternate states are allowed to proceed into formula evaluation, where they may trigger
+  handlers based on evaluation results or exceptions
+
+**Use Cases:**
+
+- **Early detection** (default): Provides predictable, fast handling of alternate states without evaluation overhead
+- **Formula evaluation**: Useful when you need the formula to process alternate states as part of complex calculations or when
+  alternate states should only trigger handlers under specific evaluation conditions
 
 ### Alternate State Handling Examples
 
@@ -1382,45 +1452,50 @@ sensors:
   power_analysis:
     name: "Power Analysis"
     formula: "missing_main_entity + 100"
-    UNAVAILABLE: "fallback_main_value"
-    UNKNOWN: "estimated_main_value * 2"
+    alternate_states:
+      UNAVAILABLE: "fallback_main_value"
+      UNKNOWN: "estimated_main_value * 2"
     variables:
       fallback_main_value: "50"
       estimated_main_value: "25"
       computed_adjustment:
         formula: "missing_sensor_a + missing_sensor_b"
-        UNAVAILABLE: "backup_calculation"
-        UNKNOWN: "conservative_estimate"
+        alternate_states:
+          UNAVAILABLE: "backup_calculation"
+          UNKNOWN: "conservative_estimate"
       backup_calculation:
         formula: "sensor.backup_entity * 0.8"
-        UNAVAILABLE: "10"
+        alternate_states:
+          UNAVAILABLE: "10"
       conservative_estimate: "5"
     attributes:
       efficiency:
         formula: "undefined_efficiency_sensor * 100"
-        UNAVAILABLE: "estimated_efficiency"
+        alternate_states:
+          UNAVAILABLE: "estimated_efficiency"
         variables:
           estimated_efficiency: "82.5"
         metadata:
           unit_of_measurement: "%"
       health_score:
         formula: "undefined_health_metric"
-        UNAVAILABLE: "calculated_health"
-        UNKNOWN: "default_health"
+        alternate_states:
+          UNAVAILABLE: "calculated_health"
+          UNKNOWN: "default_health"
         variables:
           calculated_health:
             formula: "state / 100 * 100"
-            UNAVAILABLE: "baseline_health"
+            alternate_states:
+              UNAVAILABLE: "baseline_health"
           baseline_health: "85"
           default_health: "75"
 ```
 
 This example shows alternate state handling in:
 
-- **Main sensor formulas** with alternative calculations
+- **Main sensor formulas** with alternative calculations using the `alternate_states` key
 - **Computed variables** with nested alternate state handling
 - **Attribute formulas** with independent fallback logic
 
 Alternate state handling ensures your synthetic sensors remain functional even when dependencies are unavailable, providing
-robust fallback mechanisms for critical calculations. All problematic states (None, "unavailable", "unknown") default to
-`STATE_UNKNOWN` for consistent behavior.
+robust fallback mechanisms for critical calculations. Users can define custom behavior for each type of alternate state.

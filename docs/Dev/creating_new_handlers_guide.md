@@ -5,8 +5,8 @@ lessons learned from implementing the `metadata()` function handler.
 
 ## Overview
 
-Formula handlers are responsible for processing specific types of expressions or functions within synthetic sensor formulas.
-The system supports different handler types:
+Formula handlers are responsible for processing specific types of expressions or functions within synthetic sensor formulas. The
+system supports different handler types:
 
 - **String Handler**: String manipulation functions (`split()`, `replace()`, etc.)
 - **Numeric Handler**: Mathematical expressions and functions
@@ -731,8 +731,8 @@ poetry run python -m pytest tests/integration/test_datetime_functions_integratio
 
 ### Handler Registration Priority
 
-**Critical**: Register your handler **before** the `StringHandler` if your functions take string parameters. The string
-handler uses `FormulaRouter` which detects string literals and claims the formula for string processing.
+**Critical**: Register your handler **before** the `StringHandler` if your functions take string parameters. The string handler
+uses `FormulaRouter` which detects string literals and claims the formula for string processing.
 
 ```python
 # CORRECT order - metadata before string
@@ -745,10 +745,9 @@ self.register_handler_type("string", StringHandler)
 self.register_handler_type("metadata", MetadataHandler)  # Too late!
 ```
 
-**Why This Matters**: During the metadata handler implementation, the initial test failures were caused by the
-`StringHandler` claiming formulas like `metadata(1000.0, 'last_changed')` because the router detected the string literal
-`'last_changed'` and routed the entire formula to string processing. This prevented the metadata handler from ever being
-tested.
+**Why This Matters**: During the metadata handler implementation, the initial test failures were caused by the `StringHandler`
+claiming formulas like `metadata(1000.0, 'last_changed')` because the router detected the string literal `'last_changed'` and
+routed the entire formula to string processing. This prevented the metadata handler from ever being tested.
 
 ### Function Detection Patterns
 
@@ -766,8 +765,8 @@ def can_handle(self, formula: str) -> bool:
 ```
 
 **Critical Insight**: The `can_handle()` method is called **after variable resolution**. This means a formula like
-`metadata(power_entity, 'last_changed')` becomes `metadata(1000.0, 'last_changed')` before your handler sees it. Complex
-regex patterns that expect specific variable names will fail, while simple string detection works reliably.
+`metadata(power_entity, 'last_changed')` becomes `metadata(1000.0, 'last_changed')` before your handler sees it. Complex regex
+patterns that expect specific variable names will fail, while simple string detection works reliably.
 
 ### Parameter Parsing
 
@@ -813,8 +812,7 @@ def __init__(self, expression_evaluator=None):
 
 - **Problem**: Formula being claimed by another handler
 - **Solution**: Check registration order in `HandlerFactory`
-- **Real Example**: `metadata(1000.0, 'last_changed')` was claimed by `StringHandler` before `MetadataHandler` could process
-  it
+- **Real Example**: `metadata(1000.0, 'last_changed')` was claimed by `StringHandler` before `MetadataHandler` could process it
 
 ### 2. "Undefined Variable" Errors
 
@@ -864,8 +862,8 @@ Beyond the comprehensive guidance in the integration test guide, here are handle
 2. **Literals in Variables**: Testing function calls within YAML variable definitions
 3. **External Entity Interaction**: Testing with mock external entities
 
-**Why Three Tests**: This pattern from the datetime tests catches different failure modes - evaluation issues, YAML
-processing problems, and entity resolution bugs.
+**Why Three Tests**: This pattern from the datetime tests catches different failure modes - evaluation issues, YAML processing
+problems, and entity resolution bugs.
 
 ### Mock State Creation for Handlers
 
@@ -879,8 +877,7 @@ def create_mock_state(self, state_value: str, **kwargs):
     })()
 ```
 
-**Handler-Specific Properties**: Add the metadata your handler needs (e.g., `last_changed`, `entity_id` for metadata
-handler).
+**Handler-Specific Properties**: Add the metadata your handler needs (e.g., `last_changed`, `entity_id` for metadata handler).
 
 ### Debug Integration Test Failures
 

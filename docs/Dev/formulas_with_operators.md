@@ -655,5 +655,5 @@ formula: |
   ) else 0
 ```
 
-This comprehensive guide covers the major Python operators and constructs available in synthetic sensor formulas, with
-practical examples focused on energy monitoring and management scenarios.
+This comprehensive guide covers the major Python operators and constructs available in synthetic sensor formulas, with practical
+examples focused on energy monitoring and management scenarios.

@@ -249,10 +249,10 @@ class SelfReferenceResolver(VariableResolver):
         """Process a resolved value from either data provider or HA state."""
         if value is None:
             _LOGGER.debug(
-                "Self-reference resolver: backing entity '%s' has None value, returning unknown state",
+                "Self-reference resolver: backing entity '%s' has None value, preserving None",
                 backing_entity_id,
             )
-            return "unknown"
+            return None
 
         # Handle special Home Assistant state values
         if isinstance(value, str) and (is_ha_state_value(value) or is_ha_unknown_equivalent(value)):

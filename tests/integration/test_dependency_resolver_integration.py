@@ -445,8 +445,9 @@ sensors:
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
-    UNKNOWN:
-      formula: "0"  # Power sensors should return 0 when backing entity is None
+    alternate_states:
+      NONE:
+        formula: "0"  # Power sensors should return 0 when backing entity is None
 """
 
             # Import YAML

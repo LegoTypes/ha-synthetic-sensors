@@ -114,3 +114,5 @@ class ConfigYamlConverter:
                 else:
                     # This is a primitive value
                     formula_data["attributes"][name] = attr_value
+        if formula.allow_unresolved_states:
+            formula_data["allow_unresolved_states"] = formula.allow_unresolved_states

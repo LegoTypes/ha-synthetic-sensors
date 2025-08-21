@@ -362,22 +362,27 @@ def _resolve_simple_variables(
             _LOGGER.debug("Skipping config variable %s (already set in context)", var_name)
             continue
 
+        _LOGGER.debug("UTILS_CONFIG_DEBUG: Calling resolver_callback for '%s' = '%s'", var_name, var_value)
         resolved_value = resolver_callback(var_name, var_value, eval_context, sensor_config)
-        if resolved_value is not None:
-            # Check if resolver already returned a ReferenceValue object
-            if isinstance(resolved_value, ReferenceValue):
-                # Resolver already created ReferenceValue - use it directly
-                eval_context[var_name] = resolved_value
-                # Update the registry if needed
-                entity_registry_key = "_entity_reference_registry"
-                if entity_registry_key not in eval_context:
-                    eval_context[entity_registry_key] = {}
-                entity_registry = eval_context[entity_registry_key]
-                if isinstance(entity_registry, dict):
-                    entity_registry[resolved_value.reference] = resolved_value
-            else:
-                # Resolver returned raw value - wrap in ReferenceValue
-                ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_value, resolved_value)
+        _LOGGER.debug("UTILS_CONFIG_DEBUG: resolver_callback returned %s for '%s'", resolved_value, var_name)
+
+        # Always set the variable in context - resolver should always return ReferenceValue
+        if isinstance(resolved_value, ReferenceValue):
+            # Resolver already created ReferenceValue - use it directly
+            eval_context[var_name] = resolved_value
+            # Update the registry if needed
+            entity_registry_key = "_entity_reference_registry"
+            if entity_registry_key not in eval_context:
+                eval_context[entity_registry_key] = {}
+            entity_registry = eval_context[entity_registry_key]
+            if isinstance(entity_registry, dict):
+                entity_registry[resolved_value.reference] = resolved_value
+        elif resolved_value is not None:
+            # Resolver returned raw value - wrap in ReferenceValue
+            ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_value, resolved_value)
+        else:
+            # Resolver returned None - this is a missing dependency (fatal error)
+            raise MissingDependencyError(f"Variable '{var_name}' could not be resolved")
 
 
 def _resolve_computed_variables(
@@ -541,6 +546,7 @@ def _evaluate_cv_via_pipeline(
     formula: str,
     eval_context: dict[str, ContextValue],
     parent_config: FormulaConfig | None,
+    allow_unresolved_states: bool = False,
 ) -> dict[str, Any]:
     variables_view = _build_simple_variables_view(parent_config)
     return FormulaEvaluatorService.evaluate_formula_via_pipeline(
@@ -548,6 +554,7 @@ def _evaluate_cv_via_pipeline(
         eval_context,
         variables=variables_view,
         bypass_dependency_management=False,
+        allow_unresolved_states=allow_unresolved_states,
     )
 
 
@@ -576,7 +583,9 @@ def _resolve_metadata_computed_variable(
         _LOGGER.debug("Computed variable %s stored as lazy ReferenceValue (awaiting HA readiness)", var_name)
         return True
 
-    eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
+    eval_result = _evaluate_cv_via_pipeline(
+        computed_var.formula, eval_context, parent_config, computed_var.allow_unresolved_states
+    )
     if eval_result.get(RESULT_KEY_SUCCESS):
         result = eval_result[RESULT_KEY_VALUE]
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
@@ -598,7 +607,9 @@ def _resolve_non_metadata_computed_variable(
     eval_context: dict[str, ContextValue],
     parent_config: FormulaConfig | None,
 ) -> bool:
-    eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
+    eval_result = _evaluate_cv_via_pipeline(
+        computed_var.formula, eval_context, parent_config, computed_var.allow_unresolved_states
+    )
     if eval_result.get(RESULT_KEY_SUCCESS):
         result = eval_result[RESULT_KEY_VALUE]
         _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
@@ -685,14 +696,28 @@ def _try_alternate_state_handler(
         )
         return None  # Let the error propagate as fatal
 
-    # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN fallbacks
+    # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN/NONE fallbacks
+    handler_formula = None
+
+    # Try specific handlers first
     if STATE_UNAVAILABLE in error_str:
         handler_formula = computed_var.alternate_state_handler.unavailable
     elif STATE_UNKNOWN in error_str:
         handler_formula = computed_var.alternate_state_handler.unknown
-    # For other non-fatal errors, try unavailable handler first, then unknown
-    else:
-        handler_formula = computed_var.alternate_state_handler.unavailable or computed_var.alternate_state_handler.unknown
+    elif "none" in error_str:
+        handler_formula = computed_var.alternate_state_handler.none
+
+    # If no specific handler found, try fallback handler
+    if handler_formula is None:
+        handler_formula = computed_var.alternate_state_handler.fallback
+
+    # Final fallback: try specific handlers in priority order
+    if handler_formula is None:
+        handler_formula = (
+            computed_var.alternate_state_handler.none
+            or computed_var.alternate_state_handler.unavailable
+            or computed_var.alternate_state_handler.unknown
+        )
 
     if not handler_formula:
         return None

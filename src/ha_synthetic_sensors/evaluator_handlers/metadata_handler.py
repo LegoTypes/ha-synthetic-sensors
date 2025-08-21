@@ -3,22 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 import logging
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 
+from ..constants_alternate import ALTERNATE_STATE_NONE, STATE_NONE
 from ..constants_handlers import HANDLER_NAME_METADATA
 from ..constants_metadata import (
     ERROR_METADATA_ENTITY_NOT_FOUND,
     ERROR_METADATA_FUNCTION_PARAMETER_COUNT,
     ERROR_METADATA_HASS_NOT_AVAILABLE,
-    ERROR_METADATA_INVALID_KEY,
     ERROR_METADATA_KEY_NOT_FOUND,
     METADATA_FUNCTION_NAME,
     METADATA_FUNCTION_VALID_KEYS,
 )
+from ..exceptions import AlternateStateDetected
 from ..type_definitions import ContextValue, ReferenceValue
 from .base_handler import FormulaHandler
 
@@ -82,7 +85,7 @@ class MetadataHandler(FormulaHandler):
             handler = cls(hass=hass)
             if handler.can_handle(formula):
                 _LOGGER.debug("METADATA_HANDLER: Processing metadata functions in: %s", formula)
-                result = handler.evaluate(formula, context)
+                result, _ = handler.evaluate(formula, context)
                 _LOGGER.debug("METADATA_HANDLER: Metadata processing result: %s", result)
 
                 # For entity_id metadata, return the entity ID string for formula evaluation
@@ -121,19 +124,21 @@ class MetadataHandler(FormulaHandler):
         _LOGGER.debug("MetadataHandler.can_handle('%s') = %s", formula, has_metadata)
         return has_metadata
 
-    def evaluate(self, formula: str, context: dict[str, ContextValue] | None = None) -> str:
+    def evaluate(self, formula: str, context: dict[str, ContextValue] | None = None) -> tuple[str, dict[str, str]]:
         """Evaluate a formula containing metadata() function calls.
 
         This handler processes metadata function calls within formulas by replacing them
-        with their evaluated results, then returns the processed formula for further
-        evaluation by other handlers.
+        with metadata_result() function calls for AST caching, and returns both the
+        processed formula and metadata results for context.
 
         Args:
             formula: The formula containing metadata() function calls
             context: Variable context for evaluation
 
         Returns:
-            The formula with metadata() function calls replaced by their results
+            Tuple of (processed_formula, metadata_results)
+            - processed_formula: Formula with metadata() calls replaced by metadata_result() calls
+            - metadata_results: Dictionary of metadata values keyed by _metadata_N
 
         Raises:
             ValueError: If metadata key is invalid or entity not found
@@ -149,9 +154,12 @@ class MetadataHandler(FormulaHandler):
                         _LOGGER.debug("  Regular value %s: %s", key, str(value)[:100])
 
             processed_formula = formula
+            metadata_results = {}  # Store metadata results for AST caching
+            metadata_counter = 0
 
             # Find all metadata function calls and replace them with their results
             def replace_metadata_function(match: re.Match[str]) -> str:
+                nonlocal metadata_counter
                 full_call = match.group(0)  # Full metadata(...) call
                 params_str = match.group(1)  # Content inside parentheses
 
@@ -170,24 +178,45 @@ class MetadataHandler(FormulaHandler):
                 # If it's already an entity ID, use it directly
                 resolved_entity_id = self._resolve_entity_reference(entity_ref, context)
 
-                # Get metadata value
-                metadata_value = self._get_metadata_value(resolved_entity_id, metadata_key)
+                # Check 1: Is the entity reference itself an alternate state?
+                if self._is_alternate_state(resolved_entity_id):
+                    raise AlternateStateDetected(
+                        f"Entity reference '{resolved_entity_id}' is in alternate state", resolved_entity_id
+                    )
 
-                # Return properly formatted value for formula substitution
-                # All metadata values should be quoted for safe evaluation in larger expressions
-                # Datetime objects need to be converted to ISO format strings
+                # Get metadata value
+                metadata_value = self._get_metadata_value(resolved_entity_id, metadata_key, context)
+
+                # Check 2: Is the metadata result an alternate state?
+                if self._is_alternate_state(metadata_value):
+                    raise AlternateStateDetected(f"Metadata result '{metadata_value}' is alternate state", metadata_value)
+
+                # Store metadata result for AST caching
+                metadata_key_name = f"_metadata_{metadata_counter}"
+                metadata_counter += 1
+
+                # Format metadata value for storage
                 if hasattr(metadata_value, "isoformat"):  # datetime-like objects
-                    return f'"{metadata_value.isoformat()}"'
-                if isinstance(metadata_value, str):
-                    return f'"{metadata_value}"'
-                return f'"{metadata_value!s}"'
+                    formatted_value = metadata_value.isoformat()
+                elif isinstance(metadata_value, str):
+                    formatted_value = metadata_value
+                else:
+                    formatted_value = str(metadata_value)
+
+                metadata_results[metadata_key_name] = formatted_value
+
+                # Return the metadata function call for AST caching
+                return f"metadata_result({metadata_key_name})"
 
             # Use regex to find and replace metadata function calls
             metadata_pattern = re.compile(rf"{METADATA_FUNCTION_NAME}\s*\(\s*([^)]+)\s*\)", re.IGNORECASE)
             processed_formula = metadata_pattern.sub(replace_metadata_function, processed_formula)
 
             _LOGGER.debug("Processed metadata formula: %s", processed_formula)
-            return processed_formula
+            _LOGGER.debug("Metadata results: %s", metadata_results)
+
+            # Return both the processed formula and metadata results
+            return processed_formula, metadata_results
 
         except Exception as e:
             _LOGGER.error("Error evaluating metadata formula '%s': %s", formula, e)
@@ -422,7 +451,7 @@ class MetadataHandler(FormulaHandler):
         # before the metadata handler sees them
         return None
 
-    def _get_metadata_value(self, entity_id: str, metadata_key: str) -> Any:
+    def _get_metadata_value(self, entity_id: str, metadata_key: str, context: dict[str, ContextValue] | None = None) -> Any:
         """Get metadata value from Home Assistant entity.
 
         Args:
@@ -435,25 +464,60 @@ class MetadataHandler(FormulaHandler):
         Raises:
             ValueError: If metadata key is invalid or entity not found
         """
-        if metadata_key not in self.VALID_METADATA_KEYS:
-            raise ValueError(ERROR_METADATA_INVALID_KEY.format(key=metadata_key, valid_keys=sorted(self.VALID_METADATA_KEYS)))
-
+        # Allow any metadata key string. Previously this method rejected keys not in a whitelist.
+        # We still require a Home Assistant instance to look up states.
         if not self._hass:
             raise ValueError(ERROR_METADATA_HASS_NOT_AVAILABLE)
 
         state_obj = self._hass.states.get(entity_id)
         if not state_obj:
-            raise ValueError(ERROR_METADATA_ENTITY_NOT_FOUND.format(entity_id=entity_id))
+            # If HA doesn't yet have this entity (common during initial synthetic sensor creation),
+            # attempt to synthesize a minimal state object from the evaluation context so metadata()
+            # calls (e.g. last_changed) can still be evaluated in alternate handlers.
+            if context:
+                # Prefer a ReferenceValue named 'state' or 'current_sensor_entity_id' that holds a previous value
+                ref = None
+                if "state" in context and isinstance(context["state"], ReferenceValue):
+                    ref = context["state"]
+                elif "current_sensor_entity_id" in context and isinstance(context["current_sensor_entity_id"], ReferenceValue):
+                    ref = context["current_sensor_entity_id"]
+
+                # Create a minimal synthetic state object if we can
+                if ref is not None:
+                    # Build a lightweight object with the attributes metadata expects
+                    class _SyntheticState:
+                        def __init__(self, entity_id: str, state_val: Any) -> None:
+                            self.entity_id: str = entity_id
+                            self.state: Any = state_val
+                            self.attributes: dict[str, Any] = {}
+                            self.last_changed = datetime.now()
+                            self.last_updated = self.last_changed
+
+                    # Use the ReferenceValue.value as the state if available, otherwise None
+                    try:
+                        state_val = ref.value if isinstance(ref, ReferenceValue) else None
+                    except Exception:
+                        state_val = None
+
+                    state_obj = _SyntheticState(entity_id, state_val)
+
+            if not state_obj:
+                raise ValueError(ERROR_METADATA_ENTITY_NOT_FOUND.format(entity_id=entity_id))
 
         # Get the metadata property
+        # First check for direct attribute on the state object (e.g., last_changed)
         if hasattr(state_obj, metadata_key):
             value = getattr(state_obj, metadata_key)
             _LOGGER.debug("Retrieved metadata %s for %s: %s", metadata_key, entity_id, value)
             return value
-        if metadata_key in state_obj.attributes:
+
+        # Then check state attributes dict for the key
+        if isinstance(getattr(state_obj, "attributes", None), dict) and metadata_key in state_obj.attributes:
             value = state_obj.attributes[metadata_key]
             _LOGGER.debug("Retrieved attribute metadata %s for %s: %s", metadata_key, entity_id, value)
             return value
+
+        # Key not found on state object or attributes
         raise ValueError(ERROR_METADATA_KEY_NOT_FOUND.format(key=metadata_key, entity_id=entity_id))
 
     def get_handler_name(self) -> str:
@@ -478,3 +542,24 @@ class MetadataHandler(FormulaHandler):
                 "valid_keys": sorted(self.VALID_METADATA_KEYS),
             }
         ]
+
+    def _is_alternate_state(self, value: Any) -> bool:
+        """Check if a value is an alternate state value.
+
+        Args:
+            value: The value to check
+
+        Returns:
+            True if the value is an alternate state, False otherwise
+        """
+
+        # Python None
+        if value is None or value == STATE_NONE:
+            return True
+
+        # String alternate states
+        if isinstance(value, str):
+            normalized = value.lower().strip()
+            return normalized in {STATE_UNAVAILABLE.lower(), STATE_UNKNOWN.lower(), ALTERNATE_STATE_NONE}
+
+        return False

@@ -1,0 +1,146 @@
+digraph EvaluationPipeline {
+    // Graph settings
+    rankdir=TB;
+    node [shape=box, style=filled, fontname="Arial", fontsize=10];
+    edge [fontname="Arial", fontsize=9];
+
+    // Color scheme
+    subgraph cluster_phases {
+        label="Evaluation Pipeline Phases";
+        style=filled;
+        color=lightblue;
+
+        // Phase 0: Pre-Evaluation
+        subgraph cluster_phase0 {
+            label="Phase 0: Pre-Evaluation";
+            style=filled;
+            color=lightyellow;
+
+            P0_Start [label="Formula Input", shape=oval, fillcolor=lightgreen];
+            P0_Cache [label="Cache Check", fillcolor=yellow];
+            P0_Circuit [label="Circuit Breaker Check", fillcolor=yellow];
+            P0_Validation [label="Syntax Validation", fillcolor=yellow];
+        }
+
+        // Phase 1: Variable Resolution
+        subgraph cluster_phase1 {
+            label="Phase 1: Variable Resolution";
+            style=filled;
+            color=lightcyan;
+
+            P1_Collections [label="Collection Resolution", fillcolor=cyan];
+            P1_Entities [label="Entity Resolution", fillcolor=cyan];
+            P1_CrossSensor [label="Cross-Sensor Resolution", fillcolor=cyan];
+            P1_Metadata [label="Metadata Processing", fillcolor=cyan];
+            P1_EntityRefs [label="Entity Reference Resolution", fillcolor=cyan];
+
+            // Single Value Check - HIGHLIGHTED
+            P1_SingleValueCheck [label="SINGLE VALUE CHECK\n(HA State Detection)", fillcolor=orange, style=filled, shape=diamond];
+        }
+
+        // Phase 2: Main Evaluator
+        subgraph cluster_phase2 {
+            label="Phase 2: Main Evaluator";
+            style=filled;
+            color=lightpink;
+
+            P2_DependencyCheck [label="Dependency Management Check", fillcolor=pink];
+            P2_DependencyEval [label="Dependency-Aware Evaluation", fillcolor=pink];
+            P2_NormalEval [label="Normal Evaluation Path", fillcolor=pink];
+        }
+
+        // Phase 2.5: Pre-Evaluation Optimization
+        subgraph cluster_phase25 {
+            label="Phase 2.5: Pre-Evaluation Optimization";
+            style=filled;
+            color=lightcoral;
+
+            P25_SingleVarCheck [label="SINGLE VARIABLE CHECK\n(Pre-Evaluation)", fillcolor=orange, style=filled, shape=diamond];
+        }
+
+        // Phase 3: Formula Execution
+        subgraph cluster_phase3 {
+            label="Phase 3: Formula Execution";
+            style=filled;
+            color=lightsteelblue;
+
+            P3_HandlerContext [label="Handler Context Preparation", fillcolor=steelblue];
+            P3_CoreEvaluator [label="CoreFormulaEvaluator", fillcolor=steelblue];
+            P3_CleanSlate [label="CLEAN SLATE Routing", fillcolor=lightblue];
+            P3_MetadataHandler [label="MetadataHandler", fillcolor=steelblue];
+            P3_SimpleEval [label="Enhanced SimpleEval", fillcolor=steelblue];
+        }
+
+        // Phase 4: Post-Evaluation (Consolidated)
+        subgraph cluster_phase4 {
+            label="Phase 4: Post-Evaluation (Consolidated)";
+            style=filled;
+            color=lightgreen;
+
+            P4_ResultCheck [label="Result Check\n(From Phases 1/2.5/3)", fillcolor=orange, shape=diamond];
+            P4_AlternateHandler [label="Alternate State Handler\n(Consolidated)", fillcolor=orange, shape=diamond];
+            P4_Finalize [label="Result Finalization", fillcolor=lightgreen];
+        }
+    }
+
+    // Flow connections
+    P0_Start -> P0_Cache;
+    P0_Cache -> P0_Circuit [label="Cache Miss"];
+    P0_Circuit -> P0_Validation [label="Circuit Open"];
+    P0_Validation -> P1_Collections;
+
+    // Phase 1 flow
+    P1_Collections -> P1_Entities;
+    P1_Entities -> P1_CrossSensor;
+    P1_CrossSensor -> P1_Metadata;
+    P1_Metadata -> P1_EntityRefs;
+    P1_EntityRefs -> P1_SingleValueCheck;
+
+    // Single value check outcomes (early results for Phase 4)
+    P1_SingleValueCheck -> P4_AlternateHandler [label="Early Result", color=red, penwidth=2];
+    P1_SingleValueCheck -> P2_DependencyCheck [label="No Early Result", color=blue];
+
+    P2_DependencyCheck -> P2_DependencyEval [label="Needs Dependencies"];
+    P2_DependencyCheck -> P2_NormalEval [label="No Dependencies"];
+    P2_DependencyEval -> P25_SingleVarCheck;
+    P2_NormalEval -> P25_SingleVarCheck;
+
+    // Phase 2.5 flow
+    P25_SingleVarCheck -> P4_AlternateHandler [label="Single Variable\nEarly Result", color=red, penwidth=2];
+    P25_SingleVarCheck -> P3_HandlerContext [label="Multiple Variables\nor No Early Result", color=blue];
+
+    // Phase 3 flow
+    P3_HandlerContext -> P3_CoreEvaluator;
+    P3_CoreEvaluator -> P3_CleanSlate;
+    P3_CleanSlate -> P3_MetadataHandler [label="Check for Metadata Functions"];
+    P3_MetadataHandler -> P3_SimpleEval [label="Processed Formula"];
+    P3_SimpleEval -> P4_ResultCheck;
+    // Exception-based triggers from Phase 3
+    P3_MetadataHandler -> P4_AlternateHandler [label="AlternateStateDetected (entity/result)", color=red, penwidth=2];
+    P3_SimpleEval -> P4_AlternateHandler [label="AlternateStateDetected (final result)", color=red, penwidth=2];
+
+    // Phase 4 flow (consolidated)
+    P4_ResultCheck -> P4_AlternateHandler [label="Exception or\nAlternate State", color=red, penwidth=2];
+    P4_AlternateHandler -> P4_Finalize [label="Handler Result", color=red, penwidth=2];
+    P4_ResultCheck -> P4_Finalize [label="Normal Result", color=blue];
+
+    // Cache hit path
+    P0_Cache -> P4_Finalize [label="Cache Hit", color=green, penwidth=2];
+
+    // Circuit breaker path
+    P0_Circuit -> P4_Finalize [label="Circuit Closed", color=red, penwidth=2];
+
+    // Legend
+    subgraph cluster_legend {
+        label="Legend";
+        style=filled;
+        color=white;
+
+        Legend_SingleValue [label="Single Value Check", fillcolor=orange, shape=diamond];
+        Legend_AlternateHandler [label="Alternate State Handler", fillcolor=orange, shape=diamond];
+        Legend_NormalFlow [label="Normal Flow", color=blue];
+        Legend_AlternateFlow [label="Alternate State Flow", color=red];
+        Legend_CacheFlow [label="Cache/Circuit Flow", color=green];
+        Legend_ExceptionTrigger [label="Exception Trigger (AlternateStateDetected)", color=red];
+    }
+}

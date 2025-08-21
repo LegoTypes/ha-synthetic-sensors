@@ -17,8 +17,8 @@ Priority Type Analyzer adoption and generalized alternate state handlers
   inconsistent behavior.
 - Alternate state handlers (`UNAVAILABLE`/`UNKNOWN`) are treated as raw expression strings, forcing users to quote boolean
   values and preventing simple literal usage.
-- A global missing-state guard in the evaluator short-circuits when any context entry is unknown/unavailable, even if
-  unrelated to the current formula (affecting metadata-only computed variables like within_grace).
+- A global missing-state guard in the evaluator short-circuits when any context entry is unknown/unavailable, even if unrelated
+  to the current formula (affecting metadata-only computed variables like within_grace).
 
 ### Proposal
 
@@ -39,8 +39,8 @@ Priority Type Analyzer adoption and generalized alternate state handlers
 
 3. Scope the missing-state guard
    - Limit the Phase 3 missing-state short-circuit to variables actually referenced by the post-metadata resolved formula. Do
-     not short-circuit based on unrelated context entries. If `state` appears only within `metadata(state, ...)`, it should
-     not trigger the guard.
+     not short-circuit based on unrelated context entries. If `state` appears only within `metadata(state, ...)`, it should not
+     trigger the guard.
 
 ### Task List
 
@@ -52,16 +52,16 @@ Priority Type Analyzer adoption and generalized alternate state handlers
     - `EvaluatorHelpers.process_evaluation_result` (string branch)
 
 - Alternate handler generalization
-  - Schema: allow `UNAVAILABLE`/`UNKNOWN` to be oneOf [string, number, boolean, object{formula, variables}]. Update at
-    sensor, variable, and attribute levels as applicable.
-  - Parsing: allow literal or object; keep string expressions unchanged. Store on `AlternateStateHandler` without forcing
-    string type.
-  - Evaluation: if literal → return analyzer(value); if object → evaluate via pipeline using its variables; if string →
-    existing evaluation path.
+  - Schema: allow `UNAVAILABLE`/`UNKNOWN` to be oneOf [string, number, boolean, object{formula, variables}]. Update at sensor,
+    variable, and attribute levels as applicable.
+  - Parsing: allow literal or object; keep string expressions unchanged. Store on `AlternateStateHandler` without forcing string
+    type.
+  - Evaluation: if literal → return analyzer(value); if object → evaluate via pipeline using its variables; if string → existing
+    evaluation path.
 
 - Missing-state guard scoping
-  - In `CoreFormulaEvaluator.evaluate_formula`, compute referenced identifiers from post-metadata `resolved_formula` and pass
-    to extraction; only guard for those.
+  - In `CoreFormulaEvaluator.evaluate_formula`, compute referenced identifiers from post-metadata `resolved_formula` and pass to
+    extraction; only guard for those.
 
 - Tests/fixtures
   - Add unit tests for analyzer conversions (globals, variables, alternates) and for object-form alternates.

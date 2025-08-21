@@ -19,14 +19,14 @@ class DateFunctions(BaseDateTimeFunction):
         Returns:
             Set of function names this handler supports
         """
-        return {"today", "yesterday", "tomorrow", "utc_today", "utc_yesterday"}
+        return {"today", "yesterday", "tomorrow", "utc_today", "utc_yesterday", "date"}
 
     def evaluate_function(self, function_name: str, args: list[Any] | None = None) -> str:
         """Evaluate the date function and return an ISO datetime string.
 
         Args:
             function_name: The name of the function to evaluate
-            args: Optional arguments (not used by these functions)
+            args: Optional arguments (for date() function)
 
         Returns:
             ISO datetime string result (date at midnight)
@@ -35,6 +35,11 @@ class DateFunctions(BaseDateTimeFunction):
             ValueError: If the function is not supported or arguments are invalid
         """
         self._validate_function_name(function_name)
+
+        if function_name == "date":
+            return self._convert_date_string(args)
+
+        # For other functions, validate no arguments
         self._validate_no_arguments(function_name, args)
 
         if function_name == "today":
@@ -96,6 +101,32 @@ class DateFunctions(BaseDateTimeFunction):
         yesterday = datetime.now(pytz.UTC).date() - timedelta(days=1)
         return datetime.combine(yesterday, datetime.min.time(), pytz.UTC).isoformat()
 
+    def _convert_date_string(self, args: list[Any] | None) -> str:
+        """Convert a date string to ISO format.
+
+        Args:
+            args: List containing a single date string argument
+
+        Returns:
+            ISO datetime string for the date at midnight
+
+        Raises:
+            ValueError: If arguments are invalid or date string cannot be parsed
+        """
+        if not args or len(args) != 1:
+            raise ValueError("date() function requires exactly one string argument")
+
+        date_string = args[0]
+        if not isinstance(date_string, str):
+            raise ValueError("date() function requires a string argument")
+
+        try:
+            # Parse the date string (expecting YYYY-MM-DD format)
+            parsed_date = datetime.strptime(date_string, "%Y-%m-%d").date()
+            return datetime.combine(parsed_date, datetime.min.time()).isoformat()
+        except ValueError as e:
+            raise ValueError(f"Invalid date format '{date_string}'. Expected YYYY-MM-DD format: {e}") from e
+
     def get_function_info(self) -> dict[str, Any]:
         """Get information about the date functions provided.
 
@@ -112,6 +143,7 @@ class DateFunctions(BaseDateTimeFunction):
                     "yesterday": "Yesterday's date at midnight in local timezone",
                     "tomorrow": "Tomorrow's date at midnight in local timezone",
                     "utc_today": "Today's date at midnight in UTC",
+                    "date": "Convert date string (YYYY-MM-DD) to ISO datetime format",
                     "utc_yesterday": "Yesterday's date at midnight in UTC",
                 },
             }

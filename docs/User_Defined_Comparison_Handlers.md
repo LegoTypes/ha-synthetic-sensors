@@ -17,9 +17,9 @@ through a plugin architecture. User handlers can:
 
 ## Architecture Components
 
-**Base Handler**: `BaseComparisonHandler` provides the foundation for custom handlers **Extensible Registry**: Global
-registry manages handler registration and priority **Factory Pattern**: `ComparisonFactory` selects appropriate handlers for
-each comparison **Metadata-Driven**: Handlers provide type information for automatic discovery
+**Base Handler**: `BaseComparisonHandler` provides the foundation for custom handlers **Extensible Registry**: Global registry
+manages handler registration and priority **Factory Pattern**: `ComparisonFactory` selects appropriate handlers for each
+comparison **Metadata-Driven**: Handlers provide type information for automatic discovery
 
 ## Creating a Custom Comparison Handler
 
@@ -487,8 +487,8 @@ def test_energy_handler_integration():
 
 ## Collection Functions with User-Defined Handlers
 
-Collection functions (`sum()`, `count()`, `avg()`, etc.) automatically leverage user-defined comparison handlers when
-available. This enables advanced filtering with domain-specific logic:
+Collection functions (`sum()`, `count()`, `avg()`, etc.) automatically leverage user-defined comparison handlers when available.
+This enables advanced filtering with domain-specific logic:
 
 ```yaml
 sensors:

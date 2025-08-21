@@ -127,11 +127,14 @@ sensors:
     entity_id: "sensor.span_main_meter_consumed_energy"  # Explicit entity_id
     formula: "state"  # Main formula uses 'state' token (backing entity value)
     # UNAVAILABLE handler: Use computed variable approach (SHOULD WORK)
-    UNAVAILABLE: "state if within_grace else UNAVAILABLE"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "state if within_grace else UNAVAILABLE"
     variables:
       within_grace:
         formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"
-        UNAVAILABLE: 'false'
+        alternate_states:
+          UNAVAILABLE: false
     attributes:
       # Track energy state information using proper syntax
       last_valid_value:
@@ -159,15 +162,9 @@ sensors:
     variables:
       time_diff_minutes:
         formula: "minutes_between(metadata(external_sensor, 'last_changed'), metadata(state, 'last_changed'))"
-        UNAVAILABLE: '0'
+        alternate_states:
+          UNAVAILABLE: 0
       both_recent:
         formula: "time_diff_minutes < 10 and metadata(external_sensor, 'entity_id') == 'sensor.external_power_meter'"
-        UNAVAILABLE: 'false'
-    attributes:
-      # Multiple metadata calls with arithmetic and boolean logic
-      complex_check:
-        formula: "minutes_between(metadata(external_sensor, 'last_changed'), now()) < 30 and metadata(state, 'entity_id') == metadata(external_sensor, 'entity_id')"
-      entity_comparison:
-        formula: "metadata(state, 'entity_id') + ' vs ' + metadata(external_sensor, 'entity_id')"
-      time_analysis:
-        formula: "str(minutes_between(metadata(state, 'last_changed'), metadata(external_sensor, 'last_changed'))) + ' minutes apart'"
+        alternate_states:
+          UNAVAILABLE: false

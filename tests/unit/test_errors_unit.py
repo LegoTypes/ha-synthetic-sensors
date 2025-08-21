@@ -230,6 +230,7 @@ class TestErrors:
         result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
         # The result should indicate the evaluation completed but with None/unknown state
         assert result["success"] is True
+        # Current behavior: None values remain as None when no explicit alternate state handlers configured
         assert result["value"] is None
 
     def test_invalid_variable_reference(self, config_manager, invalid_data_yaml, mock_hass, mock_entity_registry, mock_states):
@@ -275,6 +276,7 @@ class TestErrors:
         result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
         # The result should indicate the evaluation completed but with None/unknown state
         assert result["success"] is True
+        # Current behavior: None values remain as None when no explicit alternate state handlers configured
         assert result["value"] is None
 
     def test_complex_error_scenario(self, config_manager, invalid_data_yaml, mock_hass, mock_entity_registry, mock_states):

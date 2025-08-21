@@ -4,10 +4,12 @@ CLEAN SLATE: Only handlers that are actually used after enhanced SimpleEval impl
 """
 
 # Handler names (only used handlers)
+HANDLER_NAME_ALTERNATE_STATE = "alternate_state"
 HANDLER_NAME_METADATA = "metadata"
 HANDLER_NAME_NUMERIC = "numeric"
 
 # Handler type registration names (only used handlers)
+HANDLER_TYPE_ALTERNATE_STATE = "alternate_state"
 HANDLER_TYPE_METADATA = "metadata"
 HANDLER_TYPE_NUMERIC = "numeric"
 

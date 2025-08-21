@@ -139,12 +139,12 @@ class StateResolver(VariableResolver):
         # Get the state value from the result (using "value" field from data provider)
         state_value = result.get(RESULT_KEY_VALUE)
         if state_value is None:
-            # None values are treated as unknown to allow for integration initialization
+            # Preserve None values - let alternate state handlers decide what to do
             _LOGGER.debug(
-                "State resolver: Backing entity '%s' has None state value, treating as unknown",
+                "STATE_RESOLVER_DEBUG: Backing entity '%s' has None state value, preserving None",
                 backing_entity_id,
             )
-            return ReferenceValue(reference=backing_entity_id, value="unknown")
+            return ReferenceValue(reference=backing_entity_id, value=None)
 
         _LOGGER.debug(
             "State resolver: Successfully resolved backing entity '%s' state to '%s'",

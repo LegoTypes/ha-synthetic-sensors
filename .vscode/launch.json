@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Alternate Handlers Test",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_alternate_handlers_runtime.py::test_alternate_handlers_and_guard_runtime",
+        "-v",
+        "-s"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    }
+  ]
+}

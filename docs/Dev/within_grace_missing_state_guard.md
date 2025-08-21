@@ -15,10 +15,10 @@ Missing-state short-circuit causes computed variables like `within_grace` to eva
 - **Symptom**: Attribute formulas that reference a computed variable (e.g., `grace_period_active: formula: within_grace`)
   sometimes show `None`, even though `metadata(state, 'last_changed')` exists and `minutes_between(...) < N` should return a
   boolean.
-- **Scope**: Any evaluation where the context contains entries whose raw value is `unknown` or `unavailable` while the
-  current expression does not actually use those entries.
-- **Impact**: Grace period attributes are intermittently `None` during startup/reload or transient unavailability of
-  unrelated entities.
+- **Scope**: Any evaluation where the context contains entries whose raw value is `unknown` or `unavailable` while the current
+  expression does not actually use those entries.
+- **Impact**: Grace period attributes are intermittently `None` during startup/reload or transient unavailability of unrelated
+  entities.
 
 ### Reproduction
 
@@ -40,8 +40,8 @@ Missing-state short-circuit causes computed variables like `within_grace` to eva
 
 ### Root cause
 
-- The evaluator applies a global guard that aborts evaluation if it finds any context entry with raw value equal to `unknown`
-  or `unavailable` (case-insensitive), even if that entry is not referenced by the current formula.
+- The evaluator applies a global guard that aborts evaluation if it finds any context entry with raw value equal to `unknown` or
+  `unavailable` (case-insensitive), even if that entry is not referenced by the current formula.
 
 Code reference:
 
@@ -61,8 +61,8 @@ ha-synthetic-sensors/src/ha_synthetic_sensors/core_formula_evaluator.py
 
 - During initialization, the current sensor’s own `state` or some unrelated dependency can briefly be `"unknown"`. That flag
   triggers the early return `None`, so the computed variable result becomes `None` before the expression is evaluated.
-- The variable-level `UNAVAILABLE/UNKNOWN: 'false'` guards in YAML cannot help, because the evaluator exits before it
-  evaluates the formula.
+- The variable-level `UNAVAILABLE/UNKNOWN: 'false'` guards in YAML cannot help, because the evaluator exits before it evaluates
+  the formula.
 
 ### Proposed solution
 
@@ -75,17 +75,17 @@ Implementation outline:
 
 - Extract the set of variable names referenced by the current `resolved_formula` (simple regex over identifiers, excluding
   function names), or reuse the dependency extractor for attribute/computed-variable contexts.
-- In `_extract_values_for_enhanced_evaluation(...)`, check missing-state only for those referenced variables. Ignore
-  unrelated context entries.
+- In `_extract_values_for_enhanced_evaluation(...)`, check missing-state only for those referenced variables. Ignore unrelated
+  context entries.
 - Special-cases:
   - If the formula explicitly references `state`, then the guard remains in effect for `state`.
-  - For the main sensor formula evaluation, keeping the current behavior is acceptable (if desired) because an unknown
-    `state` should typically make the sensor unavailable.
+  - For the main sensor formula evaluation, keeping the current behavior is acceptable (if desired) because an unknown `state`
+    should typically make the sensor unavailable.
 
 Acceptance criteria:
 
-- `within_grace` evaluates to a boolean immediately (no `None`) provided metadata and time functions are available,
-  regardless of other context entries being `unknown`.
+- `within_grace` evaluates to a boolean immediately (no `None`) provided metadata and time functions are available, regardless
+  of other context entries being `unknown`.
 - The main sensor state still becomes `unavailable` when its own required inputs are missing.
 - Unit tests cover cases where unrelated context entries are `unknown` while the formula does not reference them.
 
@@ -97,8 +97,8 @@ Acceptance criteria:
 
 ### Test plan (high level)
 
-- Unit: Add tests that build a handler context with `state == "unknown"` but evaluate a formula that does not use `state`
-  (e.g., `minutes_between(metadata(state, 'last_changed'), now()) < 30`). Expect a boolean result.
+- Unit: Add tests that build a handler context with `state == "unknown"` but evaluate a formula that does not use `state` (e.g.,
+  `minutes_between(metadata(state, 'last_changed'), now()) < 30`). Expect a boolean result.
 - Integration: Reload sensors and verify `grace_period_active` is boolean from the first evaluation cycle.
 
 ### Rollout notes

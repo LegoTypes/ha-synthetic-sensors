@@ -316,9 +316,9 @@ class EvaluatorDependency:
             # Validate the value - this will raise DataValidationError for fatal cases (unsupported types)
             self._validate_data_provider_value(entity_id, result["value"])
 
-            # Handle None values as "unknown" for graceful handling
+            # Preserve None values - let alternate state handlers decide what to do
             if result["value"] is None:
-                return "unknown"
+                return "none"
 
             # Check for operational state strings that should be handled gracefully
             if isinstance(result["value"], str):

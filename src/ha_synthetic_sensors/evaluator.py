@@ -5,16 +5,19 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import logging
 import re
+import traceback
 from typing import Any, cast
 
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
+from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.core import STATE_UNKNOWN, HomeAssistant
 from homeassistant.helpers.typing import StateType
 
 from .alternate_state_eval import evaluate_formula_alternate
+from .alternate_state_processor import alternate_state_processor
 from .cache import CacheConfig
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
+from .constants_alternate import identify_alternate_state_value
 from .constants_evaluation_results import (
     RESULT_KEY_ERROR,
     RESULT_KEY_STATE,
@@ -51,6 +54,7 @@ from .evaluator_stats import (
     get_enhanced_evaluation_stats as _get_enhanced_evaluation_stats,
 )
 from .exceptions import (
+    AlternateStateDetected,
     BackingEntityResolutionError,
     CircularDependencyError,
     DataValidationError,
@@ -328,8 +332,16 @@ class Evaluator(FormulaEvaluator):
             CircularDependencyError,
         ) as known_err:
             result = self._handle_known_errors(known_err, formula_name)
+        except AlternateStateDetected as alt_state_err:
+            # Let AlternateStateDetected propagate to core formula evaluator
+            raise alt_state_err
         except Exception as err_unknown:
+            # Log full exception with traceback to aid debugging of integration tests
+            _LOGGER.exception("Unhandled exception during evaluation of formula '%s': %s", formula_name, err_unknown)
+            # Also print the traceback to stdout for tests running with -s
+            traceback.print_exc()
             result = self._error_handler.handle_evaluation_error(err_unknown, formula_name)
+        _LOGGER.debug("evaluate_formula_with_sensor_config result for %s: %s", formula_name, result)
         return result
 
     def _handle_known_errors(self, err: Exception, formula_name: str) -> EvaluationResult:
@@ -351,7 +363,7 @@ class Evaluator(FormulaEvaluator):
         bypass_dependency_management: bool,
         formula_name: str,
     ) -> EvaluationResult:
-        """Core formula evaluation logic without exception handling."""
+        """Core formula evaluation logic."""
         # Perform all pre-evaluation checks
         check_result, eval_context = self._perform_pre_evaluation_checks(config, context, sensor_config, formula_name)
         if check_result is not None:
@@ -361,21 +373,29 @@ class Evaluator(FormulaEvaluator):
         if eval_context is None:
             return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
 
-        # Use enhanced variable resolution with HA state detection
-        resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
-            config.formula, sensor_config, eval_context, config
-        )
+        # Use enhanced variable resolution with HA state detection and alternate handler processing
+        try:
+            _LOGGER.debug("Variable resolution start: formula=%s, context_keys=%s", config.formula, list(eval_context.keys()))
+            resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
+                config.formula, sensor_config, eval_context, config
+            )
+            _LOGGER.debug(
+                "Variable resolution complete: resolved_formula=%s, has_ha_state=%s, ha_state_value=%s, early_result=%s",
+                resolution_result.resolved_formula,
+                getattr(resolution_result, "has_ha_state", None),
+                getattr(resolution_result, "ha_state_value", None),
+                getattr(resolution_result, "early_result", None),
+            )
+        except Exception as e:
+            _LOGGER.exception("Exception during variable resolution for formula %s: %s", config.id, e)
+            traceback.print_exc()
+            raise
 
-        # Check if HA state was detected during variable resolution
-        ha_state = resolution_result.ha_state_value if resolution_result.has_ha_state else None
-        if ha_state is not None:
-            if config.alternate_state_handler:
-                fake_err = ValueError(str(ha_state))
-                alt_value = self._try_formula_alternate_state_handler(config, eval_context, sensor_config, fake_err)
-                if alt_value is not None:
-                    normalized = EvaluatorHelpers.process_evaluation_result(alt_value)
-                    return EvaluatorResults.create_success_result_with_state("ok", value=normalized)
-            return self._handle_ha_state_detection(resolution_result, formula_name)
+        # Check if early result was detected during variable resolution
+        if resolution_result.early_result is not None:
+            _LOGGER.debug("Early result detected in variable resolution: %s", resolution_result.early_result)
+            # Pass early result to Phase 4 for processing
+            return self._process_early_result(resolution_result.early_result, config, eval_context, sensor_config)
 
         # Check if we need dependency-aware evaluation
         if self._should_use_dependency_management(sensor_config, context, bypass_dependency_management, config):
@@ -400,17 +420,35 @@ class Evaluator(FormulaEvaluator):
         # Evaluate the formula normally
         return self._evaluate_formula_normally(config, eval_context, context, sensor_config, formula_name)
 
-    def _handle_ha_state_detection(self, resolution_result: Any, formula_name: str) -> EvaluationResult:
-        """Handle HA state detection during variable resolution."""
-        _LOGGER.debug(
-            "Formula '%s' resolved to HA state '%s' during variable resolution, returning corresponding sensor state",
-            formula_name,
-            resolution_result.ha_state_value,
+    def _process_early_result(
+        self,
+        early_result: Any,
+        config: FormulaConfig,
+        eval_context: dict[str, ContextValue],
+        sensor_config: SensorConfig | None,
+    ) -> EvaluationResult:
+        """Convert early results to EvaluationResult format with potential alternate state handling."""
+        _LOGGER.debug("Evaluator._process_early_result: Processing early result from Phase 1 or 2.5: %s", early_result)
+
+        # Use the alternate state processor to handle the early result
+        # This consolidates all alternate state processing in Phase 4
+        processed_result = alternate_state_processor.process_evaluation_result(
+            result=early_result,
+            exception=None,  # No exception for early results
+            context=eval_context,
+            config=config,
+            sensor_config=sensor_config,
+            core_evaluator=self._execution_engine.core_evaluator,
+            resolve_all_references_in_formula=self._resolve_all_references_in_formula,
+            pre_eval=True,
         )
-        self._error_handler.handle_successful_evaluation(formula_name)
-        return EvaluatorResults.create_success_from_ha_state(
-            resolution_result.ha_state_value, resolution_result.unavailable_dependencies or []
-        )
+
+        # Normalize processed result using EvaluatorHelpers then convert to proper EvaluationResult
+        # CRITICAL FIX: When alternate state processor returns None (no handler found),
+        # preserve the None instead of falling back to early_result
+        normalized = EvaluatorHelpers.process_evaluation_result(processed_result)
+        # Use create_success_from_result to correctly handle None -> STATE_UNKNOWN and numeric/boolean types
+        return EvaluatorResults.create_success_from_result(normalized)
 
     def _should_use_dependency_management(
         self,
@@ -546,6 +584,9 @@ class Evaluator(FormulaEvaluator):
             self._error_handler.handle_successful_evaluation(formula_name)
 
             # Convert result to proper EvaluationResult
+            # Preserve None results as STATE_UNKNOWN instead of treating them as successful 'ok' with None value
+            if result is None:
+                return EvaluatorResults.create_success_from_result(result)
             if isinstance(result, int | float):
                 return EvaluatorResults.create_success_result(float(result))
             return EvaluatorResults.create_success_result_with_state("ok", value=result)
@@ -583,6 +624,9 @@ class Evaluator(FormulaEvaluator):
         result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
 
         # Convert result to proper EvaluationResult
+        # Preserve None results as STATE_UNKNOWN instead of treating them as successful 'ok' with None value
+        if result is None:
+            return EvaluatorResults.create_success_from_result(result)
         if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))
         return EvaluatorResults.create_success_result_with_state("ok", value=result)
@@ -611,12 +655,23 @@ class Evaluator(FormulaEvaluator):
         # Determine which exception handler(s) to try. Prefer type-specific, then fallback to both.
         error_str = str(error).lower()
         candidates: list[Any] = []
-        if "unavailable" in error_str and config.alternate_state_handler.unavailable is not None:
+
+        # Try specific handlers first
+        if STATE_UNAVAILABLE in error_str and config.alternate_state_handler.unavailable is not None:
             candidates.append(config.alternate_state_handler.unavailable)
-        if "unknown" in error_str and config.alternate_state_handler.unknown is not None:
+        elif STATE_UNKNOWN in error_str and config.alternate_state_handler.unknown is not None:
             candidates.append(config.alternate_state_handler.unknown)
-        # Fallback ordering if error type not identifiable
+        elif "none" in error_str and config.alternate_state_handler.none is not None:
+            candidates.append(config.alternate_state_handler.none)
+
+        # If no specific handler found, try fallback handler
+        if not candidates and config.alternate_state_handler.fallback is not None:
+            candidates.append(config.alternate_state_handler.fallback)
+
+        # Final fallback: try specific handlers in priority order
         if not candidates:
+            if config.alternate_state_handler.none is not None:
+                candidates.append(config.alternate_state_handler.none)
             if config.alternate_state_handler.unavailable is not None:
                 candidates.append(config.alternate_state_handler.unavailable)
             if config.alternate_state_handler.unknown is not None:
@@ -655,7 +710,17 @@ class Evaluator(FormulaEvaluator):
         cache_key_id: str,
         sensor_config: SensorConfig | None = None,
     ) -> float | str | bool | None:
-        """Execute the actual formula evaluation with proper multi-phase resolution and exception handling."""
+        """Execute the actual formula evaluation with multi-phase resolution and exception handling.
+
+        This method orchestrates the complete evaluation pipeline for a formula, including:
+        - Variable resolution and dependency management
+        - Context preparation and optimization
+        - Formula execution via CoreFormulaEvaluator
+        - Alternate state handling and result finalization
+
+        RELATIONSHIP: This method delegates the actual formula evaluation to CoreFormulaEvaluator
+        via _execute_with_handler -> FormulaEvaluatorService -> CoreFormulaEvaluator.evaluate_formula
+        """
         # PHASE 1: Variable resolution
         resolution_result, resolved_formula = self._resolve_formula_variables(config, sensor_config, eval_context)
 
@@ -663,7 +728,33 @@ class Evaluator(FormulaEvaluator):
         handler_context = self._prepare_handler_context(eval_context, resolution_result)
 
         # PHASE 3: Execute formula with appropriate handler
-        result = self._execute_with_handler(config, resolved_formula, handler_context, eval_context, sensor_config)
+        try:
+            # Note: Metadata function processing is handled in CoreFormulaEvaluator
+            # No need to duplicate it here since _execute_with_handler calls CoreFormulaEvaluator
+
+            # Evaluation with raise conditions for alternate states and exception handling
+            result = self._execute_with_handler(config, resolved_formula, handler_context, eval_context, sensor_config)
+
+            # Check if evaluation result is an alternate state
+            if isinstance(result, str) and result.lower() in ["unavailable", "unknown", "none"]:
+                raise AlternateStateDetected(f"Evaluation returned alternate state: {result}", result.lower())
+
+        except AlternateStateDetected as e:
+            # Handle alternate state detection
+            if config.alternate_state_handler:
+                result = alternate_state_processor.process_evaluation_result(
+                    e.alternate_state_value,
+                    None,
+                    handler_context,
+                    config,
+                    sensor_config,
+                    core_evaluator=self._execution_engine.core_evaluator,
+                    resolve_all_references_in_formula=self._resolve_all_references_in_formula,
+                )
+                _LOGGER.debug("Formula %s resolved using alternate state handler = %s", config.id, result)
+            else:
+                # No alternate state handler configured, return the alternate state value
+                result = e.alternate_state_value
 
         # PHASE 4: Validate and finalize result
         return self._finalize_result(result, config, context, cache_key_id, sensor_config)
@@ -686,11 +777,16 @@ class Evaluator(FormulaEvaluator):
 
     def _extract_values_for_enhanced_evaluation(self, context: dict[str, ContextValue]) -> dict[str, Any]:
         """Extract values from ReferenceValue objects for enhanced SimpleEval evaluation."""
-        # Use public interface via temporary execution (avoid protected access)
         enhanced_context: dict[str, Any] = {}
         for key, value in context.items():
             if isinstance(value, ReferenceValue):
-                enhanced_context[key] = EvaluatorHelpers.process_evaluation_result(value.value)
+                raw = value.value
+                # Detect HA alternate states using shared helper
+                # identify_alternate_state_value() returns a string for matches
+                # and False when no alternate state is detected. Respect that
+                # contract by checking for a string result rather than None.
+                alt = identify_alternate_state_value(raw)
+                enhanced_context[key] = alt if isinstance(alt, str) else raw
             else:
                 enhanced_context[key] = value
         return enhanced_context
@@ -703,38 +799,20 @@ class Evaluator(FormulaEvaluator):
         eval_context: dict[str, ContextValue],
         sensor_config: SensorConfig | None,
     ) -> float | str | bool | None:
-        """Execute formula using the shared formula evaluation service."""
-        try:
-            # Use the shared formula evaluation service
-            result = FormulaEvaluatorService.evaluate_formula(resolved_formula, config.formula, handler_context)
+        """Execute formula using the shared formula evaluation service.
 
-            # Check if we need to use alternate state handler
-            # CRITICAL FIX: Check for None in addition to STATE_UNKNOWN and STATE_UNAVAILABLE
-            # This ensures that None values (which indicate missing/unavailable data) properly trigger
-            # alternate state handlers, preventing ValueError for numeric sensors that expect None or numeric values.
-            if (result is None or result in (STATE_UNKNOWN, STATE_UNAVAILABLE)) and config.alternate_state_handler:
-                # Create a fake error to trigger alternate handlers for the specific state
-                # CRITICAL FIX: Handle None results gracefully in error creation
-                # This prevents errors when creating fake errors for None values that trigger alternate handlers.
-                fake_err = ValueError(str(result) if result is not None else "None")
-                exception_result = self._try_formula_alternate_state_handler(config, eval_context, sensor_config, fake_err)
+        This method delegates formula evaluation to the shared FormulaEvaluatorService,
+        which in turn uses CoreFormulaEvaluator for the actual evaluation logic.
 
-                if exception_result is not None:
-                    _LOGGER.debug(
-                        "Formula %s resolved using alternate handler for %s = %s", config.id, result, exception_result
-                    )
-                    return exception_result
-
-            return result
-        except Exception as err:
-            # Exception handler for compatibility (but clean slate should not need this)
-            exception_result = self._try_formula_alternate_state_handler(config, eval_context, sensor_config, err)
-
-            if exception_result is not None:
-                _LOGGER.debug("Formula %s resolved using exception handler = %s", config.id, exception_result)
-                return exception_result
-            # Re-raise original error - clean slate should be deterministic
-            raise err
+        RELATIONSHIP: This is the bridge between the pipeline orchestrator (_execute_formula_evaluation)
+        and the pure evaluation engine (CoreFormulaEvaluator via FormulaEvaluatorService)
+        """
+        # Use the shared formula evaluation service
+        # Correct argument type in evaluate_formula call
+        result = FormulaEvaluatorService.evaluate_formula(
+            resolved_formula, config.formula, handler_context, allow_unresolved_states=config.allow_unresolved_states
+        )
+        return result
 
     def _finalize_result(
         self,
@@ -766,11 +844,7 @@ class Evaluator(FormulaEvaluator):
         eval_context: dict[str, ContextValue],
         formula_config: FormulaConfig | None = None,
     ) -> str:
-        """
-        COMPILER-LIKE APPROACH: Resolve ALL references in formula to actual values.
-
-        This method delegates to the Variable Resolution Phase for complete resolution.
-        """
+        """Delegate to the Variable Resolution Phase for complete resolution."""
         return self._variable_resolution_phase.resolve_all_references_in_formula(
             formula, sensor_config, eval_context, formula_config
         )
@@ -816,28 +890,22 @@ class Evaluator(FormulaEvaluator):
         return cache_stats
 
     def clear_compiled_formulas(self) -> None:
-        """Clear all compiled formulas from the formula compilation cache.
+        """Clear all compiled formulas from cache.
 
         This should be called when formulas change or during configuration reload
         to ensure that formula modifications take effect.
         """
-        # Clear compiled formulas in enhanced helper (99% of formulas)
+        # Clear compiled formulas in enhanced helper (handles all formulas)
         if hasattr(self._enhanced_helper, "clear_compiled_formulas"):
             self._enhanced_helper.clear_compiled_formulas()
-
-        # Clear compiled formulas in numeric handler (specialized cases)
-        numeric_handler = self._handler_factory.get_handler("numeric")
-        if numeric_handler is not None and hasattr(numeric_handler, "clear_compiled_formulas"):
-            numeric_handler.clear_compiled_formulas()
 
     def get_compilation_cache_stats(self) -> dict[str, Any]:
         """Get formula compilation cache statistics.
 
         Returns:
-            Dictionary with compilation cache statistics from enhanced helper and specialized handlers
+            Dictionary with compilation cache statistics from enhanced helper
         """
-        numeric_handler = self._handler_factory.get_handler("numeric")
-        return _build_compilation_cache_stats(self._enhanced_helper, numeric_handler)
+        return _build_compilation_cache_stats(self._enhanced_helper)
 
     def get_enhanced_evaluation_stats(self) -> dict[str, Any]:
         """Get enhanced evaluation usage statistics.

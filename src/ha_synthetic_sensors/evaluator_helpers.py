@@ -109,7 +109,9 @@ class EvaluatorHelpers:
             processed_result = None
         # Handle numeric and boolean results
         elif isinstance(result, int | float | bool):
-            processed_result = result
+            # Preserve booleans as booleans, but normalize numeric types to float
+            # to provide consistent string conversions (e.g., str(5.0) -> '5.0').
+            processed_result = result if isinstance(result, bool) else float(result)
         # Handle string results
         elif isinstance(result, str):
             # Preserve HA state strings

@@ -95,6 +95,10 @@ class EvaluatorResults:
         # Home Assistant will handle None appropriately by converting to STATE_UNKNOWN internally.
         if result is None:
             return EvaluatorResults.create_success_result_with_state(STATE_UNKNOWN, **{RESULT_KEY_VALUE: None})
+        # CRITICAL FIX: Check for boolean first, since bool is a subclass of int in Python
+        # This prevents True/False from being converted to 1.0/0.0
+        if isinstance(result, bool):
+            return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
         if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))
         return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
@@ -123,6 +127,15 @@ class EvaluatorResults:
             STATE_UNKNOWN if ha_state_value in [STATE_UNAVAILABLE, STATE_UNKNOWN] or ha_state_value is None else ha_state_value
         )
 
+        # Normalize dependency representations: accept HADependency objects or strings
+        deps = unavailable_dependencies or []
+        serialized = []
+        for d in deps:
+            try:
+                serialized.append(str(d))
+            except Exception:
+                serialized.append(d)
+
         return EvaluatorResults.create_success_result_with_state(
-            normalized_state, **{RESULT_KEY_VALUE: None, RESULT_KEY_UNAVAILABLE_DEPENDENCIES: unavailable_dependencies or []}
+            normalized_state, **{RESULT_KEY_VALUE: None, RESULT_KEY_UNAVAILABLE_DEPENDENCIES: serialized}
         )

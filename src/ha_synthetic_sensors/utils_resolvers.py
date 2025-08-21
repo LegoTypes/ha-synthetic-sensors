@@ -7,7 +7,6 @@ to eliminate code duplication between different resolver classes.
 import logging
 from typing import Any, cast
 
-from homeassistant.core import STATE_UNKNOWN
 from homeassistant.helpers.typing import StateType
 
 from .constants_boolean_states import FALSE_STATES, TRUE_STATES
@@ -50,11 +49,11 @@ def resolve_via_data_provider_entity(dependency_handler: Any, entity_id: str, or
             value = validated_result.get(RESULT_KEY_VALUE)
             if value is None:
                 _LOGGER.debug(
-                    "Entity resolver: entity '%s' exists but has None value, returning unknown state",
+                    "Entity resolver: entity '%s' exists but has None value, preserving None",
                     entity_id,
                 )
-                # Return unknown state wrapped in ReferenceValue
-                return ReferenceValue(reference=entity_id, value=STATE_UNKNOWN)
+                # Preserve None values - let alternate state handlers decide what to do
+                return ReferenceValue(reference=entity_id, value=None)
 
             # Handle special Home Assistant state values
             if isinstance(value, str) and (is_ha_state_value(value) or is_ha_unknown_equivalent(value)):
@@ -240,11 +239,11 @@ def resolve_via_hass_entity(dependency_handler: Any, entity_id: str, original_re
         # Handle None state values (startup race condition)
         if state_value is None:
             _LOGGER.debug(
-                "Entity resolver: entity '%s' has None state, returning unknown",
+                "Entity resolver: entity '%s' has None state, preserving None",
                 entity_id,
             )
-            # Return unknown state wrapped in ReferenceValue
-            return ReferenceValue(reference=entity_id, value="unknown")
+            # Preserve None values - let alternate state handlers decide what to do
+            return ReferenceValue(reference=entity_id, value=None)
 
         # Convert state value to appropriate type
         converted_value = _convert_hass_state_value(state_value, entity_id, hass_state)

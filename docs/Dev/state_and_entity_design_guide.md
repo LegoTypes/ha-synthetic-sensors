@@ -5,18 +5,18 @@ attributes, and attribute-to-attribute references.
 
 ## Overview
 
-Synthetic sensors support multiple ways to reference entities and values within formulas. Understanding these reference
-patterns is crucial for creating effective sensor configurations. The integration is responsible for properly constructing
-sensor definitions and ensuring that references to other entities are valid, including the registration of backing entities
-that may be in-memory objects.
+Synthetic sensors support multiple ways to reference entities and values within formulas. Understanding these reference patterns
+is crucial for creating effective sensor configurations. The integration is responsible for properly constructing sensor
+definitions and ensuring that references to other entities are valid, including the registration of backing entities that may be
+in-memory objects.
 
-These idioms define the fundamental rules and behaviors for state and entity references in synthetic sensor formulas. They
-are the foundation for all formula evaluation and variable resolution in the package.
+These idioms define the fundamental rules and behaviors for state and entity references in synthetic sensor formulas. They are
+the foundation for all formula evaluation and variable resolution in the package.
 
-The system implements entities reference and values internally using a **ReferenceValue architecture** that ensures type
-safety and provides handlers with access to both entity references and resolved values. This architecture enables features
-like the `metadata()` function that require knowledge of the actual Home Assistant entity ID. For detailed implementation
-information, see the [ReferenceValue Architecture Implementation Guide](reference_value_architecture.md).
+The system implements entities reference and values internally using a **ReferenceValue architecture** that ensures type safety
+and provides handlers with access to both entity references and resolved values. This architecture enables features like the
+`metadata()` function that require knowledge of the actual Home Assistant entity ID. For detailed implementation information,
+see the [ReferenceValue Architecture Implementation Guide](reference_value_architecture.md).
 
 ## Synthetic Sensor Definitions
 
@@ -31,9 +31,9 @@ information, see the [ReferenceValue Architecture Implementation Guide](referenc
 - The integration is responsible for properly constructing sensor definitions (YAML) and ensuring that references to other
   entities within that YAML are valid. When an integration starts up, the initial data in backing entities (if any) should be
   fully populated.
-- The registration of backing entities will be validated by the synthetic package such that a registration provides at least
-  one dictionary entry for any backing entities that are registered. If backing entities were provided but no entries exist,
-  this condition is a fatal error and an appropriate exception should be raised.
+- The registration of backing entities will be validated by the synthetic package such that a registration provides at least one
+  dictionary entry for any backing entities that are registered. If backing entities were provided but no entries exist, this
+  condition is a fatal error and an appropriate exception should be raised.
 
 ## Standard HA State Values
 
@@ -41,25 +41,24 @@ The following state values are recognized and handled consistently throughout th
 
 - **`"unavailable"`**: Represents an entity that exists but is temporarily unavailable (e.g., device offline)
 - **`"unknown"`**: Represents an entity that exists but has no known state value
-- **`"None"`**: String representation that is converted to `STATE_UNKNOWN` for consistency
+- **`"None"`**: String representation that can be handled by alternate state handlers
 
 ### State Value Handling Rules
 
 1. **Consistent Casing**: All HA state values use lowercase (`"unknown"`, `"unavailable"`) for consistency
 2. **Early Detection**: HA state values are detected during variable resolution phase, before formula evaluation begins
-3. **Invalid Expression Prevention**: Expressions like `"unavailable" + 10` are invalid and are detected early to prevent
-   formula evaluation errors
-4. **State Reflection**: When a formula contains HA state values, the synthetic sensor immediately returns `STATE_UNKNOWN`
-   without attempting formula evaluation
-5. **None Conversion**: `None` values from backing entities are treated as `STATE_UNKNOWN` to allow for integration
-   initialization
-6. **Enhanced Dependency Reporting**: Unavailable dependencies are reported with context including variable names and entity
-   IDs
+3. **Alternate State Handler Processing**: When HA state values are detected, they trigger alternate state handlers if defined
+4. **Early Detection**: Single variables with alternate states are detected during variable resolution phase
+5. **Post-Evaluation Processing**: Results containing alternate states trigger handlers after formula evaluation
+6. **Exception Mapping**: Evaluation exceptions are mapped to appropriate alternate states (undefined → unavailable, etc.)
+7. **Enhanced Dependency Reporting**: Unavailable dependencies are reported with context including variable names and entity IDs
 
 ### Implementation Notes
 
 - **Variable Resolution**: HA state values are detected during variable resolution phase using enhanced detection logic
-- **Early Return**: When HA states are detected, the evaluator returns the state immediately, bypassing formula evaluation
+- **Alternate State Handler Integration**: When HA states are detected, they trigger the comprehensive alternate state handler
+  system
+- **Two-Phase Processing**: Early detection during variable resolution and post-evaluation processing for results and exceptions
 - **Enhanced Dependency Tracking**: HA state values are tracked in `unavailable_dependencies` with format:
   `"variable_name (entity_id) is state_value"` for better debugging context
 - **Entity Mapping**: Variable resolution tracks entity mappings to provide accurate entity IDs in dependency reporting
@@ -67,47 +66,46 @@ The following state values are recognized and handled consistently throughout th
 - **Architectural Integration**: HA state detection is integrated into the layered, compiler-like evaluation system
 - **VariableResolutionResult**: Enhanced variable resolution returns structured results with HA state detection
 - **Duplicate Prevention**: The system prevents duplicate dependency entries during variable resolution
-- **Default State**: All HA state values (None, "unavailable", "unknown") default to `STATE_UNKNOWN` for consistency
+- **Handler Priority System**: Specific handlers (none/unknown/unavailable) take precedence over fallback handlers
 
 ## State and Entity Idioms
 
-1. **Sensor Evaluation Order** The main sensor has two states - the pre-evaluation state and the post-evaluation state. The
-   main sensor is evaluated before attributes are evaluated. A main sensor state cannot be circular to itself. References to
-   the main sensor state (backing or external entities) are evaluated prior to any other evaluation. Attribute formulas are
-   evaluated in dependency order, ensuring that all referenced values are available.
-2. **Main Formula State Idiom** If a sensor has a resolvable backing entity, the `state` token in the main formula resolves
-   to the current state of the backing entity. If there is no backing entity, `state` refers to the sensor's own
-   pre-evaluation state.
-3. **Attribute State Idiom** In attribute formulas, the `state` token always refers to the result of the main sensor's
-   formula evaluation (i.e., the main sensor's calculated value after all variables and dependencies are resolved), never
-   directly to the backing entity.
+1. **Sensor Evaluation Order** The main sensor has two states - the pre-evaluation state and the post-evaluation state. The main
+   sensor is evaluated before attributes are evaluated. A main sensor state cannot be circular to itself. References to the main
+   sensor state (backing or external entities) are evaluated prior to any other evaluation. Attribute formulas are evaluated in
+   dependency order, ensuring that all referenced values are available.
+2. **Main Formula State Idiom** If a sensor has a resolvable backing entity, the `state` token in the main formula resolves to
+   the current state of the backing entity. If there is no backing entity, `state` refers to the sensor's own pre-evaluation
+   state.
+3. **Attribute State Idiom** In attribute formulas, the `state` token always refers to the result of the main sensor's formula
+   evaluation (i.e., the main sensor's calculated value after all variables and dependencies are resolved), never directly to
+   the backing entity.
 4. **Self-Reference Idiom** In main formulas, referencing the sensor by its key (e.g., `my_sensor`) or by its full entity ID
    (e.g., `sensor.my_sensor`) is equivalent to using the `state` token. All three resolve to the backing entity's state (if
-   present) or the sensor's previous value (if not). If the backing entity value is None, it is treated as `STATE_UNKNOWN`.
-5. **Attribute Self-Reference Idiom** In attribute formulas, referencing the main sensor by its key or entity ID is
-   equivalent to using the `state` token. All attribute forms resolve to the main sensor's calculated value
-   (post-evaluation).
+   present) or the sensor's previous value (if not). If the backing entity value is None, it can be handled by alternate state
+   handlers.
+5. **Attribute Self-Reference Idiom** In attribute formulas, referencing the main sensor by its key or entity ID is equivalent
+   to using the `state` token. All attribute forms resolve to the main sensor's calculated value (post-evaluation).
 6. **State Reference Idiom** The main state can reference attributes but those attribute references are dereferenced prior to
    main sensor state evaluation. Attributes can reference other attributes within the same sensor by dot notation, i.e.,
-   `state.myattribute`. These references are resolved in dependency order, and circular references (either with the main
-   sensor state or to other attributes) are detected and prevented.
-7. **Variable Inheritance Idiom** All variables defined in the parent sensor are automatically available in attribute
-   formulas.
+   `state.myattribute`. These references are resolved in dependency order, and circular references (either with the main sensor
+   state or to other attributes) are detected and prevented.
+7. **Variable Inheritance Idiom** All variables defined in the parent sensor are automatically available in attribute formulas.
 8. **Direct Entity Reference Idiom** Any formula can reference the state of any Home Assistant entity directly by its full
    entity ID (e.g., `sensor.some_entity`). This always resolves to the current state of that entity.
-9. **Error Propagation Idiom** If a required entity or variable cannot be resolved, or if a data provider returns invalid
-   data, a specific exception is raised (`BackingEntityResolutionError`, `MissingDependencyError`, or `DataValidationError`).
-   Fatal errors are never silently converted to error results. However, None values from backing entities are treated as
-   `STATE_UNKNOWN` rather than causing errors to allow for integration initialization.
-10. **Consistent Reference Idiom** The same reference patterns (`state`, sensor key, entity ID) are supported in both main
-    and attribute formulas, but their meaning is context-dependent (main formula = backing entity or previous value;
-    attribute = main sensor's calculated value).
+9. **Error Propagation Idiom** If a required entity or variable cannot be resolved, or if a data provider returns invalid data,
+   a specific exception is raised (`BackingEntityResolutionError`, `MissingDependencyError`, or `DataValidationError`). Fatal
+   errors are never silently converted to error results. However, None values from backing entities can be handled by alternate
+   state handlers to allow for integration initialization.
+10. **Consistent Reference Idiom** The same reference patterns (`state`, sensor key, entity ID) are supported in both main and
+    attribute formulas, but their meaning is context-dependent (main formula = backing entity or previous value; attribute =
+    main sensor's calculated value).
 
 ## Enhanced Dependency Reporting
 
 The synthetic sensor package provides enhanced dependency reporting to improve debugging and monitoring capabilities. When
-dependencies are unavailable or contain HA state values, the system reports detailed information including both variable
-names and entity IDs.
+dependencies are unavailable or contain HA state values, the system reports detailed information including both variable names
+and entity IDs.
 
 ### Dependency Reporting Format
 
@@ -127,31 +125,41 @@ This format provides:
 
 ```yaml
 sensors:
-  # Example: Backing entity with unknown state
+  # Example: Backing entity with unknown state - handled by alternate state handler
   power_monitor:
     entity_id: sensor.panel_power # Entity exists but value is None
     formula: state * 2
+    alternate_states:
+      NONE: 0 # Handle None values by returning 0
     # Result:
-    #   state: "unknown"
+    #   state: "ok"
+    #   value: 0 (from none handler)
     #   unavailable_dependencies: ["source_value (sensor.panel_power) is unknown"]
 
-  # Example: Variable reference with unavailable state
+  # Example: Variable reference with unavailable state - handled by fallback
   efficiency_calc:
     variables:
       panel_power: sensor.panel_power # Entity state = "unavailable"
     formula: panel_power * 0.95
+    alternate_states:
+      FALLBACK: 100 # Fallback value when dependencies are unavailable
     # Result:
-    #   state: "unknown"
+    #   state: "ok"
+    #   value: 100 (from fallback handler)
     #   unavailable_dependencies: ["panel_power (sensor.panel_power) is unavailable"]
 
-  # Example: Multiple unavailable dependencies
+  # Example: Multiple unavailable dependencies - handled by specific handlers
   complex_calc:
     variables:
       power1: sensor.panel_power # Entity state = "unknown"
       power2: sensor.solar_power # Entity state = "unavailable"
     formula: power1 + power2
+    alternate_states:
+      UNKNOWN: 50 # Handle unknown state
+      UNAVAILABLE: 25 # Handle unavailable state
     # Result:
-    #   state: "unknown" (all unavailable dependencies default to STATE_UNKNOWN)
+    #   state: "ok"
+    #   value: 75 (from handlers: 50 + 25)
     #   unavailable_dependencies: [
     #     "power1 (sensor.panel_power) is unknown",
     #     "power2 (sensor.solar_power) is unavailable"
@@ -195,8 +203,8 @@ sensors:
 
 - **Behavior**: `state` resolves to the backing entity's current state value
 - **Evaluation**: The backing entity's state is fetched and used in the formula
-- **None Value Handling**: If the backing entity value is None, it is treated as `STATE_UNKNOWN` to allow for integration
-  initialization
+- **None Value Handling**: If the backing entity value is None, it can be handled by alternate state handlers to allow for
+  integration initialization
 - **Error Handling**: If the backing entity is not registered or the registration contains no entries,
   `BackingEntityResolutionError` is raised
 
@@ -241,8 +249,8 @@ sensors:
 
 **Note**: Both patterns resolve to the backing entity's state value when a backing entity is configured.
 
-**Safety**: Using `state` is the recommended approach as it's completely safe and unambiguous. Entity ID self-references
-require the entity to exist in Home Assistant.
+**Safety**: Using `state` is the recommended approach as it's completely safe and unambiguous. Entity ID self-references require
+the entity to exist in Home Assistant.
 
 ## Attribute Formula References
 
@@ -528,8 +536,8 @@ The following scenarios should be tested to ensure proper behavior:
 
 ### Explicit Variable Definition
 
-All variables used in formulas must be explicitly defined by the user but sensor key references are updated by the cross
-sensor reference implementation to the proper sensor entity_id after it is known through HA registration.
+All variables used in formulas must be explicitly defined by the user but sensor key references are updated by the cross sensor
+reference implementation to the proper sensor entity_id after it is known through HA registration.
 
 ### Cross-Sensor Reference Replacement Strategy
 
@@ -537,9 +545,9 @@ The cross-sensor reference implementation replaces any reference to the main sen
 entity_id wherever the original reference (to either the sensor key or the sensor's entity_id, if defined in the yaml, was
 placed.
 
-**Critical Implementation Insight**: Cross-sensor variable resolution correctly updates variables to use HA-assigned entity
-IDs rather than original sensor keys. This ensures that cross-sensor references remain valid after entity registration, even
-when collision resolution occurs and entities receive different entity IDs than originally specified.
+**Critical Implementation Insight**: Cross-sensor variable resolution correctly updates variables to use HA-assigned entity IDs
+rather than original sensor keys. This ensures that cross-sensor references remain valid after entity registration, even when
+collision resolution occurs and entities receive different entity IDs than originally specified.
 
 #### Self-Reference in Attributes: State Token vs Entity ID
 
@@ -554,8 +562,8 @@ ensure consistent evaluation within the current update cycle:
 2. **Update Cycle Consistency**: Using `entity_id` would re-fetch the sensor's state from HA, which could be the previous
    evaluation result rather than the current cycle's calculated value.
 
-3. **Avoiding Stale Data**: The `state` token ensures attributes use the most current calculated value from the same
-   evaluation cycle, preventing inconsistencies between the main sensor and its attributes.
+3. **Avoiding Stale Data**: The `state` token ensures attributes use the most current calculated value from the same evaluation
+   cycle, preventing inconsistencies between the main sensor and its attributes.
 
 **Example:**
 
@@ -580,31 +588,30 @@ sensors:
 
 **Implementation Details:**
 
-- **Cross-Sensor Sensor Set Reference Resolution**: References within a sensor to other sensor keys within the same sensor
-  set are replaced with the actual entity IDs assigned by HA upon registration. This ensures that HA uniqueness guarantees
-  are honored.
+- **Cross-Sensor Sensor Set Reference Resolution**: References within a sensor to other sensor keys within the same sensor set
+  are replaced with the actual entity IDs assigned by HA upon registration. This ensures that HA uniqueness guarantees are
+  honored.
 - **Self-Reference Replacement**: References to either the same sensor's sensor key or entity_id field are replaced with the
   `state` token in ALL contexts (main formulas, attributes, variables, dependencies). The `state` token reference resolves to
   the sensor state within the same update cycle instead of requiring HA state machine lookups, preventing stale data and
   ensuring evaluation consistency. Variables are aliases, so self-references in variables also resolve to `state`.
 - **State Token Resolution Context**:
-  - **Main Formulas**: `state` resolves to backing entity state (if present) or pre-evaluation sensor state (pure
-    calculation)
+  - **Main Formulas**: `state` resolves to backing entity state (if present) or pre-evaluation sensor state (pure calculation)
   - **Attributes**: `state` resolves to the main sensor's post-evaluation result
   - **No Circular References**: State token always refers to different evaluation phases, preventing circular dependencies
 - **Entity ID Resolution**: Direct entity ID references to other sensors fetch from HA state machine.
-- **Entity ID Field Updates**: When a sensor is registered, the actual entity_id that HA assigns is recorded and applied to
-  the entity_id field, updating any existing entity_id in the YAML configuration or adding the entity_id field if not
-  originally present. This update ensures that YAML exports always reflect current HA reality while sensor keys remain as
-  user-friendly metadata and shorthand references within the same sensor set.
+- **Entity ID Field Updates**: When a sensor is registered, the actual entity_id that HA assigns is recorded and applied to the
+  entity_id field, updating any existing entity_id in the YAML configuration or adding the entity_id field if not originally
+  present. This update ensures that YAML exports always reflect current HA reality while sensor keys remain as user-friendly
+  metadata and shorthand references within the same sensor set.
 - **YAML Export Format**:
   - **Dictionary Keys**: Original sensor keys (preserved as metadata and user-friendly references)
   - **entity_id Fields**: HA-assigned entity IDs (current reality for accurate downstream references)
 - **Storage Persistence**: Entity ID field updates persist to storage and YAML exports to maintain data accuracy.
 
-**Design Decision**: YAML exports include HA-assigned entity_ids for ALL sensors, including those that didn't originally
-specify an entity_id. This ensures that exported YAML reflects the current system state and enables reliable sensor
-referencing for subsequent CRUD operations.
+**Design Decision**: YAML exports include HA-assigned entity_ids for ALL sensors, including those that didn't originally specify
+an entity_id. This ensures that exported YAML reflects the current system state and enables reliable sensor referencing for
+subsequent CRUD operations.
 
 ### Example: YAML Export Format After HA Registration
 
@@ -666,8 +673,8 @@ sensors:
 - **Cross-sensor references** (between different sensors): Replaced with HA-assigned entity IDs
   - Sensor B referring to Sensor A: `base_power_sensor` → `sensor.base_power_sensor_2`
   - Maintains proper HA entity resolution and dependency tracking
-- **Collision Resolution**: Entity ID collisions are automatically handled by HA's entity registry (e.g., `sensor.base_power`
-  → `sensor.base_power_2` when collision occurs). All cross-sensor references are updated to use the final collision-resolved
+- **Collision Resolution**: Entity ID collisions are automatically handled by HA's entity registry (e.g., `sensor.base_power` →
+  `sensor.base_power_2` when collision occurs). All cross-sensor references are updated to use the final collision-resolved
   entity IDs.
 
 ```yaml
@@ -730,8 +737,8 @@ class BackingEntityResolutionError(MissingDependencyError):
 
 **Integration Responsibilities**:
 
-- The integration is responsible for properly constructing sensor definitions and ensuring that references to other entities
-  are valid
+- The integration is responsible for properly constructing sensor definitions and ensuring that references to other entities are
+  valid
 - When registering backing entities, the integration must provide at least one dictionary entry for any backing entities that
   are registered
 - The integration should handle the case where initial data in backing entities may not be fully populated during startup
@@ -740,10 +747,9 @@ class BackingEntityResolutionError(MissingDependencyError):
 
 - The synthetic package validates that backing entity registrations provide at least one dictionary entry
 - Debug logging indicates how many backing entities were registered (including sensor key and backing entity_id)
-- If backing entities were provided but no entries exist, this condition is a fatal error and an appropriate exception is
-  raised
-- If backing entities were provided, their values may be None and the package treats these None entries as `STATE_UNKNOWN` to
-  allow for integration initialization
+- If backing entities were provided but no entries exist, this condition is a fatal error and an appropriate exception is raised
+- If backing entities were provided, their values may be None and the package treats these None entries as `STATE_NONE` (Python
+  None) to allow for integration initialization
 
 **Triggers**:
 
@@ -753,7 +759,8 @@ class BackingEntityResolutionError(MissingDependencyError):
 - Backing entity exists but returns invalid data
 
 **Behavior**: Exception is raised and propagated (not converted to error result). Note: If a mapping exists but the value is
-None, this is treated as a transient condition and no exception is raised - the None value is converted to `STATE_UNKNOWN`.
+None, this is treated as a transient condition and no exception is raised - the None value can be handled by alternate state
+handlers if defined.
 
 ```yaml
 sensors:
@@ -763,11 +770,13 @@ sensors:
     formula: state * 2 # 'state' cannot be resolved
     # Result: BackingEntityResolutionError is raised
 
-  # Example: Valid backing entity with None value (treated as STATE_UNKNOWN)
+  # Example: Valid backing entity with None value (handled by alternate state handler)
   valid_sensor_with_none:
     entity_id: sensor.span_panel_instantaneous_power # Entity exists but value is None
-    formula: state * 2 # 'state' resolves to "unknown" (None treated as STATE_UNKNOWN)
-    # Result: Formula evaluates with "unknown" value, allowing for integration initialization
+    formula: state * 2 # 'state' resolves to None
+    alternate_states:
+      NONE: 0 # Handle None values by returning 0
+    # Result: Formula evaluates with value 0, allowing for integration initialization
 
   # Example: Valid backing entity with populated value
   valid_sensor:
@@ -792,6 +801,41 @@ class MissingDependencyError(Exception):
 - Attribute-to-attribute reference fails
 
 **Behavior**: Exception is raised and propagated
+
+### Critical Distinction: Missing Dependencies vs Special State Values
+
+The system makes a critical distinction between two scenarios:
+
+#### 1. Missing Dependencies (Fatal)
+
+- **Definition**: Entity doesn't exist in Home Assistant
+
+- **Behavior**: Raises `MissingDependencyError` (fatal, stops evaluation)
+
+- **Example**: `sensor.nonexistent_entity` in formula when entity doesn't exist
+
+#### 2. Special State Values (Handled by Alternate State Handlers)
+
+- **Definition**: Entity exists but has special state value (`None`, `"unknown"`, `"unavailable"`)
+- **Behavior**: Triggers alternate state handlers if defined
+- **Example**: `sensor.existing_entity` exists but returns `None` or `"unknown"`
+
+```yaml
+sensors:
+  # Example: Missing entity (fatal error)
+  problematic_sensor:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.nonexistent_entity * 2 # Entity doesn't exist
+    # Result: MissingDependencyError is raised (fatal)
+
+  # Example: Entity with special state (handled by alternate state handlers)
+  valid_sensor_with_special_state:
+    entity_id: sensor.span_panel_instantaneous_power
+    formula: sensor.existing_but_unknown * 2 # Entity exists but returns "unknown"
+    alternate_states:
+      UNKNOWN: 0 # Handle unknown state by returning 0
+    # Result: Formula evaluates with value 0
+```
 
 ```yaml
 sensors:
@@ -829,59 +873,113 @@ class DataValidationError(Exception):
 
 - Data provider returns `None`
 
-### Invalid Expression Handling
+### Alternate State Handler Processing
 
-The synthetic sensor package detects and handles invalid expressions that contain HA state values before they reach formula
-evaluation.
+The synthetic sensor package uses a comprehensive alternate state handler system to process HA state values and evaluation
+exceptions, providing flexible and user-defined handling instead of automatic conversion to `STATE_UNKNOWN`.
 
-#### Invalid Expression Detection
+#### Two-Phase Processing System
 
-Expressions that contain HA state values are considered invalid and are detected during variable resolution:
+The system implements two trigger points for alternate state handlers:
+
+1. **Early Detection**: Single variables with alternate states are detected during variable resolution phase
+2. **Post-Evaluation Processing**: Results and exceptions containing alternate states trigger handlers after formula evaluation
+
+#### Exception-to-State Mapping
+
+Evaluation exceptions are intelligently mapped to appropriate alternate states:
+
+- **Missing dependencies** → `MissingDependencyError` (fatal, stops evaluation)
+- **`"undefined"` or `"not defined"`** → `unavailable` (entity not available)
+- **`"unavailable"`** → `unavailable`
+- **`"unknown"`** → `unknown`
+- **Other evaluation exceptions** → `STATE_NONE` (triggers alternate state handlers)
+
+#### Handler Priority System
+
+Alternate state handlers follow a priority order:
+
+1. **Specific handlers** (none/unknown/unavailable) - highest priority
+2. **FALLBACK handler** - catch-all for any alternate state
+3. **Final fallback** - none → unavailable → unknown (if no specific handlers defined)
+
+#### Examples of Alternate State Handler Usage
 
 ```yaml
 sensors:
-  # Example: Invalid expression with HA state
-  problematic_sensor:
+  # Example: Handling unavailable entity with fallback
+  power_monitor:
     variables:
-      offline_sensor: sensor.offline_sensor  # Entity state = "unavailable"
-    formula: offline_sensor + 10  # Resolves to "unavailable" + 10
-    # Result: Sensor state = "unknown" (invalid expression detected)
-    # unavailable_dependencies: ["offline_sensor (sensor.offline_sensor) is unavailable"]
+      offline_sensor: sensor.offline_sensor # Entity state = "unavailable"
+    formula: offline_sensor + 10
+    alternate_states:
+      FALLBACK: 100 # Return 100 when dependencies are unavailable
+    # Result: value = 100 (from fallback handler)
 
-  # Example: Invalid expression with quoted HA state
-  another_problematic_sensor:
-    formula: "unavailable" + 10  # Direct invalid expression
-    # Result: Sensor state = "unknown" (invalid expression detected)
-    # unavailable_dependencies: []
+  # Example: Specific handlers for different states
+  energy_calculator:
+    variables:
+      power_sensor: sensor.power_meter # Entity state = "unknown"
+    formula: power_sensor * 2
+    alternate_states:
+      UNKNOWN: 50 # Handle unknown state
+      UNAVAILABLE: 0 # Handle unavailable state
+      NONE: None # Preserve None for energy sensors
+    # Result: value = 50 (from unknown handler)
+
+  # Example: Object-form handler with variables
+  complex_calc:
+    variables:
+      missing_sensor: sensor.missing # Entity doesn't exist
+    formula: missing_sensor * scale_factor
+    alternate_states:
+      UNAVAILABLE:
+        formula: backup_value * scale_factor
+        variables:
+          backup_value: 200
+          scale_factor: 1.5
+    # Result: value = 300 (from object-form handler)
 ```
 
-#### Detection Rules
+#### Circular Dependency Protection
 
-1. **Quoted HA States**: Expressions containing `"unknown"` or `"unavailable"` as string literals
-2. **Unquoted HA States**: Expressions containing unquoted HA state values
-3. **Mixed Expressions**: Any formula that would result in invalid mathematical operations with HA states
-
-#### Behavior
-
-- **Early Detection**: Invalid expressions are detected during variable resolution phase
-- **State Reflection**: The sensor returns `STATE_UNKNOWN` immediately
-- **No Formula Evaluation**: The formula is not evaluated to prevent mathematical errors
-- **Enhanced Reporting**: Dependencies are reported with context for debugging
-
-#### Examples of Invalid Expressions
+The system includes circular dependency detection for alternate state handlers:
 
 ```yaml
-# These expressions are invalid and will return STATE_UNKNOWN:
-formula: "'unknown' * 2"             # Returns "unknown"
-formula: "sensor.offline + 5"        # Returns "unknown" if sensor.offline is unavailable
-formula: "'unavailable' / 100"       # Returns "unknown"
-formula: "'unknown' - 50"            # Returns "unknown"
+# This configuration will cause a CircularDependencyError:
+alternate_state_handler:
+  none: "STATE_NONE"      # none → none (circular!)
+  fallback: "STATE_UNKNOWN"
 
-# These expressions are valid:
-formula: "100 + 200"                 # Valid numeric expression
-formula: "sensor.online + 10"        # Valid if sensor.online returns numeric value
-formula: "valid_string"            # Valid string literal (for attributes)
+# This configuration is valid:
+alternate_state_handler:
+  none: 0                 # none → 0 (valid)
+  fallback: 100           # fallback → 100 (valid)
 ```
+
+#### STATE_NONE YAML Constant
+
+The system supports a special YAML constant for None values:
+
+```yaml
+alternate_state_handler:
+  none: "STATE_NONE" # YAML constant that converts to Python None
+  # Equivalent to:
+  # none: null
+```
+
+This is particularly useful for energy sensors that need to preserve `None` values.
+
+#### State Constants
+
+The system uses specific constants for state values:
+
+- **`STATE_NONE`**: Python `None` (internal representation)
+- **`STATE_UNKNOWN`**: String `"unknown"` (entity exists but has no current value)
+- **`STATE_UNAVAILABLE`**: String `"unavailable"` (entity exists but is temporarily unavailable)
+
+**Important**: These constants should be used instead of raw strings in code. The system automatically handles conversion
+between YAML representation and internal Python values.
 
 ## Integration Responsibilities and Backing Entity Registration
 
@@ -908,7 +1006,7 @@ backing_entities = {
 **Validation Rules**:
 
 1. **Minimum Entry Requirement**: At least one dictionary entry must be provided for any backing entities that are registered
-2. **None Value Handling**: None values are treated as `STATE_UNKNOWN` to allow for integration initialization
+2. **None Value Handling**: None values can be handled by alternate state handlers to allow for integration initialization
 3. **Debug Logging**: The package logs how many backing entities were registered, including sensor key and backing entity_id
 4. **Fatal Error**: If backing entities were provided but no entries exist, a fatal exception is raised
 
@@ -919,12 +1017,14 @@ backing_entities = {
 sensors:
   power_analyzer:
     entity_id: sensor.span_panel_instantaneous_power # Backing entity
-    formula: "state * 1.1" # May initially resolve to "unknown" if backing entity is None
+    formula: "state * 1.1" # May initially resolve to None if backing entity is None
+    alternate_state_handler:
+      none: 0 # Handle None values during initialization
     metadata:
       unit_of_measurement: W
     # During integration startup:
     # 1. Backing entity is registered with None value
-    # 2. Formula evaluates with "unknown" result
+    # 2. Formula evaluates with 0 result (from none handler)
     # 3. Integration later updates backing entity with actual value
     # 4. Formula evaluates with actual value
 ```
@@ -955,9 +1055,9 @@ backing_entities = {}  # Empty dictionary
 ```python
 # This is valid during integration startup:
 backing_entities = {
-    "sensor.span_panel_instantaneous_power": None,  # Will be treated as STATE_UNKNOWN
+    "sensor.span_panel_instantaneous_power": None,  # Can be handled by alternate state handlers
 }
-# Result: Formula evaluates with "unknown" value, allowing for later population
+# Result: Formula evaluates with handler-defined value, allowing for later population
 ```
 
 #### Valid Scenario: Populated Values
@@ -1015,20 +1115,21 @@ sensors:
     # Result: Formula evaluates with "unknown" value (NO EXCEPTION)
 ```
 
-**Behavior**: The None value is treated as "unknown", formula evaluation continues, and no exception is raised. This allows
-for integration initialization where data may not be immediately available.
+**Behavior**: The None value can be handled by alternate state handlers, formula evaluation continues, and no exception is
+raised. This allows for integration initialization where data may not be immediately available.
 
 #### Key Distinction Summary
 
-| Condition               | Mapping Exists | Value  | Result                      | Exception                      |
-| ----------------------- | -------------- | ------ | --------------------------- | ------------------------------ |
-| **Fatal Error**         | ❌ No          | N/A    | Cannot resolve              | `BackingEntityResolutionError` |
-| **Transient Condition** | ✅ Yes         | `None` | Resolves to `STATE_UNKNOWN` | No exception                   |
+| Condition               | Mapping Exists | Value  | Result                     | Exception                      |
+| ----------------------- | -------------- | ------ | -------------------------- | ------------------------------ |
+| **Fatal Error**         | ❌ No          | N/A    | Cannot resolve             | `BackingEntityResolutionError` |
+| **Transient Condition** | ✅ Yes         | `None` | Can be handled by handlers | No exception                   |
 
 This distinction is crucial for integration development:
 
 - **Fatal errors** indicate configuration problems that must be fixed
-- **Transient conditions** allow for graceful handling of initialization periods where None values default to `STATE_UNKNOWN`
+- **Transient conditions** allow for graceful handling of initialization periods where None values can be handled by alternate
+  state handlers
 
 ## Code Standards
 
@@ -1103,8 +1204,8 @@ The evaluation system is organized into distinct layers, each with a specific re
 
 ### Compiler-Like Formula Evaluation Architecture
 
-The synthetic sensor package implements a compiler-like multi-phase approach to formula evaluation, ensuring clean separation
-of concerns and extensible handler architecture.
+The synthetic sensor package implements a compiler-like multi-phase approach to formula evaluation, ensuring clean separation of
+concerns and extensible handler architecture.
 
 ### Evaluation Phases
 
@@ -1117,8 +1218,8 @@ Circular references are detected and rejected immediately before any dependency 
 3. **Early Rejection**: Circular references cause immediate `CircularDependencyError` - no further processing occurs
 4. **Fatal Error**: Circular references are treated as fatal errors that stop evaluation completely
 
-This phase ensures that impossible configurations are rejected early, preventing wasted processing on formulas that can never
-be resolved.
+This phase ensures that impossible configurations are rejected early, preventing wasted processing on formulas that can never be
+resolved.
 
 #### Phase 1: Complete Reference Resolution
 
@@ -1138,8 +1239,7 @@ Formulas are routed to appropriate handlers based on content analysis:
 1. **String Handler**: Processes string literals for attributes only
    - Examples: `attribute: "tab [30,32]"` → `"tab [30,32]"`
    - Handles string literals in attribute configurations
-   - **Note**: Currently limited to string literals only. Future enhancements will support string concatenation and
-     evaluation.
+   - **Note**: Currently limited to string literals only. Future enhancements will support string concatenation and evaluation.
 
 2. **Numeric Handler**: Processes mathematical expressions using SimpleEval
    - Examples: `240.0 * 4.17 * 0.95` → `950.76`
@@ -1299,7 +1399,23 @@ formula: "sum('device_class:power', !'sensor.kitchen_oven')" # HA-assigned entit
 # NOT: "sum('device_class:power', !'kitchen_oven')"          # Original sensor key
 ```
 
-This reflects the correct behavior where cross-sensor references are updated to use actual entity IDs for proper HA
-integration.
+This reflects the correct behavior where cross-sensor references are updated to use actual entity IDs for proper HA integration.
+
+## Comprehensive Alternate State Handler System
+
+The synthetic sensor package implements an alternate state handler system that provides user-defined handling of HA state values
+and evaluation exceptions.
+
+### System Overview
+
+The alternate state handler system consists of:
+
+1. **Two-Phase Processing**: Early detection during variable resolution and post-evaluation processing
+2. **Exception Mapping**: Intelligent mapping of exceptions to appropriate alternate states
+3. **Handler Priority**: Specific handlers take precedence over fallback handlers
+4. **Circular Dependency Protection**: Detection and prevention of circular references
+5. **STATE_NONE Support**: Special YAML constant for None values
+
+This integration ensures that alternate state handlers work consistently across all sensor types and evaluation scenarios.
 
 ## Summary of Key Clarifications

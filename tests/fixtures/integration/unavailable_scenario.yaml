@@ -1,0 +1,30 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_unavailable_scenario"
+  variables:
+    energy_grace_period_minutes: 15
+  metadata:
+    attribution: "Unavailable scenario test"
+
+sensors:
+  unavailable_sensor:
+    name: "Unavailable Sensor"
+    entity_id: "sensor.unavailable_backing"
+    formula: "state"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "state if within_grace else 'fallback'"
+      UNKNOWN:
+        formula: "state if within_grace else 'fallback'"
+    variables:
+      within_grace:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+

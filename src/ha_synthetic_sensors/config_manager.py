@@ -16,9 +16,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
+from .alternate_state_circular_validator import validate_alternate_state_handler_circular_deps
 from .config_models import AlternateStateHandler, ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .config_yaml_converter import ConfigYamlConverter
+from .constants_alternate import STATE_NONE_YAML
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector
 from .schema_validator import validate_yaml_config
 from .utils_config import validate_computed_variable_references
@@ -377,18 +379,47 @@ class ConfigManager:
         """Parse exception handler from YAML data.
 
         Args:
-            handler_data: Dictionary containing UNAVAILABLE and/or UNKNOWN keys
+            handler_data: Dictionary containing either:
+                - Direct UNAVAILABLE, UNKNOWN, NONE, and/or FALLBACK keys (old format)
+                - alternate_states key containing the handlers (new format)
 
         Returns:
             AlternateStateHandler object or None if no handlers found
         """
-        unavailable_handler = handler_data.get("UNAVAILABLE")
-        unknown_handler = handler_data.get("UNKNOWN")
+        # Check for new alternate_states structure first
+        if "alternate_states" in handler_data:
+            alternate_states = handler_data["alternate_states"]
+            unavailable_handler = self._convert_yaml_to_python_value(alternate_states.get("UNAVAILABLE"))
+            unknown_handler = self._convert_yaml_to_python_value(alternate_states.get("UNKNOWN"))
+            none_handler = self._convert_yaml_to_python_value(alternate_states.get("NONE"))
+            fallback_handler = self._convert_yaml_to_python_value(alternate_states.get("FALLBACK"))
+        else:
+            # Fall back to old direct structure
+            unavailable_handler = self._convert_yaml_to_python_value(handler_data.get("UNAVAILABLE"))
+            unknown_handler = self._convert_yaml_to_python_value(handler_data.get("UNKNOWN"))
+            none_handler = self._convert_yaml_to_python_value(handler_data.get("NONE"))
+            fallback_handler = self._convert_yaml_to_python_value(handler_data.get("FALLBACK"))
 
-        if not unavailable_handler and not unknown_handler:
+        if unavailable_handler is None and unknown_handler is None and none_handler is None and fallback_handler is None:
             return None
 
-        return AlternateStateHandler(unavailable=unavailable_handler, unknown=unknown_handler)
+        handler = AlternateStateHandler(
+            unavailable=unavailable_handler, unknown=unknown_handler, none=none_handler, fallback=fallback_handler
+        )
+
+        # Validate for circular dependencies
+        validate_alternate_state_handler_circular_deps(handler)
+
+        return handler
+
+    def _convert_yaml_to_python_value(self, value: Any) -> Any:
+        """Convert YAML values to Python representation.
+
+        Specifically handles STATE_NONE → Python None.
+        """
+        if isinstance(value, str) and value == STATE_NONE_YAML:
+            return None
+        return value
 
     def _parse_variables(self, variables_data: dict[str, Any]) -> dict[str, str | int | float | ComputedVariable]:
         """Parse variables dictionary, handling computed variables with formula key and exception handlers.
@@ -410,8 +441,11 @@ class ConfigManager:
                     if not formula_expr or not str(formula_expr).strip():
                         raise ValueError(f"Variable '{var_name}' has empty formula expression")
 
-                    # Parse exception handler if present
+                    # Parse exception handler if present (supports both old and new structure)
                     alternate_state_handler = self._parse_alternate_state_handler(var_value)
+
+                    # Parse allow_unresolved_states if present
+                    allow_unresolved_states = var_value.get("allow_unresolved_states", False)
 
                     # Create ComputedVariable object
                     # Note: Dependencies will be resolved during context building phase
@@ -419,12 +453,20 @@ class ConfigManager:
                         formula=str(formula_expr).strip(),
                         dependencies=set(),  # Will be populated during dependency resolution
                         alternate_state_handler=alternate_state_handler,
+                        allow_unresolved_states=allow_unresolved_states,
                     )
-                elif "UNAVAILABLE" in var_value or "UNKNOWN" in var_value:
+                elif "UNAVAILABLE" in var_value or "UNKNOWN" in var_value or "NONE" in var_value or "FALLBACK" in var_value:
                     # This appears to be a simple variable with exception handlers
                     raise ValueError(
                         f"Variable '{var_name}' has exception handlers but no base value. "
                         f"Simple variables with exception handlers are not yet supported. "
+                        f"Consider using a computed variable with formula."
+                    )
+                elif "alternate_states" in var_value:
+                    # This appears to be a simple variable with alternate_states structure
+                    raise ValueError(
+                        f"Variable '{var_name}' has alternate_states but no base value. "
+                        f"Simple variables with alternate_states are not yet supported. "
                         f"Consider using a computed variable with formula."
                     )
                 else:

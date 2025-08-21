@@ -4,8 +4,8 @@
 
 The condition parser in the synthetic sensors integration uses a preprocessing + hierarchical comparison architecture.
 User-defined comparison handlers can preprocess operands (unit conversion, normalization, etc.) and return built-in type
-operands, which then flow through the existing hierarchical built-in comparison logic. This design provides extensibility
-while maintaining type safety and leveraging proven comparison logic.
+operands, which then flow through the existing hierarchical built-in comparison logic. This design provides extensibility while
+maintaining type safety and leveraging proven comparison logic.
 
 ## Current Architecture
 
@@ -31,17 +31,17 @@ The system uses a simple two-phase pipeline:
    all non-UserType objects since no extension registration system exists yet
 2. **Handler Selection**: A future `_extract_handler_from_metadata` method will check if YAML configuration defines a handler
    for the operand types
-3. **Built-in Comparison**: When no user extension is found, built-in comparison logic operates directly on the operands
-   without requiring metadata
+3. **Built-in Comparison**: When no user extension is found, built-in comparison logic operates directly on the operands without
+   requiring metadata
 
-**Current Reality**: Today, no extension registration system exists, so the handler extraction always returns None and
-built-in comparison proceeds immediately.
+**Current Reality**: Today, no extension registration system exists, so the handler extraction always returns None and built-in
+comparison proceeds immediately.
 
 **Future Vision**: When YAML-based extension registration is implemented, user extensions will preprocess operands and return
 built-in types for standard comparison.
 
-**Key Design Point**: Metadata is used solely to determine if user extensions should handle operand types. Built-in
-comparisons operate directly on operands and don't require metadata.
+**Key Design Point**: Metadata is used solely to determine if user extensions should handle operand types. Built-in comparisons
+operate directly on operands and don't require metadata.
 
 ### Handler Interface
 
@@ -405,8 +405,8 @@ Integration tests validate:
 
 ## Implementation Task List
 
-The following task list implements the comparison handler design using the compiler-like phased approach outlined in the
-state and entity design guide. This modular implementation ensures seamless integration with the existing `evaluator_phases`
+The following task list implements the comparison handler design using the compiler-like phased approach outlined in the state
+and entity design guide. This modular implementation ensures seamless integration with the existing `evaluator_phases`
 architecture.
 
 ### Phase 1: Essential Comparison Operations (MVP)
@@ -693,8 +693,8 @@ deterministic and reliable:
 
 ### Core Principles
 
-1. **No Fallback Logic**: When a comparison cannot be performed, the system raises an explicit exception rather than
-   returning a default value
+1. **No Fallback Logic**: When a comparison cannot be performed, the system raises an explicit exception rather than returning a
+   default value
 2. **Type Validation**: All type combinations must be explicitly supported by handlers - no implicit conversions
 3. **Operator Validation**: Each handler explicitly declares which operators it supports for which types
 4. **Error Propagation**: Comparison failures propagate up the evaluation chain to enable proper error handling
@@ -735,8 +735,8 @@ The system defines a clear exception hierarchy:
 
 ### Current Design Scope
 
-This comparison handler design is specifically focused on **comparison operations** used in collection patterns and
-conditional expressions:
+This comparison handler design is specifically focused on **comparison operations** used in collection patterns and conditional
+expressions:
 
 ```yaml
 # Comparison operations (this design)
@@ -964,5 +964,5 @@ The design emphasizes:
 - **Integration**: Seamless integration with existing evaluator architecture
 - **Deterministic Behavior**: Reliable, actionable results with clear failure modes
 
-This architecture ensures that the synthetic sensors integration can handle complex comparison scenarios while maintaining
-the reliability and performance characteristics required for production use in Home Assistant environments.
+This architecture ensures that the synthetic sensors integration can handle complex comparison scenarios while maintaining the
+reliability and performance characteristics required for production use in Home Assistant environments.
