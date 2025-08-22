@@ -75,7 +75,12 @@ class TestStateTokenInMainFormula:
 
             # Verify the attribute was calculated correctly
             assert "amperage" in sensor._calculated_attributes
-            assert sensor._calculated_attributes["amperage"] == 5.0
+            # With ReferenceValue architecture, extract the value for comparison
+            amperage_value = sensor._calculated_attributes["amperage"]
+            if hasattr(amperage_value, "value"):
+                assert amperage_value.value == 5.0
+            else:
+                assert amperage_value == 5.0
 
     async def test_state_token_without_backing_entity_fails(
         self, mock_hass, mock_entity_registry, mock_states, evaluator, sensor_manager
