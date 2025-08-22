@@ -25,10 +25,20 @@ class TestStringOperationsIntegration:
             entity_id="sensor.power_meter", state="125.5", attributes={"friendly_name": "Power Meter"}
         )
 
+        # Register entities in entity registry (required for variable resolution)
+        mock_entity_registry.register_entity(
+            entity_id="sensor.test_sensor", unique_id="test_sensor", domain="sensor", device_class=None
+        )
+        mock_entity_registry.register_entity(
+            entity_id="sensor.power_meter", unique_id="power_meter", domain="sensor", device_class="power"
+        )
+
         # Set up storage manager with proper mocking (following the guide)
         with (
             patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
             patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+            patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
         ):
             # Mock Store to avoid file system access
             mock_store = AsyncMock()
@@ -74,9 +84,6 @@ class TestStringOperationsIntegration:
                 storage_manager=storage_manager,
             )
 
-            # Update sensors to trigger formula evaluation
-            await sensor_manager.async_update_sensors()
-
             # Get the actual sensor entities to verify their computed values
             all_entities = []
             for call in mock_async_add_entities.call_args_list:
@@ -85,6 +92,21 @@ class TestStringOperationsIntegration:
 
             # Verify we have the expected number of entities
             assert len(all_entities) >= 3, f"Expected at least 3 entities, got {len(all_entities)}"
+
+            # Initialize entities properly in test environment (required after removing state change tracking)
+            # Create mock platform
+            mock_platform = Mock()
+            mock_platform.platform_name = "sensor"
+            mock_platform.logger = Mock()
+
+            for entity in all_entities:
+                entity.hass = mock_hass
+                entity.platform = mock_platform
+                # Manually call async_added_to_hass (required in test environment)
+                await entity.async_added_to_hass()
+
+            # Update sensors to trigger formula evaluation
+            await sensor_manager.async_update_sensors()
 
             # Create a mapping for easy lookup
             sensor_entities = {entity.unique_id: entity for entity in all_entities}
@@ -98,7 +120,7 @@ class TestStringOperationsIntegration:
                     f"String concatenation failed: expected '{expected}', got '{string_concat_entity.native_value}'"
                 )
 
-            # Test: "'Status: ' + state + ' active'" where state="online"
+            # Test: "'Status: ' + ha_string_variable + ' active'" where ha_string_variable="online"
             mixed_variable_entity = sensor_entities.get("mixed_string_variable_sensor")
             if mixed_variable_entity and mixed_variable_entity.native_value:
                 expected = "Status: online active"
@@ -106,13 +128,20 @@ class TestStringOperationsIntegration:
                     f"Mixed string variable failed: expected '{expected}', got '{mixed_variable_entity.native_value}'"
                 )
 
-            # Test: "state * 1.1" where state=125.5 - should be numeric result
+            # Test: "ha_numeric_variable * 1.1" where ha_numeric_variable=125.5 - should be numeric result
             numeric_entity = sensor_entities.get("numeric_default_sensor")
             if numeric_entity and numeric_entity.native_value is not None:
-                expected = 125.5 * 1.1  # 138.05
-                assert abs(float(numeric_entity.native_value) - expected) < 0.01, (
-                    f"Numeric formula failed: expected '{expected}', got '{numeric_entity.native_value}'"
+                assert numeric_entity.native_value == 138.05, (
+                    f"Numeric formula failed: expected 138.05, got '{numeric_entity.native_value}'"
                 )
+
+                # Test the string attribute: "'Result is: ' + ha_numeric_variable" where ha_numeric_variable=125.5
+                if hasattr(numeric_entity, "attributes") and numeric_entity.attributes:
+                    result_description = numeric_entity.attributes.get("result_description")
+                    expected_description = "Result is: 125.5"
+                    assert result_description == expected_description, (
+                        f"String attribute failed: expected '{expected_description}', got '{result_description}'"
+                    )
 
             # Cleanup
             if storage_manager.sensor_set_exists(sensor_set_id):
@@ -126,6 +155,11 @@ class TestStringOperationsIntegration:
         # Setup mock entity states for testing
         mock_states["sensor.power_meter"] = Mock(
             entity_id="sensor.power_meter", state="150.0", attributes={"friendly_name": "Power Meter"}
+        )
+
+        # Register entities in entity registry (required for variable resolution)
+        mock_entity_registry.register_entity(
+            entity_id="sensor.power_meter", unique_id="power_meter", domain="sensor", device_class="power"
         )
 
         # Set up storage manager with proper mocking (following the guide)
@@ -177,9 +211,6 @@ class TestStringOperationsIntegration:
                 storage_manager=storage_manager,
             )
 
-            # Update sensors to trigger formula evaluation
-            await sensor_manager.async_update_sensors()
-
             # Get the actual sensor entities to verify their computed values
             all_entities = []
             for call in mock_async_add_entities.call_args_list:
@@ -189,11 +220,26 @@ class TestStringOperationsIntegration:
             # Verify we have the expected number of entities
             assert len(all_entities) >= 2, f"Expected at least 2 entities, got {len(all_entities)}"
 
+            # Initialize entities properly in test environment (required after removing state change tracking)
+            # Create mock platform
+            mock_platform = Mock()
+            mock_platform.platform_name = "sensor"
+            mock_platform.logger = Mock()
+
+            for entity in all_entities:
+                entity.hass = mock_hass
+                entity.platform = mock_platform
+                # Manually call async_added_to_hass (required in test environment)
+                await entity.async_added_to_hass()
+
+            # Update sensors to trigger formula evaluation
+            await sensor_manager.async_update_sensors()
+
             # Create a mapping for easy lookup
             sensor_entities = {entity.unique_id: entity for entity in all_entities}
 
             # Test actual formula evaluation results
-            # Test: "'Power: ' + state + 'W'" where state="150.0"
+            # Test: "'Power: ' + ha_string_variable + 'W'" where ha_string_variable="150.0"
             string_ops_entity = sensor_entities.get("valid_string_sensor")
             if string_ops_entity and string_ops_entity.native_value:
                 expected = "Power: 150.0W"
@@ -201,13 +247,20 @@ class TestStringOperationsIntegration:
                     f"String operations validation failed: expected '{expected}', got '{string_ops_entity.native_value}'"
                 )
 
-            # Test: "state * 1.1" where state=150.0 - should be numeric result
+            # Test: "ha_numeric_variable * 1.1" where ha_numeric_variable=150.0 - should be numeric result
             numeric_ops_entity = sensor_entities.get("valid_numeric_sensor")
             if numeric_ops_entity and numeric_ops_entity.native_value is not None:
-                expected = 150.0 * 1.1  # 165.0
-                assert abs(float(numeric_ops_entity.native_value) - expected) < 0.01, (
-                    f"Numeric operations validation failed: expected '{expected}', got '{numeric_ops_entity.native_value}'"
+                assert numeric_ops_entity.native_value == 165.0, (
+                    f"Numeric operations validation failed: expected 165.0, got '{numeric_ops_entity.native_value}'"
                 )
+
+                # Test the string attribute: "'Result is: ' + ha_numeric_variable" where ha_numeric_variable=150.0
+                if hasattr(numeric_ops_entity, "attributes") and numeric_ops_entity.attributes:
+                    result_description = numeric_ops_entity.attributes.get("result_description")
+                    expected_description = "Result is: 150.0"
+                    assert result_description == expected_description, (
+                        f"String attribute failed: expected '{expected_description}', got '{result_description}'"
+                    )
 
             # Cleanup
             if storage_manager.sensor_set_exists(sensor_set_id):

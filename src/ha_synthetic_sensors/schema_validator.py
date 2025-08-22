@@ -1,5 +1,5 @@
 """
-Schema Validation - Comprehensive YAML configuration validation using JSON Schema.
+Schema Validation - YAML configuration validation using JSON Schema.
 
 This module provides schema-based validation for synthetic sensor YAML configurations,
 with detailed error reporting and support for schema versioning.
@@ -27,7 +27,14 @@ from .constants_metadata import (
 )
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
-from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS
+from .shared_constants import (
+    DATETIME_FUNCTIONS,
+    DURATION_FUNCTIONS,
+    ENGINE_BASE_RESERVED_ATTRIBUTES,
+    LAST_VALID_CHANGED_KEY,
+    LAST_VALID_STATE_KEY,
+    METADATA_FUNCTIONS,
+)
 
 HAS_JSONSCHEMA = True
 
@@ -267,39 +274,41 @@ class SchemaValidator:
             except ValueError:
                 pass  # Skip validation if we can't get the constants
 
+            # Additional validation for problematic combinations using HA's device class to state class mappings
+            if state_class_enum == sensor_state_class.TOTAL_INCREASING:
+                try:
+                    device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
+                    allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
+
+                    # Check if TOTAL_INCREASING is not in the allowed state classes for this device class
+                    if sensor_state_class.TOTAL_INCREASING not in allowed_state_classes:
+                        # Find a suitable alternative state class
+                        suggested_state_class = sensor_state_class.MEASUREMENT
+                        if sensor_state_class.MEASUREMENT in allowed_state_classes:
+                            suggested_state_class = sensor_state_class.MEASUREMENT
+                        elif sensor_state_class.TOTAL in allowed_state_classes:
+                            suggested_state_class = sensor_state_class.TOTAL
+                        else:
+                            # If no suitable alternative found, just suggest measurement
+                            suggested_state_class = sensor_state_class.MEASUREMENT
+
+                        errors.append(
+                            ValidationError(
+                                message=(
+                                    f"Sensor '{sensor_key}' uses state_class '{sensor_state_class.TOTAL_INCREASING.value}' with "
+                                    f"device_class '{device_class}' which doesn't support this state class."
+                                ),
+                                path=f"sensors.{sensor_key}.state_class",
+                                severity=ValidationSeverity.ERROR,
+                                suggested_fix=f"Consider using '{suggested_state_class.value}' instead",
+                            )
+                        )
+                except ValueError:
+                    pass  # Skip validation if we can't get the constants
+
         except ImportError:
             # HA not available - skip validation
             pass
-
-    def _validate_state_class_fallback(
-        self,
-        sensor_key: str,
-        sensor_config: dict[str, Any],
-        device_class: str,
-        state_class: str,
-        errors: list[ValidationError],
-    ) -> None:
-        """Fallback validation when HA constants are not available."""
-        # Basic validation for obvious mismatches
-        if state_class == "total_increasing":
-            problematic_classes = [
-                "battery",
-                "temperature",
-                "humidity",
-                "signal_strength",
-            ]
-            if any(pattern in device_class for pattern in problematic_classes):
-                errors.append(
-                    ValidationError(
-                        message=(
-                            f"Sensor '{sensor_key}' uses state_class 'total_increasing' with "
-                            f"device_class '{device_class}' which typically doesn't increase monotonically."
-                        ),
-                        path=f"sensors.{sensor_key}.state_class",
-                        severity=ValidationSeverity.ERROR,
-                        suggested_fix="Consider using 'measurement' instead",
-                    )
-                )
 
     def _validate_sensor_config(
         self,
@@ -369,8 +378,6 @@ class SchemaValidator:
         for attr_name, attr_config in attributes.items():
             # Disallow engine-reserved attribute names at YAML validation time
             # Use shared constants to detect collisions with engine-reserved attribute names
-            from .shared_constants import ENGINE_BASE_RESERVED_ATTRIBUTES, LAST_VALID_CHANGED_KEY, LAST_VALID_STATE_KEY
-
             if attr_name in (LAST_VALID_STATE_KEY, LAST_VALID_CHANGED_KEY) or attr_name in ENGINE_BASE_RESERVED_ATTRIBUTES:
                 errors.append(
                     ValidationError(
@@ -422,8 +429,6 @@ class SchemaValidator:
         literal_attrs, other_attr_names = self._categorize_attributes(all_attributes, attr_name)
 
         # Disallow attribute names that collide with engine-managed last-valid attribute keys
-        from .shared_constants import LAST_VALID_CHANGED_KEY, LAST_VALID_STATE_KEY
-
         if attr_name in (LAST_VALID_STATE_KEY, LAST_VALID_CHANGED_KEY):
             errors.append(
                 ValidationError(

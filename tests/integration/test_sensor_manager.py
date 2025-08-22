@@ -356,20 +356,15 @@ class TestDynamicSensorExtended:
     @pytest.mark.asyncio
     async def test_async_added_to_hass_with_dependencies(self, dynamic_sensor, mock_hass, mock_entity_registry, mock_states):
         """Test async_added_to_hass with dependencies."""
-        # Mock the async_track_state_change_event
-        with (
-            patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track,
-            patch.object(dynamic_sensor, "async_write_ha_state"),
-        ):
-            mock_track.return_value = MagicMock()
-
+        # Note: State change tracking removed - integration change notifier handles all updates
+        # Dependencies are resolved during evaluation, not through HA state tracking
+        with patch.object(dynamic_sensor, "async_write_ha_state"):
             await dynamic_sensor.async_added_to_hass()
 
-            # Should set up state change tracking for dependencies
-            mock_track.assert_called_once_with(
-                dynamic_sensor._hass, list(dynamic_sensor._dependencies), dynamic_sensor._handle_dependency_change
+            # Verify entity was registered for cross-sensor reference resolution
+            dynamic_sensor._sensor_manager.register_cross_sensor_entity_id.assert_called_once_with(
+                dynamic_sensor._config.unique_id, dynamic_sensor.entity_id
             )
-            assert len(dynamic_sensor._update_listeners) == 1
 
     @pytest.mark.asyncio
     async def test_async_added_to_hass_no_dependencies(
@@ -386,14 +381,14 @@ class TestDynamicSensorExtended:
         # EntityComponent
         sensor.entity_id = f"sensor.{sensor._attr_unique_id}"
 
-        # No dependencies should not set up state change tracking
-        with (
-            patch("ha_synthetic_sensors.sensor_manager.async_track_state_change_event") as mock_track,
-            patch.object(sensor, "async_write_ha_state"),
-        ):
+        # Note: State change tracking removed - no listeners are created regardless of dependencies
+        with patch.object(sensor, "async_write_ha_state"):
             await sensor.async_added_to_hass()
-            mock_track.assert_not_called()
-            assert len(sensor._update_listeners) == 0
+
+            # Verify entity was registered for cross-sensor reference resolution
+            mock_sensor_manager.register_cross_sensor_entity_id.assert_called_once_with(
+                sensor._config.unique_id, sensor.entity_id
+            )
 
     @pytest.mark.asyncio
     async def test_async_will_remove_from_hass(self, dynamic_sensor, mock_hass, mock_entity_registry, mock_states):

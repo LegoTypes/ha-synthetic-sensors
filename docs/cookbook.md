@@ -461,28 +461,51 @@ exposed on the entity at runtime:
 - `last_valid_state` — the last valid calculated state (number or string)
 - `last_valid_changed` — ISO timestamp (string) when that value was recorded
 
-Access patterns (both work for these engine attributes):
+Access patterns:
 
 ```yaml
-# Inline metadata form (convenient in formulas)
-within_grace:
-  formula: "minutes_between(metadata(state, 'last_valid_changed'), now()) < energy_grace_period_minutes"
-
-# Variable + direct attribute form (when you already have a variable)
 variables:
   source: "sensor.span_panel_main_meter_produced_energy"
-formula: "minutes_between(source.last_valid_changed, now()) < energy_grace_period_minutes"
+formula: "minutes_between(metadata(source, 'last_valid_changed'), now()) < energy_grace_period_minutes"
 ```
 
-When to prefer which:
+Avoid direct `entity.attribute` access (e.g., `source.last_valid_state` / `source.last_valid_changed`) for engine-provided
+last-good values in templates.
 
-- Use `metadata(entity, 'key')` when you want HA property fallback (it checks HA state properties such as `last_changed` first)
-  or when you need datetime normalization for date helpers.
-- Use `entity.attribute` (for example `source.last_valid_state`) when you already provide the entity as a variable and prefer
-  direct access to the stored value.
+### Prefer central variables for last-good values
 
-Summary: for the synthetic engine-provided `last_valid_*` attributes both forms return the same values; `metadata()` adds
-HA-specific lookup/fallback and datetime normalization when that behavior is required.
+When multiple formulas or attributes need the engine-provided last-good values, define sensor-level variables that resolve
+`metadata(state, ...)` once and reference those variables throughout the sensor. This centralizes the lookup, reduces repeated
+metadata calls, and makes templates easier to read and maintain.
+
+Recommended pattern (sensor-level variables):
+
+```yaml
+sensors:
+  example_energy_sensor:
+    name: "Example Energy"
+    formula: state
+    variables:
+      # centralize last-good references once
+      last_valid_state: "metadata(state, 'last_valid_state')"
+      last_valid_changed: "metadata(state, 'last_valid_changed')"
+      within_grace:
+        formula: "last_valid_changed is not None and minutes_between(last_valid_changed, now()) < energy_grace_period_minutes"
+    alternate_states:
+      FALLBACK:
+        formula: "state if state is not None else (last_valid_state if within_grace else None)"
+    attributes:
+      energy_reporting_status:
+        formula: "'Live' if state is not None else ('Off-Line, reporting previous value' if within_grace else None)"
+        alternate_states:
+          FALLBACK: false
+```
+
+Benefits:
+
+- Single location to update if the key name or behavior changes.
+- Cleaner formulas and attributes that reference `last_valid_*` without repeating `metadata()`.
+- Easier to debug because `within_grace` and the last-good variables are centralized and logged consistently.
 
 ### Metadata Dictionary
 

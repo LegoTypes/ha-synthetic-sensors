@@ -16,7 +16,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.util import dt as dt_util, slugify
+from homeassistant.util import slugify
 
 from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
@@ -49,6 +49,8 @@ from .name_resolver import NameResolver
 from .reference_value_manager import ReferenceValueManager
 from .shared_constants import LAST_VALID_CHANGED_KEY, LAST_VALID_STATE_KEY
 from .type_definitions import DataProviderCallback, DataProviderChangeNotifier, EvaluationResult, ReferenceValue
+
+# dedupe imports
 
 if TYPE_CHECKING:
     from homeassistant.core import EventStateChangedData
@@ -148,26 +150,16 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Tracking
         self._last_update: datetime | None = None
         self._update_listeners: list[Any] = []
+        # No persistent preseed object - we will create canonical ReferenceValue
+        # instances from the entity's extra state attributes when building eval contexts.
 
         # Collect all dependencies from all formulas
         self._dependencies: set[str] = set()
         for formula in config.formulas:
             self._dependencies.update(formula.get_dependencies(hass))
 
-        # IMPORTANT: When using data provider callbacks, we still need to listen to state changes
-        # to trigger re-evaluation. Add variable entity IDs to dependencies for state tracking.
-        if self._evaluator.data_provider_callback:
-            for formula in config.formulas:
-                if formula.variables:
-                    for _var_name, var_value in formula.variables.items():
-                        if isinstance(var_value, str) and "." in var_value:
-                            # This looks like an entity_id, add it to dependencies for state tracking
-                            self._dependencies.add(var_value)
-                            _LOGGER.debug(
-                                "Added variable entity %s to dependencies for sensor %s (data provider mode)",
-                                var_value,
-                                self._attr_unique_id,
-                            )
+        # Note: Dependency tracking for data provider entities removed
+        # Integration change notifier handles all updates when backing data changes
 
     @property
     def hass_instance(self) -> HomeAssistant:
@@ -282,71 +274,8 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             except (ValueError, TypeError):
                 self._attr_native_value = last_state.state
 
-        # Seed engine-managed last-good attributes from backing data if not initialized
-        try:
-            attrs = dict(self._attr_extra_state_attributes or {})
-            if LAST_VALID_STATE_KEY not in attrs:
-                # Determine backing entity id (explicit entity_id or sensor->backing mapping)
-                backing_entity_id = self._config.entity_id
-                if not backing_entity_id and self._sensor_manager.sensor_to_backing_mapping:
-                    backing_entity_id = self._sensor_manager.sensor_to_backing_mapping.get(self._config.unique_id)
-
-                backing_value = None
-                # Try data-provider path first if available
-                if backing_entity_id:
-                    # Data provider path
-                    evaluator_dp = getattr(self._evaluator, "data_provider_callback", None)
-                    if evaluator_dp:
-                        try:
-                            dp_res = evaluator_dp(backing_entity_id)
-                            # dp_res expected: {"value": val, "exists": bool}
-                            if isinstance(dp_res, dict) and dp_res.get("exists") and dp_res.get("value") is not None:
-                                # Use alternate state helper to ensure this is not an alternate
-                                from .constants_alternate import identify_alternate_state_value
-
-                                if identify_alternate_state_value(dp_res.get("value")) is False:
-                                    backing_value = dp_res.get("value")
-                        except Exception:
-                            # Fall through to HA state lookup if dp fails
-                            backing_value = None
-
-                    # HA state lookup fallback
-                    if backing_value is None:
-                        state_obj = self._hass.states.get(backing_entity_id) if self._hass else None
-                        if state_obj is not None:
-                            raw = state_obj.state
-                            from .constants_alternate import identify_alternate_state_value
-
-                            if identify_alternate_state_value(raw) is False:
-                                try:
-                                    backing_value = float(raw)
-                                except (ValueError, TypeError):
-                                    backing_value = raw
-
-                # If we found a valid backing value, seed the attributes
-                if backing_value is not None:
-                    attrs[LAST_VALID_STATE_KEY] = backing_value
-                    attrs[LAST_VALID_CHANGED_KEY] = dt_util.utcnow().isoformat()
-                    self._attr_extra_state_attributes = attrs
-                    _LOGGER.debug(
-                        "Seeded %s/%s from backing %s for %s",
-                        LAST_VALID_STATE_KEY,
-                        LAST_VALID_CHANGED_KEY,
-                        backing_entity_id,
-                        self.entity_id,
-                    )
-        except Exception:
-            # Defensive: don't prevent entity startup if seeding fails
-            _LOGGER.debug("Failed to seed last-valid attributes for %s", getattr(self, "entity_id", None), exc_info=True)
-
-        # Set up dependency tracking
-        if self._dependencies:
-            self._update_listeners.append(
-                async_track_state_change_event(self._hass, list(self._dependencies), self._handle_dependency_change)
-            )
-
-        # Initial evaluation
-        await self._async_update_sensor()
+        # Note: State change tracking removed - integration change notifier handles all updates
+        # Dependencies are resolved during evaluation, not through HA state tracking
 
     async def async_will_remove_from_hass(self) -> None:
         """Handle entity removal."""
@@ -387,6 +316,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # ARCHITECTURE FIX: Use ReferenceValueManager for type safety
         context: dict[str, Any] = {}
+
         for var_name, var_value in formula_config.variables.items():
             # Check if this is a numeric literal (not a string entity ID)
             if isinstance(var_value, int | float):
@@ -433,7 +363,95 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                     # Entity not found - this is a missing dependency (fatal error)
                     raise MissingDependencyError(f"Entity '{var_value}' not found")
 
+        # CRITICAL: Inject canonical ReferenceValue for 'state' AFTER processing all other variables
+        # This ensures computed variables like state.last_valid_changed are resolvable and prevents
+        # the canonical ReferenceValue from being overwritten by formula variables.
+        _LOGGER.debug(
+            "CANONICAL_INJECT_DEBUG: checking conditions - has_attrs=%s, attrs=%s",
+            hasattr(self, "_attr_extra_state_attributes"),
+            getattr(self, "_attr_extra_state_attributes", None),
+        )
+        try:
+            if hasattr(self, "_attr_extra_state_attributes") and self._attr_extra_state_attributes:
+                attrs_local = dict(self._attr_extra_state_attributes)
+                last_val = attrs_local.get(LAST_VALID_STATE_KEY)
+                last_changed = attrs_local.get(LAST_VALID_CHANGED_KEY)
+                # Use the real entity_id as reference when available
+                ref = self.entity_id or "state"
+                # Create a ReferenceValue with last-valid metadata attached
+                rv = ReferenceValue(
+                    reference=ref,
+                    value=last_val if last_val is not None else None,
+                    last_valid_state=last_val,
+                    last_valid_changed=last_changed,
+                )
+                ReferenceValueManager.set_variable_with_reference_value(context, "state", ref, rv)
+                _LOGGER.debug("Injected canonical state ReferenceValue with last_valid_changed=%s", last_changed)
+        except Exception as exc:
+            _LOGGER.debug(
+                "Failed to inject entity extra-state ReferenceValue into eval context for %s: %s",
+                getattr(self, "entity_id", None),
+                exc,
+            )
+
         return context if context else None
+
+    def _attempt_seed_last_valid(self, backing_entity_id: str | None = None) -> None:
+        """Try to seed LAST_VALID_STATE_KEY/ LAST_VALID_CHANGED_KEY from backing data.
+
+        Uses the existing resolver infrastructure to avoid duplicating backing entity lookup logic.
+        """
+        try:
+            attrs = dict(self._attr_extra_state_attributes or {})
+            if LAST_VALID_STATE_KEY in attrs:
+                return
+
+            if not backing_entity_id:
+                return
+
+            # Use the existing self-reference resolver to get backing entity value
+            # This reuses all the well-tested lookup logic instead of duplicating it
+            resolver_factory = getattr(self._evaluator, "_variable_resolution_phase", None)
+            if not resolver_factory:
+                _LOGGER.debug("No variable resolution phase available for seeding")
+                return
+
+            resolver_factory = getattr(resolver_factory, "_resolver_factory", None)
+            if not resolver_factory:
+                _LOGGER.debug("No resolver factory available for seeding")
+                return
+
+            # Get the self-reference resolver
+            self_ref_resolver = None
+            for resolver in resolver_factory.get_all_resolvers():
+                if hasattr(resolver, "_resolve_backing_entity_value"):
+                    self_ref_resolver = resolver
+                    break
+
+            if not self_ref_resolver:
+                _LOGGER.debug("No self-reference resolver available for seeding")
+                return
+
+            # Use the existing backing entity resolution logic
+            backing_value = self_ref_resolver._resolve_backing_entity_value(backing_entity_id, f"seed_{backing_entity_id}")
+            _LOGGER.debug("Seeding result for %s: %s", backing_entity_id, backing_value)
+
+            if backing_value is not None:
+                attrs[LAST_VALID_STATE_KEY] = backing_value
+                attrs[LAST_VALID_CHANGED_KEY] = datetime.now().isoformat()
+                self._attr_extra_state_attributes = attrs
+                _LOGGER.debug(
+                    "Seeded last_valid_state/last_valid_changed from backing entity %s: %s",
+                    backing_entity_id,
+                    backing_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "Backing entity %s not ready for seeding (returned None) - will retry on next evaluation",
+                    backing_entity_id,
+                )
+        except Exception:
+            _LOGGER.debug("Seeding attempt failed for %s", getattr(self, "entity_id", None), exc_info=True)
 
     def _evaluate_attributes(self, main_result: EvaluationResult) -> None:
         """Evaluate calculated attributes using the main result context."""
@@ -545,7 +563,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None:
             self._attr_native_value = main_result_dict[RESULT_KEY_VALUE]
             self._attr_available = True
-            self._last_update = dt_util.utcnow()
+            self._last_update = datetime.now()
 
             # Evaluate calculated attributes
             self._evaluate_attributes(main_result)
@@ -589,7 +607,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # Use previous value if present, otherwise default to 0.0
             self._attr_native_value = self._attr_native_value if self._attr_native_value is not None else 0.0
             self._attr_available = False
-            self._last_update = dt_util.utcnow()
+            self._last_update = datetime.now()
             _LOGGER.debug(
                 "Sensor %s set to unknown due to unavailable dependencies",
                 self.entity_id,
@@ -616,6 +634,18 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 and self._config.unique_id in self._sensor_manager.sensor_to_backing_mapping
             )
 
+            # FIRST-CYCLE SEEDING: attempt to seed engine-managed last-good attributes
+            # when backing-entity data should be available.
+            if has_backing_entity:
+                backing_entity_id: str | None = self._config.entity_id
+                if not backing_entity_id and self._sensor_manager.sensor_to_backing_mapping:
+                    backing_entity_id = self._sensor_manager.sensor_to_backing_mapping.get(self._config.unique_id)
+
+                # Only attempt seeding if we don't already have last_valid_state
+                attrs = dict(self._attr_extra_state_attributes or {})
+                if LAST_VALID_STATE_KEY not in attrs:
+                    self._attempt_seed_last_valid(backing_entity_id)
+
             # If no backing entity and we have a previous state, provide it in context
             if not has_backing_entity and self._attr_native_value is not None:
                 if main_context is None:
@@ -638,6 +668,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # Schedule entity update (test environments may not have a platform; avoid failing hard)
             try:
                 self.async_write_ha_state()
+                _LOGGER.debug("async_write_ha_state called successfully for %s", self.entity_id)
             except Exception as write_err:  # pragma: no cover - defensive in non-HA test envs
                 _LOGGER.debug("async_write_ha_state skipped in test env: %s", write_err)
 
@@ -647,6 +678,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             _LOGGER.error("Error updating sensor %s: %s", self.entity_id, err)
             try:
                 self.async_write_ha_state()
+                _LOGGER.debug("async_write_ha_state called successfully in error path for %s", self.entity_id)
             except Exception as write_err:  # pragma: no cover - defensive in non-HA test envs
                 _LOGGER.debug("async_write_ha_state skipped in error path (test env): %s", write_err)
 
@@ -1095,13 +1127,13 @@ class SensorManager:
                 sensor_name=sensor_unique_id,
                 main_value=main_value,
                 calculated_attributes=calculated_attributes,
-                last_update=dt_util.utcnow(),
+                last_update=datetime.now(),
             )
         else:
             state = self._sensor_states[sensor_unique_id]
             state.main_value = main_value
             state.calculated_attributes = calculated_attributes
-            state.last_update = dt_util.utcnow()
+            state.last_update = datetime.now()
             state.is_available = True
 
         # CROSS-SENSOR REFERENCE SUPPORT
@@ -1353,13 +1385,13 @@ class SensorManager:
             state = self._sensor_states[sensor_unique_id]
             state.main_value = main_value
             state.calculated_attributes.update(calculated_attributes)
-            state.last_update = dt_util.utcnow()
+            state.last_update = datetime.now()
         else:
             self._sensor_states[sensor_unique_id] = SensorState(
                 sensor_name=sensor_unique_id,
                 main_value=main_value,
                 calculated_attributes=calculated_attributes,
-                last_update=dt_util.utcnow(),
+                last_update=datetime.now(),
             )
 
     async def async_update_sensors(self, sensor_configs: list[SensorConfig] | None = None) -> None:

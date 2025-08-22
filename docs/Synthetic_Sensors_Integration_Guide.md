@@ -210,10 +210,12 @@ async def async_setup_synthetic_sensors(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
+    coordinator: YourCoordinator | None,                 # Can be None for manual mode
     storage_manager: StorageManager,
+    synthetic_coordinator: SyntheticSensorCoordinator,   # Required - direct dependency injection
     sensor_set_id: str | None = None,                    # Optional: select specific set when multiple exist
     data_provider_callback: DataProviderCallback | None = None,
-    change_notifier: DataProviderChangeNotifier | None = None,  # NEW
+    change_notifier: DataProviderChangeNotifier | None = None,
     sensor_to_backing_mapping: dict[str, str] | None = None,    # Synthetic Sensor Key -> Backing entity_id
 ) -> SensorManager
 ```
@@ -445,7 +447,41 @@ except SyntheticSensorsConfigError as e:
 
 ## Real-Time Update Patterns
 
-The update pattern depends on your backing entity source:
+The update pattern depends on your backing entity source and coordinator configuration:
+
+### Manual Update Mode (coordinator=None)
+
+When you set `coordinator=None`, the synthetic sensors operate in **manual update mode**:
+
+```python
+# Manual update mode - no automatic coordinator updates
+sensor_manager = await async_setup_synthetic_sensors(
+    hass=hass,
+    config_entry=config_entry,
+    async_add_entities=async_add_entities,
+    coordinator=None,  # Manual mode - no automatic updates
+    storage_manager=storage_manager,
+    synthetic_coordinator=synthetic_coord,  # Required for data access
+    data_provider_callback=create_data_provider_callback(None, synthetic_coord),
+    change_notifier=change_notifier_callback,
+    sensor_to_backing_mapping=sensor_to_backing_mapping,
+)
+```
+
+**Manual Mode Characteristics:**
+
+- **No automatic updates** from main coordinator
+- **Manual trigger updates** via `async_dispatcher_send` or direct calls
+- **Direct data access** through synthetic coordinator
+- **UI updates work correctly** when data changes
+- **Signal-based updates** for selective sensor refresh
+
+**Use Cases:**
+
+- Integrations that update data independently of coordinator
+- Custom update cycles or event-driven updates
+- Integrations with complex data flow requirements
+- Testing scenarios where coordinator is not available
 
 ### Virtual Backing Entities (Custom Data Provider)
 
@@ -457,9 +493,11 @@ sensor_manager = await async_setup_synthetic_sensors(
     hass=hass,
     config_entry=config_entry,
     async_add_entities=async_add_entities,
+    coordinator=coordinator,  # Can be None for manual mode
     storage_manager=storage_manager,
+    synthetic_coordinator=synthetic_coord,  # Required - direct dependency injection
     # device_identifier now provided via YAML global_settings
-    data_provider_callback=create_data_provider_callback(coordinator),
+    data_provider_callback=create_data_provider_callback(coordinator, synthetic_coord),
     change_notifier=change_notifier_callback,  # Enable real-time selective updates
     sensor_to_backing_mapping=sensor_to_backing_mapping,  # Register your virtual entities
 )
@@ -475,7 +513,9 @@ sensor_manager = await async_setup_synthetic_sensors(
     hass=hass,
     config_entry=config_entry,
     async_add_entities=async_add_entities,
+    coordinator=coordinator,  # Can be None for manual mode
     storage_manager=storage_manager,
+    synthetic_coordinator=synthetic_coord,  # Required - direct dependency injection
     # device_identifier now provided via YAML global_settings
     # No data_provider_callback - uses HA entity state lookups
     # No change_notifier - automatic via async_track_state_change_event
@@ -493,9 +533,11 @@ sensor_manager = await async_setup_synthetic_sensors(
     hass=hass,
     config_entry=config_entry,
     async_add_entities=async_add_entities,
+    coordinator=coordinator,  # Can be None for manual mode
     storage_manager=storage_manager,
+    synthetic_coordinator=synthetic_coord,  # Required - direct dependency injection
     # device_identifier now provided via YAML global_settings
-    data_provider_callback=create_data_provider_callback(coordinator),  # For virtual entities
+    data_provider_callback=create_data_provider_callback(coordinator, synthetic_coord),  # For virtual entities
     change_notifier=change_notifier_callback,  # For virtual entity updates
     sensor_to_backing_mapping=virtual_backing_mapping,  # Only virtual entities registered
 )
@@ -537,7 +579,9 @@ automatically falling back to HA entities when needed:
 # Default behavior - virtual entities with natural fallback to HA
 sensor_manager = await async_setup_synthetic_sensors(
     # ... other parameters ...
-    data_provider_callback=create_data_provider_callback(coordinator),
+    coordinator=coordinator,  # Can be None for manual mode
+    synthetic_coordinator=synthetic_coord,  # Required - direct dependency injection
+    data_provider_callback=create_data_provider_callback(coordinator, synthetic_coord),
     change_notifier=create_change_notifier_callback(sensor_manager),
 )
 ```
@@ -557,7 +601,9 @@ sensor_manager = await async_setup_synthetic_sensors(
 # Allow natural fallback to HA state lookups
 sensor_manager = await async_setup_synthetic_sensors(
     # ... other parameters ...
-    data_provider_callback=create_data_provider_callback(coordinator),
+    coordinator=coordinator,  # Can be None for manual mode
+    synthetic_coordinator=synthetic_coord,  # Required - direct dependency injection
+    data_provider_callback=create_data_provider_callback(coordinator, synthetic_coord),
     change_notifier=create_change_notifier_callback(sensor_manager),
 )
 ```
@@ -574,6 +620,8 @@ sensor_manager = await async_setup_synthetic_sensors(
 # Traditional HA entity lookups only
 sensor_manager = await async_setup_synthetic_sensors(
     # ... other parameters ...
+    coordinator=coordinator,  # Can be None for manual mode
+    synthetic_coordinator=synthetic_coord,  # Required - direct dependency injection
     data_provider_callback=None,  # No data provider
     change_notifier=None,  # No change notifier
 )
@@ -592,11 +640,21 @@ updates**:
 
 ### Implementation Flow
 
+#### Standard Mode (coordinator provided)
+
 1. **Your coordinator receives new data** from device API
 2. **Your integration compares old vs new values** and identifies changed backing entities
 3. **Your integration calls `change_notifier(changed_entity_ids)`** with specific entity IDs that changed
 4. **Synthetic sensors package updates only affected sensors** using `async_update_sensors_for_entities()`
 5. **Real-time updates with optimal performance**
+
+#### Manual Mode (coordinator=None)
+
+1. **Your integration updates data independently** of coordinator lifecycle
+2. **Your integration calls `change_notifier(changed_entity_ids)`** when data changes
+3. **Synthetic sensors package updates only affected sensors** using `async_update_sensors_for_entities()`
+4. **Real-time updates with optimal performance** - same as standard mode
+5. **UI updates work correctly** through direct synthetic coordinator access
 
 ## YAML-Based Sensor Set Patterns
 
@@ -1137,19 +1195,21 @@ async def setup_synthetic_configuration(
 
     return storage_manager, synthetic_coord
 
-def create_data_provider_callback(main_coordinator: YourCoordinator) -> DataProviderCallback:
-    """Create data provider callback that uses virtual backing entities."""
+def create_data_provider_callback(
+    main_coordinator: YourCoordinator | None,
+    synthetic_coordinator: SyntheticSensorCoordinator
+) -> DataProviderCallback:
+    """Create data provider callback that uses virtual backing entities with direct dependency injection."""
 
     def data_provider_callback(entity_id: str) -> DataProviderResult:
         """Provide live data from virtual backing entities."""
         try:
-            # Find the synthetic coordinator for this device
-            synthetic_coord = find_synthetic_coordinator_for(main_coordinator)
-            if not synthetic_coord:
-                return {"value": None, "exists": False}
+            # Use the passed synthetic coordinator directly - no lookup needed
+            if main_coordinator is None:
+                _LOGGER.debug("Using synthetic coordinator for data access when coordinator=None for entity_id: %s", entity_id)
 
             # Get value from virtual backing entity
-            value = synthetic_coord.get_backing_value(entity_id)
+            value = synthetic_coordinator.get_backing_value(entity_id)
             exists = value is not None
 
             return {"value": value, "exists": exists}
@@ -1178,7 +1238,7 @@ def create_change_notifier_callback(
 
 # Complete setup example in sensor.py
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up synthetic sensors with change notification."""
+    """Set up synthetic sensors with change notification using direct dependency injection."""
 
     # Set up native sensors
     native_entities = create_native_sensors(coordinator)
@@ -1193,8 +1253,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     device_data = coordinator.data
     sensor_configs, sensor_to_backing_mapping = await generate_panel_sensors(coordinator, device_data)
 
-    # Create callbacks
-    data_provider = create_data_provider_callback(coordinator)
+    # Create callbacks with direct dependency injection
+    data_provider = create_data_provider_callback(coordinator, synthetic_coord)
     change_notifier = create_change_notifier_callback(synthetic_coord)
 
     # Register synthetic sensors with simplified interface
@@ -1202,7 +1262,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         hass=hass,
         config_entry=config_entry,
         async_add_entities=async_add_entities,
+        coordinator=coordinator,  # Can be None for manual mode
         storage_manager=storage_manager,
+        synthetic_coordinator=synthetic_coord,  # Required - direct dependency injection
         data_provider_callback=data_provider,
         change_notifier=change_notifier,  # Enable real-time selective updates
         sensor_to_backing_mapping=sensor_to_backing_mapping,  # Provide mapping

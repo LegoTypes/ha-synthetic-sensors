@@ -8,9 +8,9 @@ global_settings:
 sensors:
   valid_string_sensor:
     name: "Valid String Operations"
-    formula: "'Power: ' + state + 'W'"
+    formula: "'Power: ' + ha_string_variable + 'W'"
     variables:
-      state: "sensor.power_meter"
+      ha_string_variable: "sensor.power_meter"
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
@@ -18,10 +18,13 @@ sensors:
 
   valid_numeric_sensor:
     name: "Valid Numeric Operations"
-    formula: "state * 1.1"
+    formula: "ha_numeric_variable * 1.1"
     variables:
-      state: "sensor.power_meter"
+      ha_numeric_variable: "sensor.power_meter"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
+    attributes:
+      result_description:
+        formula: "'Result is: ' + ha_numeric_variable"
