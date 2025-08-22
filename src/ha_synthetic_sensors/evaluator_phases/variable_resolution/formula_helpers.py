@@ -5,12 +5,7 @@ import re
 from typing import Any
 
 from ha_synthetic_sensors.config_models import FormulaConfig
-from ha_synthetic_sensors.constants_alternate import (
-    ALTERNATE_STATE_NONE,
-    ALTERNATE_STATE_UNAVAILABLE,
-    ALTERNATE_STATE_UNKNOWN,
-    identify_alternate_state_value,
-)
+from ha_synthetic_sensors.constants_alternate import identify_alternate_state_value
 
 from .resolution_types import HADependency, VariableResolutionResult
 
@@ -131,39 +126,26 @@ class FormulaHelpers:
 
         Returns early result that will be processed by Phase 4 alternate state handling.
         """
-        # Check 1: If we have unavailable dependencies, prioritize unavailable state
-        if unavailable_dependencies:
-            for dep in unavailable_dependencies:
-                if isinstance(dep, HADependency):
-                    alt = identify_alternate_state_value(dep.state)
-                    if alt == ALTERNATE_STATE_UNAVAILABLE:
-                        return VariableResolutionResult(
-                            resolved_formula=resolved_formula,
-                            has_ha_state=True,
-                            ha_state_value=ALTERNATE_STATE_UNAVAILABLE,
-                            unavailable_dependencies=unavailable_dependencies,
-                            entity_to_value_mappings=entity_to_value_mappings,
-                            early_result=ALTERNATE_STATE_UNAVAILABLE,
-                        )
-                elif isinstance(dep, str):
-                    if ALTERNATE_STATE_UNKNOWN in dep.lower():
-                        return VariableResolutionResult(
-                            resolved_formula=resolved_formula,
-                            has_ha_state=True,
-                            ha_state_value=ALTERNATE_STATE_UNKNOWN,
-                            unavailable_dependencies=unavailable_dependencies,
-                            entity_to_value_mappings=entity_to_value_mappings,
-                            early_result=ALTERNATE_STATE_UNKNOWN,
-                        )
-                    elif ALTERNATE_STATE_NONE in dep.lower():
-                        return VariableResolutionResult(
-                            resolved_formula=resolved_formula,
-                            has_ha_state=True,
-                            ha_state_value=ALTERNATE_STATE_NONE,
-                            unavailable_dependencies=unavailable_dependencies,
-                            entity_to_value_mappings=entity_to_value_mappings,
-                            early_result=ALTERNATE_STATE_NONE,
-                        )
+        # Check 1: If formula is a single entity with unavailable dependency, check for alternate states
+        if unavailable_dependencies and len(unavailable_dependencies) == 1:
+            # Only proceed if the resolved formula is exactly one entity token
+            single_token = FormulaHelpers.get_single_entity_token(resolved_formula, entity_to_value_mappings)
+            if single_token:
+                dep = unavailable_dependencies[0]
+                # Extract the value to check (state from HADependency, or the string itself)
+                value_to_check = dep.state if isinstance(dep, HADependency) else dep
+
+                # Check for alternate states using the centralized function
+                alt_state = identify_alternate_state_value(value_to_check)
+                if isinstance(alt_state, str):
+                    return VariableResolutionResult(
+                        resolved_formula=resolved_formula,
+                        has_ha_state=True,
+                        ha_state_value=alt_state,
+                        unavailable_dependencies=unavailable_dependencies,
+                        entity_to_value_mappings=entity_to_value_mappings,
+                        early_result=alt_state,
+                    )
 
         # Check 2: Single state detection - check if entire formula is a single alternate state
         stripped_formula = resolved_formula.strip()
