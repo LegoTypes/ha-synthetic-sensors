@@ -226,7 +226,7 @@ class TestCompiledFormula:
         """Test CompiledFormula can be created and used."""
         from ha_synthetic_sensors.math_functions import MathFunctions
 
-        math_functions = MathFunctions.get_builtin_functions()
+        math_functions = MathFunctions.get_all_functions()
         formula = "a * 2 + b"
 
         compiled = CompiledFormula(formula, math_functions)
@@ -240,7 +240,7 @@ class TestCompiledFormula:
         """Test that hit count is properly tracked."""
         from ha_synthetic_sensors.math_functions import MathFunctions
 
-        math_functions = MathFunctions.get_builtin_functions()
+        math_functions = MathFunctions.get_all_functions()
         compiled = CompiledFormula("a + b", math_functions)
 
         assert compiled.hit_count == 0
@@ -255,7 +255,7 @@ class TestCompiledFormula:
         """Test that different contexts don't interfere with each other."""
         from ha_synthetic_sensors.math_functions import MathFunctions
 
-        math_functions = MathFunctions.get_builtin_functions()
+        math_functions = MathFunctions.get_all_functions()
         compiled = CompiledFormula("a + b", math_functions)
 
         result1 = compiled.evaluate({"a": 1, "b": 2})

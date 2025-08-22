@@ -117,7 +117,7 @@ class TestEnhancedMathFunctions(unittest.TestCase):
 
     def test_enhanced_vs_builtin_functions(self):
         """Test that enhanced functions include all builtin functions plus new ones."""
-        builtin_functions = MathFunctions.get_builtin_functions()
+        builtin_functions = MathFunctions.get_all_functions()
         enhanced_functions = MathFunctions.get_all_functions()
 
         # Enhanced should include all builtin functions

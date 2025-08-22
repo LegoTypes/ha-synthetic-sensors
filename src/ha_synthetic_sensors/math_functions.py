@@ -12,8 +12,6 @@ import math
 import re
 from typing import Any
 
-from .datetime_functions import get_datetime_functions
-
 # Type alias for numeric values (excluding complex since it doesn't work with float())
 NumericValue = int | float
 IterableOrValues = NumericValue | Iterable[NumericValue]
@@ -651,8 +649,11 @@ class MathFunctions:
         return business_days
 
     @staticmethod
-    def get_builtin_functions() -> dict[str, Callable[..., Any]]:
-        """Get all mathematical functions available for formula evaluation.
+    def get_all_functions() -> dict[str, Callable[..., Any]]:
+        """Get all available functions including enhanced duration/datetime functions.
+
+        This is the enhanced function set that provides native Python objects
+        for direct SimpleEval compatibility.
 
         Returns:
             Dictionary mapping function names to callable functions
@@ -702,28 +703,6 @@ class MathFunctions:
             "safe_divide": MathFunctions.safe_divide,
         }
 
-        # Existing datetime functions from registry
-        datetime_functions = get_datetime_functions()
-        math_functions.update(datetime_functions)
-
-        return math_functions
-
-    @staticmethod
-    def get_all_functions() -> dict[str, Callable[..., Any]]:
-        """Get ALL available functions including enhanced duration/datetime functions.
-
-        This is the NEW enhanced function set that replaces string-based duration functions
-        with actual timedelta objects for direct SimpleEval compatibility.
-
-        This implements Phase 1 of the Enhanced SimpleEval Foundation as specified
-        in formula_router_architecture_redesign.md
-
-        Returns:
-            Dictionary mapping function names to callable functions
-        """
-        # Start with all existing builtin functions
-        math_functions = MathFunctions.get_builtin_functions()
-
         # OVERRIDE duration functions to return actual timedelta objects instead of strings
         # This enables direct SimpleEval arithmetic: minutes(5) / minutes(1) -> 5.0
         enhanced_duration_functions = {
@@ -747,7 +726,28 @@ class MathFunctions:
                 "format_friendly": MathFunctions.format_friendly,
                 "format_date": MathFunctions.format_date,
                 "datetime": datetime,
+                "date": MathFunctions.smart_date,
                 "timedelta": timedelta,
+                # Duration functions for enhanced system
+                "seconds": lambda n: timedelta(seconds=float(n)),
+                "minutes": lambda n: timedelta(minutes=float(n)),
+                "hours": lambda n: timedelta(hours=float(n)),
+                "days": lambda n: timedelta(days=float(n)),
+                "weeks": lambda n: timedelta(weeks=float(n)),
+                # Legacy datetime functions for compatibility
+                "now": lambda: datetime.now().isoformat(),
+                "today": lambda: datetime.combine(datetime.now().date(), datetime.min.time()).isoformat(),
+                "yesterday": lambda: datetime.combine(
+                    (datetime.now().date() - timedelta(days=1)), datetime.min.time()
+                ).isoformat(),
+                "tomorrow": lambda: datetime.combine(
+                    (datetime.now().date() + timedelta(days=1)), datetime.min.time()
+                ).isoformat(),
+                "utc_now": lambda: datetime.now(UTC).isoformat(),
+                "utc_today": lambda: datetime.combine(datetime.now(UTC).date(), datetime.min.time(), UTC).isoformat(),
+                "utc_yesterday": lambda: datetime.combine(
+                    (datetime.now(UTC).date() - timedelta(days=1)), datetime.min.time(), UTC
+                ).isoformat(),
                 # Unit conversion functions for timedelta results
                 "as_minutes": MathFunctions.as_minutes,
                 "as_seconds": MathFunctions.as_seconds,
@@ -806,10 +806,40 @@ class MathFunctions:
         return math_functions
 
     @staticmethod
+    def smart_date(*args):
+        """Smart date function that handles both native constructor and string parsing.
+
+        Args:
+            *args: Either 3 integers (year, month, day) or 1 string (YYYY-MM-DD)
+
+        Returns:
+            For 3 int args: date object
+            For 1 string arg: ISO datetime string
+        """
+        # Case 1: Native Python constructor - date(year, month, day)
+        if len(args) == 3:
+            try:
+                return date(*args)  # Return native date object
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"Invalid date constructor arguments: {e}") from e
+
+        # Case 2: String parsing - date("2024-12-25")
+        elif len(args) == 1 and isinstance(args[0], str):
+            try:
+                # Parse the date string (expecting YYYY-MM-DD format)
+                parsed_date = datetime.strptime(args[0], "%Y-%m-%d").date()
+                # Return ISO format string that represents the date object
+                return datetime.combine(parsed_date, datetime.min.time()).isoformat()
+            except ValueError as e:
+                raise ValueError(f"Invalid date string format '{args[0]}'. Expected YYYY-MM-DD") from e
+        else:
+            raise ValueError("date() function requires either 3 integers (year, month, day) or 1 string (YYYY-MM-DD)")
+
+    @staticmethod
     def get_function_names() -> set[str]:
         """Get the names of all available functions.
 
         Returns:
             Set of function names that should be excluded from dependency extraction
         """
-        return set(MathFunctions.get_builtin_functions().keys())
+        return set(MathFunctions.get_all_functions().keys())

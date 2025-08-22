@@ -67,22 +67,15 @@ class FormulaCompilationCache:
     improvement for frequently used formulas.
     """
 
-    def __init__(self, max_entries: int = 1000, use_enhanced_functions: bool = False):
+    def __init__(self, max_entries: int = 1000):
         """Initialize the compilation cache.
 
         Args:
             max_entries: Maximum number of compiled formulas to cache
-            use_enhanced_functions: If True, use enhanced functions for SimpleEval integration
         """
         self._cache: dict[str, CompiledFormula] = {}
         self._max_entries = max_entries
-        self._use_enhanced_functions = use_enhanced_functions
-
-        # Choose function set based on enhancement flag
-        if use_enhanced_functions:
-            self._math_functions = MathFunctions.get_all_functions()  # Enhanced with timedelta support
-        else:
-            self._math_functions = MathFunctions.get_builtin_functions()  # Standard string-based duration
+        self._math_functions = MathFunctions.get_all_functions()  # Enhanced functions only
 
         self._hits = 0
         self._misses = 0

@@ -405,7 +405,7 @@ class TestMathFunctions:
 
     def test_builtin_functions_include_new_functions(self):
         """Test that new functions are included in builtin functions."""
-        functions = MathFunctions.get_builtin_functions()
+        functions = MathFunctions.get_all_functions()
 
         assert "count" in functions
         assert "std" in functions

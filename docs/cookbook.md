@@ -1050,6 +1050,8 @@ sensors:
 - `tomorrow()` - Tomorrow's date at midnight in local timezone (ISO format)
 - `utc_today()` - Today's date at midnight in UTC timezone (ISO format)
 - `utc_yesterday()` - Yesterday's date at midnight in UTC timezone (ISO format)
+- `date(year, month, day)` - Create date object from integers
+- `date("YYYY-MM-DD")` - Parse date string to ISO datetime format
 
 **Duration Functions:**
 
@@ -1067,7 +1069,7 @@ sensors:
   # Basic date arithmetic
   future_date:
     name: "Future Date"
-    formula: "date('2025-01-01') + days(30)"
+    formula: "date(2025, 1, 1) + days(30)"
     metadata:
       device_class: "date"
 
@@ -1092,7 +1094,7 @@ sensors:
   # Date differences
   days_since_created:
     name: "Days Since Created"
-    formula: "date(now()) - date(created_timestamp)"
+    formula: "now() - date(created_timestamp)"
     variables:
       created_timestamp: sensor.creation_date # attribute reference
     metadata:
@@ -1102,7 +1104,7 @@ sensors:
   # Conditional date arithmetic
   maintenance_overdue:
     name: "Maintenance Overdue"
-    formula: "1 if date(now()) > date(last_service) + months(12) else 0"
+    formula: "1 if now() > date(last_service) + months(12) else 0"
     variables:
       last_service: sensor.last_maintenance_date # attribute reference
     metadata:
@@ -1112,7 +1114,7 @@ sensors:
   # Time-based calculations
   device_uptime:
     name: "Device Uptime"
-    formula: "date(now()) - date(state.last_changed)"
+    formula: "now() - date(state.last_changed)"
     metadata:
       unit_of_measurement: "days"
       device_class: "duration"
@@ -1120,7 +1122,7 @@ sensors:
   # Recent activity monitoring
   recent_activity:
     name: "Recent Activity"
-    formula: "count(state.last_changed >= date(now()) - hours(24))"
+    formula: "count(state.last_changed >= now() - hours(24))"
     metadata:
       unit_of_measurement: "events"
 ```
@@ -1133,7 +1135,8 @@ sensors:
   complex_schedule:
     name: "Complex Schedule"
     formula: "date(base_date) + months(3) + weeks(2) + days(5)"
-    variables: base_date:"sensor.base_date # attribute reference
+    variables:
+      base_date: sensor.base_date # attribute reference
     metadata:
       device_class: "date"
 
@@ -1160,7 +1163,7 @@ sensors:
   # Duration-based calculations
   energy_period:
     name: "Energy Period"
-    formula: "date(now()) - date(period_start) + days(1)"
+    formula: "now() - date(period_start) + days(1)"
     variables:
       period_start: sensor.energy_period_start # attribute reference
     metadata:

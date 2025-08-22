@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytz
@@ -22,14 +22,15 @@ class DateFunctions(BaseDateTimeFunction):
         return {"today", "yesterday", "tomorrow", "utc_today", "utc_yesterday", "date"}
 
     def evaluate_function(self, function_name: str, args: list[Any] | None = None) -> str:
-        """Evaluate the date function and return an ISO datetime string.
+        """Evaluate the date function and return result.
 
         Args:
             function_name: The name of the function to evaluate
             args: Optional arguments (for date() function)
 
         Returns:
-            ISO datetime string result (date at midnight)
+            For date() with 3 args: date object
+            For date() with 1 string arg or other functions: ISO datetime string
 
         Raises:
             ValueError: If the function is not supported or arguments are invalid
@@ -102,30 +103,43 @@ class DateFunctions(BaseDateTimeFunction):
         return datetime.combine(yesterday, datetime.min.time(), pytz.UTC).isoformat()
 
     def _convert_date_string(self, args: list[Any] | None) -> str:
-        """Convert a date string to ISO format.
+        """Smart date function that handles both native constructor and string parsing.
 
         Args:
-            args: List containing a single date string argument
+            args: Either (year, month, day) integers or a single date string
 
         Returns:
-            ISO datetime string for the date at midnight
+            For 3 integers: date object (native constructor)
+            For 1 string: ISO datetime string for the date at midnight
 
         Raises:
-            ValueError: If arguments are invalid or date string cannot be parsed
+            ValueError: If arguments are invalid or cannot be parsed
         """
-        if not args or len(args) != 1:
-            raise ValueError("date() function requires exactly one string argument")
+        if not args:
+            raise ValueError("date() function requires arguments")
 
-        date_string = args[0]
-        if not isinstance(date_string, str):
-            raise ValueError("date() function requires a string argument")
+        # Case 1: Native Python constructor - date(year, month, day)
+        if len(args) == 3:
+            try:
+                date_obj = date(*args)
+                # Return ISO format string that represents the date object
+                return date_obj.isoformat()
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"Invalid date constructor arguments: {e}") from e
 
-        try:
-            # Parse the date string (expecting YYYY-MM-DD format)
-            parsed_date = datetime.strptime(date_string, "%Y-%m-%d").date()
-            return datetime.combine(parsed_date, datetime.min.time()).isoformat()
-        except ValueError as e:
-            raise ValueError(f"Invalid date format '{date_string}'. Expected YYYY-MM-DD format: {e}") from e
+        # Case 2: String parsing - date("2024-12-25")
+        elif len(args) == 1 and isinstance(args[0], str):
+            date_string = args[0]
+            try:
+                # Parse the date string (expecting YYYY-MM-DD format)
+                parsed_date = datetime.strptime(date_string, "%Y-%m-%d").date()
+                return datetime.combine(parsed_date, datetime.min.time()).isoformat()
+            except ValueError as e:
+                raise ValueError(f"Invalid date format '{date_string}'. Expected YYYY-MM-DD format: {e}") from e
+
+        # Case 3: Invalid arguments
+        else:
+            raise ValueError("date() expects either (year, month, day) integers or a single date string in YYYY-MM-DD format")
 
     def get_function_info(self) -> dict[str, Any]:
         """Get information about the date functions provided.
@@ -143,7 +157,7 @@ class DateFunctions(BaseDateTimeFunction):
                     "yesterday": "Yesterday's date at midnight in local timezone",
                     "tomorrow": "Tomorrow's date at midnight in local timezone",
                     "utc_today": "Today's date at midnight in UTC",
-                    "date": "Convert date string (YYYY-MM-DD) to ISO datetime format",
+                    "date": "Create date object from integers (year, month, day) or parse date string (YYYY-MM-DD) to ISO datetime format",
                     "utc_yesterday": "Yesterday's date at midnight in UTC",
                 },
             }

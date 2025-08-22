@@ -24,8 +24,8 @@ class EnhancedSimpleEvalHelper:
 
     def __init__(self) -> None:
         """Initialize the enhanced SimpleEval helper with AST compilation cache."""
-        # Initialize compilation cache for AST caching with enhanced functions
-        self._compilation_cache = FormulaCompilationCache(use_enhanced_functions=True)
+        # Initialize compilation cache for AST caching
+        self._compilation_cache = FormulaCompilationCache()
         self._enhancement_stats = {"enhanced_eval_count": 0, "fallback_count": 0}
         _LOGGER.debug("EnhancedSimpleEvalHelper initialized with AST compilation cache")
 
