@@ -24,17 +24,31 @@ def test_identify_variables_for_attribute_access_marks_entity_vars() -> None:
 
 
 @pytest.mark.parametrize(
-    "deps,expected_state",
+    "formula,expected_state",
     [
-        (["x (sensor.a) is unavailable"], "unavailable"),
-        (["x (sensor.a) is unknown"], "unknown"),
+        ("unavailable", "unavailable"),
+        ("unknown", "unknown"),
+        ("none", "none"),
     ],
 )
-def test_detect_ha_state_in_formula_via_dependencies(deps: list[str], expected_state: str) -> None:
-    res = FormulaHelpers.detect_ha_state_in_formula("1 + 2", deps, {})
+def test_detect_ha_state_in_formula_single_alternate_state(formula: str, expected_state: str) -> None:
+    """Test that single alternate state formulas are detected correctly."""
+    res = FormulaHelpers.detect_ha_state_in_formula(formula, [], {})
     assert res is not None
     assert res.has_ha_state is True
     assert res.ha_state_value == expected_state
+
+
+def test_detect_ha_state_in_formula_entity_references_return_none() -> None:
+    """Test that entity references do NOT trigger early return."""
+    res = FormulaHelpers.detect_ha_state_in_formula("sensor.a", ["x (sensor.a) is unavailable"], {})
+    assert res is None  # Entity references should not trigger early return
+
+
+def test_detect_ha_state_in_formula_complex_formula_with_dependencies_returns_none() -> None:
+    """Test that complex formulas with dependencies do NOT trigger early return."""
+    res = FormulaHelpers.detect_ha_state_in_formula("1 + 2", ["x (sensor.a) is unavailable"], {})
+    assert res is None  # Complex formula should not trigger early return
 
 
 def test_detect_ha_state_in_formula_detects_quoted_unknown() -> None:
