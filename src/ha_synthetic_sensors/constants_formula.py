@@ -4,6 +4,7 @@ This module centralizes formula-related constants including reserved words,
 HA state values, and other shared constants used across the evaluation system.
 """
 
+from .constants_alternate import identify_alternate_state_value
 from .math_functions import MathFunctions
 from .shared_constants import BOOLEAN_LITERALS, MATH_FUNCTIONS, PYTHON_KEYWORDS, STRING_FUNCTIONS
 
@@ -155,18 +156,6 @@ def is_reserved_word(word: str) -> bool:
     return word in FORMULA_RESERVED_WORDS
 
 
-def is_ha_state_value(value: str) -> bool:
-    """Check if a value is a Home Assistant state value.
-
-    Args:
-        value: The value to check
-
-    Returns:
-        True if the value represents an HA state (unknown, unavailable, etc.)
-    """
-    return value in HA_STATE_VALUES
-
-
 def is_ha_unknown_equivalent(value: str) -> bool:
     """Check if a value should be converted to "unknown".
 
@@ -190,7 +179,9 @@ def normalize_ha_state_value(value: str) -> str:
     """
     if is_ha_unknown_equivalent(value):
         return "unknown"
-    return value.lower() if is_ha_state_value(value.lower()) else value
+    # Use modern alternate state detection
+    alt_state = identify_alternate_state_value(value.lower())
+    return value.lower() if isinstance(alt_state, str) else value
 
 
 def is_collection_function(function_name: str) -> bool:

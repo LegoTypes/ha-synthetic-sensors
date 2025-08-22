@@ -6,11 +6,11 @@ from typing import Any
 
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.constants_alternate import (
+    ALTERNATE_STATE_NONE,
     ALTERNATE_STATE_UNAVAILABLE,
     ALTERNATE_STATE_UNKNOWN,
     identify_alternate_state_value,
 )
-from ha_synthetic_sensors.constants_formula import is_ha_state_value, normalize_ha_state_value
 
 from .resolution_types import HADependency, VariableResolutionResult
 
@@ -134,7 +134,6 @@ class FormulaHelpers:
         # Check 1: If we have unavailable dependencies, prioritize unavailable state
         if unavailable_dependencies:
             for dep in unavailable_dependencies:
-                # Handle both HADependency objects and string dependencies (for compatibility)
                 if isinstance(dep, HADependency):
                     alt = identify_alternate_state_value(dep.state)
                     if alt == ALTERNATE_STATE_UNAVAILABLE:
@@ -147,17 +146,7 @@ class FormulaHelpers:
                             early_result=ALTERNATE_STATE_UNAVAILABLE,
                         )
                 elif isinstance(dep, str):
-                    # Handle legacy string format like "sensor.kitchen is unavailable"
-                    if "unavailable" in dep.lower():
-                        return VariableResolutionResult(
-                            resolved_formula=resolved_formula,
-                            has_ha_state=True,
-                            ha_state_value=ALTERNATE_STATE_UNAVAILABLE,
-                            unavailable_dependencies=unavailable_dependencies,
-                            entity_to_value_mappings=entity_to_value_mappings,
-                            early_result=ALTERNATE_STATE_UNAVAILABLE,
-                        )
-                    elif "unknown" in dep.lower():
+                    if ALTERNATE_STATE_UNKNOWN in dep.lower():
                         return VariableResolutionResult(
                             resolved_formula=resolved_formula,
                             has_ha_state=True,
@@ -165,6 +154,15 @@ class FormulaHelpers:
                             unavailable_dependencies=unavailable_dependencies,
                             entity_to_value_mappings=entity_to_value_mappings,
                             early_result=ALTERNATE_STATE_UNKNOWN,
+                        )
+                    elif ALTERNATE_STATE_NONE in dep.lower():
+                        return VariableResolutionResult(
+                            resolved_formula=resolved_formula,
+                            has_ha_state=True,
+                            ha_state_value=ALTERNATE_STATE_NONE,
+                            unavailable_dependencies=unavailable_dependencies,
+                            entity_to_value_mappings=entity_to_value_mappings,
+                            early_result=ALTERNATE_STATE_NONE,
                         )
 
         # Check 2: Single state detection - check if entire formula is a single alternate state
@@ -174,7 +172,7 @@ class FormulaHelpers:
         if stripped_formula.startswith('"') and stripped_formula.endswith('"'):
             stripped_formula = stripped_formula[1:-1]
 
-        # Use the shared alternate state detection logic
+        # Use the alternate state detection logic
         alt_state = identify_alternate_state_value(stripped_formula)
         if isinstance(alt_state, str):
             _LOGGER.debug(
@@ -187,21 +185,6 @@ class FormulaHelpers:
                 unavailable_dependencies=unavailable_dependencies,
                 entity_to_value_mappings=entity_to_value_mappings,
                 early_result=alt_state,
-            )
-
-        # Fallback check for legacy HA state constants
-        if is_ha_state_value(stripped_formula):
-            ha_state_value = normalize_ha_state_value(stripped_formula)
-            _LOGGER.debug(
-                "Single state optimization: Formula '%s' resolved to legacy HA state '%s'", resolved_formula, ha_state_value
-            )
-            return VariableResolutionResult(
-                resolved_formula=resolved_formula,
-                has_ha_state=True,
-                ha_state_value=ha_state_value,
-                unavailable_dependencies=unavailable_dependencies,
-                entity_to_value_mappings=entity_to_value_mappings,
-                early_result=ha_state_value,
             )
 
         return None

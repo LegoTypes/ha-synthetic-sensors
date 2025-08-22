@@ -45,15 +45,19 @@ def test_direct_entity_reference(mock_hass, mock_entity_registry, mock_states) -
         mock_er_collection.return_value = mock_entity_registry
         mock_er_constants.return_value = mock_entity_registry
 
+        # Set up proper mock state function
+        def mock_get_state(entity_id):
+            if entity_id == "sensor.temperature":
+                mock_state = MagicMock()
+                mock_state.state = "22.0"
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = mock_get_state
+
         # Create evaluator with HA lookups enabled
         evaluator = Evaluator(mock_hass)
         evaluator.update_integration_entities({"sensor.temperature"})
-
-        # The entity state is already set up by mock_states fixture
-        # sensor.temperature should return Mock(state="22.0") from conftest.py line 795-797
-        print(f"Available mock states: {list(mock_states.keys())}")
-        if "sensor.temperature" in mock_states:
-            print(f"sensor.temperature state: {mock_states['sensor.temperature'].state}")
 
         # Test direct entity reference (no variables needed)
         config = FormulaConfig(id="test_formula", formula="sensor.temperature", variables={})
@@ -62,22 +66,17 @@ def test_direct_entity_reference(mock_hass, mock_entity_registry, mock_states) -
 
     # Debug output
     print(f"Evaluation result: {result}")
-    print(f"Mock state calls: {mock_hass.states.get.call_args_list}")
-
-    # Debug the mock state object
-    mock_state_obj = mock_hass.states.get.return_value
-    print(f"Mock state object: {mock_state_obj}")
-    print(f"Mock state.state: {mock_state_obj.state}")
-
-    # Test alternate state detection
-    from ha_synthetic_sensors.constants_alternate import identify_alternate_state_value
-
-    alt_result = identify_alternate_state_value(mock_state_obj.state)
-    print(f"Alternate state detection result for '{mock_state_obj.state}': {alt_result}")
 
     # Should succeed and return the value from HA state
     assert result["success"] is True
-    assert result["value"] == 22.0, f"Expected 22.0, got {result['value']} (full result: {result})"
+    # With ReferenceValue architecture, extract the value for comparison
+    value = result["value"]
+    if hasattr(value, "value"):
+        # This is a ReferenceValue object - extract the raw value
+        assert value.value == 22.0, f"Expected 22.0, got {value.value} (full result: {result})"
+    else:
+        # This is a raw value
+        assert value == 22.0, f"Expected 22.0, got {value} (full result: {result})"
 
     # Should have called Home Assistant to get the entity state
     mock_hass.states.get.assert_called_with("sensor.temperature")

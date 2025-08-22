@@ -5,8 +5,8 @@ import hashlib
 import logging
 from typing import Any
 
+from ha_synthetic_sensors.constants_alternate import identify_alternate_state_value
 from ha_synthetic_sensors.constants_boolean_states import get_current_false_states, get_current_true_states
-from ha_synthetic_sensors.constants_formula import is_ha_state_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,7 +115,8 @@ class EvaluatorHelpers:
         # Handle string results
         elif isinstance(result, str):
             # Preserve HA state strings
-            if is_ha_state_value(result):
+            alt_state = identify_alternate_state_value(result)
+            if isinstance(alt_state, str):
                 processed_result = result
             else:
                 # Use priority analyzer: boolean-first, then numeric

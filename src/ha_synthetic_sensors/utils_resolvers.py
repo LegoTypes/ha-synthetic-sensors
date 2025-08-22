@@ -9,9 +9,10 @@ from typing import Any, cast
 
 from homeassistant.helpers.typing import StateType
 
+from .constants_alternate import identify_alternate_state_value
 from .constants_boolean_states import FALSE_STATES, TRUE_STATES
 from .constants_evaluation_results import RESULT_KEY_EXISTS, RESULT_KEY_VALUE
-from .constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
+from .constants_formula import is_ha_unknown_equivalent, normalize_ha_state_value
 from .data_validation import validate_data_provider_result
 from .exceptions import DataValidationError, MissingDependencyError
 from .type_definitions import ReferenceValue
@@ -56,11 +57,13 @@ def resolve_via_data_provider_entity(dependency_handler: Any, entity_id: str, or
                 return ReferenceValue(reference=entity_id, value=None)
 
             # Handle special Home Assistant state values
-            if isinstance(value, str) and (is_ha_state_value(value) or is_ha_unknown_equivalent(value)):
-                _LOGGER.debug("Entity resolver: entity '%s' has %s state via data provider", entity_id, value)
-                # Return the normalized HA state value wrapped in ReferenceValue
-                normalized_value = normalize_ha_state_value(value)
-                return ReferenceValue(reference=entity_id, value=normalized_value)
+            if isinstance(value, str):
+                alt_state = identify_alternate_state_value(value)
+                if isinstance(alt_state, str) or is_ha_unknown_equivalent(value):
+                    _LOGGER.debug("Entity resolver: entity '%s' has %s state via data provider", entity_id, value)
+                    # Return the normalized HA state value wrapped in ReferenceValue
+                    normalized_value = normalize_ha_state_value(value)
+                    return ReferenceValue(reference=entity_id, value=normalized_value)
 
             _LOGGER.debug("Entity resolver: resolved '%s' to %s", entity_id, value)
 
@@ -111,15 +114,15 @@ def resolve_via_data_provider_attribute(
                 attribute_value = attributes[attribute_name]
 
                 # Handle special Home Assistant state values in attributes
-                if isinstance(attribute_value, str) and (
-                    is_ha_state_value(attribute_value) or is_ha_unknown_equivalent(attribute_value)
-                ):
-                    _LOGGER.debug(
-                        "Attribute resolver: attribute '%s' of entity '%s' has %s state via data provider",
-                        attribute_name,
-                        entity_id,
-                        attribute_value,
-                    )
+                if isinstance(attribute_value, str):
+                    alt_state = identify_alternate_state_value(attribute_value)
+                    if isinstance(alt_state, str) or is_ha_unknown_equivalent(attribute_value):
+                        _LOGGER.debug(
+                            "Attribute resolver: attribute '%s' of entity '%s' has %s state via data provider",
+                            attribute_name,
+                            entity_id,
+                            attribute_value,
+                        )
                     return normalize_ha_state_value(attribute_value)
 
                 _LOGGER.debug(
@@ -159,9 +162,11 @@ def _convert_hass_state_value(state_value: str, entity_id: str, hass_state: Any 
         The converted value
     """
     # Handle special Home Assistant state values
-    if is_ha_state_value(state_value) or is_ha_unknown_equivalent(state_value):
-        _LOGGER.debug("Entity resolver: entity '%s' has %s state via HASS", entity_id, state_value)
-        return normalize_ha_state_value(state_value)
+    if isinstance(state_value, str):
+        alt_state = identify_alternate_state_value(state_value)
+        if isinstance(alt_state, str) or is_ha_unknown_equivalent(state_value):
+            _LOGGER.debug("Entity resolver: entity '%s' has %s state via HASS", entity_id, state_value)
+            return normalize_ha_state_value(state_value)
 
     # Try to convert to numeric value
     try:
@@ -293,15 +298,15 @@ def resolve_via_hass_attribute(
             attribute_value = hass_state.attributes[attribute_name]
 
             # Handle special Home Assistant state values in attributes
-            if isinstance(attribute_value, str) and (
-                is_ha_state_value(attribute_value) or is_ha_unknown_equivalent(attribute_value)
-            ):
-                _LOGGER.debug(
-                    "Attribute resolver: attribute '%s' of entity '%s' has %s state via HASS",
-                    attribute_name,
-                    entity_id,
-                    attribute_value,
-                )
+            if isinstance(attribute_value, str):
+                alt_state = identify_alternate_state_value(attribute_value)
+                if isinstance(alt_state, str) or is_ha_unknown_equivalent(attribute_value):
+                    _LOGGER.debug(
+                        "Attribute resolver: attribute '%s' of entity '%s' has %s state via HASS",
+                        attribute_name,
+                        entity_id,
+                        attribute_value,
+                    )
                 return normalize_ha_state_value(attribute_value)
 
             _LOGGER.debug("Attribute resolver: resolved '%s' to %s via HASS", original_reference, attribute_value)

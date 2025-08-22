@@ -3,8 +3,9 @@
 import logging
 from typing import Any
 
+from ...constants_alternate import identify_alternate_state_value
 from ...constants_evaluation_results import RESULT_KEY_VALUE
-from ...constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
+from ...constants_formula import is_ha_unknown_equivalent, normalize_ha_state_value
 from ...data_validation import validate_data_provider_result
 from ...exceptions import DataValidationError, FormulaEvaluationError
 from .base_resolver import VariableResolver
@@ -255,13 +256,15 @@ class SelfReferenceResolver(VariableResolver):
             return None
 
         # Handle special Home Assistant state values
-        if isinstance(value, str) and (is_ha_state_value(value) or is_ha_unknown_equivalent(value)):
-            _LOGGER.debug(
-                "Self-reference resolver: backing entity '%s' has %s state via %s",
-                backing_entity_id,
-                value,
-                source,
-            )
+        if isinstance(value, str):
+            alt_state = identify_alternate_state_value(value)
+            if isinstance(alt_state, str) or is_ha_unknown_equivalent(value):
+                _LOGGER.debug(
+                    "Self-reference resolver: backing entity '%s' has %s state via %s",
+                    backing_entity_id,
+                    value,
+                    source,
+                )
             return normalize_ha_state_value(value)
 
         # For HA state, try to convert to numeric

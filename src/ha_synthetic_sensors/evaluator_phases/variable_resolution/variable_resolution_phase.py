@@ -8,7 +8,8 @@ from typing import Any
 from homeassistant.const import STATE_UNKNOWN
 
 from ha_synthetic_sensors.config_models import FormulaConfig, SensorConfig
-from ha_synthetic_sensors.constants_formula import is_ha_state_value, is_reserved_word
+from ha_synthetic_sensors.constants_alternate import identify_alternate_state_value
+from ha_synthetic_sensors.constants_formula import is_reserved_word
 from ha_synthetic_sensors.evaluator_handlers.metadata_handler import MetadataHandler
 from ha_synthetic_sensors.exceptions import DataValidationError, MissingDependencyError
 from ha_synthetic_sensors.shared_constants import get_ha_domains
@@ -596,11 +597,6 @@ class VariableResolutionPhase:
         # Not a variable, return as-is
         return var_name
 
-        # Note: We are intentionally not substituting variables into the formula at this phase
-        # to preserve lazy evaluation. The code below remains for reference but is disabled.
-        # variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
-        # return variable_pattern.sub(replace_variable_ref, formula)
-
     def _process_resolved_entity_value(
         self, value: Any, var_name: str, entity_id: str, ha_dependencies: list[HADependency]
     ) -> str:
@@ -624,9 +620,11 @@ class VariableResolutionPhase:
             return "unknown"
 
         # Check if value is an HA state
-        if isinstance(actual_value, str) and is_ha_state_value(actual_value):
-            ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(actual_value)))
-            return str(actual_value)
+        if isinstance(actual_value, str):
+            alt_state = identify_alternate_state_value(actual_value)
+            if isinstance(alt_state, str):
+                ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(actual_value)))
+                return str(actual_value)
 
         return str(actual_value)
 
@@ -834,9 +832,11 @@ class VariableResolutionPhase:
             if existing_value is None:
                 entity_id = entity_mappings.get(var_name, var_value if isinstance(var_value, str) else "unknown")
                 ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state="unknown"))
-            elif isinstance(existing_value, str) and is_ha_state_value(existing_value):
-                entity_id = entity_mappings.get(var_name, var_value if isinstance(var_value, str) else "unknown")
-                ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(existing_value)))
+            elif isinstance(existing_value, str):
+                alt_state = identify_alternate_state_value(existing_value)
+                if isinstance(alt_state, str):
+                    entity_id = entity_mappings.get(var_name, var_value if isinstance(var_value, str) else "unknown")
+                    ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(existing_value)))
             _LOGGER.debug("Skipping config variable %s (already resolved to %s)", var_name, existing_value)
             return True
         return False
@@ -865,13 +865,15 @@ class VariableResolutionPhase:
                         var_name, var_value if isinstance(var_value, str) else STATE_UNKNOWN
                     )
                     ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id_for_tracking, state="unknown"))
-                elif isinstance(actual_resolved_value, str) and is_ha_state_value(actual_resolved_value):
-                    entity_id_for_tracking = entity_mappings.get(
-                        var_name, var_value if isinstance(var_value, str) else STATE_UNKNOWN
-                    )
-                    ha_dependencies.append(
-                        HADependency(var=var_name, entity_id=entity_id_for_tracking, state=str(actual_resolved_value))
-                    )
+                elif isinstance(actual_resolved_value, str):
+                    alt_state = identify_alternate_state_value(actual_resolved_value)
+                    if isinstance(alt_state, str):
+                        entity_id_for_tracking = entity_mappings.get(
+                            var_name, var_value if isinstance(var_value, str) else STATE_UNKNOWN
+                        )
+                        ha_dependencies.append(
+                            HADependency(var=var_name, entity_id=entity_id_for_tracking, state=str(actual_resolved_value))
+                        )
             else:
                 _LOGGER.debug(
                     "Config variable '%s' in formula '%s' resolved to None",
@@ -923,10 +925,12 @@ class VariableResolutionPhase:
                         entity_id = reference if "." in reference else existing_mappings.get(var_name, reference)
                         ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state="unknown"))
                         entity_mappings[var_name] = entity_id
-                    elif isinstance(value, str) and is_ha_state_value(value):
-                        entity_id = reference if "." in reference else existing_mappings.get(var_name, reference)
-                        ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
-                        entity_mappings[var_name] = entity_id
+                    elif isinstance(value, str):
+                        alt_state = identify_alternate_state_value(value)
+                        if isinstance(alt_state, str):
+                            entity_id = reference if "." in reference else existing_mappings.get(var_name, reference)
+                            ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
+                            entity_mappings[var_name] = entity_id
 
                     # NEW APPROACH: Keep the variable name in the formula
                     # Handlers will access the ReferenceValue objects from context
@@ -939,10 +943,12 @@ class VariableResolutionPhase:
                     entity_id = existing_mappings.get(var_name, "unknown")
                     ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state="unknown"))
                     entity_mappings[var_name] = entity_id
-                elif isinstance(value, str) and is_ha_state_value(value):
-                    entity_id = existing_mappings.get(var_name, "unknown")
-                    ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
-                    entity_mappings[var_name] = entity_id
+                elif isinstance(value, str):
+                    alt_state = identify_alternate_state_value(value)
+                    if isinstance(alt_state, str):
+                        entity_id = existing_mappings.get(var_name, "unknown")
+                        ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
+                        entity_mappings[var_name] = entity_id
 
                 # NEW APPROACH: Keep the variable name in the formula
                 return var_name
