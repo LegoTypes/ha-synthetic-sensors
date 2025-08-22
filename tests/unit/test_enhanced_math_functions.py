@@ -138,8 +138,8 @@ class TestEnhancedMathFunctions(unittest.TestCase):
             "format_friendly",
             "format_date",
             "datetime",
-            "date",
             "timedelta",
+            # Note: 'date' is already in builtin functions, so not in new functions
         }
         self.assertTrue(expected_new.issubset(new_functions))
 

@@ -105,12 +105,28 @@ class TestMetadataHandler:
     def test_metadata_function_invalid_key(self):
         """Test metadata() function with invalid metadata key."""
         mock_hass = Mock()
+
+        # Create a custom state object that only has specific attributes
+        class MockState:
+            def __init__(self):
+                self.entity_id = "sensor.test"
+                self.attributes = {}
+
+            def __getattr__(self, name):
+                # Only allow access to known attributes
+                if name in ["entity_id", "attributes"]:
+                    return getattr(self, name)
+                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        mock_state = MockState()
+        mock_hass.states.get.return_value = mock_state
+
         handler = MetadataHandler(hass=mock_hass)
 
         # Test with invalid key
         formula = "metadata(sensor.test, 'invalid_key')"
 
-        with pytest.raises(ValueError, match="Invalid metadata key: invalid_key"):
+        with pytest.raises(ValueError, match="Metadata key 'invalid_key' not found for entity 'sensor.test'"):
             handler.evaluate(formula)
 
     def test_metadata_function_missing_entity(self):
