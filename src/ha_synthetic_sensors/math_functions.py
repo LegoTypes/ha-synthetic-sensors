@@ -806,20 +806,22 @@ class MathFunctions:
         return math_functions
 
     @staticmethod
-    def smart_date(*args: int | str) -> str:
+    def smart_date(*args: int | str) -> date | str:
         """Smart date function that handles both native constructor and string parsing.
 
         Args:
             *args: Either 3 integers (year, month, day) or 1 string (YYYY-MM-DD)
 
         Returns:
-            For 3 int args: date object
+            For 3 int args: Python date object
             For 1 string arg: ISO datetime string
         """
         # Case 1: Native Python constructor - date(year, month, day)
         if len(args) == 3:
             try:
-                return date(*args)  # Return native date object
+                # Ensure all args are integers for date constructor
+                year, month, day = int(args[0]), int(args[1]), int(args[2])
+                return date(year, month, day)  # Return native date object
             except (TypeError, ValueError) as e:
                 raise ValueError(f"Invalid date constructor arguments: {e}") from e
 
