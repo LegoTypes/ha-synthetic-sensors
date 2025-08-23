@@ -25,7 +25,7 @@ class CompiledFormula:
         """
         # Store the original formula - let users control boolean vs string comparisons explicitly
         self.formula = formula
-        _LOGGER.debug(f"Formula compilation: '{formula}' (unquoted names for boolean, quoted strings for comparison)")
+        _LOGGER.debug("Formula compilation: '%s' (unquoted names for boolean, quoted strings for comparison)", formula)
 
         # Get boolean state mappings for SimpleEval
         boolean_names = BooleanStates.get_all_boolean_names()
@@ -48,11 +48,12 @@ class CompiledFormula:
             Evaluation result
         """
         self.hit_count += 1
-        # Merge context with boolean names instead of replacing them
-        context_with_booleans = context or {}
-        # Preserve the boolean names that were set during initialization
+        # Start with boolean names, then let context variables override them
         boolean_names = BooleanStates.get_all_boolean_names()
-        context_with_booleans.update(boolean_names)
+        context_with_booleans = boolean_names.copy()
+        # Context variables should take precedence over boolean names
+        if context:
+            context_with_booleans.update(context)
         self.evaluator.names = context_with_booleans
         # Use the pre-parsed AST for fast evaluation
         result = self.evaluator.eval(self.formula, previously_parsed=self.parsed_ast)
