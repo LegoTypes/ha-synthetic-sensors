@@ -37,7 +37,8 @@ def get_true_states() -> set[Any]:
     }
 
     # Only add truly generic boolean representations not covered by HA
-    package_semantics = {"true", "yes", "1"}
+    # Note: Removed "1" to avoid conflicts with numeric variables
+    package_semantics = {"true", "yes"}
 
     return ha_turned_on | ha_basic_states | package_semantics
 
@@ -58,7 +59,8 @@ def get_false_states() -> set[Any]:
     }
 
     # Only add truly generic boolean representations not covered by HA
-    package_semantics = {"false", "no", "0"}
+    # Note: Removed "0" to avoid conflicts with numeric variables
+    package_semantics = {"false", "no"}
 
     return ha_turned_off | ha_basic_states | package_semantics
 
@@ -86,7 +88,8 @@ def get_core_true_states() -> set[Any]:
     }
 
     # Only add truly generic boolean representations
-    package_semantics = {"true", "yes", "1"}
+    # Note: Removed "1" to avoid conflicts with numeric variables
+    package_semantics = {"true", "yes"}
 
     return ha_basic_states | package_semantics
 
@@ -104,7 +107,8 @@ def get_core_false_states() -> set[Any]:
     }
 
     # Only add truly generic boolean representations
-    package_semantics = {"false", "no", "0"}
+    # Note: Removed "0" to avoid conflicts with numeric variables
+    package_semantics = {"false", "no"}
 
     return ha_basic_states | package_semantics
 
