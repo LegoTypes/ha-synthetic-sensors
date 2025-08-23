@@ -274,6 +274,10 @@ class ContextBuildingPhase:
 
         # Check for attribute patterns
         if "." in var_value:
+            # Check for state.attribute pattern first
+            if var_value.startswith("state."):
+                return True
+
             # Skip entity IDs (they have dots but aren't attribute references)
             # Use dynamic domain discovery instead of hardcoded list
             hass = getattr(self, "_hass", None)
@@ -281,13 +285,6 @@ class ContextBuildingPhase:
                 ha_domains = get_ha_domains(hass)
                 if any(var_value.startswith(f"{domain}.") for domain in ha_domains):
                     return False
-            # Also skip package-specific tokens
-            if var_value.startswith("state."):
-                return False
-
-            # Check for state.attribute pattern
-            if var_value.startswith("state."):
-                return True
 
             # Check for other attribute patterns
             parts = var_value.split(".")
