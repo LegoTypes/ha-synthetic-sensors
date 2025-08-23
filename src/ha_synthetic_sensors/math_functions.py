@@ -806,7 +806,7 @@ class MathFunctions:
         return math_functions
 
     @staticmethod
-    def smart_date(*args):
+    def smart_date(*args: int | str) -> str:
         """Smart date function that handles both native constructor and string parsing.
 
         Args:
