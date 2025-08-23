@@ -736,8 +736,9 @@ class Evaluator(FormulaEvaluator):
             result = self._execute_with_handler(config, resolved_formula, handler_context, eval_context, sensor_config)
 
             # Check if evaluation result is an alternate state
-            if isinstance(result, str) and result.lower() in ["unavailable", "unknown", "none"]:
-                raise AlternateStateDetected(f"Evaluation returned alternate state: {result}", result.lower())
+            alternate_state = identify_alternate_state_value(result)
+            if isinstance(alternate_state, str):
+                raise AlternateStateDetected(f"Evaluation returned alternate state: {result}", alternate_state)
 
         except AlternateStateDetected as e:
             # Handle alternate state detection
