@@ -5,6 +5,55 @@ from homeassistant.core import HomeAssistant
 
 from .constants_entities import get_ha_entity_domains
 
+# Entity domain constants
+SENSOR_DOMAIN = "sensor"
+BINARY_SENSOR_DOMAIN = "binary_sensor"
+DOMAIN_SEPARATOR = "."
+
+# Computed constants for entity ID prefixes
+SENSOR_PREFIX = f"{SENSOR_DOMAIN}{DOMAIN_SEPARATOR}"
+BINARY_SENSOR_PREFIX = f"{BINARY_SENSOR_DOMAIN}{DOMAIN_SEPARATOR}"
+SENSOR_PREFIX_LENGTH = len(SENSOR_PREFIX)
+BINARY_SENSOR_PREFIX_LENGTH = len(BINARY_SENSOR_PREFIX)
+
+
+def extract_entity_key_from_domain(entity_id: str, domain: str) -> str | None:
+    """Extract the key part from a domain.key entity ID.
+
+    Args:
+        entity_id: The full entity ID (e.g., "sensor.my_sensor")
+        domain: The domain to check for (e.g., "sensor")
+
+    Returns:
+        The key part if the entity_id matches the domain, None otherwise
+
+    Examples:
+        >>> extract_entity_key_from_domain("sensor.my_sensor", "sensor")
+        "my_sensor"
+        >>> extract_entity_key_from_domain("binary_sensor.door", "binary_sensor")
+        "door"
+        >>> extract_entity_key_from_domain("sensor.temp", "binary_sensor")
+        None
+    """
+    prefix = f"{domain}{DOMAIN_SEPARATOR}"
+    if entity_id.startswith(prefix):
+        return entity_id[len(prefix) :]
+    return None
+
+
+def is_entity_from_domain(entity_id: str, domain: str) -> bool:
+    """Check if an entity ID belongs to a specific domain.
+
+    Args:
+        entity_id: The full entity ID (e.g., "sensor.my_sensor")
+        domain: The domain to check for (e.g., "sensor")
+
+    Returns:
+        True if the entity_id belongs to the domain, False otherwise
+    """
+    return entity_id.startswith(f"{domain}{DOMAIN_SEPARATOR}")
+
+
 # Python keywords that should be excluded from variable extraction
 PYTHON_KEYWORDS: frozenset[str] = frozenset(
     {
