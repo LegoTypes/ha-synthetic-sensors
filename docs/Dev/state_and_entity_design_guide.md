@@ -1089,7 +1089,7 @@ backing_entities = {
 sensors:
   voltage_analyzer:
     entity_id: sensor.span_panel_voltage  # No mapping exists for this entity
-    formula: state * 1.1  # Cannot resolve 'state'
+    formula: "state * 1.1"  # Cannot resolve 'state'
     # Result: BackingEntityResolutionError is raised (FATAL ERROR)
 ```
 
@@ -1111,8 +1111,8 @@ backing_entities = {
 sensors:
   voltage_analyzer:
     entity_id: sensor.span_panel_voltage  # Mapping exists but value is None
-    formula: "state * 1.1"  # 'state' resolves to "unknown" (None treated as STATE_UNKNOWN)
-    # Result: Formula evaluates with "unknown" value (NO EXCEPTION)
+    formula: "state * 1.1"  # 'state' resolves to None; alternate state handlers may convert this to a usable value
+    # Result: Formula evaluates according to alternate state handlers (NO EXCEPTION)
 ```
 
 **Behavior**: The None value can be handled by alternate state handlers, formula evaluation continues, and no exception is
@@ -1417,5 +1417,3 @@ The alternate state handler system consists of:
 5. **STATE_NONE Support**: Special YAML constant for None values
 
 This integration ensures that alternate state handlers work consistently across all sensor types and evaluation scenarios.
-
-## Summary of Key Clarifications
