@@ -33,6 +33,7 @@ def test_resolve_attribute_via_data_provider_success() -> None:
     r = EntityAttributeResolver()
     r.set_dependency_handler(_make_dep_handler(data_provider=provider))
     value = r.resolve("dev", "dev.battery_level", context)
+    # Resolvers return raw values, ReferenceValue objects are created by VariableResolutionPhase
     assert value == 85
 
 

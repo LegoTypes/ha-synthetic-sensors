@@ -22,6 +22,7 @@ from ..constants_metadata import (
     METADATA_FUNCTION_VALID_KEYS,
 )
 from ..exceptions import AlternateStateDetected
+from ..shared_constants import get_ha_domains
 from ..type_definitions import ContextValue, ReferenceValue
 from .base_handler import FormulaHandler
 
@@ -351,16 +352,15 @@ class MetadataHandler(FormulaHandler):
                 # Use the reference as the entity ID
                 entity_id = reference
 
-                # Validate it looks like an entity ID
-                if "." in entity_id and entity_id.startswith(("sensor.", "switch.", "light.", "binary_sensor.")):
+                # Validate it looks like an entity ID using dynamic domain discovery
+                hass = getattr(self, "_hass", None)
+                ha_domains = get_ha_domains(hass) if hass else set()
+
+                if "." in entity_id and any(entity_id.startswith(f"{domain}.") for domain in ha_domains):
                     return entity_id
 
                 # If the reference isn't an entity ID, maybe the value is
-                if (
-                    isinstance(value, str)
-                    and "." in value
-                    and value.startswith(("sensor.", "switch.", "light.", "binary_sensor."))
-                ):
+                if isinstance(value, str) and "." in value and any(value.startswith(f"{domain}.") for domain in ha_domains):
                     return value
 
                 # Neither reference nor value is a valid entity ID

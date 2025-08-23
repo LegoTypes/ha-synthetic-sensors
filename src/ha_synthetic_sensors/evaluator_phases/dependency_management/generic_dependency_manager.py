@@ -321,7 +321,18 @@ class GenericDependencyManager:
 
         # Entity references (contain dots and start with known prefixes)
         if "." in identifier:
-            entity_prefixes = ["sensor", "binary_sensor", "switch", "light", "climate", "input_number", "input_text", "span"]
+            entity_prefixes = [
+                "sensor",
+                "binary_sensor",
+                "switch",
+                "light",
+                "climate",
+                "input_number",
+                "input_text",
+                "span",
+                "device_tracker",
+                "cover",
+            ]
             if identifier.split(".")[0] in entity_prefixes:
                 return DependencyType.ENTITY
 

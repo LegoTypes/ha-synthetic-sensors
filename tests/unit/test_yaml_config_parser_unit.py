@@ -244,6 +244,61 @@ class TestYAMLConfigParser:
         with pytest.raises(ValueError, match="Failed to load YAML file"):
             await parser.async_load_yaml_file(yaml_file)
 
+    def test_load_boolean_handler_yaml_fixture(self, parser):
+        """Test loading the boolean handler YAML fixture specifically."""
+        # Load the boolean handler YAML fixture
+        yaml_content = load_yaml_fixture_content("unit_test_boolean_handler_yaml_integration")
+
+        # Validate the YAML structure (should not raise an exception)
+        parser.validate_raw_yaml_structure(yaml_content)
+
+        # Parse the YAML content to check the structure
+        import yaml
+
+        result = yaml.safe_load(yaml_content)
+
+        # Verify the structure is valid
+        assert result is not None
+
+        # Verify all 5 sensors are present
+        sensors = result.get("sensors", {})
+        assert len(sensors) == 5
+
+        # Verify specific sensors exist
+        assert "door_lock_and" in sensors
+        assert "presence_or" in sensors
+        assert "security_check" in sensors
+        assert "temperature_comfort" in sensors
+        assert "direct_binary_test" in sensors
+
+        # Verify boolean formulas use Python operators (not symbolic)
+        door_lock_and = sensors["door_lock_and"]
+        assert "and" in door_lock_and["formula"]
+        assert "&&" not in door_lock_and["formula"]
+
+        presence_or = sensors["presence_or"]
+        assert "or" in presence_or["formula"]
+        assert "||" not in presence_or["formula"]
+
+        security_check = sensors["security_check"]
+        assert "not" in security_check["formula"]
+        assert "!" not in security_check["formula"]
+
+        # Verify variables are properly defined
+        assert "variables" in door_lock_and
+        assert "door_state" in door_lock_and["variables"]
+        assert "motion_state" in door_lock_and["variables"]
+
+        # Verify metadata is present
+        temperature_comfort = sensors["temperature_comfort"]
+        assert "metadata" in temperature_comfort
+        assert temperature_comfort["metadata"]["device_class"] == "temperature"
+        assert temperature_comfort["metadata"]["unit_of_measurement"] == "°C"
+
+        # Verify global settings
+        assert "global_settings" in result
+        assert result["global_settings"]["device_identifier"] == "test_device_123"
+
 
 class TestTrimYamlKeys:
     """Test cases for trim_yaml_keys utility function."""

@@ -61,10 +61,13 @@ def test_resolve_all_references_with_ha_detection_entity_and_state_paths(mock_ha
     eval_ctx = {"x": 1}
 
     phase = _make_phase(hass=mock_hass)
-    # The fake resolver returns 42 for entity ids and 100 for state, so final expression becomes numeric
+    # The fake resolver returns ReferenceValue objects for entity ids and state, so final expression becomes numeric
     result = phase.resolve_all_references_with_ha_detection(formula_cfg.formula, sensor_cfg, eval_ctx, formula_cfg)
     assert result.resolved_formula  # string formula after resolution
     assert "sensor.x" not in result.resolved_formula
+    # Context should contain ReferenceValue objects - check for the entity ID key and the alias key
+    assert isinstance(eval_ctx.get("sensor_x"), ReferenceValue)  # Alias key (sensor_x)
+    assert isinstance(eval_ctx.get("state"), ReferenceValue)  # State key
 
 
 def test_resolve_all_references_in_formula_returns_string(mock_hass) -> None:

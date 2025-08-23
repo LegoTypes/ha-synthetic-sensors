@@ -5,6 +5,7 @@ from unittest.mock import Mock, MagicMock
 import pytest
 
 from ha_synthetic_sensors.evaluator_handlers.metadata_handler import MetadataHandler
+from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
 class TestMetadataHandler:
@@ -88,9 +89,8 @@ class TestMetadataHandler:
         handler = MetadataHandler(hass=mock_hass)
 
         # Test evaluation with context variable - use ReferenceValue (ReferenceValue architecture)
-        from ha_synthetic_sensors.type_definitions import ReferenceValue
-
         formula = "metadata(power_var, 'entity_id')"
+        # EvaluationContext should contain ReferenceValue objects
         context = {"power_var": ReferenceValue("sensor.power_meter", "sensor.power_meter")}
 
         result, metadata_results = handler.evaluate(formula, context)

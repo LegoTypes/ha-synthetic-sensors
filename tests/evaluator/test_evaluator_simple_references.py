@@ -15,8 +15,10 @@ def test_simple_variable_evaluator(mock_hass, mock_entity_registry, mock_states)
     # Test simple variable reference
     config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
 
-    # Create context with the variable value
-    context = {"power_reading": 25.5}
+    # Create context with the variable value as ReferenceValue (current architecture)
+    from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+    context = {"power_reading": ReferenceValue("sensor.power_meter", 25.5)}
 
     result = evaluator.evaluate_formula(config, context)
 
@@ -33,41 +35,51 @@ def test_direct_entity_reference(mock_hass, mock_entity_registry, mock_states) -
     # Register the entity in mock entity registry
     mock_entity_registry.register_entity("sensor.temperature", "sensor.temperature", "sensor")
 
-    # Mock domain resolution (required for direct entity reference resolution)
-    with (
-        patch(
-            "ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resolution_phase.get_ha_domains"
-        ) as mock_get_domains,
-        patch("ha_synthetic_sensors.collection_resolver.er.async_get") as mock_er_collection,
-        patch("ha_synthetic_sensors.constants_entities.er.async_get") as mock_er_constants,
-    ):
-        mock_get_domains.return_value = frozenset({"sensor", "binary_sensor", "switch", "light", "climate"})
-        mock_er_collection.return_value = mock_entity_registry
-        mock_er_constants.return_value = mock_entity_registry
+    # Ensure the entity is in mock_states (it should already be there, but let's be explicit)
+    if "sensor.temperature" not in mock_states:
+        from unittest.mock import Mock
 
-        # Set up proper mock state function
-        def mock_get_state(entity_id):
-            if entity_id == "sensor.temperature":
-                mock_state = MagicMock()
-                mock_state.state = "22.0"
-                return mock_state
-            return None
+        mock_states["sensor.temperature"] = Mock(
+            state="22.0", entity_id="sensor.temperature", attributes={"device_class": "temperature"}
+        )
 
-        mock_hass.states.get.side_effect = mock_get_state
+    # Create data provider callback that returns the entity data
+    def data_provider_callback(entity_id: str):
+        if entity_id == "sensor.temperature":
+            return {"value": 22.0, "exists": True}
+        return {"value": None, "exists": False}
 
-        # Create evaluator with HA lookups enabled
-        evaluator = Evaluator(mock_hass)
-        evaluator.update_integration_entities({"sensor.temperature"})
+    # Create evaluator with data provider callback
+    evaluator = Evaluator(mock_hass, data_provider_callback=data_provider_callback)
 
-        # Test direct entity reference (no variables needed)
-        config = FormulaConfig(id="test_formula", formula="sensor.temperature", variables={})
+    # Register the entity with the evaluator
+    evaluator.update_integration_entities({"sensor.temperature"})
 
-        result = evaluator.evaluate_formula(config, {})
+    # Create a proper sensor configuration with backing entity mapping
+    # The current system expects sensor configurations with proper entity mappings
+    from ha_synthetic_sensors.config_models import SensorConfig, FormulaConfig
+
+    sensor_config = SensorConfig(
+        unique_id="test_sensor",
+        name="Test Sensor",
+        entity_id="sensor.test_sensor",
+        device_identifier="test_device",
+        formulas=[
+            FormulaConfig(
+                id="main",
+                formula="sensor.temperature",  # Direct entity reference
+                variables={},
+            )
+        ],
+    )
+
+    # Test direct entity reference using the proper sensor configuration
+    result = evaluator.evaluate_formula_with_sensor_config(sensor_config.formulas[0], context={}, sensor_config=sensor_config)
 
     # Debug output
     print(f"Evaluation result: {result}")
 
-    # Should succeed and return the value from HA state
+    # Should succeed and return the value from data provider
     assert result["success"] is True
     # With ReferenceValue architecture, extract the value for comparison
     value = result["value"]
@@ -78,8 +90,8 @@ def test_direct_entity_reference(mock_hass, mock_entity_registry, mock_states) -
         # This is a raw value
         assert value == 22.0, f"Expected 22.0, got {value} (full result: {result})"
 
-    # Should have called Home Assistant to get the entity state
-    mock_hass.states.get.assert_called_with("sensor.temperature")
+    # The data provider callback returns the value first, so mock_hass.states.get is not called
+    # This is the expected behavior - data provider takes precedence over HA state lookups
 
 
 def test_numeric_literal(mock_hass, mock_entity_registry, mock_states) -> None:

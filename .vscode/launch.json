@@ -2,12 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Alternate Handlers Test",
+      "name": "delayed entity availability",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
       "args": [
-        "tests/integration/test_alternate_handlers_runtime.py::test_alternate_handlers_and_guard_runtime",
+        "tests/integration/test_delayed_entity_availability.py::test_delayed_entity_availability_with_dependency_tracking",
         "-v",
         "-s"
       ],

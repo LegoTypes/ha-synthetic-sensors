@@ -7,6 +7,7 @@ from typing import Any
 
 from simpleeval import SimpleEval
 
+from .boolean_states import BooleanStates
 from .math_functions import MathFunctions
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,10 +23,16 @@ class CompiledFormula:
             formula: The formula string to compile
             math_functions: Math functions to include in evaluator
         """
-        self.formula = formula
-        self.evaluator = SimpleEval(functions=math_functions)
-        # Pre-parse the formula AST for reuse
-        self.parsed_ast = self.evaluator.parse(formula)
+        # Preprocess formula to convert quoted boolean literals to unquoted names
+        self.formula = BooleanStates.preprocess_formula_for_boolean_literals(formula)
+        _LOGGER.debug(f"Formula preprocessing: '{formula}' -> '{self.formula}'")
+
+        # Get boolean state mappings for SimpleEval
+        boolean_names = BooleanStates.get_all_boolean_names()
+
+        self.evaluator = SimpleEval(functions=math_functions, names=boolean_names)
+        # Pre-parse the processed formula AST for reuse
+        self.parsed_ast = self.evaluator.parse(self.formula)
         self.hit_count = 0
 
     def evaluate(
@@ -41,7 +48,12 @@ class CompiledFormula:
             Evaluation result
         """
         self.hit_count += 1
-        self.evaluator.names = context or {}
+        # Merge context with boolean names instead of replacing them
+        context_with_booleans = context or {}
+        # Preserve the boolean names that were set during initialization
+        boolean_names = BooleanStates.get_all_boolean_names()
+        context_with_booleans.update(boolean_names)
+        self.evaluator.names = context_with_booleans
         # Use the pre-parsed AST for fast evaluation
         result = self.evaluator.eval(self.formula, previously_parsed=self.parsed_ast)
 

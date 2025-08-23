@@ -6,7 +6,7 @@ from typing import Any
 from ...constants_evaluation_results import RESULT_KEY_VALUE
 from ...data_validation import validate_data_provider_result
 from ...exceptions import DataValidationError, FormulaEvaluationError
-from ...shared_constants import BINARY_SENSOR_DOMAIN, SENSOR_DOMAIN, extract_entity_key_from_domain, is_entity_from_domain
+from ...shared_constants import extract_entity_key_from_domain, is_entity_from_domain
 from ...utils_resolvers import _convert_hass_state_value
 from .base_resolver import VariableResolver
 
@@ -41,7 +41,7 @@ class SelfReferenceResolver(VariableResolver):
 
         # Only handle entity ID patterns (sensor.sensor_key)
         # Raw sensor keys are handled by auto-injection as variables
-        sensor_key = extract_entity_key_from_domain(variable_value, SENSOR_DOMAIN)
+        sensor_key = extract_entity_key_from_domain(variable_value, "sensor")
         return sensor_key is not None and sensor_key in self._sensor_to_backing_mapping
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
@@ -50,7 +50,7 @@ class SelfReferenceResolver(VariableResolver):
             return None
 
         # Only handle entity ID references (sensor.sensor_key)
-        sensor_key = extract_entity_key_from_domain(variable_value, SENSOR_DOMAIN)
+        sensor_key = extract_entity_key_from_domain(variable_value, "sensor")
         if not sensor_key or sensor_key not in self._sensor_to_backing_mapping:
             return None
 
@@ -109,10 +109,10 @@ class SelfReferenceResolver(VariableResolver):
             return k == "state"
 
         def is_sensor_entity(k: str) -> bool:
-            return is_entity_from_domain(k, SENSOR_DOMAIN)
+            return is_entity_from_domain(k, "sensor")
 
         def is_binary_sensor_entity(k: str) -> bool:
-            return is_entity_from_domain(k, BINARY_SENSOR_DOMAIN)
+            return is_entity_from_domain(k, "binary_sensor")
 
         def is_config_key(k: str) -> bool:
             return k in ["sensor_config", "formula_config"]

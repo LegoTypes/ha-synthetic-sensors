@@ -118,7 +118,7 @@ class EvaluatorDependency:
         if config.variables:
             for _, var_value in config.variables.items():
                 if isinstance(var_value, str) and var_value.startswith(
-                    ("sensor.", "binary_sensor.", "input_", "switch.", "light.", "climate.")
+                    ("sensor.", "binary_sensor.", "input_", "switch.", "light.", "climate.", "device_tracker.", "cover.")
                 ):
                     dependencies.add(var_value)
 

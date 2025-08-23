@@ -485,7 +485,7 @@ class SensorSet(SensorSetYamlOperationsMixin):
 
         for var_value in global_variables.values():
             if isinstance(var_value, str) and var_value.startswith(
-                ("sensor.", "input_", "binary_sensor.", "switch.", "light.", "climate.")
+                ("sensor.", "input_", "binary_sensor.", "switch.", "light.", "climate.", "device_tracker.", "cover.")
             ):
                 affected_entities.append(var_value)
 

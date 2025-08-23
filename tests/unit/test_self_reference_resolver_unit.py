@@ -17,6 +17,7 @@ def test_self_reference_main_formula_resolves_via_data_provider_then_hass() -> N
     )
     r.set_dependency_handler(dep)
     val = r.resolve("x", "sensor.s1", {})
+    # Resolvers return raw values, ReferenceValue objects are created by VariableResolutionPhase
     assert val == 123
 
     # If DP not used but HASS present
@@ -27,6 +28,7 @@ def test_self_reference_main_formula_resolves_via_data_provider_then_hass() -> N
     )
     r.set_dependency_handler(dep2)
     val2 = r.resolve("x", "sensor.s1", {})
+    # Resolvers return raw values, ReferenceValue objects are created by VariableResolutionPhase
     assert val2 == 42
 
 
@@ -39,8 +41,10 @@ def test_self_reference_attribute_context_uses_state_or_registry() -> None:
 
     # If state value present and numeric
     out = r.resolve("x", "sensor.s1", {"state": 55, "attr": 1})
+    # Should return raw value for attribute context (not ReferenceValue)
     assert out == 55
 
     # If no state, use registry
     out2 = r.resolve("x", "sensor.s1", {"attr": 1})
+    # Should return raw value for attribute context (not ReferenceValue)
     assert out2 == 77

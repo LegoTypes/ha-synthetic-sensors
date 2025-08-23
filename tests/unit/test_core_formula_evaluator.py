@@ -27,6 +27,7 @@ class TestCoreFormulaEvaluator:
         # Setup mocks - for enhanced simple eval path
         self.enhanced_helper.try_enhanced_eval.return_value = (True, "test_result")
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute
@@ -48,6 +49,7 @@ class TestCoreFormulaEvaluator:
         # Enhanced helper should be used as fallback
         self.enhanced_helper.try_enhanced_eval.return_value = (True, 42.0)
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute
@@ -63,6 +65,7 @@ class TestCoreFormulaEvaluator:
         test_exception = ValueError("test error")
         self.enhanced_helper.try_enhanced_eval.return_value = (False, test_exception)
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute and verify exception
@@ -84,6 +87,7 @@ class TestCoreFormulaEvaluator:
         # Setup enhanced helper mock for continued evaluation after metadata processing
         self.enhanced_helper.try_enhanced_eval.return_value = (True, "test_value")
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute with metadata formula

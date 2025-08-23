@@ -6,6 +6,7 @@ from typing import Any
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import DataValidationError, MissingDependencyError
 from ...reference_value_manager import ReferenceValueManager
+from ...shared_constants import get_ha_domains
 from ...type_definitions import ContextValue, DataProviderCallback, ReferenceValue
 from ...utils_config import resolve_config_variables
 from ..variable_resolution.resolver_factory import VariableResolverFactory
@@ -274,7 +275,14 @@ class ContextBuildingPhase:
         # Check for attribute patterns
         if "." in var_value:
             # Skip entity IDs (they have dots but aren't attribute references)
-            if var_value.startswith(("sensor.", "binary_sensor.", "input_number.", "input_text.", "input_boolean.")):
+            # Use dynamic domain discovery instead of hardcoded list
+            hass = getattr(self, "_hass", None)
+            if hass:
+                ha_domains = get_ha_domains(hass)
+                if any(var_value.startswith(f"{domain}.") for domain in ha_domains):
+                    return False
+            # Also skip package-specific tokens
+            if var_value.startswith("state."):
                 return False
 
             # Check for state.attribute pattern

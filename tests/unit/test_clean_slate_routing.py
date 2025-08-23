@@ -34,7 +34,9 @@ class TestCleanSlateRouting(unittest.TestCase):
         config = FormulaConfig(id="test_numeric", name="Test Numeric", formula="2 + 3 * 4")
 
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, 14)) as mock_enhanced:
-            result = self.evaluator._execute_with_handler(config, "2 + 3 * 4", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "2 + 3 * 4", context, {}, None)
 
             # Verify enhanced evaluation was called directly
             mock_enhanced.assert_called_once()
@@ -45,7 +47,9 @@ class TestCleanSlateRouting(unittest.TestCase):
         config = FormulaConfig(id="test_duration", name="Test Duration", formula="minutes(5) / minutes(1)")
 
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, 5.0)) as mock_enhanced:
-            result = self.evaluator._execute_with_handler(config, "minutes(5) / minutes(1)", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "minutes(5) / minutes(1)", context, {}, None)
 
             # Verify enhanced evaluation was called directly
             mock_enhanced.assert_called_once()
@@ -59,7 +63,9 @@ class TestCleanSlateRouting(unittest.TestCase):
         with patch.object(
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, expected_date)
         ) as mock_enhanced:
-            result = self.evaluator._execute_with_handler(config, "add_business_days(today(), 5)", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "add_business_days(today(), 5)", context, {}, None)
 
             # Verify enhanced evaluation was called and date converted to ISO string
             mock_enhanced.assert_called_once()
@@ -73,7 +79,9 @@ class TestCleanSlateRouting(unittest.TestCase):
         with patch.object(
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, mock_timedelta)
         ) as mock_enhanced:
-            result = self.evaluator._execute_with_handler(config, "hours(2) + minutes(30)", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "hours(2) + minutes(30)", context, {}, None)
 
             # Verify enhanced evaluation was called and timedelta converted to seconds
             mock_enhanced.assert_called_once()
@@ -92,7 +100,9 @@ class TestCleanSlateRouting(unittest.TestCase):
         mock_metadata_handler.evaluate.return_value = ("metadata_result(_metadata_0)", {"_metadata_0": "2024-01-01T10:00:00"})
 
         with patch.object(self.evaluator._handler_factory, "get_handler", return_value=mock_metadata_handler):
-            result = self.evaluator._execute_with_handler(config, "metadata(entity, 'last_changed')", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "metadata(entity, 'last_changed')", context, {}, None)
 
             # Verify metadata handler was called
             mock_metadata_handler.can_handle.assert_called_with("metadata(entity, 'last_changed')")
@@ -107,11 +117,13 @@ class TestCleanSlateRouting(unittest.TestCase):
         from ha_synthetic_sensors.exceptions import AlternateStateDetected
 
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(False, None)):
-            with self.assertRaises(AlternateStateDetected) as context:
-                self.evaluator._execute_with_handler(config, "unsupported_operation()", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            eval_context = {"test_var": ReferenceValue("test", "value")}
+            with self.assertRaises(AlternateStateDetected) as exc_context:
+                self.evaluator._execute_with_handler(config, "unsupported_operation()", eval_context, {}, None)
 
             # Verify clear error message about formula evaluation failure
-            self.assertIn("Formula evaluation failed", str(context.exception))
+            self.assertIn("Formula evaluation failed", str(exc_context.exception))
 
     def test_clean_slate_metadata_handler_unavailable(self):
         """Test that missing metadata handler raises clear error."""
@@ -121,11 +133,13 @@ class TestCleanSlateRouting(unittest.TestCase):
         from ha_synthetic_sensors.exceptions import AlternateStateDetected
 
         with patch.object(self.evaluator._handler_factory, "get_handler", return_value=None):
-            with self.assertRaises(AlternateStateDetected) as context:
-                self.evaluator._execute_with_handler(config, "metadata(entity, 'attr')", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            eval_context = {"test_var": ReferenceValue("test", "value")}
+            with self.assertRaises(AlternateStateDetected) as exc_context:
+                self.evaluator._execute_with_handler(config, "metadata(entity, 'attr')", eval_context, {}, None)
 
             # In current architecture, missing handler results in undefined function error
-            self.assertIn("Function 'metadata' not defined", str(context.exception))
+            self.assertIn("Function 'metadata' not defined", str(exc_context.exception))
 
     def test_clean_slate_always_enabled(self):
         """Test that clean slate routing is always enabled (no disable option)."""
@@ -133,7 +147,9 @@ class TestCleanSlateRouting(unittest.TestCase):
 
         # Enhanced routing is always enabled in clean slate design
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, 5)) as mock_enhanced:
-            result = self.evaluator._execute_with_handler(config, "2 + 3", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "2 + 3", context, {}, None)
 
             # Verify enhanced evaluation was called
             mock_enhanced.assert_called_once()
@@ -146,7 +162,9 @@ class TestCleanSlateRouting(unittest.TestCase):
         with patch.object(
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, "Hello World")
         ) as mock_enhanced:
-            result = self.evaluator._execute_with_handler(config, "'Hello' + ' ' + 'World'", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "'Hello' + ' ' + 'World'", context, {}, None)
 
             # Verify enhanced evaluation was called directly
             mock_enhanced.assert_called_once()
@@ -160,7 +178,9 @@ class TestCleanSlateRouting(unittest.TestCase):
         with patch.object(
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, mock_datetime)
         ) as mock_enhanced:
-            result = self.evaluator._execute_with_handler(config, "now() + days(7)", {}, {}, None)
+            # EvaluationContext should contain ReferenceValue objects
+            context = {"test_var": ReferenceValue("test", "value")}
+            result = self.evaluator._execute_with_handler(config, "now() + days(7)", context, {}, None)
 
             # Verify enhanced evaluation was called and datetime converted to ISO string
             mock_enhanced.assert_called_once()
@@ -191,7 +211,9 @@ class TestCleanSlateRouting(unittest.TestCase):
                 config = FormulaConfig(id="test", name="Test", formula=formula)
 
                 with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, mock_result)):
-                    result = self.evaluator._execute_with_handler(config, formula, {}, {}, None)
+                    # EvaluationContext should contain ReferenceValue objects
+                    context = {"test_var": ReferenceValue("test", "value")}
+                    result = self.evaluator._execute_with_handler(config, formula, context, {}, None)
                     self.assertEqual(result, expected_result)
 
 

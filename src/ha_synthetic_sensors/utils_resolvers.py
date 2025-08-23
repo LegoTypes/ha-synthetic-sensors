@@ -188,8 +188,8 @@ def _convert_hass_state_value(state_value: str, entity_id: str, hass_state: Any 
         return state_value
 
 
-def _convert_boolean_state(state_value: str, entity_id: str, hass_state: Any = None) -> float | None:
-    """Convert boolean-like state to numeric value.
+def _convert_boolean_state(state_value: str, entity_id: str, hass_state: Any = None) -> float | str | None:
+    """Convert boolean-like state to numeric value or preserve string for SimpleEval.
 
     Args:
         state_value: The raw state value
@@ -197,20 +197,19 @@ def _convert_boolean_state(state_value: str, entity_id: str, hass_state: Any = N
         hass_state: The HASS state object for device class information
 
     Returns:
-        Numeric value (1.0 or 0.0) or None if not convertible
+        Numeric value (1.0 or 0.0), original string, or None if not convertible
     """
     state_str = str(state_value).lower()
 
-    # Basic boolean states
-    result = None
-    if state_str in TRUE_STATES:
-        result = 1.0
-        _LOGGER.debug("Entity resolver: resolved '%s' to 1.0 (boolean true) via HASS", entity_id)
-    elif state_str in FALSE_STATES:
-        result = 0.0
-        _LOGGER.debug("Entity resolver: resolved '%s' to 0.0 (boolean false) via HASS", entity_id)
+    # For boolean comparisons, preserve the original string value
+    # SimpleEval will handle the boolean comparisons natively
+    if state_str in TRUE_STATES or state_str in FALSE_STATES:
+        _LOGGER.debug("Entity resolver: preserving '%s' as string for SimpleEval boolean comparison", entity_id)
+        return state_value  # Return original string, not numeric conversion
 
-    return result
+    # For non-boolean states, also preserve as string for SimpleEval to handle
+    _LOGGER.debug("Entity resolver: preserving '%s' as string for SimpleEval comparison", entity_id)
+    return state_value  # Return original string for SimpleEval to handle
 
 
 def resolve_via_hass_entity(dependency_handler: Any, entity_id: str, original_reference: str) -> Any | None:

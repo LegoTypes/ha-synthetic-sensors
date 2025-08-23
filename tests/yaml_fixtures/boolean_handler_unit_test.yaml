@@ -1,0 +1,78 @@
+# YAML fixture for boolean handler unit tests
+# Used by: test_boolean_handler_unit.py
+# Test cases covered:
+# - Boolean state comparisons using Home Assistant states (on/off, home/away, open/closed, etc.)
+# - Boolean logic with actual boolean states
+# - Verification that BooleanComparisonHandler correctly handles HA boolean states
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  binary_sensor_on_test:
+    name: "Binary Sensor ON Test"
+    formula: "binary_sensor.test_on == 'on'"
+    metadata:
+      device_class: "safety"
+
+  binary_sensor_off_test:
+    name: "Binary Sensor OFF Test"
+    formula: "binary_sensor.test_off == 'off'"
+    metadata:
+      device_class: "safety"
+
+  device_tracker_home_test:
+    name: "Device Tracker Home Test"
+    formula: "device_tracker.test_home == 'home'"
+    metadata:
+      device_class: "presence"
+
+  device_tracker_away_test:
+    name: "Device Tracker Away Test"
+    formula: "device_tracker.test_away == 'not_home'"
+    metadata:
+      device_class: "presence"
+
+  cover_open_test:
+    name: "Cover Open Test"
+    formula: "cover.test_open == 'open'"
+    metadata:
+      device_class: "door"
+
+  cover_closed_test:
+    name: "Cover Closed Test"
+    formula: "cover.test_closed == 'closed'"
+    metadata:
+      device_class: "door"
+
+  switch_active_test:
+    name: "Switch Active Test"
+    formula: "switch.test_active == 'active'"
+    metadata:
+      device_class: "power"
+
+  switch_inactive_test:
+    name: "Switch Inactive Test"
+    formula: "switch.test_inactive == 'inactive'"
+    metadata:
+      device_class: "power"
+
+  boolean_and_test:
+    name: "Boolean AND Test"
+    formula: "binary_sensor.test_on == 'on' and device_tracker.test_home == 'home'"
+    metadata:
+      device_class: "safety"
+
+  boolean_or_test:
+    name: "Boolean OR Test"
+    formula: "binary_sensor.test_on == 'on' or cover.test_open == 'open'"
+    metadata:
+      device_class: "safety"
+
+  boolean_not_test:
+    name: "Boolean NOT Test"
+    formula: "not (binary_sensor.test_off == 'on')"
+    metadata:
+      device_class: "safety"

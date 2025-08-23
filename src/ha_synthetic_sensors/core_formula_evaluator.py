@@ -237,7 +237,9 @@ class CoreFormulaEvaluator:
 
         # Precompute referenced variable tokens from the referenced_formula so we only
         # early-detect alternate states for variables actually used by the formula.
-        referenced_tokens = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", referenced_formula))
+        # Handle both simple variable names and entity IDs with dots
+        referenced_tokens = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)?)\b", referenced_formula))
+        _LOGGER.debug("Referenced tokens from formula '%s': %s", referenced_formula, referenced_tokens)
 
         for key, value in context.items():
             if isinstance(value, ReferenceValue):

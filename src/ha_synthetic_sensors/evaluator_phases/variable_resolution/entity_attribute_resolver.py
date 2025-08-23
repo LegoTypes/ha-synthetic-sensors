@@ -29,7 +29,14 @@ class EntityAttributeResolver(VariableResolver):
 
         # Check if it looks like an entity attribute reference (contains a dot)
         # and it's not a state.attribute or entity ID pattern
-        if "." in variable_value and not variable_value.startswith(("state.", "sensor.", "binary_sensor.")):
+        # Use dynamic domain discovery instead of hardcoded list
+        hass = getattr(self._dependency_handler, "hass", None) if self._dependency_handler else None
+        ha_domains = get_ha_domains(hass) if hass else set()
+
+        if "." in variable_value and not variable_value.startswith("state."):
+            # Check if it's an entity ID using dynamic domain discovery
+            if any(variable_value.startswith(f"{domain}.") for domain in ha_domains):
+                return False
             # Simple heuristic: if it contains exactly one dot and doesn't look like an entity ID
             parts = variable_value.split(".")
             # Get hass from dependency handler if available

@@ -19,6 +19,7 @@ class _Hass:
 
 def test_process_metadata_functions_resolves_with_referencevalue_hass() -> None:
     hass = _Hass({"sensor.kitchen": _StateObj("sensor.kitchen")})
+    # EvaluationContext should contain ReferenceValue objects
     context = {"_hass": ReferenceValue(reference="_hass", value=hass)}
     formula = "metadata(sensor.kitchen, 'entity_id')"
     out = MetadataHandler.process_metadata_functions(formula, context)
@@ -29,6 +30,7 @@ def test_process_metadata_functions_resolves_with_referencevalue_hass() -> None:
 def test_metadata_handler_evaluate_with_variable_and_key() -> None:
     hass = _Hass({"sensor.kitchen": _StateObj("sensor.kitchen")})
     handler = MetadataHandler(hass=hass)
+    # EvaluationContext should contain ReferenceValue objects
     ctx = {"dev": ReferenceValue(reference="sensor.kitchen", value=0)}
     processed_formula, metadata_results = handler.evaluate("metadata(dev, 'friendly_name')", ctx)
     # AST caching approach: returns placeholder formula and metadata results separately
