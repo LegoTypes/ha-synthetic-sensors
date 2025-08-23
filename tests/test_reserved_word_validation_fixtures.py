@@ -139,7 +139,7 @@ class TestReservedWordValidation:
         print("✅ 'def' reserved word validation in attributes works correctly")
 
     def test_valid_variable_names(self):
-        """Test that valid variable names are accepted."""
+        """Test that valid variable names are accepted, including partial matches of reserved words."""
         with open("tests/fixtures/invalid_yaml/valid_variable_names.yaml", "r", encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
 
@@ -148,7 +148,10 @@ class TestReservedWordValidation:
         # Should have no reserved word errors
         reserved_word_errors = [error for error in result["errors"] if "reserved word" in error.message]
         assert len(reserved_word_errors) == 0, "Should have no reserved word errors for valid variable names"
-        print("✅ Valid variable names are accepted correctly")
+
+        # Verify that partial matches like 'the_state', 'my_if_condition', etc. are allowed
+        # These should NOT trigger reserved word errors even though they contain reserved words as substrings
+        print("✅ Valid variable names are accepted correctly, including partial matches of reserved words")
 
     def test_multiple_reserved_words_in_single_file(self):
         """Test that multiple reserved words in a single file are all caught."""
@@ -194,6 +197,22 @@ class TestReservedWordValidation:
         assert len(found_reserved_words) >= 3, f"Should find at least 3 reserved words, found {len(found_reserved_words)}"
         print("✅ Multiple reserved words are all caught correctly")
 
+    def test_reserved_word_state_attribute(self):
+        """Test that reserved words as attribute names are detected."""
+        with open("tests/fixtures/invalid_yaml/reserved_word_state_attribute.yaml", "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f)
+
+        result = self.validator.validate_config(config_data)
+
+        # Should have a reserved word error for the attribute name
+        reserved_word_errors = [error for error in result["errors"] if "reserved word" in error.message]
+        assert len(reserved_word_errors) >= 1, "Should have at least one reserved word error for attribute name"
+
+        # Check that the error is specifically for the attribute name
+        attr_errors = [error for error in reserved_word_errors if "Attribute name 'state'" in error.message]
+        assert len(attr_errors) >= 1, "Should have error for 'state' as attribute name"
+        print("✅ Reserved word as attribute name is correctly detected")
+
 
 if __name__ == "__main__":
     # Run all tests
@@ -208,5 +227,6 @@ if __name__ == "__main__":
     test_instance.test_reserved_word_def_in_attribute()
     test_instance.test_valid_variable_names()
     test_instance.test_multiple_reserved_words_in_single_file()
+    test_instance.test_reserved_word_state_attribute()
 
     print("🎉 All reserved word validation tests passed!")

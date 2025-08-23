@@ -5,7 +5,6 @@ global_settings:
 sensors:
   main_power:
     name: Main Panel Power
-    unique_id: span_panel_123_main_power
     entity_id: sensor.span_panel_main_power
     formula: grid_import - grid_export
     variables:
@@ -22,7 +21,6 @@ sensors:
       icon: mdi:transmission-tower
   daily_consumption:
     name: Daily Energy Consumption
-    unique_id: span_panel_123_daily_consumption
     entity_id: sensor.span_panel_daily_consumption
     formula: abs(net_power) * hours_per_day / 1000
     variables:
@@ -39,7 +37,6 @@ sensors:
       icon: mdi:flash
   efficiency_rating:
     name: Panel Efficiency Rating
-    unique_id: span_panel_123_efficiency
     entity_id: sensor.span_panel_efficiency
     formula: (actual_output / theoretical_max) * 100
     variables:
@@ -56,7 +53,6 @@ sensors:
       icon: mdi:gauge
   total_circuit_load:
     name: Total Circuit Load
-    unique_id: span_panel_123_total_load
     entity_id: sensor.span_panel_total_load
     formula: circuit_1 + circuit_2 + circuit_3 + circuit_4 + circuit_5
     variables:
@@ -67,12 +63,7 @@ sensors:
       circuit_5: span_backing.panel_123_circuit_5_power
     attributes:
       circuit_count: 5
-      circuit_names:
-      - Main HVAC
-      - Kitchen Appliances
-      - Living Room
-      - Master Bedroom
-      - Garage
+      circuit_names: "Main HVAC, Kitchen Appliances, Living Room, Master Bedroom, Garage"
     metadata:
       unit_of_measurement: W
       device_class: power
@@ -80,7 +71,6 @@ sensors:
       icon: mdi:sigma
   estimated_monthly_cost:
     name: Estimated Monthly Cost
-    unique_id: span_panel_123_monthly_cost
     entity_id: sensor.span_panel_monthly_cost
     formula: (daily_kwh * days_per_month * rate_per_kwh)
     variables:

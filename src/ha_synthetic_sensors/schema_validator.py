@@ -34,7 +34,7 @@ from .shared_constants import (
     LAST_VALID_CHANGED_KEY,
     LAST_VALID_STATE_KEY,
     METADATA_FUNCTIONS,
-    get_reserved_words,
+    get_variable_name_reserved_words,
 )
 
 HAS_JSONSCHEMA = True
@@ -987,10 +987,11 @@ class SchemaValidator:
 
         for var_name, var_value in attr_variables.items():
             # Validate variable name against reserved words
-            self._validate_variable_name_reserved_words(
+            self._validate_name_reserved_words(
                 var_name,
                 f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
                 errors,
+                "Variable",
             )
 
             if isinstance(var_value, str):
@@ -1017,28 +1018,30 @@ class SchemaValidator:
                         )
                     )
 
-    def _validate_variable_name_reserved_words(
+    def _validate_name_reserved_words(
         self,
-        var_name: str,
+        name: str,
         path: str,
         errors: list[ValidationError],
+        name_type: str = "Variable",
     ) -> None:
-        """Validate that a variable name is not a reserved word.
+        """Validate that a variable or attribute name is not a reserved word.
 
         Args:
-            var_name: The variable name to validate
+            name: The variable or attribute name to validate
             path: The YAML path for error reporting
             errors: List to append validation errors to
+            name_type: Type of name being validated ("Variable" or "Attribute")
         """
-        reserved_words = get_reserved_words()
+        reserved_words = get_variable_name_reserved_words()
 
-        if var_name in reserved_words:
+        if name in reserved_words:
             errors.append(
                 ValidationError(
-                    message=f"Variable name '{var_name}' is a reserved word and cannot be used as a variable name",
+                    message=f"{name_type} name '{name}' is a reserved word and cannot be used as a {name_type.lower()} name",
                     path=path,
                     severity=ValidationSeverity.ERROR,
-                    suggested_fix=f"Rename variable '{var_name}' to avoid collision with reserved words. Reserved words include Python keywords, built-in types, function names, and Home Assistant domains.",
+                    suggested_fix=f"Rename {name_type.lower()} '{name}' to avoid collision with reserved words. Reserved words include Python keywords, built-in types, special tokens like 'state', and Home Assistant domains.",
                 )
             )
 
@@ -1068,10 +1071,11 @@ class SchemaValidator:
 
         for var_name, var_value in global_variables.items():
             # Validate variable name against reserved words
-            self._validate_variable_name_reserved_words(
+            self._validate_name_reserved_words(
                 var_name,
                 f"global_settings.variables.{var_name}",
                 errors,
+                "Variable",
             )
 
             if isinstance(var_value, str):
@@ -1135,10 +1139,11 @@ class SchemaValidator:
 
             for var_name, var_value in sensor_variables.items():
                 # Validate variable name against reserved words
-                self._validate_variable_name_reserved_words(
+                self._validate_name_reserved_words(
                     var_name,
                     f"sensors.{sensor_key}.variables.{var_name}",
                     errors,
+                    "Variable",
                 )
 
                 if isinstance(var_value, str):
@@ -1167,6 +1172,14 @@ class SchemaValidator:
             # Check attribute-level variables
             attributes = sensor_config.get("attributes", {})
             for attr_name, attr_config in attributes.items():
+                # Validate attribute name against reserved words
+                self._validate_name_reserved_words(
+                    attr_name,
+                    f"sensors.{sensor_key}.attributes.{attr_name}",
+                    errors,
+                    "Attribute",
+                )
+
                 if isinstance(attr_config, dict):
                     self._validate_attribute_variables(
                         sensor_key, attr_name, attr_config, sensor_keys, global_var_keys, sensor_var_keys, errors

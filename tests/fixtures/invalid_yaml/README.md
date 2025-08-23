@@ -24,10 +24,12 @@ The synthetic sensors integration validates that YAML variable names do not use 
 - `reserved_word_for.yaml` - Uses 'for' as a variable name
 - `reserved_word_while.yaml` - Uses 'while' as a variable name
 - `reserved_word_def.yaml` - Uses 'def' as an attribute variable name
+- `reserved_word_state_attribute.yaml` - Uses 'state' as an attribute name
 
 ### Valid Configuration
 
-- `valid_variable_names.yaml` - Uses only valid variable names for comparison
+- `valid_variable_names.yaml` - Uses only valid variable names for comparison, including partial matches of reserved words
+  (e.g., `the_state`, `my_if_condition`)
 
 ## Validation Scope
 
@@ -36,6 +38,10 @@ The reserved word validation applies to:
 1. **Global variables** (`global_settings.variables.*`)
 2. **Sensor variables** (`sensors.*.variables.*`)
 3. **Attribute variables** (`sensors.*.attributes.*.variables.*`)
+4. **Attribute names** (`sensors.*.attributes.*`)
+
+**Important**: The validation only checks for exact matches of reserved words. Variable names that contain reserved words as
+substrings (like `the_state`, `my_if_condition`, `string_value`) are allowed and will not trigger validation errors.
 
 ## Error Messages
 

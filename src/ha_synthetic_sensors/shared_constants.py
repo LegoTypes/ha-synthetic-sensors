@@ -234,6 +234,22 @@ def get_reserved_words(hass: HomeAssistant | None = None) -> frozenset[str]:
     )
 
 
+# Function to get reserved words for variable name validation
+# This excludes function names since they're only reserved when used as function calls
+def get_variable_name_reserved_words(hass: HomeAssistant | None = None) -> frozenset[str]:
+    """Get reserved words for variable name validation (excludes function names).
+
+    Args:
+        hass: Home Assistant instance (optional, for registry access)
+
+    Returns:
+        Frozenset of reserved words that cannot be used as variable names
+    """
+    if hass is None:
+        return PYTHON_KEYWORDS | BUILTIN_TYPES | BOOLEAN_LITERALS | STATE_KEYWORDS
+    return PYTHON_KEYWORDS | BUILTIN_TYPES | BOOLEAN_LITERALS | STATE_KEYWORDS | get_ha_entity_domains(hass)
+
+
 # Legacy constant for backward compatibility (lazy loaded)
 def get_ha_domains(hass: HomeAssistant | None = None) -> frozenset[str]:
     """Get HA entity domains (lazy loaded).
@@ -261,6 +277,7 @@ __all__ = [
     "STRING_FUNCTIONS",
     "get_ha_domains",
     "get_reserved_words",
+    "get_variable_name_reserved_words",
 ]
 
 # Last-good attribute names exposed on entities (engine-managed)

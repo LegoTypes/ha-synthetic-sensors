@@ -234,11 +234,11 @@ sensors:
   fallback_only_sensor:
     name: "Fallback Only Sensor"
     entity_id: "sensor.fallback_backing"
-    formula: "state * 2"
+    formula: "backing_state * 2"
     alternate_states:
       FALLBACK: 777  # Literal fallback
     variables:
-      state: "sensor.fallback_backing"
+      backing_state: "sensor.fallback_backing"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -247,7 +247,7 @@ sensors:
   fallback_object_sensor:
     name: "Fallback Object Sensor"
     entity_id: "sensor.fallback_backing"
-    formula: "state * 2"
+    formula: "backing_state * 2"
     alternate_states:
       FALLBACK:
         formula: "safe_default * multiplier"
@@ -255,7 +255,7 @@ sensors:
           safe_default: 300
           multiplier: 2.5
     variables:
-      state: "sensor.fallback_backing"
+      backing_state: "sensor.fallback_backing"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -264,14 +264,14 @@ sensors:
   priority_test_sensor:
     name: "Priority Test Sensor"
     entity_id: "sensor.priority_backing"
-    formula: "state + 10"
+    formula: "backing_state + 10"
     alternate_states:
       UNAVAILABLE: 100  # Should be used for unavailable
       UNKNOWN: 200      # Should be used for unknown
       NONE: 300         # Should be used for none
       FALLBACK: 999     # Should NOT be used when specific handlers exist
     variables:
-      state: "sensor.priority_backing"
+      backing_state: "sensor.priority_backing"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -280,14 +280,14 @@ sensors:
   string_handlers_sensor:
     name: "String Handlers Sensor"
     entity_id: "sensor.string_backing"
-    formula: "str(state) + '_processed'"
+    formula: "str(backing_state) + '_processed'"
     alternate_states:
       UNAVAILABLE: "unavailable_string"
       UNKNOWN: "unknown_string"
       NONE: "none_string"
       FALLBACK: "fallback_string"
     variables:
-      state: "sensor.string_backing"
+      backing_state: "sensor.string_backing"
     metadata:
       unit_of_measurement: "string"
       device_class: "timestamp"
@@ -296,14 +296,14 @@ sensors:
   boolean_handlers_sensor:
     name: "Boolean Handlers Sensor"
     entity_id: "sensor.boolean_backing"
-    formula: "state > 0"
+    formula: "backing_state > 0"
     alternate_states:
       UNAVAILABLE: true
       UNKNOWN: false
       NONE: true
       FALLBACK: false
     variables:
-      state: "sensor.boolean_backing"
+      backing_state: "sensor.boolean_backing"
     metadata:
       unit_of_measurement: "boolean"
       device_class: "timestamp"
@@ -312,14 +312,14 @@ sensors:
   energy_none_sensor:
     name: "Energy None Sensor"
     entity_id: "sensor.energy_backing"
-    formula: "state"
+    formula: "backing_state"
     alternate_states:
       UNAVAILABLE: 0
       UNKNOWN: 0
       NONE: null  # Preserve None for energy sensors
       FALLBACK: 0
     variables:
-      state: "sensor.energy_backing"
+      backing_state: "sensor.energy_backing"
     metadata:
       unit_of_measurement: "kWh"
       device_class: "energy"

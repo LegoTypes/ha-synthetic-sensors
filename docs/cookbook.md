@@ -1651,7 +1651,7 @@ When validation fails, the system provides specific error messages with paths to
 
 **Error Format:**
 
-```
+```text
 Variable name '{name}' is a reserved word and cannot be used as a variable name
 Path: sensors.{sensor_key}.variables.{variable_name}
 ```

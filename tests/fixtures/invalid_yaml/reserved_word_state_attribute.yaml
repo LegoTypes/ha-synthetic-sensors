@@ -1,0 +1,15 @@
+# Test YAML file with reserved word as attribute name
+# This should fail validation - 'state' is a reserved word
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Reserved Word Attribute"
+    formula: "temperature + humidity"
+    variables:
+      temperature: "sensor.temp_sensor"
+      humidity: "sensor.humidity_sensor"
+    attributes:
+      state:  # This should fail - 'state' is a reserved word
+        formula: "temp_value * 2"
+        variables:
+          temp_value: "sensor.another_temp"
