@@ -140,9 +140,11 @@ class TestEvaluator:
 
         result = evaluator.evaluate_formula(config, {})
         # Current implementation: undefined variables result in alternate state, not hard errors
+        from homeassistant.const import STATE_UNKNOWN
+
         assert result["success"] is True
-        assert result["state"] == "unknown"  # Alternate state handling
-        assert result["value"] is None
+        assert result.get("state") == STATE_UNKNOWN  # Alternate state handling
+        assert result.get("value") is None
 
     def test_clear_cache(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache clearing functionality."""

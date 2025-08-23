@@ -78,8 +78,6 @@ class DependencyParser:
         """Get the entity domains pattern for regex compilation."""
         if self.hass is not None:
             try:
-                from .shared_constants import get_ha_domains
-
                 domains = get_ha_domains(self.hass)
                 if domains:
                     return "|".join(sorted(domains))

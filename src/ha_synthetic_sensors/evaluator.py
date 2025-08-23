@@ -391,6 +391,36 @@ class Evaluator(FormulaEvaluator):
             traceback.print_exc()
             raise
 
+        # If Phase 1 detected an HA state (e.g., 'unknown', 'unavailable' or None) prefer to
+        # normalize and return it immediately via the centralized HA-state result creator.
+        # This centralizes alternate-state handling at Phase 1 and prevents later layers from
+        # mis-classifying HA-provided alternate-state strings as successful 'ok' values.
+        if getattr(resolution_result, "has_ha_state", False):
+            _LOGGER.debug(
+                "HA state detected during variable resolution: ha_state_value=%s, early_result=%s",
+                getattr(resolution_result, "ha_state_value", None),
+                getattr(resolution_result, "early_result", None),
+            )
+            # If an early_result exists, send it to the alternate-state processor so configured
+            # alternate_state handlers have a chance to run. Only short-circuit directly to the
+            # HA-state result when there is no early_result to process.
+            if getattr(resolution_result, "early_result", None) is not None:
+                _LOGGER.debug("Passing early_result to alternate_state_processor due to HA state detection")
+                return self._process_early_result(resolution_result.early_result, config, eval_context, sensor_config)
+
+            # No early_result to process: return a HA-state-preserving result
+            ha_state_value = getattr(resolution_result, "ha_state_value", None)
+            if ha_state_value is not None:
+                return EvaluatorResults.create_success_from_ha_state(
+                    ha_state_value,
+                    getattr(resolution_result, "unavailable_dependencies", None),
+                )
+            # If ha_state_value is None, create a default success result
+            return EvaluatorResults.create_success_result_with_state(
+                STATE_UNKNOWN,
+                unavailable_dependencies=getattr(resolution_result, "unavailable_dependencies", None),
+            )
+
         # Check if early result was detected during variable resolution
         if resolution_result.early_result is not None:
             _LOGGER.debug("Early result detected in variable resolution: %s", resolution_result.early_result)
@@ -584,12 +614,9 @@ class Evaluator(FormulaEvaluator):
             self._error_handler.handle_successful_evaluation(formula_name)
 
             # Convert result to proper EvaluationResult
-            # Preserve None results as STATE_UNKNOWN instead of treating them as successful 'ok' with None value
-            if result is None:
-                return EvaluatorResults.create_success_from_result(result)
-            if isinstance(result, int | float):
-                return EvaluatorResults.create_success_result(float(result))
-            return EvaluatorResults.create_success_result_with_state("ok", value=result)
+            # Preserve None results as STATE_UNKNOWN via create_success_from_result
+            # Convert using the central helper so alternate states and None are handled consistently
+            return EvaluatorResults.create_success_from_result(result)
 
         except Exception as e:
             _LOGGER.error("Error in dependency-aware evaluation for formula '%s': %s", config.formula, e)
@@ -624,12 +651,8 @@ class Evaluator(FormulaEvaluator):
         result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
 
         # Convert result to proper EvaluationResult
-        # Preserve None results as STATE_UNKNOWN instead of treating them as successful 'ok' with None value
-        if result is None:
-            return EvaluatorResults.create_success_from_result(result)
-        if isinstance(result, int | float):
-            return EvaluatorResults.create_success_result(float(result))
-        return EvaluatorResults.create_success_result_with_state("ok", value=result)
+        # Normalize all results through shared helper to ensure consistent STATE_OK / STATE_UNKNOWN behavior
+        return EvaluatorResults.create_success_from_result(result)
 
     def _try_formula_alternate_state_handler(
         self,
@@ -826,6 +849,19 @@ class Evaluator(FormulaEvaluator):
         """Validate result type and cache if appropriate."""
         if self._formula_processor is None:
             raise RuntimeError("Formula processor not initialized")
+        # If the raw result is an HA alternate-state string (e.g., 'unknown'/'unavailable'),
+        # preserve it as-is since this method should return raw values, not EvaluationResult objects
+        # The conversion to EvaluationResult happens later in the pipeline
+        try:
+            alt = identify_alternate_state_value(result)
+        except Exception:
+            alt = False
+
+        if isinstance(alt, str):
+            # For HA alternate states, return the state string as-is
+            # The evaluation pipeline will handle conversion to EvaluationResult later
+            return result
+
         return self._formula_processor.finalize_result(result, config, context, cache_key_id, sensor_config)
 
     def _build_evaluation_context(

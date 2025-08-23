@@ -125,7 +125,11 @@ class TestFormulaEvaluation:
         result = evaluator.evaluate_formula(config, context)
         # Current implementation: runtime errors treated as alternate states
         assert result["success"] is True
-        assert result["state"] == "unknown"
+        # Accept either STATE_UNKNOWN or 'unknown' depending on API surface
+        # `STATE_UNKNOWN` equals the string 'unknown' — compare to the constant only for clarity
+        from homeassistant.const import STATE_UNKNOWN
+
+        assert result.get("state") == STATE_UNKNOWN
         assert result["value"] is None
 
         # Test missing dependencies - current behavior treats as alternate state
@@ -136,7 +140,7 @@ class TestFormulaEvaluation:
         result = evaluator.evaluate_formula(config, context)
         # Current implementation: undefined variables treated as alternate states
         assert result["success"] is True
-        assert result["state"] == "unknown"
+        assert result.get("state") in (STATE_UNKNOWN, "unknown")
         assert result["value"] is None
 
     def test_complex_formulas(self, mock_hass, mock_entity_registry, mock_states):

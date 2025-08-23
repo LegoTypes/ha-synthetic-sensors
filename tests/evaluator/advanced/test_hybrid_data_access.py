@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from homeassistant.const import STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 
 from ha_synthetic_sensors.config_manager import ConfigManager, FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
@@ -241,10 +241,11 @@ class TestHybridDataAccess:
         result = evaluator.evaluate_formula(formula_config, {})
 
         # Should handle the error gracefully - integration claimed entity but it's unavailable
-        # The current implementation treats "unavailable" as a successful string value
+        # Phase 1 preserves HA states; expect preserved HA state and no numeric value
         assert result["success"] is True  # Not a fatal error
-        assert result["value"] == "unavailable"  # Integration returned unavailable as string value
-        assert result["state"] == "ok"  # Current behavior - treats as successful evaluation
+        # Expect the preserved HA state to be STATE_UNAVAILABLE for claimed-but-unavailable integration entity
+        assert result.get("state") == STATE_UNAVAILABLE
+        assert result.get("value") is None
 
     def test_sensor_manager_with_registration(
         self, mock_hass, mock_integration_data_provider, hybrid_config, mock_entity_registry, mock_states

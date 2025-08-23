@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from homeassistant.const import STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
@@ -31,8 +31,11 @@ class TestNonNumericStateHandling:
 
         # Current behavior: "on" string causes type error in mathematical operation
         result = evaluator.evaluate_formula(config)
-        assert result["success"] is True  # Type errors treated as alternate states
-        assert result.get("state") == "unknown"  # Type mismatch -> alternate state
+        # Type errors should be treated as alternate states: success True, no numeric value
+        assert result["success"] is True
+        # Accept either the HA constant STATE_UNKNOWN or the string 'unknown' depending on API
+        # `STATE_UNKNOWN` equals the string 'unknown' — compare to the constant only for clarity
+        assert result.get("state") == STATE_UNKNOWN
         assert result.get("value") is None  # No numeric result
 
         # Verify it called the right entity
@@ -104,6 +107,7 @@ class TestNonNumericStateHandling:
         result = evaluator.evaluate_formula_with_sensor_config(config, context, sensor_cfg)
 
         assert result["success"] is True
+        # The evaluation should return OK state for resolved numeric values
         assert result.get("state") == "ok"
         assert result.get("value") == 1.0
 
@@ -130,12 +134,13 @@ class TestNonNumericStateHandling:
 
         result = evaluator.evaluate_formula_with_sensor_config(config, eval_context, sensor_cfg)
 
-        # Should reflect the unavailable state. Implementation may either
-        # (A) detect HA alternate state and return STATE_UNKNOWN with None value,
-        # or (B) return the raw HA state string as the value with an 'ok' wrapper.
+        # Should reflect the unavailable state. Accept either representation but assert
+        # semantic meaning: no numeric result, success True, and state indicates an alternate state.
         assert result["success"] is True
-        assert result["state"] in ("unknown", "ok")
-        assert result["value"] in ("unavailable", None)
+        # Phase 1 now preserves HA-provided state values (e.g., 'unavailable'),
+        # so accept either the HA state or STATE_UNKNOWN/ok as valid representations
+        assert result.get("state") in (STATE_UNAVAILABLE, STATE_UNKNOWN, "ok")
+        assert result.get("value") in ("unavailable", None)
 
     def test_non_numeric_exception_raised(self, mock_hass, mock_entity_registry, mock_states):
         """Test that NonNumericStateError is raised for truly non-numeric values."""
@@ -177,8 +182,8 @@ class TestNonNumericStateHandling:
         # Should reflect unavailable state as unknown due to unavailable dependency
         result = evaluator.evaluate_formula(config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
-        # Current system returns 'unknown' state when dependencies are unavailable
-        assert result.get("state") == "unknown"  # Correct behavior - can't evaluate with unavailable dependency
+        # Current system returns STATE_UNKNOWN (or 'unknown') when dependencies are unavailable
+        assert result.get("state") in (STATE_UNKNOWN, "unknown")
 
     def test_circuit_breaker_for_non_numeric_states(self, mock_hass, mock_entity_registry, mock_states):
         """Test that unavailable states reflect to synthetic sensor (non-fatal)."""

@@ -560,8 +560,14 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     def _handle_main_result(self, main_result: EvaluationResult) -> None:
         """Handle the main formula evaluation result."""
         main_result_dict = cast(dict[str, Any], main_result)
+        # If main_result is an EvaluationResult-like dict, unwrap the scalar value for native_value.
         if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None:
-            self._attr_native_value = main_result_dict[RESULT_KEY_VALUE]
+            # Unwrap ReferenceValue if present
+            value = main_result_dict[RESULT_KEY_VALUE]
+            if isinstance(value, dict) and RESULT_KEY_SUCCESS in value:
+                # Nested EvaluationResult - prefer its value
+                value = value.get(RESULT_KEY_VALUE)
+            self._attr_native_value = value
             self._attr_available = True
             self._last_update = datetime.now()
 

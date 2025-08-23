@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from homeassistant.const import STATE_UNKNOWN
 
+from .constants_alternate import identify_alternate_state_value
 from .constants_evaluation_results import (
     ERROR_RESULT_KEYS,
     RESULT_KEY_ERROR,
@@ -90,6 +91,10 @@ class EvaluatorResults:
     @staticmethod
     def create_success_from_result(result: float | int | str | bool | None) -> EvaluationResult:
         """Create a success result from a typed evaluation value."""
+        # If caller already passed an EvaluationResult-shaped dict, return it unchanged
+        if isinstance(result, dict) and RESULT_KEY_SUCCESS in result:
+            return cast(EvaluationResult, result)
+
         # CRITICAL FIX: Handle None values by returning STATE_UNKNOWN with None value
         # This preserves None values for Home Assistant while maintaining proper state handling.
         # Home Assistant will handle None appropriately by converting to STATE_UNKNOWN internally.
@@ -101,6 +106,16 @@ class EvaluatorResults:
             return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
         if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))
+        # If the result is a string that represents an HA alternate state, preserve HA semantics
+        if isinstance(result, str):
+            try:
+                alt = identify_alternate_state_value(result)
+            except Exception:
+                alt = False
+            if isinstance(alt, str):
+                # Preserve original HA state and no numeric value
+                return EvaluatorResults.create_success_from_ha_state(result, None)
+
         return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
 
     @staticmethod
@@ -122,13 +137,15 @@ class EvaluatorResults:
     ) -> EvaluationResult:
         """Create a success result that reflects a detected HA state during resolution."""
         # Preserve the original HA state value so callers can inspect the exact
-        # Home Assistant-provided state. Special-case: if the HA-provided value is
-        # None, represent that as STATE_NONE (internal None) to signal an explicit
-        # None state. Do NOT normalize 'unavailable' or 'unknown' to STATE_UNKNOWN
-        # here; upstream code or callers should decide how to handle those values.
-        from .constants_alternate import STATE_NONE
-
-        normalized_state = ha_state_value if ha_state_value is not None else STATE_NONE
+        # Home Assistant-provided state. Note that Home Assistant normally
+        # normalizes missing states with None to UNKNOWN.
+        # Internal `None` (STATE_NONE) is an internal semantic used by this package
+        # (for example to represent YAML-level `STATE_NONE`). For downstream consistency
+        # we map an internal None to `STATE_UNKNOWN` here so consumers (entities, tests)
+        # observe a stable HA-facing alternate-state representation.
+        # Literal HA strings such as 'unavailable' or 'unknown' are preserved
+        # unchanged so callers can react to the exact HA-provided value.
+        normalized_state = ha_state_value if ha_state_value is not None else STATE_UNKNOWN
 
         # Normalize dependency representations: accept HADependency objects or strings
         deps = unavailable_dependencies or []

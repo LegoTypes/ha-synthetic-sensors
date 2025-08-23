@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from homeassistant.const import STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
@@ -31,9 +31,9 @@ def test_evaluator_handles_unknown_value_from_data_provider(mock_hass, mock_enti
     result = evaluator.evaluate_formula(config)
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
-    # Current behavior: string "unknown" from data provider is treated as successful evaluation
-    assert result["state"] == "ok"  # String values are treated as successful
-    assert result["value"] == "unknown"  # The actual "unknown" string value
+    # Phase 1 preserves HA provided state; expect STATE_UNKNOWN and no numeric value
+    assert result.get("state") == STATE_UNKNOWN
+    assert result.get("value") is None
     # Check that the enhanced dependency reporting includes the entity ID
     deps = result.get("unavailable_dependencies", [])
     # Note: With current implementation, this may not create unavailable dependencies entry
@@ -61,9 +61,9 @@ def test_evaluator_handles_unavailable_entity_reference(mock_hass, mock_entity_r
     result = evaluator.evaluate_formula(config)
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
-    # Current behavior: string "unavailable" from data provider is treated as successful evaluation
-    assert result["state"] == "ok"  # String values are treated as successful
-    assert result["value"] == "unavailable"  # The actual "unavailable" string value
+    # Phase 1 now preserves HA-provided state values and sets no numeric value
+    assert result.get("state") == STATE_UNAVAILABLE
+    assert result.get("value") is None
     # Check that the enhanced dependency reporting includes the entity ID
     deps = result.get("unavailable_dependencies", [])
     # Note: With current implementation, this may not create unavailable dependencies entry
