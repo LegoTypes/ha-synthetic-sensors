@@ -73,7 +73,10 @@ class TestEvaluator:
 
         config = FormulaConfig(id="context", name="context", formula="A + B + C")
 
-        context: dict[str, Any] = {"A": 15, "B": 25, "C": 0}
+        # Use ReferenceValue objects for context variables (ReferenceValue architecture)
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+        context: dict[str, Any] = {"A": ReferenceValue("A", 15), "B": ReferenceValue("B", 25), "C": ReferenceValue("C", 0)}
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
         assert result["value"] == 40
@@ -271,12 +274,14 @@ class TestEvaluator:
                 },
             )
 
-            # Build context like DynamicSensor would - use Any to match ContextValue
+            # Build context like DynamicSensor would - use ReferenceValue objects (ReferenceValue architecture)
+            from ha_synthetic_sensors.type_definitions import ReferenceValue
+
             context: dict[str, Any] = {}
             for var_name, entity_id in config.variables.items():
                 state = mock_hass.states.get(entity_id)
                 if state is not None:
-                    context[var_name] = float(state.state)
+                    context[var_name] = ReferenceValue(entity_id, float(state.state))
 
             result = evaluator.evaluate_formula(config, context)
             assert result["success"] is True
@@ -301,8 +306,8 @@ class TestEvaluator:
             )  # Direct entity names, not entity() function
 
             entity_context: dict[str, Any] = {
-                "sensor_temperature": 22.5,
-                "sensor_humidity": 45.0,
+                "sensor_temperature": ReferenceValue("sensor.temperature", 22.5),
+                "sensor_humidity": ReferenceValue("sensor.humidity", 45.0),
             }
 
             result3 = evaluator.evaluate_formula(config_entity_access, entity_context)
@@ -321,8 +326,8 @@ class TestEvaluator:
             )
 
             mixed_context: dict[str, Any] = {
-                "power_total": 1000.0,
-                "temperature_reading": 22.5,
+                "power_total": ReferenceValue("sensor.power_meter", 1000.0),
+                "temperature_reading": ReferenceValue("sensor.temperature", 22.5),
             }
             result4 = evaluator.evaluate_formula(config_mixed, mixed_context)
             assert result4["success"] is True
@@ -360,8 +365,10 @@ class TestEvaluator:
             id="cache_test", name="Cache Test", formula="test_var * 2", variables={"test_var": "sensor.test_entity"}
         )
 
-        # First evaluation
-        context: dict[str, Any] = {"test_var": 100.0}
+        # First evaluation - use ReferenceValue objects (ReferenceValue architecture)
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+        context: dict[str, Any] = {"test_var": ReferenceValue("sensor.test_entity", 100.0)}
         result1 = evaluator.evaluate_formula(config, context)
         assert result1["success"] is True
         assert result1["value"] == 200.0
@@ -372,7 +379,7 @@ class TestEvaluator:
         assert result2["value"] == 200.0
 
         # Different context should work too
-        context2: dict[str, Any] = {"test_var": 150.0}
+        context2: dict[str, Any] = {"test_var": ReferenceValue("sensor.test_entity", 150.0)}
         result3 = evaluator.evaluate_formula(config, context2)
         assert result3["success"] is True
         assert result3["value"] == 300.0

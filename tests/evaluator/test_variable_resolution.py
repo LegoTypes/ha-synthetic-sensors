@@ -120,8 +120,13 @@ class TestVariableResolution:
         # without triggering the full evaluation pipeline that requires HA domains
         evaluator = Evaluator(mock_hass)
 
-        # Create a simple context with the resolved values for testing
-        test_context = {"leg1_power": 1000.0, "leg2_power": 500.0}
+        # Create a context with ReferenceValue objects for testing (ReferenceValue architecture)
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+        test_context = {
+            "leg1_power": ReferenceValue("sensor.span_panel_circuit_30_power", 1000.0),
+            "leg2_power": ReferenceValue("sensor.span_panel_circuit_32_power", 500.0),
+        }
 
         # Test with a simple formula that doesn't trigger entity reference resolution
         simple_config = FormulaConfig(id="test", formula="leg1_power + leg2_power", variables={})
@@ -149,17 +154,23 @@ class TestVariableResolution:
         )
 
         # Create context manually (this is what DynamicSensor._build_variable_context should do)
+        # Use ReferenceValue objects (ReferenceValue architecture)
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
         context = {}
         for var_name, entity_id in config.variables.items():
             state = mock_hass.states.get(entity_id)
             if state is not None:
-                context[var_name] = float(state.state)
+                context[var_name] = ReferenceValue(entity_id, float(state.state))
             else:
-                context[var_name] = None
+                # For unavailable entities, create ReferenceValue with None value
+                context[var_name] = ReferenceValue(entity_id, None)
 
         # Should handle None values gracefully
-        assert context["available_power"] == 1000.0
-        assert context["unavailable_power"] is None
+        assert context["available_power"].value == 1000.0
+        assert context["available_power"].reference == "sensor.span_panel_circuit_30_power"
+        assert context["unavailable_power"].value is None
+        assert context["unavailable_power"].reference == "sensor.unavailable_entity"
 
         # The evaluator should handle None values appropriately
         result = evaluator.evaluate_formula(config, context)

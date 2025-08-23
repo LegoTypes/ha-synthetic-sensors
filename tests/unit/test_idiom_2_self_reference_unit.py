@@ -67,8 +67,11 @@ class TestIdiom2SelfReference:
         main_formula = sensor.formulas[0]
 
         # Provide registry values via evaluator's registry context and include self key per design guide
+        # Use ReferenceValue objects (ReferenceValue architecture)
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
         registry_context = evaluator._sensor_registry_phase.get_all_sensor_values()
-        context = {**registry_context, "power_calculator_key": 1000.0}
+        context = {**registry_context, "power_calculator_key": ReferenceValue("power_calculator", 1000.0)}
         main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Main formula should succeed: state * 2 = 1000 * 2 = 2000
@@ -109,7 +112,13 @@ class TestIdiom2SelfReference:
         main_formula = sensor.formulas[0]
 
         # Provide registry/self key context to align with current evaluation path
-        context = {"power_calculator_key": 1000.0, **evaluator._sensor_registry_phase.get_all_sensor_values()}
+        # Use ReferenceValue objects (ReferenceValue architecture)
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+        context = {
+            "power_calculator_key": ReferenceValue("power_calculator", 1000.0),
+            **evaluator._sensor_registry_phase.get_all_sensor_values(),
+        }
         main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Main formula should succeed: power_calculator * 2 = 1000 * 2 = 2000

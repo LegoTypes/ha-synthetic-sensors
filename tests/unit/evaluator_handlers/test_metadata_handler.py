@@ -87,9 +87,11 @@ class TestMetadataHandler:
         # Create handler with mock hass
         handler = MetadataHandler(hass=mock_hass)
 
-        # Test evaluation with context variable
+        # Test evaluation with context variable - use ReferenceValue (ReferenceValue architecture)
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
         formula = "metadata(power_var, 'entity_id')"
-        context = {"power_var": "sensor.power_meter"}
+        context = {"power_var": ReferenceValue("sensor.power_meter", "sensor.power_meter")}
 
         result, metadata_results = handler.evaluate(formula, context)
 
