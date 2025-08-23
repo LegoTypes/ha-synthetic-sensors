@@ -476,36 +476,39 @@ class VariableResolutionPhase:
         return formula, ha_dependencies
 
     def _resolve_entity_references(self, formula: str, eval_context: dict[str, ContextValue]) -> str:
-        """Resolve entity references (e.g., sensor.temperature -> 23.5)."""
+        """Register entity references in context without modifying the formula (lazy resolution)."""
         # Pattern that explicitly prevents matching decimals by requiring word boundary at start and letter/underscore
         entity_pattern = re.compile(
             r"(?:^|(?<=\s)|(?<=\()|(?<=[+\-*/]))([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z0-9_.]+)(?=\s|$|[+\-*/)])"
         )
 
-        def replace_entity_ref(match: re.Match[str]) -> str:
+        def register_entity_ref(match: re.Match[str]) -> str:
             entity_id = match.group(1)
-            # First check if already resolved in context
             var_name = entity_id.replace(".", "_").replace("-", "_")
-            if var_name in eval_context:
-                value = eval_context[var_name]
-                actual_value = value.value if isinstance(value, ReferenceValue) else value
-                return "unknown" if actual_value is None else str(actual_value)
-            if entity_id in eval_context:
-                value = eval_context[entity_id]
-                actual_value = value.value if isinstance(value, ReferenceValue) else value
-                return "unknown" if actual_value is None else str(actual_value)
-            # Use the resolver factory to resolve the entity reference
-            resolved_value = self._resolver_factory.resolve_variable(entity_id, entity_id, eval_context)
-            if resolved_value is not None:
-                # Extract value from ReferenceValue for entity resolution
-                actual_value = resolved_value.value if isinstance(resolved_value, ReferenceValue) else resolved_value
-                # Convert Python None to "unknown" for HA state detection
-                if actual_value is None:
-                    return "unknown"
-                return str(actual_value)
-            raise MissingDependencyError(f"Failed to resolve entity reference '{entity_id}' in formula")
 
-        return entity_pattern.sub(replace_entity_ref, formula)
+            # Check if already resolved in context
+            if var_name in eval_context or entity_id in eval_context:
+                return match.group(0)  # Return original match unchanged
+
+            # Use the resolver factory to resolve and register the entity reference
+            try:
+                resolved_value = self._resolver_factory.resolve_variable(entity_id, entity_id, eval_context)
+                if resolved_value is not None:
+                    # Store ReferenceValue in context for handlers (including None values)
+                    eval_context[var_name] = resolved_value
+                    eval_context[entity_id] = resolved_value
+                    _LOGGER.debug("Registered entity reference '%s' in context for lazy resolution", entity_id)
+            except MissingDependencyError:
+                # Let the missing dependency be handled by later phases
+                _LOGGER.debug("Entity reference '%s' could not be resolved, will be handled by later phases", entity_id)
+
+            return match.group(0)  # Return original entity reference unchanged
+
+        # Process matches but don't modify the formula string
+        entity_pattern.sub(register_entity_ref, formula)
+
+        # Return formula unchanged - let Phase 3 handle value extraction
+        return formula
 
     def _resolve_cross_sensor_references(
         self,
