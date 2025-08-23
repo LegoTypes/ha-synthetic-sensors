@@ -23,9 +23,9 @@ class CompiledFormula:
             formula: The formula string to compile
             math_functions: Math functions to include in evaluator
         """
-        # Preprocess formula to convert quoted boolean literals to unquoted names
-        self.formula = BooleanStates.preprocess_formula_for_boolean_literals(formula)
-        _LOGGER.debug(f"Formula preprocessing: '{formula}' -> '{self.formula}'")
+        # Store the original formula - let users control boolean vs string comparisons explicitly
+        self.formula = formula
+        _LOGGER.debug(f"Formula compilation: '{formula}' (unquoted names for boolean, quoted strings for comparison)")
 
         # Get boolean state mappings for SimpleEval
         boolean_names = BooleanStates.get_all_boolean_names()

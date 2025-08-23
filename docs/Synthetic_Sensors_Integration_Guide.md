@@ -122,10 +122,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     native_entities = create_native_sensors(coordinator)
     async_add_entities(native_entities)
 
-    # Register custom comparison handlers (optional)
-    from ha_synthetic_sensors.comparison_handlers import register_user_comparison_handler
-    energy_handler = EnergyComparisonHandler()  # Your custom handler
-    register_user_comparison_handler(energy_handler)
+    # Custom comparison logic can be implemented using ConditionParser
+    # See examples/custom_comparison_type.py for implementation details
 
     # Then add synthetic sensors with one call
     sensor_manager = await async_setup_synthetic_sensors(
@@ -167,36 +165,30 @@ DataProviderCallback = Callable[[str], DataProviderResult]
 DataProviderChangeNotifier = Callable[[set[str]], None]
 ```
 
-## User-Defined Comparison Handlers
+## Custom Comparison Logic
 
-The synthetic sensors library includes an **extensible comparison handler architecture** that allows users to define custom
-comparison logic for specialized data types. This enables advanced pattern matching in collection functions and condition
-evaluation.
+The synthetic sensors library uses the `ConditionParser` for handling comparisons in collection functions and condition
+evaluation. Custom comparison logic can be implemented by extending the `ConditionParser.evaluate_condition` method or creating
+helper classes.
 
-For comprehensive documentation on creating and using custom comparison handlers, see the dedicated guide:
+For examples of implementing custom comparison logic, see:
 
-**[User-Defined Comparison Handlers](User_Defined_Comparison_Handlers.md)**
-
-This guide covers:
-
-- **Handler Architecture**: Understanding the extensible comparison system
-- **Creating Custom Handlers**: Step-by-step implementation guide
-- **Priority System**: Handler selection and precedence rules
-- **Advanced Examples**: IP address, version string, and energy handlers
-- **Best Practices**: Design patterns and testing strategies
-- **Integration**: Using handlers with collection functions and patterns
+- **examples/custom_comparison_type.py**: Shows how to create helper classes for IP address and color comparisons
+- **examples/using_typed_conditions.py**: Demonstrates condition parsing and evaluation
 
 **Quick Start:**
 
 ```python
-from ha_synthetic_sensors.comparison_handlers import register_user_comparison_handler
+from ha_synthetic_sensors.condition_parser import ConditionParser
 
-# Register your custom handler
-energy_handler = EnergyComparisonHandler()
-register_user_comparison_handler(energy_handler)
+# Use built-in comparison logic
+condition = ConditionParser.parse_state_condition(">= 50")
+result = ConditionParser.evaluate_condition(75, condition)  # True
 
-# Use in collection patterns
-formula: count("attribute:power_consumption>=1kW")  # Uses energy handler
+# Extend for custom types
+def custom_evaluate_condition(actual_value, condition):
+    # Add custom logic here
+    return ConditionParser.evaluate_condition(actual_value, condition)
 ```
 
 ## Interface Functions Overview

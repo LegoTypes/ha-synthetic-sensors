@@ -1,0 +1,20 @@
+version: "1.0"
+
+sensors:
+  low_battery_devices:
+    name: "Low Battery Devices"
+    formula: "count('battery_level<20')"
+    metadata:
+      unit_of_measurement: "devices"
+
+  high_battery_devices:
+    name: "High Battery Devices"
+    formula: "count('battery_level>80')"
+    metadata:
+      unit_of_measurement: "devices"
+
+  online_devices:
+    name: "Online Devices"
+    formula: "count('online:true')"
+    metadata:
+      unit_of_measurement: "devices"

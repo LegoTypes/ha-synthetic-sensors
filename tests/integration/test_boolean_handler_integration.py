@@ -140,39 +140,41 @@ class TestBooleanHandlerIntegration:
             entity_lookup = {entity.unique_id: entity for entity in all_entities}
 
             # Test actual sensor values after evaluation
-            # door_lock_and: door_state == 'locked' and motion_state == 'clear' -> True and True -> True
+            # door_lock_and: door_state == locked and motion_state == 'clear' -> False and True -> False -> 0.0
+            # (door_state='locked' string vs locked=False boolean -> False)
             door_lock_and_entity = entity_lookup.get("door_lock_and")
             assert door_lock_and_entity is not None, "Door lock AND sensor entity not found"
-            assert door_lock_and_entity.native_value is True, (
-                f"Door lock AND sensor should be True, got {door_lock_and_entity.native_value}"
+            assert door_lock_and_entity.native_value == 0.0, (
+                f"Door lock AND sensor should be 0.0, got {door_lock_and_entity.native_value}"
             )
 
-            # presence_or: home_presence == 'home' or work_presence == 'office' -> True or False -> True
+            # presence_or: home_presence == home or work_presence == 'office' -> True or False -> True -> 1.0
+            # (home_presence='home' string vs home=True boolean -> True)
             presence_or_entity = entity_lookup.get("presence_or")
             assert presence_or_entity is not None, "Presence OR sensor entity not found"
-            assert presence_or_entity.native_value is True, (
-                f"Presence OR sensor should be True, got {presence_or_entity.native_value}"
+            assert presence_or_entity.native_value == 1.0, (
+                f"Presence OR sensor should be 1.0, got {presence_or_entity.native_value}"
             )
 
-            # security_check: not (alarm_state == 'disarmed') and door_state == 'locked' -> not (False) and True -> True and True -> True
+            # security_check: not (alarm_state == 'disarmed') and door_state == locked -> not (False) and False -> True and False -> False -> 0.0
             security_check_entity = entity_lookup.get("security_check")
             assert security_check_entity is not None, "Security check sensor entity not found"
-            assert security_check_entity.native_value is True, (
-                f"Security check sensor should be True, got {security_check_entity.native_value}"
+            assert security_check_entity.native_value == 0.0, (
+                f"Security check sensor should be 0.0, got {security_check_entity.native_value}"
             )
 
-            # temperature_comfort: temperature >= min_temp and temperature <= max_temp -> 22.5 >= 18 and 22.5 <= 24 -> True and True -> True
+            # temperature_comfort: temperature >= min_temp and temperature <= max_temp -> 22.5 >= 18 and 22.5 <= 24 -> True and True -> True -> 1.0
             temperature_comfort_entity = entity_lookup.get("temperature_comfort")
             assert temperature_comfort_entity is not None, "Temperature comfort sensor entity not found"
-            assert temperature_comfort_entity.native_value is True, (
-                f"Temperature comfort sensor should be True, got {temperature_comfort_entity.native_value}"
+            assert temperature_comfort_entity.native_value == 1.0, (
+                f"Temperature comfort sensor should be 1.0, got {temperature_comfort_entity.native_value}"
             )
 
-            # direct_binary_test: binary_sensor.test_direct == 'on' -> True
-            direct_binary_test_entity = entity_lookup.get("direct_binary_test")
-            assert direct_binary_test_entity is not None, "Direct binary test sensor entity not found"
-            assert direct_binary_test_entity.native_value is True, (
-                f"Direct binary test sensor should be True, got {direct_binary_test_entity.native_value}"
+            # direct_binary_test: binary_sensor.test_direct == on -> 'on' == True -> True -> 1.0
+            direct_binary_entity = entity_lookup.get("direct_binary_test")
+            assert direct_binary_entity is not None, "Direct binary test sensor entity not found"
+            assert direct_binary_entity.native_value == 1.0, (
+                f"Direct binary test sensor should be 1.0, got {direct_binary_entity.native_value}"
             )
 
             # Verify all sensors have valid values

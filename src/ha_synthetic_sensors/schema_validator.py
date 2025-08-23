@@ -830,6 +830,33 @@ class SchemaValidator:
             return
 
         tokens = tokenize_formula(formula)
+
+        # Get boolean state names for validation
+        from .boolean_states import BooleanStates
+
+        boolean_names = set(BooleanStates.get_all_boolean_names().keys())
+
+        # Fallback list of common boolean states in case HA constants are not fully loaded
+        fallback_boolean_states = {
+            "on",
+            "off",
+            "home",
+            "not_home",
+            "locked",
+            "not_locked",
+            "occupied",
+            "not_occupied",
+            "motion",
+            "no_motion",
+            "true",
+            "false",
+            "yes",
+            "no",
+            "1",
+            "0",
+        }
+        boolean_names.update(fallback_boolean_states)
+
         for token in tokens:
             # Check if token is valid in any scope:
             # 1. Global variables (accessible from anywhere)
@@ -839,6 +866,7 @@ class SchemaValidator:
             # 5. Datetime function names (now, today, yesterday, etc.)
             # 6. Duration function names (days, hours, minutes, etc.)
             # 7. Entity references (domain.entity format)
+            # 8. Boolean state names (on, off, home, not_home, etc.)
             datetime_functions = DATETIME_FUNCTIONS
             duration_functions = DURATION_FUNCTIONS
             metadata_functions = METADATA_FUNCTIONS
@@ -853,6 +881,7 @@ class SchemaValidator:
                 or token in duration_functions
                 or token in metadata_functions
                 or token in FORMULA_RESERVED_WORDS
+                or token in boolean_names
                 or self._is_entity_id(token)
             )
 

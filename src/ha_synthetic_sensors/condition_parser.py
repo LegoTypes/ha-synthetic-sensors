@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import re
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from .exceptions import DataValidationError
 from .type_analyzer import OperandType
@@ -154,7 +155,7 @@ class ConditionParser:
         return value_str
 
     @staticmethod
-    def _convert_value_for_comparison(value_str: str) -> OperandType:
+    def _convert_value_for_comparison(value_str: str) -> int | float | bool | str:
         """Convert a string value to the appropriate type for comparison.
 
         Args:
@@ -194,22 +195,24 @@ class ConditionParser:
         """
         expected_value = ConditionParser._convert_value_for_comparison(condition["value"])
         operator = condition["operator"]
-        
+
+        # Convert actual_value to comparable type
+        actual_converted = ConditionParser._convert_value_for_comparison(str(actual_value))
+
+        # Define operator functions with explicit type annotations
+        operator_functions: dict[str, Callable[[Any, Any], bool]] = {
+            "==": lambda a, b: a == b,
+            "!=": lambda a, b: a != b,
+            "<": lambda a, b: a < b,
+            "<=": lambda a, b: a <= b,
+            ">": lambda a, b: a > b,
+            ">=": lambda a, b: a >= b,
+        }
+
         try:
-            if operator == "==":
-                return actual_value == expected_value
-            elif operator == "!=":
-                return actual_value != expected_value
-            elif operator == "<":
-                return actual_value < expected_value
-            elif operator == "<=":
-                return actual_value <= expected_value
-            elif operator == ">":
-                return actual_value > expected_value
-            elif operator == ">=":
-                return actual_value >= expected_value
-            else:
-                return False
+            if operator in operator_functions:
+                return operator_functions[operator](actual_converted, expected_value)
+            return False
         except TypeError:
             # If comparison fails due to type mismatch, return False
             return False
@@ -228,76 +231,24 @@ class ConditionParser:
         Returns:
             True if comparison is true
         """
-        # Convert expected to the same type as actual for comparison
-        if isinstance(actual, bool):
-            # Handle boolean comparisons
-            if isinstance(expected, str):
-                expected_bool = expected.lower() == "true"
-            else:
-                expected_bool = bool(expected)
-            actual_bool = bool(actual)
-            
-            try:
-                if op == "==":
-                    return actual_bool == expected_bool
-                elif op == "!=":
-                    return actual_bool != expected_bool
-                elif op == "<":
-                    return actual_bool < expected_bool
-                elif op == "<=":
-                    return actual_bool <= expected_bool
-                elif op == ">":
-                    return actual_bool > expected_bool
-                elif op == ">=":
-                    return actual_bool >= expected_bool
-                else:
-                    return False
-            except TypeError:
-                return False
-        elif isinstance(actual, (int, float)):
-            # Handle numeric comparisons
-            try:
-                if isinstance(expected, str):
-                    # Try to convert string to numeric
-                    if "." in expected:
-                        expected_num = float(expected)
-                    else:
-                        expected_num = int(expected)
-                else:
-                    expected_num = float(expected)
-                
-                if op == "==":
-                    return actual == expected_num
-                elif op == "!=":
-                    return actual != expected_num
-                elif op == "<":
-                    return actual < expected_num
-                elif op == "<=":
-                    return actual <= expected_num
-                elif op == ">":
-                    return actual > expected_num
-                elif op == ">=":
-                    return actual >= expected_num
-                else:
-                    return False
-            except (ValueError, TypeError):
-                return False
-        else:
-            # Handle string and other type comparisons
-            try:
-                if op == "==":
-                    return actual == expected
-                elif op == "!=":
-                    return actual != expected
-                elif op == "<":
-                    return actual < expected
-                elif op == "<=":
-                    return actual <= expected
-                elif op == ">":
-                    return actual > expected
-                elif op == ">=":
-                    return actual >= expected
-                else:
-                    return False
-            except TypeError:
-                return False
+        # Convert both values to comparable types
+        actual_converted = ConditionParser._convert_value_for_comparison(str(actual))
+        expected_converted = ConditionParser._convert_value_for_comparison(str(expected))
+
+        # Define operator functions with explicit type annotations
+        operator_functions: dict[str, Callable[[Any, Any], bool]] = {
+            "==": lambda a, b: a == b,
+            "!=": lambda a, b: a != b,
+            "<": lambda a, b: a < b,
+            "<=": lambda a, b: a <= b,
+            ">": lambda a, b: a > b,
+            ">=": lambda a, b: a >= b,
+        }
+
+        try:
+            if op in operator_functions:
+                return operator_functions[op](actual_converted, expected_converted)
+            return False
+        except TypeError:
+            # If comparison fails due to type mismatch, return False
+            return False

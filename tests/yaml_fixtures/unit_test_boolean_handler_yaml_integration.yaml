@@ -4,6 +4,7 @@
 # - Boolean logic sensors using Python operators (and, or, not)
 # - Entity state comparisons in boolean expressions
 # - Verification that symbolic operators (&&, ||, !) are not used
+# - Explicit control: unquoted names for boolean, quoted strings for comparison
 
 version: "1.0"
 
@@ -13,7 +14,7 @@ global_settings:
 sensors:
   door_lock_and:
     name: "Door Lock AND Sensor"
-    formula: "door_state == 'locked' and motion_state == 'clear'"
+    formula: "door_state == locked and motion_state == 'clear'"
     variables:
       door_state: "binary_sensor.front_door"
       motion_state: "binary_sensor.motion_detector"
@@ -22,7 +23,7 @@ sensors:
 
   presence_or:
     name: "Presence OR Sensor"
-    formula: "home_presence == 'home' or work_presence == 'office'"
+    formula: "home_presence == home or work_presence == 'office'"
     variables:
       home_presence: "device_tracker.phone_home"
       work_presence: "device_tracker.phone_work"
@@ -31,7 +32,7 @@ sensors:
 
   security_check:
     name: "Security Check Sensor"
-    formula: "not (alarm_state == 'disarmed') and door_state == 'locked'"
+    formula: "not (alarm_state == 'disarmed') and door_state == locked"
     variables:
       alarm_state: "alarm_control_panel.home_alarm"
       door_state: "binary_sensor.front_door"
@@ -51,6 +52,6 @@ sensors:
 
   direct_binary_test:
     name: "Direct Binary Sensor Test"
-    formula: "binary_sensor.test_direct == 'on'"  # Direct binary_sensor entity reference comparison
+    formula: "binary_sensor.test_direct == on"  # Direct binary_sensor entity reference comparison
     metadata:
       device_class: "safety"

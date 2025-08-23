@@ -8,9 +8,9 @@ A guide to using HA Synthetic Sensors with detailed syntax examples and patterns
 - [References in YAML](#references-in-yaml)
 - [Variables and Configuration](#variables-and-configuration)
 - [Globals](#globals)
-- [Formlas](#formlas)
+- [Formulas](#formulas)
 - [Attributes and Metadata](#attributes-and-metadata)
-- [Comparison Handlers](#comparison-handlers)
+- [Comparison Logic](#comparison-logic)
 - [Cross-Sensor Dependencies](#cross-sensor-dependencies)
 - [Device Association](#device-association)
 - [String Operations](#string-operations)
@@ -193,7 +193,7 @@ global_settings:
     notes: "Primary measurement device"
 ```
 
-## Formlas
+## Formulas
 
 The main sensor must have a formula. Attributes, or variables can contain formulas that calculate values dynamically with
 automatic dependency resolution.
@@ -547,14 +547,86 @@ sensors:
       custom_property: "custom_value"
 ```
 
-## Comparison Handlers
+## Boolean Logic and State Comparisons
 
-The synthetic sensors library provides built-in comparison handlers for common data types, enabling sophisticated filtering and
+Synthetic sensors support boolean logic using Python operators (`and`, `or`, `not`) and state comparisons.
+
+### Boolean vs String Comparisons
+
+The system provides explicit control over boolean and string comparisons:
+
+**For boolean comparisons (use unquoted names):**
+
+```yaml
+sensors:
+  door_sensor:
+    formula: "binary_sensor.front_door == on"
+    # Uses boolean mapping: 'on' -> True
+```
+
+**For string comparisons (use quoted strings):**
+
+```yaml
+sensors:
+  alarm_sensor:
+    formula: "alarm_control_panel.home == 'armed_away'"
+    # Uses string comparison: 'armed_away' == 'armed_away'
+```
+
+### Boolean Logic Examples
+
+```yaml
+sensors:
+  security_check:
+    name: "Security Check"
+    formula: "door_state == locked and motion_state == 'clear'"
+    variables:
+      door_state: "binary_sensor.front_door"
+      motion_state: "binary_sensor.motion_detector"
+    # door_state == locked: boolean comparison (locked -> True)
+    # motion_state == 'clear': string comparison ('clear' == 'clear')
+
+  presence_logic:
+    name: "Presence Logic"
+    formula: "home_presence == home or work_presence == 'office'"
+    variables:
+      home_presence: "device_tracker.phone_home"
+      work_presence: "device_tracker.phone_work"
+    # home_presence == home: boolean comparison (home -> True)
+    # work_presence == 'office': string comparison ('office' == 'office')
+```
+
+### Available Boolean States
+
+Common boolean states that can be used unquoted:
+
+- `on`, `off`
+- `home`, `not_home`
+- `locked`, `not_locked`
+- `occupied`, `not_occupied`
+- `motion`, `no_motion`
+- `true`, `false`
+
+### Comparison Logic
+
+The system has built-in support for:
+
+- Numeric comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`)
+- Boolean logic (`and`, `or`, `not`)
+- String comparisons (with quoted strings)
+- Boolean conversions (with unquoted names)
+
+For custom comparison logic, see the [Custom Comparison Logic](../examples/custom_comparison_type.py) example.
+
+## Comparison Logic
+
+The synthetic sensors library provides built-in comparison logic for common data types, enabling sophisticated filtering and
 analysis in collection functions.
 
-For detailed documentation on creating and using custom comparison handlers, see the dedicated guide:
+For examples of implementing custom comparison logic, see:
 
-**[User-Defined Comparison Handlers](User_Defined_Comparison_Handlers.md)**
+- **examples/custom_comparison_type.py**: Shows how to create helper classes for custom comparisons
+- **examples/using_typed_conditions.py**: Demonstrates condition parsing and evaluation
 
 ### Built-in Comparison Handlers
 
