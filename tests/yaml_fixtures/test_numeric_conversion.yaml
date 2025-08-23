@@ -1,0 +1,23 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_numeric"
+
+sensors:
+  numeric_test:
+    name: "Numeric String Test"
+    formula: "power_sensor + 0"  # Simple arithmetic to test numeric conversion
+    variables:
+      power_sensor: "sensor.circuit_a_power"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  direct_reference_test:
+    name: "Direct Reference Test"
+    formula: "sensor.circuit_a_power"  # Direct entity reference
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

@@ -13,7 +13,6 @@ global_settings:
 sensors:
   power_analyzer:
     name: "Power Analyzer"
-    entity_id: "sensor.span_panel_instantaneous_power"
     formula: "state * 1.1"  # Uses backing entity via 'state' token
     metadata:
       unit_of_measurement: "W"
@@ -22,9 +21,9 @@ sensors:
 
   power_doubled:
     name: "Power Doubled"
-    formula: "state * 2"
+    formula: "power_state * 2"
     variables:
-      state: "sensor.span_panel_instantaneous_power"
+      power_state: "sensor.span_panel_instantaneous_power"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
