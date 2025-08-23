@@ -67,10 +67,31 @@ class TestNonNumericStateHandling:
                 f"Expected {expected_numeric} for state '{state_value}' with device_class '{device_class}', got {result}"
             )
 
-    def test_boolean_conversion_in_formula_evaluation(self, mock_hass, mock_entity_registry, mock_states):
+    def test_boolean_conversion_in_formula_evaluation(self, mock_hass, mock_entity_registry, mock_states, monkeypatch):
         """Test that boolean conversion works in actual formula evaluation."""
-        # Test with numeric value directly instead of expecting string conversion
+        # Test with numeric string value (Home Assistant always stores state values as strings)
         mock_states.register_state("sensor.test_boolean", state_value="1.0", attributes={"device_class": "power"})
+
+        # Ensure mock_hass.states.get is properly set up to return states from mock_states
+        def mock_states_get(entity_id):
+            return mock_states.get(entity_id)
+
+        mock_hass.states.get.side_effect = mock_states_get
+
+        # Set up monkeypatch for domain resolution (required for entity resolution)
+        domains = frozenset({"sensor", "binary_sensor", "switch", "light", "climate", "cover", "fan", "device_tracker"})
+        monkeypatch.setattr(
+            "ha_synthetic_sensors.evaluator_phases.variable_resolution.entity_attribute_resolver.get_ha_domains",
+            lambda _h: domains,
+        )
+        monkeypatch.setattr(
+            "ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resolution_phase.get_ha_domains",
+            lambda _h: domains,
+        )
+        monkeypatch.setattr(
+            "ha_synthetic_sensors.shared_constants.get_ha_domains",
+            lambda _h: domains,
+        )
 
         evaluator = Evaluator(mock_hass)
 
@@ -97,10 +118,31 @@ class TestNonNumericStateHandling:
         # Verify it called the right entity
         mock_hass.states.get.assert_called_with(entity_id)
 
-    def test_unavailable_state_handling(self, mock_hass, mock_entity_registry, mock_states):
+    def test_unavailable_state_handling(self, mock_hass, mock_entity_registry, mock_states, monkeypatch):
         """Test that 'unavailable' and 'unknown' states reflect to synthetic sensor state."""
         # Set the state to 'unavailable' for this test
         mock_states.register_state("sensor.temperature", state_value="unavailable", attributes={"device_class": "temperature"})
+
+        # Ensure mock_hass.states.get is properly set up to return states from mock_states
+        def mock_states_get(entity_id):
+            return mock_states.get(entity_id)
+
+        mock_hass.states.get.side_effect = mock_states_get
+
+        # Set up monkeypatch for domain resolution (required for entity resolution)
+        domains = frozenset({"sensor", "binary_sensor", "switch", "light", "climate", "cover", "fan", "device_tracker"})
+        monkeypatch.setattr(
+            "ha_synthetic_sensors.evaluator_phases.variable_resolution.entity_attribute_resolver.get_ha_domains",
+            lambda _h: domains,
+        )
+        monkeypatch.setattr(
+            "ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resolution_phase.get_ha_domains",
+            lambda _h: domains,
+        )
+        monkeypatch.setattr(
+            "ha_synthetic_sensors.shared_constants.get_ha_domains",
+            lambda _h: domains,
+        )
 
         evaluator = Evaluator(mock_hass)
 

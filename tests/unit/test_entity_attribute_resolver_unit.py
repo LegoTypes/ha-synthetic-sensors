@@ -13,9 +13,10 @@ def _make_dep_handler(hass=None, data_provider=None):
     )
 
 
-def test_can_resolve_true_for_variable_attribute_style() -> None:
+def test_can_resolve_true_for_variable_attribute_style(mock_hass, mock_entity_registry, mock_states) -> None:
+    # Use the common registry fixtures as required
     r = EntityAttributeResolver()
-    r.set_dependency_handler(_make_dep_handler())
+    r.set_dependency_handler(_make_dep_handler(hass=mock_hass))
     assert r.can_resolve("dev", "device.battery_level") is True
     assert r.can_resolve("x", "sensor.kitchen") is False
     assert r.can_resolve("x", "state.voltage") is False

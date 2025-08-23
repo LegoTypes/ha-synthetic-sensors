@@ -11,6 +11,13 @@ class _Hass:
     def __init__(self):
         # minimal states object for compatibility
         self.states = SimpleNamespace(get=lambda _eid: None)
+        # Add entity registry mock
+        from unittest.mock import Mock
+
+        self.entity_registry = Mock()
+        mock_entities = Mock()
+        mock_entities.values.return_value = [Mock(domain="sensor"), Mock(domain="binary_sensor"), Mock(domain="switch")]
+        self.entity_registry.entities = mock_entities
 
 
 def test_state_attribute_resolution_substitutes_values(monkeypatch) -> None:

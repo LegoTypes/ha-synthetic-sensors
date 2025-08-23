@@ -102,10 +102,9 @@ class TestMetadataASTCaching:
         assert result2 == expected
         assert result1 == result2
 
-    def test_metadata_ast_caching_with_variables(self):
+    def test_metadata_ast_caching_with_variables(self, mock_hass, mock_entity_registry, mock_states):
         """Test that metadata calls with variables get cached correctly."""
-        # Create mock Home Assistant instance
-        mock_hass = Mock()
+        # Set up mock state
         mock_state = Mock()
         mock_state.entity_id = "sensor.power_meter"
         mock_hass.states.get.return_value = mock_state

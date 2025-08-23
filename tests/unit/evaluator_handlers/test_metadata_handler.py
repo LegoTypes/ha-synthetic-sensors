@@ -76,16 +76,13 @@ class TestMetadataHandler:
         assert result == expected_formula
         assert metadata_results == expected_metadata
 
-    def test_metadata_function_with_variable_resolution(self):
-        """Test metadata() function with variable context."""
-        # Create mock Home Assistant instance
-        mock_hass = Mock()
+    def test_metadata_function_with_variable_resolution(self, mock_hass, mock_entity_registry, mock_states):
+        """Test metadata() function with variable resolution using ReferenceValue."""
+        # Set up mock state
         mock_state = Mock()
-
         mock_state.entity_id = "sensor.power_meter"
         mock_hass.states.get.return_value = mock_state
 
-        # Create handler with mock hass
         handler = MetadataHandler(hass=mock_hass)
 
         # Test evaluation with context variable - use ReferenceValue (ReferenceValue architecture)
