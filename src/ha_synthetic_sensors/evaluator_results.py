@@ -2,7 +2,7 @@
 
 from typing import Any, cast
 
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN
 
 from .constants_evaluation_results import (
     ERROR_RESULT_KEYS,
@@ -121,11 +121,14 @@ class EvaluatorResults:
         ha_state_value: str, unavailable_dependencies: list[str] | None = None
     ) -> EvaluationResult:
         """Create a success result that reflects a detected HA state during resolution."""
-        # According to design guide, all unavailable states default to STATE_UNKNOWN
-        # Normalize the state value - all problematic states become STATE_UNKNOWN
-        normalized_state = (
-            STATE_UNKNOWN if ha_state_value in [STATE_UNAVAILABLE, STATE_UNKNOWN] or ha_state_value is None else ha_state_value
-        )
+        # Preserve the original HA state value so callers can inspect the exact
+        # Home Assistant-provided state. Special-case: if the HA-provided value is
+        # None, represent that as STATE_NONE (internal None) to signal an explicit
+        # None state. Do NOT normalize 'unavailable' or 'unknown' to STATE_UNKNOWN
+        # here; upstream code or callers should decide how to handle those values.
+        from .constants_alternate import STATE_NONE
+
+        normalized_state = ha_state_value if ha_state_value is not None else STATE_NONE
 
         # Normalize dependency representations: accept HADependency objects or strings
         deps = unavailable_dependencies or []
