@@ -1,0 +1,16 @@
+# Test YAML file with valid variable names
+# This should pass validation - no reserved words used
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Valid Variable Names"
+    formula: "temperature + humidity"
+    variables:
+      temperature: "sensor.temp_sensor"
+      humidity: "sensor.humidity_sensor"
+      pressure: "sensor.pressure_sensor"
+    attributes:
+      computed_attr:
+        formula: "temp_value * 2"
+        variables:
+          temp_value: "sensor.another_temp"

@@ -1,0 +1,11 @@
+# Test YAML file with 'for' as a variable name
+# This should fail validation - 'for' is a reserved word
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Reserved Word 'for'"
+    formula: "temperature + humidity"
+    variables:
+      temperature: "sensor.temp_sensor"
+      humidity: "sensor.humidity_sensor"
+      for: "sensor.loop_entity"  # Reserved word - should fail

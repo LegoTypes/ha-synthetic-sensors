@@ -1597,3 +1597,249 @@ This example shows alternate state handling in:
 
 Alternate state handling ensures your synthetic sensors remain functional even when dependencies are unavailable, providing
 robust fallback mechanisms for critical calculations. Users can define custom behavior for each type of alternate state.
+
+## Troubleshooting
+
+This section covers common issues and their solutions when working with synthetic sensors.
+
+### Reserved Word Validation Errors
+
+The system validates that variable names do not use reserved words. Reserved words include Python keywords, built-in types,
+function names, and Home Assistant entity domains.
+
+**Common Reserved Word Errors:**
+
+```yaml
+# This will fail validation
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "state + 10"
+    variables:
+      state: "sensor.source_entity" # Error: 'state' is reserved
+      if: "sensor.condition" # Error: 'if' is reserved
+      str: "sensor.string_entity" # Error: 'str' is reserved
+```
+
+**Solution:** Rename variables to avoid reserved words:
+
+```yaml
+# Fixed configuration
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "current_state + 10"
+    variables:
+      current_state: "sensor.source_entity" # Renamed from 'state'
+      condition: "sensor.condition" # Renamed from 'if'
+      string_value: "sensor.string_entity" # Renamed from 'str'
+```
+
+**Common Reserved Words to Avoid:**
+
+- Python keywords: `if`, `else`, `for`, `while`, `def`, `class`, `import`, `return`, `try`, `except`
+- Built-in types: `str`, `int`, `float`, `bool`, `list`, `dict`, `set`, `tuple`
+- Boolean literals: `True`, `False`, `None`
+- Math functions: `sum`, `avg`, `max`, `min`, `count`
+- String functions: `str`, `trim`, `lower`, `upper`, `contains`
+- State-related: `state`
+- Home Assistant domains: `sensor`, `binary_sensor`, `switch`, `light`, `climate`
+
+### Validation Error Messages
+
+When validation fails, the system provides specific error messages with paths to help identify issues:
+
+**Error Format:**
+
+```
+Variable name '{name}' is a reserved word and cannot be used as a variable name
+Path: sensors.{sensor_key}.variables.{variable_name}
+```
+
+**Common Validation Error Types:**
+
+1. **Reserved word conflicts**: Variable names using reserved words
+2. **Missing dependencies**: References to non-existent entities
+3. **Invalid formulas**: Syntax errors in mathematical expressions
+4. **Circular dependencies**: Variables that reference themselves
+5. **Invalid metadata**: Unsupported device classes or state classes
+
+### Entity Reference Issues
+
+**Problem:** References to non-existent entities
+
+```yaml
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "missing_entity + 10"
+    variables:
+      missing_entity: "sensor.non_existent_sensor" # Entity doesn't exist
+```
+
+**Solution:** Verify entity IDs exist in Home Assistant before referencing them.
+
+**Problem:** Entity ID format errors
+
+```yaml
+variables:
+  invalid_entity: "invalid_entity_format" # Missing domain prefix
+```
+
+**Solution:** Use proper entity ID format: `domain.entity_name`
+
+### Formula Syntax Errors
+
+**Problem:** Invalid mathematical expressions
+
+```yaml
+formula: "sensor.power / 0"  # Division by zero
+formula: "sensor.power + "   # Incomplete expression
+formula: "sensor.power * (2 + 3"  # Unmatched parentheses
+```
+
+**Solution:** Ensure formulas are complete, valid mathematical expressions.
+
+**Problem:** Undefined variables in formulas
+
+```yaml
+formula: "undefined_variable + 10" # Variable not defined in variables section
+```
+
+**Solution:** Define all variables used in formulas in the variables section.
+
+### Circular Dependency Issues
+
+**Problem:** Variables that reference themselves
+
+```yaml
+variables:
+  circular_var:
+    formula: "circular_var + 1" # References itself
+```
+
+**Solution:** Restructure formulas to avoid self-references.
+
+**Problem:** Cross-sensor circular dependencies
+
+```yaml
+sensors:
+  sensor_a:
+    formula: "sensor_b + 10"
+  sensor_b:
+    formula: "sensor_a + 5" # Circular reference
+```
+
+**Solution:** Break circular dependencies by restructuring calculations.
+
+### Metadata Configuration Issues
+
+**Problem:** Invalid device classes
+
+```yaml
+metadata:
+  device_class: "invalid_device_class" # Not a valid HA device class
+```
+
+**Solution:** Use valid Home Assistant device classes from the official documentation.
+
+**Problem:** Invalid state classes
+
+```yaml
+metadata:
+  state_class: "invalid_state_class" # Not a valid HA state class
+```
+
+**Problem:** Incompatible unit and device class combinations
+
+```yaml
+metadata:
+  unit_of_measurement: "W"
+  device_class: "temperature" # Watts not valid for temperature
+```
+
+**Solution:** Ensure unit of measurement is compatible with the device class.
+
+### Collection Function Issues
+
+**Problem:** Invalid collection patterns
+
+```yaml
+formula: "sum(invalid_pattern)" # Pattern not recognized
+```
+
+**Solution:** Use valid collection patterns: `device_class:power`, `area:kitchen`, `state:on`, etc.
+
+**Problem:** Regex pattern variable not found
+
+```yaml
+formula: "sum(regex:pattern_var)"
+variables:
+  pattern_var: "input_text.non_existent_pattern" # Entity doesn't exist
+```
+
+**Solution:** Ensure regex pattern variables reference existing `input_text` entities.
+
+### Alternate State Handling Issues
+
+**Problem:** Missing alternate state handlers
+
+```yaml
+formula: "sensor.unavailable_entity + 10" # No fallback for unavailable entity
+```
+
+**Solution:** Add appropriate alternate state handlers:
+
+```yaml
+alternate_states:
+  UNAVAILABLE: 0
+  UNKNOWN: 0
+  NONE: 0
+```
+
+**Problem:** Circular references in alternate state handlers
+
+```yaml
+alternate_states:
+  UNAVAILABLE:
+    formula: "sensor.another_unavailable_entity" # May also be unavailable
+```
+
+**Solution:** Use literal values or ensure alternate handlers reference available entities.
+
+### Performance Issues
+
+**Problem:** Complex formulas with many dependencies
+
+```yaml
+formula: "sensor_a + sensor_b + sensor_c + ... + sensor_z" # Many dependencies
+```
+
+**Solution:** Break complex formulas into computed variables for better performance and readability.
+
+**Problem:** Frequent updates causing excessive calculations
+
+```yaml
+update_interval: 1 # Updates every second
+```
+
+**Solution:** Increase update intervals for sensors that don't need frequent updates.
+
+### Debugging Techniques
+
+**Enable Debug Logging:** Add to your Home Assistant configuration:
+
+```yaml
+logger:
+  default: info
+  logs:
+    ha_synthetic_sensors: debug
+```
+
+**Check Entity States:** Verify referenced entities exist and have valid states in Home Assistant.
+
+**Validate YAML Syntax:** Use YAML validators to check for syntax errors before loading.
+
+**Test Formulas Incrementally:** Build complex formulas step by step, testing each component.
+
+**Check Dependencies:** Review the dependency graph to identify circular references or missing entities.

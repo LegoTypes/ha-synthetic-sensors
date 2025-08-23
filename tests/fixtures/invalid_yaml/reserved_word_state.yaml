@@ -1,0 +1,9 @@
+# Test YAML file with 'state' as a variable name
+# This should fail validation - 'state' is a reserved word
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Reserved Word 'state'"
+    formula: "state + 10"
+    variables:
+      state: "sensor.source_entity"  # Reserved word - should fail

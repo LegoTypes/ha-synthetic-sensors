@@ -34,6 +34,7 @@ from .shared_constants import (
     LAST_VALID_CHANGED_KEY,
     LAST_VALID_STATE_KEY,
     METADATA_FUNCTIONS,
+    get_reserved_words,
 )
 
 HAS_JSONSCHEMA = True
@@ -985,6 +986,13 @@ class SchemaValidator:
         attr_var_keys = set(attr_variables.keys())
 
         for var_name, var_value in attr_variables.items():
+            # Validate variable name against reserved words
+            self._validate_variable_name_reserved_words(
+                var_name,
+                f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                errors,
+            )
+
             if isinstance(var_value, str):
                 # First validate formula expressions by tokenizing them
                 # Attribute variables can reference global vars, sensor vars, other attr vars, and sensor keys
@@ -1008,6 +1016,31 @@ class SchemaValidator:
                             suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
                         )
                     )
+
+    def _validate_variable_name_reserved_words(
+        self,
+        var_name: str,
+        path: str,
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate that a variable name is not a reserved word.
+
+        Args:
+            var_name: The variable name to validate
+            path: The YAML path for error reporting
+            errors: List to append validation errors to
+        """
+        reserved_words = get_reserved_words()
+
+        if var_name in reserved_words:
+            errors.append(
+                ValidationError(
+                    message=f"Variable name '{var_name}' is a reserved word and cannot be used as a variable name",
+                    path=path,
+                    severity=ValidationSeverity.ERROR,
+                    suggested_fix=f"Rename variable '{var_name}' to avoid collision with reserved words. Reserved words include Python keywords, built-in types, function names, and Home Assistant domains.",
+                )
+            )
 
     def _validate_global_settings(
         self,
@@ -1034,6 +1067,13 @@ class SchemaValidator:
         available_sensor_keys = sensor_keys or set()
 
         for var_name, var_value in global_variables.items():
+            # Validate variable name against reserved words
+            self._validate_variable_name_reserved_words(
+                var_name,
+                f"global_settings.variables.{var_name}",
+                errors,
+            )
+
             if isinstance(var_value, str):
                 # First validate formula expressions by tokenizing them
                 # Global variables can reference other global variables and sensor keys
@@ -1094,6 +1134,13 @@ class SchemaValidator:
             sensor_var_keys = set(sensor_variables.keys())
 
             for var_name, var_value in sensor_variables.items():
+                # Validate variable name against reserved words
+                self._validate_variable_name_reserved_words(
+                    var_name,
+                    f"sensors.{sensor_key}.variables.{var_name}",
+                    errors,
+                )
+
                 if isinstance(var_value, str):
                     # First validate formula expressions by tokenizing them
                     # Sensor variables can reference global vars, other sensor vars in same sensor, and sensor keys
