@@ -3,11 +3,11 @@
 import logging
 from typing import Any
 
-from ...constants_alternate import identify_alternate_state_value
 from ...constants_evaluation_results import RESULT_KEY_VALUE
-from ...constants_formula import is_ha_unknown_equivalent, normalize_ha_state_value
 from ...data_validation import validate_data_provider_result
 from ...exceptions import DataValidationError, FormulaEvaluationError
+from ...shared_constants import BINARY_SENSOR_DOMAIN, SENSOR_DOMAIN, extract_entity_key_from_domain, is_entity_from_domain
+from ...utils_resolvers import _convert_hass_state_value
 from .base_resolver import VariableResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,12 +41,8 @@ class SelfReferenceResolver(VariableResolver):
 
         # Only handle entity ID patterns (sensor.sensor_key)
         # Raw sensor keys are handled by auto-injection as variables
-        if variable_value.startswith("sensor."):
-            sensor_key = variable_value[7:]  # Remove "sensor." prefix
-            if sensor_key in self._sensor_to_backing_mapping:
-                return True
-
-        return False
+        sensor_key = extract_entity_key_from_domain(variable_value, SENSOR_DOMAIN)
+        return sensor_key is not None and sensor_key in self._sensor_to_backing_mapping
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
         """Resolve an entity ID self-reference to either backing entity value or sensor calculated result."""
@@ -54,11 +50,8 @@ class SelfReferenceResolver(VariableResolver):
             return None
 
         # Only handle entity ID references (sensor.sensor_key)
-        if not variable_value.startswith("sensor."):
-            return None
-
-        sensor_key = variable_value[7:]  # Remove "sensor." prefix
-        if sensor_key not in self._sensor_to_backing_mapping:
+        sensor_key = extract_entity_key_from_domain(variable_value, SENSOR_DOMAIN)
+        if not sensor_key or sensor_key not in self._sensor_to_backing_mapping:
             return None
 
         _LOGGER.debug(
@@ -116,10 +109,10 @@ class SelfReferenceResolver(VariableResolver):
             return k == "state"
 
         def is_sensor_entity(k: str) -> bool:
-            return k.startswith("sensor.")
+            return is_entity_from_domain(k, SENSOR_DOMAIN)
 
         def is_binary_sensor_entity(k: str) -> bool:
-            return k.startswith("binary_sensor.")
+            return is_entity_from_domain(k, BINARY_SENSOR_DOMAIN)
 
         def is_config_key(k: str) -> bool:
             return k in ["sensor_config", "formula_config"]
@@ -255,39 +248,17 @@ class SelfReferenceResolver(VariableResolver):
             )
             return None
 
-        # Handle special Home Assistant state values
+        # For string values, use centralized conversion logic from utils_resolvers
         if isinstance(value, str):
-            alt_state = identify_alternate_state_value(value)
-            if isinstance(alt_state, str) or is_ha_unknown_equivalent(value):
-                _LOGGER.debug(
-                    "Self-reference resolver: backing entity '%s' has %s state via %s",
-                    backing_entity_id,
-                    value,
-                    source,
-                )
-            return normalize_ha_state_value(value)
-
-        # For HA state, try to convert to numeric
-        if source == "HASS" and isinstance(value, str):
-            try:
-                numeric_value = float(value) if "." in value else int(value)
-                _LOGGER.debug(
-                    "Self-reference resolver: resolved '%s' to %s via backing entity '%s' (%s)",
-                    original_reference,
-                    numeric_value,
-                    backing_entity_id,
-                    source,
-                )
-                return numeric_value
-            except ValueError:
-                _LOGGER.debug(
-                    "Self-reference resolver: resolved '%s' to '%s' (non-numeric) via backing entity '%s' (%s)",
-                    original_reference,
-                    value,
-                    backing_entity_id,
-                    source,
-                )
-                return value
+            converted_value = _convert_hass_state_value(value, backing_entity_id)
+            _LOGGER.debug(
+                "Self-reference resolver: resolved '%s' to %s via backing entity '%s' (%s)",
+                original_reference,
+                converted_value,
+                backing_entity_id,
+                source,
+            )
+            return converted_value
 
         # For data provider results, use value as-is
         _LOGGER.debug(
