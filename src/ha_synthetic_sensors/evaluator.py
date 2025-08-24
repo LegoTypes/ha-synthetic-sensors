@@ -426,7 +426,26 @@ class Evaluator(FormulaEvaluator):
         if eval_context is None:
             return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
 
-        # Use enhanced variable resolution with HA state detection and alternate handler processing
+        # Perform variable resolution
+        resolution_result = self._perform_variable_resolution(config, sensor_config, eval_context)
+
+        # Handle HA state detection results
+        ha_state_result = self._handle_ha_state_detection(resolution_result, config, eval_context, sensor_config)
+        if ha_state_result is not None:
+            return ha_state_result
+
+        # Handle early results
+        if resolution_result.early_result is not None:
+            _LOGGER.debug("Early result detected in variable resolution: %s", resolution_result.early_result)
+            return self._process_early_result(resolution_result.early_result, config, eval_context, sensor_config)
+
+        # Choose evaluation strategy based on dependency management needs
+        return self._choose_evaluation_strategy(
+            config, context, sensor_config, bypass_dependency_management, resolution_result, eval_context, formula_name
+        )
+
+    def _perform_variable_resolution(self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]) -> Any:
+        """Perform variable resolution with HA state detection."""
         try:
             _LOGGER.debug("Variable resolution start: formula=%s, context_keys=%s", config.formula, list(eval_context.keys()))
             resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
@@ -439,51 +458,48 @@ class Evaluator(FormulaEvaluator):
                 getattr(resolution_result, "ha_state_value", None),
                 getattr(resolution_result, "early_result", None),
             )
+            return resolution_result
         except Exception as e:
             _LOGGER.exception("Exception during variable resolution for formula %s: %s", config.id, e)
             traceback.print_exc()
             raise
 
-        # If Phase 1 detected an HA state (e.g., 'unknown', 'unavailable' or None) prefer to
-        # normalize and return it immediately via the centralized HA-state result creator.
-        # This centralizes alternate-state handling at Phase 1 and prevents later layers from
-        # mis-classifying HA-provided alternate-state strings as successful 'ok' values.
-        if getattr(resolution_result, "has_ha_state", False):
-            _LOGGER.debug(
-                "HA state detected during variable resolution: ha_state_value=%s, early_result=%s",
-                getattr(resolution_result, "ha_state_value", None),
-                getattr(resolution_result, "early_result", None),
-            )
-            # If an early_result exists, send it to the alternate-state processor so configured
-            # alternate_state handlers have a chance to run. Only short-circuit directly to the
-            # HA-state result when there is no early_result to process.
-            if getattr(resolution_result, "early_result", None) is not None:
-                _LOGGER.debug("Passing early_result to alternate_state_processor due to HA state detection")
-                return self._process_early_result(resolution_result.early_result, config, eval_context, sensor_config)
+    def _handle_ha_state_detection(self, resolution_result: Any, config: FormulaConfig, eval_context: dict[str, ContextValue], sensor_config: SensorConfig | None) -> EvaluationResult | None:
+        """Handle HA state detection results from variable resolution."""
+        if not getattr(resolution_result, "has_ha_state", False):
+            return None
 
-            # No early_result to process: return a HA-state-preserving result
-            ha_state_value = getattr(resolution_result, "ha_state_value", None)
-            if ha_state_value is not None:
-                return EvaluatorResults.create_success_from_ha_state(
-                    ha_state_value,
-                    getattr(resolution_result, "unavailable_dependencies", None),
-                )
-            # If ha_state_value is None, create a default success result
-            return EvaluatorResults.create_success_result_with_state(
-                STATE_UNKNOWN,
-                unavailable_dependencies=getattr(resolution_result, "unavailable_dependencies", None),
-            )
+        _LOGGER.debug(
+            "HA state detected during variable resolution: ha_state_value=%s, early_result=%s",
+            getattr(resolution_result, "ha_state_value", None),
+            getattr(resolution_result, "early_result", None),
+        )
 
-        # Check if early result was detected during variable resolution
-        if resolution_result.early_result is not None:
-            _LOGGER.debug("Early result detected in variable resolution: %s", resolution_result.early_result)
-            # Pass early result to Phase 4 for processing
+        # If an early_result exists, send it to the alternate-state processor
+        if getattr(resolution_result, "early_result", None) is not None:
+            _LOGGER.debug("Passing early_result to alternate_state_processor due to HA state detection")
             return self._process_early_result(resolution_result.early_result, config, eval_context, sensor_config)
 
-        # Check if we need dependency-aware evaluation
+        # No early_result to process: return a HA-state-preserving result
+        ha_state_value = getattr(resolution_result, "ha_state_value", None)
+        if ha_state_value is not None:
+            return EvaluatorResults.create_success_from_ha_state(
+                ha_state_value,
+                getattr(resolution_result, "unavailable_dependencies", None),
+            )
+
+        # If ha_state_value is None, create a default success result
+        return EvaluatorResults.create_success_result_with_state(
+            STATE_UNKNOWN,
+            unavailable_dependencies=getattr(resolution_result, "unavailable_dependencies", None),
+        )
+
+    def _choose_evaluation_strategy(
+        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None,
+        bypass_dependency_management: bool, resolution_result: Any, eval_context: dict[str, ContextValue], formula_name: str
+    ) -> EvaluationResult:
+        """Choose between dependency-aware and normal evaluation."""
         if self._should_use_dependency_management(sensor_config, context, bypass_dependency_management, config):
-            # At this point, we know context and sensor_config are not None due to the check above
-            # Type checking: these should never be None here due to the guard condition
             # Create a new config with the resolved formula to avoid double resolution
             resolved_config = FormulaConfig(
                 id=config.id,
@@ -719,33 +735,57 @@ class Evaluator(FormulaEvaluator):
         if not config.alternate_state_handler:
             return None
 
-        # Determine which exception handler(s) to try. Prefer type-specific, then fallback to both.
-        error_str = str(error).lower()
-        candidates: list[Any] = []
-
-        # Try specific handlers first
-        if STATE_UNAVAILABLE in error_str and config.alternate_state_handler.unavailable is not None:
-            candidates.append(config.alternate_state_handler.unavailable)
-        elif STATE_UNKNOWN in error_str and config.alternate_state_handler.unknown is not None:
-            candidates.append(config.alternate_state_handler.unknown)
-        elif "none" in error_str and config.alternate_state_handler.none is not None:
-            candidates.append(config.alternate_state_handler.none)
-
-        # If no specific handler found, try fallback handler
-        if not candidates and config.alternate_state_handler.fallback is not None:
-            candidates.append(config.alternate_state_handler.fallback)
-
-        # Final fallback: try specific handlers in priority order
-        if not candidates:
-            if config.alternate_state_handler.none is not None:
-                candidates.append(config.alternate_state_handler.none)
-            if config.alternate_state_handler.unavailable is not None:
-                candidates.append(config.alternate_state_handler.unavailable)
-            if config.alternate_state_handler.unknown is not None:
-                candidates.append(config.alternate_state_handler.unknown)
+        candidates = self._get_handler_candidates(config.alternate_state_handler, error)
         if not candidates:
             return None
 
+        return self._execute_handler_candidates(candidates, config, eval_context, sensor_config)
+
+    def _get_handler_candidates(self, handler: Any, error: Exception) -> list[Any]:
+        """Get list of handler candidates based on error type and available handlers."""
+        error_str = str(error).lower()
+        candidates: list[Any] = []
+
+        # Try specific handlers first based on error type
+        specific_handler = self._get_specific_handler_for_error(handler, error_str)
+        if specific_handler is not None:
+            candidates.append(specific_handler)
+
+        # If no specific handler found, try fallback handler
+        if not candidates and handler.fallback is not None:
+            candidates.append(handler.fallback)
+
+        # Final fallback: try all available handlers in priority order
+        if not candidates:
+            candidates.extend(self._get_all_available_handlers(handler))
+
+        return candidates
+
+    def _get_specific_handler_for_error(self, handler: Any, error_str: str) -> Any:
+        """Get the specific handler that matches the error type."""
+        if STATE_UNAVAILABLE in error_str and handler.unavailable is not None:
+            return handler.unavailable
+        if STATE_UNKNOWN in error_str and handler.unknown is not None:
+            return handler.unknown
+        if "none" in error_str and handler.none is not None:
+            return handler.none
+        return None
+
+    def _get_all_available_handlers(self, handler: Any) -> list[Any]:
+        """Get all available handlers in priority order."""
+        handlers = []
+        if handler.none is not None:
+            handlers.append(handler.none)
+        if handler.unavailable is not None:
+            handlers.append(handler.unavailable)
+        if handler.unknown is not None:
+            handlers.append(handler.unknown)
+        return handlers
+
+    def _execute_handler_candidates(
+        self, candidates: list[Any], config: FormulaConfig, eval_context: dict[str, ContextValue], sensor_config: SensorConfig | None
+    ) -> bool | str | float | int | None:
+        """Execute handler candidates until one succeeds."""
         try:
             for handler_formula in candidates:
                 result = evaluate_formula_alternate(
