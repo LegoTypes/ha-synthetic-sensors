@@ -1,4 +1,4 @@
-name: CI
+name: CI (Alternative Poetry Installation)
 
 on:
   push:
@@ -22,13 +22,16 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1.4.1
-      with:
-        version: latest
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
 
     - name: Load cached venv
       id: cached-poetry-dependencies
@@ -52,8 +55,6 @@ jobs:
       run: |
         poetry run pytest tests/ -v --cov=src/ha_synthetic_sensors --cov-report=xml --cov-report=term-missing
 
-
-
   code-quality:
     runs-on: ubuntu-latest
     steps:
@@ -68,13 +69,16 @@ jobs:
       with:
         python-version: "3.13"
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1.4.1
-      with:
-        version: latest
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
 
     - name: Install dependencies
       run: poetry install --no-interaction --no-root
@@ -116,13 +120,16 @@ jobs:
       with:
         python-version: "3.13"
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1.4.1
-      with:
-        version: latest
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
 
     - name: Install dependencies
       run: poetry install --no-interaction --no-root
@@ -151,13 +158,16 @@ jobs:
       with:
         python-version: "3.13"
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1.4.1
-      with:
-        version: latest
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
 
     - name: Install dependencies
       run: poetry install --no-interaction --no-root

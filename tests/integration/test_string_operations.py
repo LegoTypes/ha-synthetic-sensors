@@ -151,11 +151,9 @@ class TestStringOperationsIntegration:
             attr_ctx: dict[str, any] = {}
             # Use the backing mock state's string value so string concatenation yields the expected result
             backing_state_str = None
-            try:
-                backing_state_obj = mock_states.get("sensor.power_meter") if mock_states is not None else None
-                backing_state_str = getattr(backing_state_obj, "state", None) if backing_state_obj is not None else None
-            except Exception:
-                backing_state_str = None
+            # Safely extract backing state string from mock states
+            backing_state_obj = mock_states.get("sensor.power_meter") if mock_states is not None else None
+            backing_state_str = getattr(backing_state_obj, "state", None) if backing_state_obj is not None else None
 
             ReferenceValueManager.set_variable_with_reference_value(
                 attr_ctx, "ha_numeric_variable", "sensor.power_meter", backing_state_str
@@ -182,8 +180,9 @@ class TestStringOperationsIntegration:
                 try:
                     # unwrap ReferenceValue object if present
                     actual_description = getattr(ca, "value", actual_description)
-                except Exception:
-                    pass
+                except (AttributeError, TypeError):
+                    # ReferenceValue object doesn't have expected structure
+                    actual_description = None
 
             # Final fallback: use backing state string if nothing else produced a value
             if actual_description is None:
