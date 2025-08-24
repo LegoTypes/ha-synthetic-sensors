@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 
@@ -70,5 +69,3 @@ def check_duplicate_sensor_keys(sensor_keys: list[str]) -> list[str]:
         else:
             seen.add(k)
     return sorted(duplicates)
-
-

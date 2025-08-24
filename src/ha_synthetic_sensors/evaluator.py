@@ -263,6 +263,46 @@ class Evaluator(FormulaEvaluator):
             self._hass, value, self._dependency_handler, self._sensor_to_backing_mapping
         )
 
+    @property
+    def execution_engine(self) -> Any:
+        """Get the execution engine."""
+        return self._execution_engine
+
+    @property
+    def resolve_all_references_in_formula(self) -> Any:
+        """Get the resolve all references in formula method."""
+        return self._resolve_all_references_in_formula
+
+    @property
+    def needs_dependency_resolution(self) -> Any:
+        """Get the needs dependency resolution method."""
+        return self._needs_dependency_resolution
+
+    @property
+    def execute_formula_evaluation(self) -> Any:
+        """Get the execute formula evaluation method."""
+        return self._execute_formula_evaluation
+
+    @property
+    def error_handler(self) -> Any:
+        """Get the error handler."""
+        return self._error_handler
+
+    @property
+    def cache_handler(self) -> Any:
+        """Get the cache handler."""
+        return self._cache_handler
+
+    @property
+    def generic_dependency_manager(self) -> Any:
+        """Get the generic dependency manager."""
+        return self._generic_dependency_manager
+
+    @property
+    def perform_pre_evaluation_checks(self) -> Any:
+        """Get the perform pre evaluation checks method."""
+        return self._perform_pre_evaluation_checks
+
     def update_integration_entities(self, entity_ids: set[str]) -> None:
         """Update the set of entities that the integration can provide (new push-based pattern)."""
         self._registered_integration_entities = entity_ids.copy()
@@ -344,9 +384,11 @@ class Evaluator(FormulaEvaluator):
         _LOGGER.debug("evaluate_formula_with_sensor_config result for %s: %s", formula_name, result)
         # Add extra debug logging for energy sensors with complex FALLBACK logic
         if sensor_config and "energy" in formula_name.lower():
-            _LOGGER.debug("Energy sensor evaluation - config: %s, context keys: %s", 
-                         sensor_config.alternate_states if hasattr(sensor_config, 'alternate_states') else 'None',
-                         list(context.keys()) if context else 'None')
+            _LOGGER.debug(
+                "Energy sensor evaluation - config: %s, context keys: %s",
+                sensor_config.alternate_states if hasattr(sensor_config, "alternate_states") else "None",
+                list(context.keys()) if context else "None",
+            )
         return result
 
     def _handle_known_errors(self, err: Exception, formula_name: str) -> EvaluationResult:

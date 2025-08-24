@@ -8,18 +8,13 @@ complexity for linting.
 from __future__ import annotations
 
 import logging
-import traceback
 from typing import Any, cast
-from .type_definitions import EvaluationResult
-from .exceptions import MissingDependencyError, DataValidationError, SensorMappingError
-
-from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import STATE_UNKNOWN
 
 from .alternate_state_processor import alternate_state_processor
-from .constants_alternate import identify_alternate_state_value
-from .evaluator_results import EvaluatorResults
 from .evaluator_helpers import EvaluatorHelpers
+from .evaluator_results import EvaluatorResults
+from .exceptions import DataValidationError, MissingDependencyError, SensorMappingError
+from .type_definitions import EvaluationResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,8 +32,8 @@ def process_early_result(
         context=eval_context,
         config=config,
         sensor_config=sensor_config,
-        core_evaluator=evaluator._execution_engine.core_evaluator,
-        resolve_all_references_in_formula=evaluator._resolve_all_references_in_formula,
+        core_evaluator=evaluator.execution_engine.core_evaluator,
+        resolve_all_references_in_formula=evaluator.resolve_all_references_in_formula,
         pre_eval=True,
     )
 
@@ -57,53 +52,55 @@ def should_use_dependency_management(
         return False
     # Delegate to evaluator's existing private check
     # Guard return to bool to satisfy strict typing when evaluator internals are untyped
-    return bool(evaluator._needs_dependency_resolution(config, sensor_config))
+    return bool(evaluator.needs_dependency_resolution(config, sensor_config))
 
 
 def evaluate_formula_normally(
     evaluator: Any, config: Any, eval_context: dict[str, Any], context: Any, sensor_config: Any, formula_name: str
 ) -> EvaluationResult:
     """Evaluate formula using the normal evaluation path and finalize result."""
-    result_value = evaluator._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
-    evaluator._error_handler.handle_successful_evaluation(formula_name)
+    result_value = evaluator.execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
+    evaluator.error_handler.handle_successful_evaluation(formula_name)
 
     # Cache numeric results
-    if isinstance(result_value, (float, int)):
-        evaluator._cache_handler.cache_result(config, eval_context, config.id, float(result_value))
+    if isinstance(result_value, float | int):
+        evaluator.cache_handler.cache_result(config, eval_context, config.id, float(result_value))
 
     return EvaluatorResults.create_success_from_result(result_value)
 
 
-def evaluate_with_dependency_management(evaluator: Any, config: Any, context: dict[str, Any], sensor_config: Any) -> EvaluationResult:
+def evaluate_with_dependency_management(
+    evaluator: Any, config: Any, context: dict[str, Any], sensor_config: Any
+) -> EvaluationResult:
     """Evaluate a formula using dependency manager (extracted helper).
 
     This function encapsulates the logic of building a complete context via
     the generic dependency manager and then evaluating the formula.
     """
     try:
-        complete_context = evaluator._generic_dependency_manager.build_evaluation_context(
+        complete_context = evaluator.generic_dependency_manager.build_evaluation_context(
             sensor_config=sensor_config, evaluator=evaluator, base_context=context
         )
 
         formula_name = config.name or config.id
 
-        check_result, eval_context = evaluator._perform_pre_evaluation_checks(config, complete_context, sensor_config, formula_name)
+        check_result, eval_context = evaluator.perform_pre_evaluation_checks(
+            config, complete_context, sensor_config, formula_name
+        )
         if check_result is not None:
             return cast(EvaluationResult, check_result)
 
         if eval_context is None:
             return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
 
-        result = evaluator._execute_formula_evaluation(config, eval_context, complete_context, config.id, sensor_config)
+        result = evaluator.execute_formula_evaluation(config, eval_context, complete_context, config.id, sensor_config)
 
-        evaluator._error_handler.handle_successful_evaluation(formula_name)
+        evaluator.error_handler.handle_successful_evaluation(formula_name)
         return EvaluatorResults.create_success_from_result(result)
 
     except Exception as e:
         _LOGGER.error("Error in dependency-aware evaluation for formula '%s': %s", config.formula, e)
-        if isinstance(e, (MissingDependencyError, DataValidationError, SensorMappingError)):
+        if isinstance(e, MissingDependencyError | DataValidationError | SensorMappingError):
             raise
         # Fallback may be untyped; cast to EvaluationResult for strict typing
-        return cast(EvaluationResult, evaluator._fallback_to_normal_evaluation(config, context, sensor_config))
-
-
+        return cast(EvaluationResult, evaluator.fallback_to_normal_evaluation(config, context, sensor_config))
