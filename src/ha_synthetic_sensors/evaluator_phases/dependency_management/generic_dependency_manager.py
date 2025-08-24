@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...constants_entities import COMMON_ENTITY_DOMAINS
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
 from ...reference_value_manager import ReferenceValueManager
@@ -321,8 +322,6 @@ class GenericDependencyManager:
 
         # Entity references (contain dots and start with known prefixes)
         if "." in identifier:
-            from ...constants_entities import COMMON_ENTITY_DOMAINS
-
             entity_prefixes = [
                 *COMMON_ENTITY_DOMAINS,
                 "input_number",

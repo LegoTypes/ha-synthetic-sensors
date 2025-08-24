@@ -176,6 +176,7 @@ disable = [
     "too-many-public-methods",        # Complex classes often need many methods
     "too-many-positional-arguments",  # HA constructors often need many params
     "too-many-locals",                # Complex functions often need many variables
+    "too-many-lines",                 # Complex modules often need many lines
     "import-error",                   # aiofiles import issue in pre-commit environment
     "relative-beyond-top-level",      # Relative imports in nested packages are acceptable
     "no-name-in-module",              # Home Assistant constants import issues

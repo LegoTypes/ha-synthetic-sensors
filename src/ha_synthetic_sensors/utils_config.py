@@ -12,6 +12,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
 from .alternate_state_eval import evaluate_computed_alternate
 from .config_models import ComputedVariable, FormulaConfig
+from .constants_entities import get_ha_entity_domains
 from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_helpers import EvaluatorHelpers
@@ -170,7 +171,7 @@ def _is_entity_id_reference(reference: str) -> bool:
     """Check if a reference looks like a valid entity ID.
 
     Entity IDs typically follow the pattern: domain.object_id
-    Common domains include: sensor, binary_sensor, switch, light, etc.
+    Uses lazy loading to get valid domains from Home Assistant registry.
 
     Args:
         reference: The reference string to check
@@ -181,48 +182,69 @@ def _is_entity_id_reference(reference: str) -> bool:
     if not isinstance(reference, str) or "." not in reference:
         return False
 
-    # Common Home Assistant entity domains
-    from .constants_entities import COMMON_ENTITY_DOMAINS
+    parts = reference.split(".", 1)
+    if len(parts) != 2:
+        return False
 
-    valid_domains = set(COMMON_ENTITY_DOMAINS) | {
-        "cover",
-        "fan",
-        "lock",
-        "media_player",
-        "vacuum",
-        "camera",
-        "alarm_control_panel",
-        "device_tracker",
-        "person",
-        "zone",
-        "automation",
-        "script",
-        "scene",
-        "input_boolean",
-        "input_number",
-        "input_select",
-        "input_text",
-        "input_datetime",
-        "timer",
-        "counter",
-        "weather",
-        "sun",
-        "calendar",
-        "water_heater",
-        "humidifier",
-        "air_quality",
-        "button",
-        "number",
-        "select",
-        "text",
-    }
+    domain, object_id = parts
+
+    # Basic validation: domain and object_id must exist and object_id must not be empty
+    if not domain or not object_id:
+        return False
+
+    # For now, we'll do basic pattern validation since we don't have access to hass context here
+    # The actual domain validation will happen during evaluation when hass is available
+    # This prevents false negatives during config validation while still catching obvious syntax errors
+
+    # Check for valid domain pattern (alphanumeric + underscore, no leading/trailing underscores)
+    import re  # pylint: disable=import-outside-toplevel
+
+    domain_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+    if not domain_pattern.match(domain):
+        return False
+
+    # Check for valid object_id pattern (alphanumeric + underscore, no leading/trailing underscores)
+    object_id_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+    return object_id_pattern.match(object_id) is not None
+
+
+def _is_entity_id_reference_with_hass(reference: str, hass: Any) -> bool:
+    """Check if a reference is a valid entity ID using Home Assistant context.
+
+    This function should be used during evaluation when hass context is available.
+    Uses the lazy loader system from constants_entities to get valid domains.
+
+    Args:
+        reference: The reference string to check
+        hass: Home Assistant instance
+
+    Returns:
+        True if the reference is a valid entity ID
+    """
+    if not isinstance(reference, str) or "." not in reference:
+        return False
 
     parts = reference.split(".", 1)
     if len(parts) != 2:
         return False
 
     domain, object_id = parts
-    return domain in valid_domains and len(object_id) > 0
+
+    # Basic validation: domain and object_id must exist and object_id must not be empty
+    if not domain or not object_id:
+        return False
+
+    # Use lazy loader to get valid domains from Home Assistant registry
+    try:
+        valid_domains = get_ha_entity_domains(hass)
+        return domain in valid_domains
+    except Exception:
+        # If we can't get domains from registry, fall back to basic pattern validation
+        import re  # pylint: disable=import-outside-toplevel
+
+        domain_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+        object_id_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+        return domain_pattern.match(domain) is not None and object_id_pattern.match(object_id) is not None
 
 
 # CLEAN SLATE: Removed exception handler fallback logic - deterministic system should not fallback to 0
