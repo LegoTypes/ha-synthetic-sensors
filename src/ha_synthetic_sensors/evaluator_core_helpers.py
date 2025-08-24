@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from .alternate_state_processor import alternate_state_processor
-from .evaluator_helpers import EvaluatorHelpers
+from .evaluation_common import (
+    check_dependency_management_conditions,
+    handle_evaluation_exception,
+    process_alternate_state_result,
+)
 from .evaluator_results import EvaluatorResults
-from .exceptions import DataValidationError, MissingDependencyError, SensorMappingError
 from .type_definitions import EvaluationResult
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,19 +28,15 @@ def process_early_result(
 
     This consolidates alternate-state handling in Phase 4.
     """
-    processed_result = alternate_state_processor.process_evaluation_result(
+    return process_alternate_state_result(
         result=getattr(resolution_result, "early_result", None),
-        exception=None,
-        context=eval_context,
         config=config,
+        eval_context=eval_context,
         sensor_config=sensor_config,
         core_evaluator=evaluator.execution_engine.core_evaluator,
         resolve_all_references_in_formula=evaluator.resolve_all_references_in_formula,
         pre_eval=True,
     )
-
-    normalized = EvaluatorHelpers.process_evaluation_result(processed_result)
-    return EvaluatorResults.create_success_from_result(normalized)
 
 
 def should_use_dependency_management(
@@ -48,7 +46,7 @@ def should_use_dependency_management(
 
     Lightweight wrapper to allow extraction from large module.
     """
-    if not sensor_config or not context or bypass_dependency_management:
+    if not check_dependency_management_conditions(sensor_config, context, bypass_dependency_management):
         return False
     # Delegate to evaluator's existing private check
     # Guard return to bool to satisfy strict typing when evaluator internals are untyped
@@ -99,8 +97,6 @@ def evaluate_with_dependency_management(
         return EvaluatorResults.create_success_from_result(result)
 
     except Exception as e:
-        _LOGGER.error("Error in dependency-aware evaluation for formula '%s': %s", config.formula, e)
-        if isinstance(e, MissingDependencyError | DataValidationError | SensorMappingError):
-            raise
+        handle_evaluation_exception(e, config, formula_name)
         # Fallback may be untyped; cast to EvaluationResult for strict typing
         return cast(EvaluationResult, evaluator.fallback_to_normal_evaluation(config, context, sensor_config))

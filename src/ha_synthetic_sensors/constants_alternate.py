@@ -34,25 +34,19 @@ def identify_alternate_state_value(value: object) -> str | bool:
         if value is None:
             return ALTERNATE_STATE_NONE
 
-        # Strings: compare lower-cased normalized form
-        if isinstance(value, str):
-            norm = value.lower().strip()
-            if norm == STATE_UNKNOWN.lower():
-                return ALTERNATE_STATE_UNKNOWN
-            if norm == STATE_UNAVAILABLE.lower():
-                return ALTERNATE_STATE_UNAVAILABLE
-            if norm == ALTERNATE_STATE_NONE:
-                return ALTERNATE_STATE_NONE
-
-        # Also handle direct Home Assistant consts if passed through
-        # (caller may import homeassistant.const.STATE_UNKNOWN/STATE_UNAVAILABLE)
-        if value == STATE_UNKNOWN:
+        # Handle direct Home Assistant consts or string equivalents
+        if value == STATE_UNKNOWN or (isinstance(value, str) and value.lower().strip() == STATE_UNKNOWN.lower()):
             return ALTERNATE_STATE_UNKNOWN
-        if value == STATE_UNAVAILABLE:
+
+        if value == STATE_UNAVAILABLE or (isinstance(value, str) and value.lower().strip() == STATE_UNAVAILABLE.lower()):
             return ALTERNATE_STATE_UNAVAILABLE
+
+        # Handle special case for 'none' string
+        if isinstance(value, str) and value.lower().strip() == ALTERNATE_STATE_NONE:
+            return ALTERNATE_STATE_NONE
     except Exception:
         # Be tolerant of unexpected inputs - signal no alternate state found
-        return False
+        pass
 
     # No alternate state detected
     return False

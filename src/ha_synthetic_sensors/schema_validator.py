@@ -233,84 +233,119 @@ class SchemaValidator:
         if not state_class or not device_class:
             return
 
-        # Import HA's official device class to state class mappings
         try:
-            # Convert string values to enum instances for lookup
-            try:
-                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
-                sensor_state_class = HAConstantLoader.get_constant("SensorStateClass")
-                device_class_enum = sensor_device_class(device_class)
-                state_class_enum = sensor_state_class(state_class)
-            except ValueError:
-                # Check if the state class is valid using component constants
-                try:
-                    sensor_state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
-                    if state_class not in sensor_state_classes:
-                        errors.append(
-                            ValidationError(
-                                message=f"Invalid state_class '{state_class}'. Valid options: {sensor_state_classes}",
-                                path=f"sensors.{sensor_key}.state_class",
-                                severity=ValidationSeverity.ERROR,
-                            )
-                        )
-                except ValueError:
-                    pass  # Skip validation if we can't get the constants
+            enums = self._get_ha_state_class_enums(state_class, device_class, sensor_key, errors)
+            if not enums:
                 return
 
-            # Check if this combination is explicitly allowed by HA
-            try:
-                device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
-                allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
-
-                if allowed_state_classes and state_class_enum not in allowed_state_classes:
-                    errors.append(
-                        ValidationError(
-                            message=(
-                                f"Invalid state_class '{state_class}' for device_class '{device_class}'. "
-                                f"Valid options: {[sc.value for sc in allowed_state_classes]}"
-                            ),
-                            path=f"sensors.{sensor_key}.state_class",
-                            severity=ValidationSeverity.ERROR,
-                        )
-                    )
-            except ValueError:
-                pass  # Skip validation if we can't get the constants
-
-            # Additional validation for problematic combinations using HA's device class to state class mappings
-            if state_class_enum == sensor_state_class.TOTAL_INCREASING:
-                try:
-                    device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
-                    allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
-
-                    # Check if TOTAL_INCREASING is not in the allowed state classes for this device class
-                    if sensor_state_class.TOTAL_INCREASING not in allowed_state_classes:
-                        # Find a suitable alternative state class
-                        suggested_state_class = sensor_state_class.MEASUREMENT
-                        if sensor_state_class.MEASUREMENT in allowed_state_classes:
-                            suggested_state_class = sensor_state_class.MEASUREMENT
-                        elif sensor_state_class.TOTAL in allowed_state_classes:
-                            suggested_state_class = sensor_state_class.TOTAL
-                        else:
-                            # If no suitable alternative found, just suggest measurement
-                            suggested_state_class = sensor_state_class.MEASUREMENT
-
-                        errors.append(
-                            ValidationError(
-                                message=(
-                                    f"Sensor '{sensor_key}' uses state_class '{sensor_state_class.TOTAL_INCREASING.value}' with "
-                                    f"device_class '{device_class}' which doesn't support this state class."
-                                ),
-                                path=f"sensors.{sensor_key}.state_class",
-                                severity=ValidationSeverity.ERROR,
-                                suggested_fix=f"Consider using '{suggested_state_class.value}' instead",
-                            )
-                        )
-                except ValueError:
-                    pass  # Skip validation if we can't get the constants
-
+            device_class_enum, state_class_enum, sensor_state_class = enums
+            self._validate_device_state_class_combination(
+                sensor_key, device_class, state_class, device_class_enum, state_class_enum, errors
+            )
+            self._validate_total_increasing_compatibility(
+                sensor_key, device_class_enum, state_class_enum, sensor_state_class, errors
+            )
         except ImportError:
             # HA not available - skip validation
             pass
+
+    def _get_ha_state_class_enums(
+        self, state_class: str, device_class: str, sensor_key: str, errors: list[ValidationError]
+    ) -> tuple[Any, Any, Any] | None:
+        """Get HA enum instances for state_class and device_class validation."""
+        try:
+            sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+            sensor_state_class = HAConstantLoader.get_constant("SensorStateClass")
+            device_class_enum = sensor_device_class(device_class)
+            state_class_enum = sensor_state_class(state_class)
+            return device_class_enum, state_class_enum, sensor_state_class
+        except ValueError:
+            self._validate_state_class_against_component_constants(state_class, sensor_key, errors)
+            return None
+
+    def _validate_state_class_against_component_constants(
+        self, state_class: str, sensor_key: str, errors: list[ValidationError]
+    ) -> None:
+        """Validate state_class against component constants when enum conversion fails."""
+        try:
+            sensor_state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
+            if state_class not in sensor_state_classes:
+                errors.append(
+                    ValidationError(
+                        message=f"Invalid state_class '{state_class}'. Valid options: {sensor_state_classes}",
+                        path=f"sensors.{sensor_key}.state_class",
+                        severity=ValidationSeverity.ERROR,
+                    )
+                )
+        except ValueError:
+            pass  # Skip validation if we can't get the constants
+
+    def _validate_device_state_class_combination(
+        self,
+        sensor_key: str,
+        device_class: str,
+        state_class: str,
+        device_class_enum: Any,
+        state_class_enum: Any,
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate if device_class and state_class combination is allowed by HA."""
+        try:
+            device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
+            allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
+
+            if allowed_state_classes and state_class_enum not in allowed_state_classes:
+                errors.append(
+                    ValidationError(
+                        message=(
+                            f"Invalid state_class '{state_class}' for device_class '{device_class}'. "
+                            f"Valid options: {[sc.value for sc in allowed_state_classes]}"
+                        ),
+                        path=f"sensors.{sensor_key}.state_class",
+                        severity=ValidationSeverity.ERROR,
+                    )
+                )
+        except ValueError:
+            pass  # Skip validation if we can't get the constants
+
+    def _validate_total_increasing_compatibility(
+        self,
+        sensor_key: str,
+        device_class_enum: Any,
+        state_class_enum: Any,
+        sensor_state_class: Any,
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate TOTAL_INCREASING state_class compatibility and suggest alternatives."""
+        if state_class_enum != sensor_state_class.TOTAL_INCREASING:
+            return
+        try:
+            device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
+            allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
+
+            if sensor_state_class.TOTAL_INCREASING not in allowed_state_classes:
+                suggested_state_class = self._find_suggested_state_class(allowed_state_classes, sensor_state_class)
+                errors.append(
+                    ValidationError(
+                        message=(
+                            f"Sensor '{sensor_key}' uses state_class '{sensor_state_class.TOTAL_INCREASING.value}' with "
+                            f"device_class '{device_class_enum.value}' which doesn't support this state class."
+                        ),
+                        path=f"sensors.{sensor_key}.state_class",
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix=f"Consider using '{suggested_state_class.value}' instead",
+                    )
+                )
+        except ValueError:
+            pass  # Skip validation if we can't get the constants
+
+    def _find_suggested_state_class(self, allowed_state_classes: set[Any], sensor_state_class: Any) -> Any:
+        """Find a suitable alternative state class from allowed options."""
+        if sensor_state_class.MEASUREMENT in allowed_state_classes:
+            return sensor_state_class.MEASUREMENT
+        if sensor_state_class.TOTAL in allowed_state_classes:
+            return sensor_state_class.TOTAL
+        return sensor_state_class.MEASUREMENT
 
     def _validate_sensor_config(
         self,

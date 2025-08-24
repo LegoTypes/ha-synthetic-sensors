@@ -28,6 +28,12 @@ from .constants_evaluation_results import (
 from .constants_formula import is_reserved_word
 from .dependency_parser import DependencyParser
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
+from .evaluation_common import (
+    check_dependency_management_conditions,
+    handle_alternate_state_detection,
+    handle_evaluation_exception,
+    process_alternate_state_result,
+)
 from .evaluation_error_handlers import (
     handle_backing_entity_error as _handle_backing_entity_error_helper,
     handle_value_error as _handle_value_error_helper,
@@ -509,23 +515,17 @@ class Evaluator(FormulaEvaluator):
 
         # Use the alternate state processor to handle the early result
         # This consolidates all alternate state processing in Phase 4
-        processed_result = alternate_state_processor.process_evaluation_result(
+        # CRITICAL FIX: When alternate state processor returns None (no handler found),
+        # preserve the None instead of falling back to early_result
+        return process_alternate_state_result(
             result=early_result,
-            exception=None,  # No exception for early results
-            context=eval_context,
             config=config,
+            eval_context=eval_context,
             sensor_config=sensor_config,
             core_evaluator=self._execution_engine.core_evaluator,
             resolve_all_references_in_formula=self._resolve_all_references_in_formula,
             pre_eval=True,
         )
-
-        # Normalize processed result using EvaluatorHelpers then convert to proper EvaluationResult
-        # CRITICAL FIX: When alternate state processor returns None (no handler found),
-        # preserve the None instead of falling back to early_result
-        normalized = EvaluatorHelpers.process_evaluation_result(processed_result)
-        # Use create_success_from_result to correctly handle None -> STATE_UNKNOWN and numeric/boolean types
-        return EvaluatorResults.create_success_from_result(normalized)
 
     def _should_use_dependency_management(
         self,
@@ -535,7 +535,7 @@ class Evaluator(FormulaEvaluator):
         config: FormulaConfig,
     ) -> bool:
         """Determine if dependency management should be used."""
-        if not sensor_config or not context or bypass_dependency_management:
+        if not check_dependency_management_conditions(sensor_config, context, bypass_dependency_management):
             return False
         return self._needs_dependency_resolution(config, sensor_config)
 
@@ -666,10 +666,7 @@ class Evaluator(FormulaEvaluator):
             return EvaluatorResults.create_success_from_result(result)
 
         except Exception as e:
-            _LOGGER.error("Error in dependency-aware evaluation for formula '%s': %s", config.formula, e)
-            # Re-raise MissingDependencyError and other fatal errors
-            if isinstance(e, MissingDependencyError | DataValidationError | SensorMappingError):
-                raise
+            handle_evaluation_exception(e, config, config.name or config.id)
             # Fall back to normal evaluation for other errors
             return self._fallback_to_normal_evaluation(config, context, sensor_config)
 
@@ -899,12 +896,8 @@ class Evaluator(FormulaEvaluator):
         # If the raw result is an HA alternate-state string (e.g., 'unknown'/'unavailable'),
         # preserve it as-is since this method should return raw values, not EvaluationResult objects
         # The conversion to EvaluationResult happens later in the pipeline
-        try:
-            alt = identify_alternate_state_value(result)
-        except Exception:
-            alt = False
-
-        if isinstance(alt, str):
+        is_alternate, _ = handle_alternate_state_detection(result)
+        if is_alternate:
             # For HA alternate states, return the state string as-is
             # The evaluation pipeline will handle conversion to EvaluationResult later
             return result
