@@ -126,92 +126,29 @@ class AlternateStateProcessor:
             Processed result, potentially from alternate state handler
         """
 
+        # Default output: if there was an exception, default to None; otherwise preserve result
+        output: float | str | bool | None = result if exception is None else None
         if not config.alternate_state_handler:
-            return result if exception is None else None
+            return output
 
-        # Handle None results - distinguish between legitimate None values and missing state guards
-        # If this was a pre-evaluation handler result, preserve literal None
+        # Handle None results separately in helper to reduce branching here
         if exception is None and result is None:
-            if pre_eval:
-                # Handler explicitly returned None to preserve STATE_NONE semantics
-                self._logger.debug("Pre-eval handler returned explicit None; preserving None result")
-                return None
+            handled, output = self._process_none_result(
+                context, config, sensor_config, core_evaluator, resolve_all_references_in_formula, pre_eval
+            )
+            if handled:
+                return output
 
-            # Check if this None result came from a legitimate None value (should trigger NONE handler)
-            # vs. a missing state guard (should trigger UNAVAILABLE handler)
-            # If any context variable contains a legitimate None value, this should be NONE
-            has_none_value = False
-            for var_name, var_value in context.items():
-                if isinstance(var_value, ReferenceValue):
-                    if var_value.value is None:
-                        has_none_value = True
-                        self._logger.debug("Found None value in context variable '%s', triggering NONE handler", var_name)
-                        break
-                elif var_value is None:
-                    has_none_value = True
-                    self._logger.debug("Found None value in context variable '%s', triggering NONE handler", var_name)
-                    break
-
-            if has_none_value:
-                res = self._trigger_alternate_handler(
-                    ALTERNATE_STATE_NONE,
-                    config.alternate_state_handler,
-                    context,
-                    config,
-                    sensor_config,
-                    core_evaluator,
-                    resolve_all_references_in_formula,
-                )
-
-                return res
-            else:
-                self._logger.debug("Evaluation returned None (missing state guard), triggering UNAVAILABLE alternate handler")
-                res = self._trigger_alternate_handler(
-                    ALTERNATE_STATE_UNAVAILABLE,
-                    config.alternate_state_handler,
-                    context,
-                    config,
-                    sensor_config,
-                    core_evaluator,
-                    resolve_all_references_in_formula,
-                )
-
-                return res
-
-        # Handle exceptions - map to appropriate alternate state
+        # Handle exceptions separately in helper
         if exception is not None:
-            # Map exception types to alternate states
-            exception_str = str(exception).lower()
-            if STATE_UNAVAILABLE in exception_str:
-                alternate_state = ALTERNATE_STATE_UNAVAILABLE
-            elif STATE_UNKNOWN in exception_str:
-                alternate_state = ALTERNATE_STATE_UNKNOWN
-            else:
-                # Default to none for other exceptions
-                alternate_state = ALTERNATE_STATE_NONE
-
-            self._logger.debug(
-                "Evaluation exception occurred: %s, mapping to %s state and triggering alternate handler",
-                str(exception),
-                alternate_state,
+            handled, output = self._process_exception(
+                exception, context, config, sensor_config, core_evaluator, resolve_all_references_in_formula
             )
-            res = self._trigger_alternate_handler(
-                alternate_state,
-                config.alternate_state_handler,
-                context,
-                config,
-                sensor_config,
-                core_evaluator,
-                resolve_all_references_in_formula,
-            )
-
-            return res
+            if handled:
+                return output
 
         # Handle successful results that are alternate states
-        # _identify_alternate_state follows the shared helper contract and returns
-        # a string identifying the alternate state or False when no alternate state is detected.
         result_alternate_state = self._identify_alternate_state(result)
-        # Only proceed if the helper did not return False (i.e., an alternate state was detected)
         if result_alternate_state is not False:
             self._logger.debug("Evaluation result is %s, triggering alternate handler", result_alternate_state)
             return self._trigger_alternate_handler(
@@ -224,8 +161,106 @@ class AlternateStateProcessor:
                 resolve_all_references_in_formula,
             )
 
-        # Normal result, no alternate state handling needed
-        return result
+        return output
+
+    def _process_none_result(
+        self,
+        context: dict[str, Any],
+        config: FormulaConfig,
+        sensor_config: SensorConfig | None,
+        core_evaluator: Any | None,
+        resolve_all_references_in_formula: Any | None,
+        pre_eval: bool,
+    ) -> tuple[bool, float | str | bool | None]:
+        """Process the case where evaluation returned None.
+
+        Returns (handled, output). If handled is True the caller should return output.
+        """
+        if pre_eval:
+            self._logger.debug("Pre-eval handler returned explicit None; preserving None result")
+            return True, None
+
+        has_none_value = False
+        for var_name, var_value in context.items():
+            if isinstance(var_value, ReferenceValue):
+                if var_value.value is None:
+                    has_none_value = True
+                    self._logger.debug("Found None value in context variable '%s', triggering NONE handler", var_name)
+                    break
+            elif var_value is None:
+                has_none_value = True
+                self._logger.debug("Found None value in context variable '%s', triggering NONE handler", var_name)
+                break
+
+        if has_none_value:
+            handler = config.alternate_state_handler
+            if handler is None:
+                self._logger.warning("Alternate state handler missing from config when expected; returning None")
+                return True, None
+            return True, self._trigger_alternate_handler(
+                ALTERNATE_STATE_NONE,
+                handler,
+                context,
+                config,
+                sensor_config,
+                core_evaluator,
+                resolve_all_references_in_formula,
+            )
+
+        self._logger.debug("Evaluation returned None (missing state guard), triggering UNAVAILABLE alternate handler")
+        handler = config.alternate_state_handler
+        if handler is None:
+            self._logger.warning("Alternate state handler missing from config when expected; returning None")
+            return True, None
+        return True, self._trigger_alternate_handler(
+            ALTERNATE_STATE_UNAVAILABLE,
+            handler,
+            context,
+            config,
+            sensor_config,
+            core_evaluator,
+            resolve_all_references_in_formula,
+        )
+
+    def _process_exception(
+        self,
+        exception: Exception,
+        context: dict[str, Any],
+        config: FormulaConfig,
+        sensor_config: SensorConfig | None,
+        core_evaluator: Any | None,
+        resolve_all_references_in_formula: Any | None,
+    ) -> tuple[bool, float | str | bool | None]:
+        """Process exceptions and map them to alternate handlers.
+
+        Returns (handled, output).
+        """
+        exception_str = str(exception).lower()
+        if STATE_UNAVAILABLE in exception_str:
+            alternate_state = ALTERNATE_STATE_UNAVAILABLE
+        elif STATE_UNKNOWN in exception_str:
+            alternate_state = ALTERNATE_STATE_UNKNOWN
+        else:
+            alternate_state = ALTERNATE_STATE_NONE
+
+        self._logger.debug(
+            "Evaluation exception occurred: %s, mapping to %s state and triggering alternate handler",
+            str(exception),
+            alternate_state,
+        )
+        handler = config.alternate_state_handler
+        if handler is None:
+            self._logger.warning("Alternate state handler missing from config when expected; returning None")
+            return True, None
+        return True, self._trigger_alternate_handler(
+            alternate_state,
+            handler,
+            context,
+            config,
+            sensor_config,
+            core_evaluator,
+            resolve_all_references_in_formula,
+        )
 
     def _identify_alternate_state(self, value: Any) -> str | bool:
         """Delegate alternate state detection to shared helper."""
@@ -322,20 +357,19 @@ class AlternateStateProcessor:
         Alternate state handlers are just formulas - they should use the same
         evaluation pipeline as main formulas, attributes, and computed variables.
         """
+        result: float | str | bool | None = None
         try:
             # Handle literal values directly
             if handler_value is None:
-                return None  # Preserve None explicitly
-            if isinstance(handler_value, bool | int | float):
-                return handler_value
-            if isinstance(handler_value, str) and not any(
+                result = None
+            elif isinstance(handler_value, bool | int | float):
+                result = handler_value
+            elif isinstance(handler_value, str) and not any(
                 op in handler_value for op in ["+", "-", "*", "/", "(", ")", "<", ">", "=", " and ", " or ", " not "]
             ):
                 # Simple string without operators - treat as literal
-                return handler_value
-
-            # For formulas (string or object form), use the standard evaluation pipeline
-            if isinstance(handler_value, dict) and "formula" in handler_value:
+                result = handler_value
+            elif isinstance(handler_value, dict) and "formula" in handler_value:
                 # Object form: create temporary FormulaConfig and use standard pipeline
                 handler_config = FormulaConfig(
                     id=f"{config.id}_alt_handler",
@@ -349,15 +383,15 @@ class AlternateStateProcessor:
                     merged_context[key] = value
 
                 # Delegate to standard formula evaluation
-                return FormulaEvaluatorService.evaluate_formula(
+                result = FormulaEvaluatorService.evaluate_formula(
                     handler_config.formula,
                     handler_config.formula,
                     merged_context,
                     allow_unresolved_states=False,
                 )
             else:
-                # String formula - delegate to standard evaluation
-                return FormulaEvaluatorService.evaluate_formula(
+                # String formula or other -> delegate to standard evaluation
+                result = FormulaEvaluatorService.evaluate_formula(
                     str(handler_value),
                     str(handler_value),
                     context,
@@ -367,9 +401,9 @@ class AlternateStateProcessor:
         except Exception as e:
             self._logger.debug("Alternate handler evaluation failed: %s", str(e))
             # Fallback to literal value for simple types
-            if isinstance(handler_value, bool | int | float | str):
-                return handler_value
-            return None
+            result = handler_value if isinstance(handler_value, bool | int | float | str) else None
+
+        return result
 
 
 # Global instance for use throughout the system

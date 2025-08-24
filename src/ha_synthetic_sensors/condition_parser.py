@@ -168,8 +168,7 @@ class ConditionParser:
         try:
             if "." in value_str:
                 return float(value_str)
-            else:
-                return int(value_str)
+            return int(value_str)
         except ValueError:
             pass
 

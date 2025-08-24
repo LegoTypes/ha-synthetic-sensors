@@ -262,8 +262,8 @@ class GenericDependencyManager:
                         getattr(formula, "id", formula.formula),
                         result.get("state"),
                     )
-            except Exception:
-                pass
+            except Exception as exc:  # Log unexpected structure instead of silencing
+                _LOGGER.exception("Unexpected result structure during direct evaluation debug check: %s", exc)
 
             # Return the full result dict for caller to inspect success/state/value
             return result
