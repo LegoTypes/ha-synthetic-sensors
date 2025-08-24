@@ -98,17 +98,24 @@ class MetadataHandler(FormulaHandler):
                 return str(result)
 
         except Exception as e:
-            # If this is our special bug detection error, re-raise it with full stack trace
-            if "METADATA_HANDLER_BUG" in str(e):
-                _LOGGER.error("METADATA_HANDLER_BUG detected - raising exception for stack trace analysis")
+            # Preserve Explicit AlternateStateDetected propagation
+            if isinstance(e, AlternateStateDetected):
                 raise
             # Fatal: missing hass must not be silently ignored
             if ERROR_METADATA_HASS_NOT_AVAILABLE in str(e):
                 _LOGGER.error("METADATA_HANDLER: %s", e)
                 raise
-            _LOGGER.warning("METADATA_HANDLER: Metadata processing failed for formula %s: %s", formula, e)
-            # Fall back to original formula if other metadata processing fails
 
+            # For other runtime errors during metadata processing, treat them as alternate STATE_UNKNOWN
+            _LOGGER.warning(
+                "METADATA_HANDLER: Runtime error processing metadata for formula %s: %s - skipping and treating as STATE_UNKNOWN",
+                formula,
+                e,
+            )
+            # Use "from e" to preserve original traceback while signaling alternate state
+            raise AlternateStateDetected(f"Metadata processing error: {e}", STATE_UNKNOWN) from e
+
+        # If handler cannot handle this formula or no metadata was processed, return original formula
         return formula
 
     def can_handle(self, formula: str) -> bool:
@@ -144,84 +151,72 @@ class MetadataHandler(FormulaHandler):
         Raises:
             ValueError: If metadata key is invalid or entity not found
         """
-        try:
-            _LOGGER.debug("Evaluating metadata formula: %s", formula)
-            _LOGGER.debug("Context keys: %s", list(context.keys()) if context else None)
-            if context:
-                for key, value in context.items():
-                    if isinstance(value, ReferenceValue):
-                        _LOGGER.debug("  ReferenceValue %s: reference=%s, value=%s", key, value.reference, value.value)
-                    else:
-                        _LOGGER.debug("  Regular value %s: %s", key, str(value)[:100])
+        _LOGGER.debug("Evaluating metadata formula: %s", formula)
 
-            processed_formula = formula
-            metadata_results = {}  # Store metadata results for AST caching
-            metadata_counter = 0
+        processed_formula = formula
+        metadata_results = {}  # Store metadata results for AST caching
+        metadata_counter = 0
 
-            # Find all metadata function calls and replace them with their results
-            def replace_metadata_function(match: re.Match[str]) -> str:
-                nonlocal metadata_counter
-                full_call = match.group(0)  # Full metadata(...) call
-                params_str = match.group(1)  # Content inside parentheses
+        # Find all metadata function calls and replace them with their results
+        def replace_metadata_function(match: re.Match[str]) -> str:
+            nonlocal metadata_counter
+            full_call = match.group(0)  # Full metadata(...) call
+            params_str = match.group(1)  # Content inside parentheses
 
-                _LOGGER.debug("Processing metadata call: %s", full_call)
+            _LOGGER.debug("Processing metadata call: %s", full_call)
 
-                # Parse parameters (simple comma split for now)
-                params = [p.strip() for p in params_str.split(",")]
-                if len(params) != 2:
-                    raise ValueError(ERROR_METADATA_FUNCTION_PARAMETER_COUNT.format(count=len(params)))
+            # Parse parameters (simple comma split for now)
+            params = [p.strip() for p in params_str.split(",")]
+            if len(params) != 2:
+                raise ValueError(ERROR_METADATA_FUNCTION_PARAMETER_COUNT.format(count=len(params)))
 
-                entity_ref = params[0].strip()
-                metadata_key = params[1].strip().strip("'\"")  # Remove quotes from key
+            entity_ref = params[0].strip()
+            metadata_key = params[1].strip().strip("'\"")  # Remove quotes from key
 
-                # The entity_ref might be a variable name or an entity ID
-                # If it's a variable name, we need to resolve it to the entity ID
-                # If it's already an entity ID, use it directly
-                resolved_entity_id = self._resolve_entity_reference(entity_ref, context)
+            # The entity_ref might be a variable name or an entity ID
+            # If it's a variable name, we need to resolve it to the entity ID
+            # If it's already an entity ID, use it directly
+            resolved_entity_id = self._resolve_entity_reference(entity_ref, context)
 
-                # Check 1: Is the entity reference itself an alternate state?
-                if self._is_alternate_state(resolved_entity_id):
-                    raise AlternateStateDetected(
-                        f"Entity reference '{resolved_entity_id}' is in alternate state", resolved_entity_id
-                    )
+            # Check 1: Is the entity reference itself an alternate state?
+            if self._is_alternate_state(resolved_entity_id):
+                raise AlternateStateDetected(
+                    f"Entity reference '{resolved_entity_id}' is in alternate state", resolved_entity_id
+                )
 
-                # Get metadata value
-                metadata_value = self._get_metadata_value(resolved_entity_id, metadata_key, context)
+            # Get metadata value
+            metadata_value = self._get_metadata_value(resolved_entity_id, metadata_key, context)
 
-                # Check 2: Is the metadata result an alternate state?
-                if self._is_alternate_state(metadata_value):
-                    raise AlternateStateDetected(f"Metadata result '{metadata_value}' is alternate state", metadata_value)
+            # Check 2: Is the metadata result an alternate state?
+            if self._is_alternate_state(metadata_value):
+                raise AlternateStateDetected(f"Metadata result '{metadata_value}' is alternate state", metadata_value)
 
-                # Store metadata result for AST caching
-                metadata_key_name = f"_metadata_{metadata_counter}"
-                metadata_counter += 1
+            # Store metadata result for AST caching
+            metadata_key_name = f"_metadata_{metadata_counter}"
+            metadata_counter += 1
 
-                # Format metadata value for storage
-                if hasattr(metadata_value, "isoformat"):  # datetime-like objects
-                    formatted_value = metadata_value.isoformat()
-                elif isinstance(metadata_value, str):
-                    formatted_value = metadata_value
-                else:
-                    formatted_value = str(metadata_value)
+            # Format metadata value for storage
+            if hasattr(metadata_value, "isoformat"):  # datetime-like objects
+                formatted_value = metadata_value.isoformat()
+            elif isinstance(metadata_value, str):
+                formatted_value = metadata_value
+            else:
+                formatted_value = str(metadata_value)
 
-                metadata_results[metadata_key_name] = formatted_value
+            metadata_results[metadata_key_name] = formatted_value
 
-                # Return the metadata function call for AST caching
-                return f"metadata_result({metadata_key_name})"
+            # Return the metadata function call for AST caching
+            return f"metadata_result({metadata_key_name})"
 
-            # Use regex to find and replace metadata function calls
-            metadata_pattern = re.compile(rf"{METADATA_FUNCTION_NAME}\s*\(\s*([^)]+)\s*\)", re.IGNORECASE)
-            processed_formula = metadata_pattern.sub(replace_metadata_function, processed_formula)
+        # Use regex to find and replace metadata function calls
+        metadata_pattern = re.compile(rf"{METADATA_FUNCTION_NAME}\s*\(\s*([^)]+)\s*\)", re.IGNORECASE)
+        processed_formula = metadata_pattern.sub(replace_metadata_function, processed_formula)
 
-            _LOGGER.debug("Processed metadata formula: %s", processed_formula)
-            _LOGGER.debug("Metadata results: %s", metadata_results)
+        _LOGGER.debug("Processed metadata formula: %s", processed_formula)
+        _LOGGER.debug("Metadata results: %s", metadata_results)
 
-            # Return both the processed formula and metadata results
-            return processed_formula, metadata_results
-
-        except Exception as e:
-            _LOGGER.error("Error evaluating metadata formula '%s': %s", formula, e)
-            raise
+        # Return both the processed formula and metadata results
+        return processed_formula, metadata_results
 
     def _get_current_sensor_entity_id_from_context(self, context: dict[str, ContextValue] | None = None) -> str | None:
         """Extract the current sensor's entity ID from evaluation context.
@@ -294,7 +289,7 @@ class MetadataHandler(FormulaHandler):
             float(clean_ref)
             # If we can parse it as a number, this is a BUG in the resolution pipeline
             raise ValueError(
-                f"METADATA_HANDLER_BUG: Received numeric value '{clean_ref}' as entity reference. "
+                f"Received numeric value '{clean_ref}' as entity reference. "
                 f"This indicates premature value substitution in the variable resolution pipeline. "
                 f"Entity references should be variable names or entity IDs, not resolved values. "
                 f"Check the stack trace to see where this numeric value was substituted."

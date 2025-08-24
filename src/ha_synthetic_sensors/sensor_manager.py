@@ -615,8 +615,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             self._attr_available = False
             self._last_update = datetime.now()
             _LOGGER.debug(
-                "Sensor %s set to unknown due to unavailable dependencies",
+                "Sensor %s set to unknown due to unavailable dependencies - result: %s",
                 self.entity_id,
+                main_result_dict,
             )
             return
 

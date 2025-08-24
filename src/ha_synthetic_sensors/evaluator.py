@@ -342,6 +342,11 @@ class Evaluator(FormulaEvaluator):
             traceback.print_exc()
             result = self._error_handler.handle_evaluation_error(err_unknown, formula_name)
         _LOGGER.debug("evaluate_formula_with_sensor_config result for %s: %s", formula_name, result)
+        # Add extra debug logging for energy sensors with complex FALLBACK logic
+        if sensor_config and "energy" in formula_name.lower():
+            _LOGGER.debug("Energy sensor evaluation - config: %s, context keys: %s", 
+                         sensor_config.alternate_states if hasattr(sensor_config, 'alternate_states') else 'None',
+                         list(context.keys()) if context else 'None')
         return result
 
     def _handle_known_errors(self, err: Exception, formula_name: str) -> EvaluationResult:

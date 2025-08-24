@@ -17,6 +17,7 @@ from homeassistant.exceptions import ConfigEntryError
 import yaml
 
 from .alternate_state_circular_validator import validate_alternate_state_handler_circular_deps
+from .config_helpers.yaml_helpers import check_duplicate_sensor_keys, extract_sensor_keys_from_yaml, trim_yaml_keys
 from .config_models import AlternateStateHandler, ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .config_yaml_converter import ConfigYamlConverter
@@ -25,7 +26,7 @@ from .cross_sensor_reference_detector import CrossSensorReferenceDetector
 from .schema_validator import validate_yaml_config
 from .utils_config import validate_computed_variable_references
 from .validation_utils import load_yaml_file
-from .yaml_config_parser import YAMLConfigParser, trim_yaml_keys
+from .yaml_config_parser import YAMLConfigParser
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -216,8 +217,11 @@ class ConfigManager:
         Raises:
             ConfigEntryError: If basic structural flaws are detected
         """
-        sensor_keys = self._extract_sensor_keys_from_yaml(yaml_content)
-        self._check_for_duplicate_sensor_keys(sensor_keys)
+        sensor_keys = extract_sensor_keys_from_yaml(yaml_content)
+        duplicates = check_duplicate_sensor_keys(sensor_keys)
+        if duplicates:
+            duplicate_list = ", ".join(duplicates)
+            raise ConfigEntryError(f"Duplicate sensor keys found in YAML: {duplicate_list}")
 
     def _extract_sensor_keys_from_yaml(self, yaml_content: str) -> list[str]:
         """Extract sensor keys from raw YAML content.
