@@ -182,12 +182,9 @@ def _is_entity_id_reference(reference: str) -> bool:
         return False
 
     # Common Home Assistant entity domains
-    valid_domains = {
-        "sensor",
-        "binary_sensor",
-        "switch",
-        "light",
-        "climate",
+    from .constants_entities import COMMON_ENTITY_DOMAINS
+
+    valid_domains = set(COMMON_ENTITY_DOMAINS) | {
         "cover",
         "fan",
         "lock",

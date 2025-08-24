@@ -566,6 +566,8 @@ class Evaluator(FormulaEvaluator):
         """Determine if dependency management should be used."""
         if not check_dependency_management_conditions(sensor_config, context, bypass_dependency_management):
             return False
+        if sensor_config is None:
+            return False
         return self._needs_dependency_resolution(config, sensor_config)
 
     def _evaluate_formula_normally(

@@ -567,7 +567,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         if not (main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None):
             return None
 
-        base_ctx = {}
+        base_ctx: dict[str, Any] = {}
         ReferenceValueManager.set_variable_with_reference_value(
             base_ctx, "state", self.entity_id or "state", main_result_dict[RESULT_KEY_VALUE]
         )

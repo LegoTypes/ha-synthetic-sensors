@@ -321,12 +321,10 @@ class GenericDependencyManager:
 
         # Entity references (contain dots and start with known prefixes)
         if "." in identifier:
+            from ...constants_entities import COMMON_ENTITY_DOMAINS
+
             entity_prefixes = [
-                "sensor",
-                "binary_sensor",
-                "switch",
-                "light",
-                "climate",
+                *COMMON_ENTITY_DOMAINS,
                 "input_number",
                 "input_text",
                 "span",

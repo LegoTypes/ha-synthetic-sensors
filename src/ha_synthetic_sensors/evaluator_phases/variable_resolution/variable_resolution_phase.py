@@ -113,54 +113,20 @@ class VariableResolutionPhase:
         This method performs complete variable resolution and detects HA state values
         early to prevent invalid expressions from reaching the evaluator.
         """
-        # Track entity mappings for enhanced dependency reporting
-        entity_mappings: dict[str, str] = {}  # variable_name -> entity_id
-        unavailable_dependencies: list[HADependency] = []
-        entity_to_value_mappings: dict[str, str] = {}  # entity_reference -> resolved_value
-        # Start with the original formula
-        resolved_formula = formula
-        # Resolve collection functions (always, regardless of sensor config)
-        resolved_formula = self._resolve_collection_functions(resolved_formula, sensor_config, eval_context, formula_config)
-        # Phase 1: Variable Resolution - build ReferenceValues in context (no value extraction yet)
-        # Phase 2: Metadata Processing - process metadata() functions with ReferenceValues
-        # Phase 3: Value Resolution - extract values from ReferenceValues for formula evaluation
-        # Phase 4: Formula Evaluation - handled by CoreFormulaEvaluator
-
-        # STEP 1: Resolve state.attribute references FIRST (before entity references)
-        if sensor_config:
-            resolved_formula = self._resolve_state_attribute_references(resolved_formula, sensor_config)
-        # STEP 2: Pre-scan for variable.attribute patterns to identify variables that need entity ID preservation
-        variables_needing_entity_ids = FormulaHelpers.identify_variables_for_attribute_access(resolved_formula, formula_config)
-        # STEP 3: Resolve config variables with special handling for attribute access variables
-        if formula_config:
-            # First do the attribute preservation (no tracking)
-            self._resolve_config_variables_with_attribute_preservation(
-                eval_context, formula_config, variables_needing_entity_ids, sensor_config
-            )
-            # Then do tracking for dependency collection
-            entity_mappings_from_config, ha_deps_from_config = self._resolve_config_variables_with_tracking(
-                eval_context, formula_config, sensor_config
-            )
-            # Collect dependencies from config variable resolution
-            unavailable_dependencies.extend(ha_deps_from_config)
-            entity_to_value_mappings.update(entity_mappings_from_config)
-        # STEP 4: Resolve variable.attribute references (e.g., device.battery_level)
-        # This must happen BEFORE simple variable resolution to catch attribute patterns
-        resolved_formula = VariableProcessors.resolve_attribute_chains(
-            resolved_formula, eval_context, formula_config, self._dependency_handler
+        # Initialize tracking variables and perform initial resolution
+        entity_mappings, unavailable_dependencies, entity_to_value_mappings, resolved_formula = (
+            self._initialize_resolution_tracking(formula, sensor_config, eval_context, formula_config)
         )
-        # STEP 5: Resolve entity references and track mappings and HA states (context-only)
-        # New behavior: register ReferenceValues for dotted entity references without substituting into formula.
-        # This preserves lazy resolution and allows metadata() to access original references in Phase 2.
-        try:
-            entity_mappings_from_entities, ha_deps_from_entities = self._track_entities_and_register_context(
-                resolved_formula, eval_context
-            )
-        except Exception:
-            entity_mappings_from_entities = {}
-            ha_deps_from_entities = []
-        entity_mappings.update(entity_mappings_from_entities)
-        unavailable_dependencies.extend(ha_deps_from_entities)
+        # Perform main resolution steps
+        resolved_formula = self._perform_main_resolution_steps(
+            resolved_formula,
+            sensor_config,
+            eval_context,
+            formula_config,
+            entity_mappings,
+            unavailable_dependencies,
+            entity_to_value_mappings,
+        )
         # STEP 6: Resolve remaining config variables and track mappings
         if formula_config:
             var_mappings, ha_deps = self._resolve_config_variables_with_tracking(eval_context, formula_config, sensor_config)
@@ -987,3 +953,74 @@ class VariableResolutionPhase:
             self._inheritance_handler.process_single_variable(
                 var_name, var_value, eval_context, formula_config, variables_needing_entity_ids, self._resolver_factory
             )
+
+    def _initialize_resolution_tracking(
+        self,
+        formula: str,
+        sensor_config: SensorConfig | None,
+        eval_context: dict[str, ContextValue],
+        formula_config: FormulaConfig | None,
+    ) -> tuple[dict[str, str], list[HADependency], dict[str, str], str]:
+        """Initialize tracking variables and perform initial resolution steps."""
+        # Track entity mappings for enhanced dependency reporting
+        entity_mappings: dict[str, str] = {}  # variable_name -> entity_id
+        unavailable_dependencies: list[HADependency] = []
+        entity_to_value_mappings: dict[str, str] = {}  # entity_reference -> resolved_value
+        # Start with the original formula
+        resolved_formula = formula
+        # Resolve collection functions (always, regardless of sensor config)
+        resolved_formula = self._resolve_collection_functions(resolved_formula, sensor_config, eval_context, formula_config)
+        return entity_mappings, unavailable_dependencies, entity_to_value_mappings, resolved_formula
+
+    def _perform_main_resolution_steps(
+        self,
+        resolved_formula: str,
+        sensor_config: SensorConfig | None,
+        eval_context: dict[str, ContextValue],
+        formula_config: FormulaConfig | None,
+        entity_mappings: dict[str, str],
+        unavailable_dependencies: list[HADependency],
+        entity_to_value_mappings: dict[str, str],
+    ) -> str:
+        """Perform the main resolution steps for variables and entities."""
+        # Phase 1: Variable Resolution - build ReferenceValues in context (no value extraction yet)
+        # Phase 2: Metadata Processing - process metadata() functions with ReferenceValues
+        # Phase 3: Value Resolution - extract values from ReferenceValues for formula evaluation
+        # Phase 4: Formula Evaluation - handled by CoreFormulaEvaluator
+
+        # STEP 1: Resolve state.attribute references FIRST (before entity references)
+        if sensor_config:
+            resolved_formula = self._resolve_state_attribute_references(resolved_formula, sensor_config)
+        # STEP 2: Pre-scan for variable.attribute patterns to identify variables that need entity ID preservation
+        variables_needing_entity_ids = FormulaHelpers.identify_variables_for_attribute_access(resolved_formula, formula_config)
+        # STEP 3: Resolve config variables with special handling for attribute access variables
+        if formula_config:
+            # First do the attribute preservation (no tracking)
+            self._resolve_config_variables_with_attribute_preservation(
+                eval_context, formula_config, variables_needing_entity_ids, sensor_config
+            )
+            # Then do tracking for dependency collection
+            entity_mappings_from_config, ha_deps_from_config = self._resolve_config_variables_with_tracking(
+                eval_context, formula_config, sensor_config
+            )
+            # Collect dependencies from config variable resolution
+            unavailable_dependencies.extend(ha_deps_from_config)
+            entity_to_value_mappings.update(entity_mappings_from_config)
+        # STEP 4: Resolve variable.attribute references (e.g., device.battery_level)
+        # This must happen BEFORE simple variable resolution to catch attribute patterns
+        resolved_formula = VariableProcessors.resolve_attribute_chains(
+            resolved_formula, eval_context, formula_config, self._dependency_handler
+        )
+        # STEP 5: Resolve entity references and track mappings and HA states (context-only)
+        # New behavior: register ReferenceValues for dotted entity references without substituting into formula.
+        # This preserves lazy resolution and allows metadata() to access original references in Phase 2.
+        try:
+            entity_mappings_from_entities, ha_deps_from_entities = self._track_entities_and_register_context(
+                resolved_formula, eval_context
+            )
+        except Exception:
+            entity_mappings_from_entities = {}
+            ha_deps_from_entities = []
+        entity_mappings.update(entity_mappings_from_entities)
+        unavailable_dependencies.extend(ha_deps_from_entities)
+        return resolved_formula

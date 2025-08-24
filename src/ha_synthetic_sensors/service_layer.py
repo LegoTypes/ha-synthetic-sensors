@@ -12,6 +12,7 @@ from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
 import yaml
 
+from .config_helpers.yaml_helpers import trim_yaml_keys
 from .config_manager import ConfigManager
 from .config_models import FormulaConfig
 from .constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
@@ -24,7 +25,6 @@ from .constants_metadata import (
 from .evaluator import Evaluator
 from .name_resolver import NameResolver
 from .sensor_manager import SensorManager
-from .yaml_config_parser import trim_yaml_keys
 
 _LOGGER = logging.getLogger(__name__)
 

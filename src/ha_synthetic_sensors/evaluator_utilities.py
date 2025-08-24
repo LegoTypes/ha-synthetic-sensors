@@ -122,7 +122,7 @@ class EvaluatorSensorRegistry:
 
     def get_sensor_value(self, sensor_name: str) -> float | str | bool | None:
         """Get a sensor's current value from the cross-sensor reference registry."""
-        return self._sensor_registry.get_sensor_value(sensor_name)
+        return cast(float | str | bool | None, self._sensor_registry.get_sensor_value(sensor_name))
 
     def unregister_sensor(self, sensor_name: str) -> None:
         """Unregister a sensor from the cross-sensor reference registry."""
@@ -131,4 +131,4 @@ class EvaluatorSensorRegistry:
 
     def get_registered_sensors(self) -> set[str]:
         """Get all registered sensor names."""
-        return self._sensor_registry.get_registered_sensors()
+        return cast(set[str], self._sensor_registry.get_registered_sensors())

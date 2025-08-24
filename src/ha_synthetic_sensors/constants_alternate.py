@@ -44,7 +44,7 @@ def identify_alternate_state_value(value: object) -> str | bool:
         # Handle special case for 'none' string
         if isinstance(value, str) and value.lower().strip() == ALTERNATE_STATE_NONE:
             return ALTERNATE_STATE_NONE
-    except Exception:
+    except (AttributeError, TypeError):
         # Be tolerant of unexpected inputs - signal no alternate state found
         pass
 

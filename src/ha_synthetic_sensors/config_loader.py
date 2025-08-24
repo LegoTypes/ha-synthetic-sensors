@@ -47,7 +47,7 @@ class ConfigLoader:
             ConfigEntryError: If file loading or parsing fails
         """
         try:
-            yaml_data = load_yaml_file(file_path)
+            yaml_data = load_yaml_file(Path(file_path) if isinstance(file_path, str) else file_path)
             if not isinstance(yaml_data, dict):
                 raise ConfigEntryError(f"Configuration file {file_path} must contain a dictionary at the root level")
             return cast(ConfigDict, yaml_data)
@@ -118,7 +118,7 @@ class ConfigLoader:
                 raise ConfigEntryError("Configuration must be a dictionary")
 
             # Trim keys and return
-            return trim_yaml_keys(config_dict)
+            return cast(ConfigDict, trim_yaml_keys(config_dict))
         except Exception as e:
             _LOGGER.error("Failed to load configuration from dictionary: %s", e)
             raise ConfigEntryError(f"Failed to load configuration: {e}") from e

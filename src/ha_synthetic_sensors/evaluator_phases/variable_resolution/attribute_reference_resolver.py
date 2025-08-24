@@ -110,7 +110,7 @@ class AttributeReferenceResolver(VariableResolver):
                         return str(extracted_value)
                     _LOGGER.debug("Attribute '%s' ReferenceValue found but not numeric: %s", attr_name, extracted_value)
                     return attr_name
-                elif isinstance(attr_value, int | float):
+                if isinstance(attr_value, int | float):
                     _LOGGER.debug("Resolving attribute reference '%s' to %s", attr_name, attr_value)
                     return str(attr_value)
                 _LOGGER.debug("Attribute '%s' found but not numeric: %s", attr_name, attr_value)
