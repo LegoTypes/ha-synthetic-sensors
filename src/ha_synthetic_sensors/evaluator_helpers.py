@@ -5,8 +5,8 @@ import hashlib
 import logging
 from typing import Any
 
+from ha_synthetic_sensors.constants_alternate import identify_alternate_state_value
 from ha_synthetic_sensors.constants_boolean_states import get_current_false_states, get_current_true_states
-from ha_synthetic_sensors.constants_formula import is_ha_state_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,30 +97,36 @@ class EvaluatorHelpers:
         return value
 
     @staticmethod
-    def process_evaluation_result(result: Any) -> float | str | bool:
+    def process_evaluation_result(result: Any) -> float | str | bool | None:
         """Process and validate evaluation result."""
-        # Handle numeric results
-        if isinstance(result, int | float):
-            return result
+        processed_result: float | str | bool | None = None
 
-        # Handle boolean results
-        if isinstance(result, bool):
-            return result
-
+        # Handle None values - preserve them for Home Assistant to handle
+        # This prevents premature conversion of None to 'unknown' string, which causes ValueError
+        # for numeric sensors (energy, power, etc.) that expect numeric values or None, not strings.
+        # Home Assistant will handle None appropriately by converting to STATE_UNKNOWN internally.
+        if result is None:
+            processed_result = None
+        # Handle numeric and boolean results
+        elif isinstance(result, int | float | bool):
+            # Preserve booleans as booleans, but normalize numeric types to float
+            # to provide consistent string conversions (e.g., str(5.0) -> '5.0').
+            processed_result = result if isinstance(result, bool) else float(result)
         # Handle string results
-        if isinstance(result, str):
+        elif isinstance(result, str):
             # Preserve HA state strings
-            if is_ha_state_value(result):
-                return result
-            # Use priority analyzer: boolean-first, then numeric
-            coerced = EvaluatorHelpers.preprocess_value_for_enhanced_eval(result)
-            if isinstance(coerced, int | float | bool):
-                return coerced
-            # Fallback to string
-            return str(coerced)
+            alt_state = identify_alternate_state_value(result)
+            if isinstance(alt_state, str):
+                processed_result = result
+            else:
+                # Use priority analyzer: boolean-first, then numeric
+                coerced = EvaluatorHelpers.preprocess_value_for_enhanced_eval(result)
+                processed_result = coerced if isinstance(coerced, int | float | bool) else str(coerced)
+        else:
+            # Handle unexpected types by converting to string
+            processed_result = str(result)
 
-        # Handle unexpected types by converting to string
-        return str(result)
+        return processed_result
 
     @staticmethod
     def get_cache_key_id(formula_config: Any, context: dict[str, Any] | None) -> str:

@@ -1,0 +1,188 @@
+name: CI (Alternative Poetry Installation)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction --no-root
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Run pre-commit hooks
+      run: |
+        poetry run pre-commit run --all-files
+
+    - name: Run tests with pytest
+      run: |
+        poetry run pytest tests/ -v --cov=src/ha_synthetic_sensors --cov-report=xml --cov-report=term-missing
+
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        # Fetch full history for CodeFactor analysis
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Install dependencies
+      run: poetry install --no-interaction --no-root
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Run CodeFactor-compatible analysis
+      run: |
+        echo "Running code quality analysis compatible with CodeFactor (.codefactor.yml)..."
+
+        # Run ruff (replaces PEP8 checks, respects pyproject.toml config)
+        echo "Running ruff checks (CodeFactor PEP8 equivalent)..."
+        poetry run ruff check --output-format=github src/ || true
+
+        # Run pylint with CodeFactor-compatible settings
+        echo "Running pylint checks..."
+        poetry run pylint src/ha_synthetic_sensors/ \
+          --max-line-length=250 \
+          --disable=attribute-defined-outside-init,too-many-instance-attributes,too-many-arguments,too-few-public-methods,missing-docstring,invalid-name,broad-except,unused-argument \
+          --output-format=colorized || true
+
+        # Run radon complexity analysis (as enabled in .codefactor.yml)
+        echo "Running complexity analysis..."
+        poetry run radon cc src/ --min=C --show-complexity || true
+
+        echo "Code quality analysis completed."
+        echo "This matches the tools and settings configured in .codefactor.yml"
+        echo "CodeFactor will provide additional analysis on GitHub when the app is installed."
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Install dependencies
+      run: poetry install --no-interaction --no-root
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Run Bandit security scan
+      run: |
+        poetry run bandit -r src/ -f json -o bandit-report.json || true
+
+    - name: Upload Bandit scan results
+      uses: actions/upload-artifact@v4
+      with:
+        name: bandit-report
+        path: bandit-report.json
+
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+
+    - name: Install Poetry (Alternative Method)
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        poetry --version
+
+    - name: Configure Poetry
+      run: |
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Install dependencies
+      run: poetry install --no-interaction --no-root
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Build package
+      run: poetry build
+
+    - name: Check package
+      run: poetry run twine check dist/*
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/

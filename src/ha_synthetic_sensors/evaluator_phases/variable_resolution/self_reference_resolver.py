@@ -3,9 +3,11 @@
 import logging
 from typing import Any
 
-from ...constants_formula import is_ha_state_value, is_ha_unknown_equivalent, normalize_ha_state_value
+from ...constants_evaluation_results import RESULT_KEY_VALUE
 from ...data_validation import validate_data_provider_result
 from ...exceptions import DataValidationError, FormulaEvaluationError
+from ...shared_constants import extract_entity_key_from_domain, is_entity_from_domain
+from ...utils_resolvers import _convert_hass_state_value
 from .base_resolver import VariableResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,6 +34,10 @@ class SelfReferenceResolver(VariableResolver):
         """Set the sensor registry phase for cross-sensor references."""
         self._sensor_registry_phase = sensor_registry_phase
 
+    def resolve_backing_entity_value(self, backing_entity_id: str, original_reference: str) -> Any:
+        """Public method to resolve backing entity value."""
+        return self._resolve_backing_entity_value(backing_entity_id, original_reference)
+
     def can_resolve(self, variable_name: str, variable_value: str | Any) -> bool:
         """Determine if this resolver can handle entity ID self-reference patterns."""
         if not isinstance(variable_value, str):
@@ -39,12 +45,8 @@ class SelfReferenceResolver(VariableResolver):
 
         # Only handle entity ID patterns (sensor.sensor_key)
         # Raw sensor keys are handled by auto-injection as variables
-        if variable_value.startswith("sensor."):
-            sensor_key = variable_value[7:]  # Remove "sensor." prefix
-            if sensor_key in self._sensor_to_backing_mapping:
-                return True
-
-        return False
+        sensor_key = extract_entity_key_from_domain(variable_value, "sensor")
+        return sensor_key is not None and sensor_key in self._sensor_to_backing_mapping
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
         """Resolve an entity ID self-reference to either backing entity value or sensor calculated result."""
@@ -52,11 +54,8 @@ class SelfReferenceResolver(VariableResolver):
             return None
 
         # Only handle entity ID references (sensor.sensor_key)
-        if not variable_value.startswith("sensor."):
-            return None
-
-        sensor_key = variable_value[7:]  # Remove "sensor." prefix
-        if sensor_key not in self._sensor_to_backing_mapping:
+        sensor_key = extract_entity_key_from_domain(variable_value, "sensor")
+        if not sensor_key or sensor_key not in self._sensor_to_backing_mapping:
             return None
 
         _LOGGER.debug(
@@ -114,10 +113,10 @@ class SelfReferenceResolver(VariableResolver):
             return k == "state"
 
         def is_sensor_entity(k: str) -> bool:
-            return k.startswith("sensor.")
+            return is_entity_from_domain(k, "sensor")
 
         def is_binary_sensor_entity(k: str) -> bool:
-            return k.startswith("binary_sensor.")
+            return is_entity_from_domain(k, "binary_sensor")
 
         def is_config_key(k: str) -> bool:
             return k in ["sensor_config", "formula_config"]
@@ -214,7 +213,7 @@ class SelfReferenceResolver(VariableResolver):
             if not validated_result.get("exists"):
                 return None
 
-            value = validated_result.get("value")
+            value = validated_result.get(RESULT_KEY_VALUE)
             return self._process_resolved_value(value, backing_entity_id, original_reference, "data provider")
 
         except DataValidationError:
@@ -248,42 +247,22 @@ class SelfReferenceResolver(VariableResolver):
         """Process a resolved value from either data provider or HA state."""
         if value is None:
             _LOGGER.debug(
-                "Self-reference resolver: backing entity '%s' has None value, returning unknown state",
+                "Self-reference resolver: backing entity '%s' has None value, preserving None",
                 backing_entity_id,
             )
-            return "unknown"
+            return None
 
-        # Handle special Home Assistant state values
-        if isinstance(value, str) and (is_ha_state_value(value) or is_ha_unknown_equivalent(value)):
+        # For string values, use centralized conversion logic from utils_resolvers
+        if isinstance(value, str):
+            converted_value = _convert_hass_state_value(value, backing_entity_id)
             _LOGGER.debug(
-                "Self-reference resolver: backing entity '%s' has %s state via %s",
+                "Self-reference resolver: resolved '%s' to %s via backing entity '%s' (%s)",
+                original_reference,
+                converted_value,
                 backing_entity_id,
-                value,
                 source,
             )
-            return normalize_ha_state_value(value)
-
-        # For HA state, try to convert to numeric
-        if source == "HASS" and isinstance(value, str):
-            try:
-                numeric_value = float(value) if "." in value else int(value)
-                _LOGGER.debug(
-                    "Self-reference resolver: resolved '%s' to %s via backing entity '%s' (%s)",
-                    original_reference,
-                    numeric_value,
-                    backing_entity_id,
-                    source,
-                )
-                return numeric_value
-            except ValueError:
-                _LOGGER.debug(
-                    "Self-reference resolver: resolved '%s' to '%s' (non-numeric) via backing entity '%s' (%s)",
-                    original_reference,
-                    value,
-                    backing_entity_id,
-                    source,
-                )
-                return value
+            return converted_value
 
         # For data provider results, use value as-is
         _LOGGER.debug(

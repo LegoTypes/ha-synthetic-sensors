@@ -1,8 +1,8 @@
 """
-Configuration Manager - Core configuration loading and management.
+Configuration Manager - Main orchestration and public API.
 
-This module provides the ConfigManager class for loading, parsing, and managing
-YAML-based synthetic sensor configuration.
+This module provides the ConfigManager class as the main entry point for
+configuration management, delegating to specialized components.
 """
 
 from __future__ import annotations
@@ -16,14 +16,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 import yaml
 
+from .alternate_state_circular_validator import validate_alternate_state_handler_circular_deps
+from .config_helpers.yaml_helpers import check_duplicate_sensor_keys, extract_sensor_keys_from_yaml, trim_yaml_keys
 from .config_models import AlternateStateHandler, ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSettingsDict, SensorConfigDict
 from .config_yaml_converter import ConfigYamlConverter
+from .constants_alternate import STATE_NONE_YAML
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector
 from .schema_validator import validate_yaml_config
 from .utils_config import validate_computed_variable_references
 from .validation_utils import load_yaml_file
-from .yaml_config_parser import YAMLConfigParser, trim_yaml_keys
+from .yaml_config_parser import YAMLConfigParser
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -214,108 +217,11 @@ class ConfigManager:
         Raises:
             ConfigEntryError: If basic structural flaws are detected
         """
-        sensor_keys = self._extract_sensor_keys_from_yaml(yaml_content)
-        self._check_for_duplicate_sensor_keys(sensor_keys)
-
-    def _extract_sensor_keys_from_yaml(self, yaml_content: str) -> list[str]:
-        """Extract sensor keys from raw YAML content.
-
-        Args:
-            yaml_content: Raw YAML content string
-
-        Returns:
-            List of sensor keys found in the YAML
-        """
-        lines = yaml_content.split("\n")
-        sensor_keys = []
-        in_sensors_section = False
-
-        for line in lines:
-            if self._is_sensors_section_start(line):
-                in_sensors_section = True
-                continue
-
-            if not in_sensors_section:
-                continue
-
-            if self._should_skip_line(line):
-                continue
-
-            if self._is_end_of_sensors_section(line):
-                break
-
-            sensor_key = self._extract_sensor_key_from_line(line)
-            if sensor_key:
-                sensor_keys.append(sensor_key)
-
-        return sensor_keys
-
-    def _is_sensors_section_start(self, line: str) -> bool:
-        """Check if line marks the start of sensors section."""
-        return line.strip() == "sensors:"
-
-    def _should_skip_line(self, line: str) -> bool:
-        """Check if line should be skipped during parsing."""
-        stripped = line.strip()
-        return not stripped or stripped.startswith("#")
-
-    def _is_end_of_sensors_section(self, line: str) -> bool:
-        """Check if we've reached the end of the sensors section."""
-        stripped = line.strip()
-        return bool(stripped and not line.startswith(" "))
-
-    def _extract_sensor_key_from_line(self, line: str) -> str | None:
-        """Extract sensor key from a YAML line if it represents a sensor definition.
-
-        Args:
-            line: A line from the YAML content
-
-        Returns:
-            Sensor key if found, None otherwise
-        """
-        if ":" not in line:
-            return None
-
-        # Only process lines that appear to define keys (end with : or have : followed by content)
-        if not (line.strip().endswith(":") or ":" in line.split("#")[0]):
-            return None
-
-        # Count leading spaces to determine indentation level
-        leading_spaces = len(line) - len(line.lstrip())
-
-        # Sensor keys should be at the first indentation level (2 spaces)
-        # Nested properties like "metadata:" are at deeper levels
-        if leading_spaces != 2:
-            return None
-
-        # Extract the key (everything before the colon, trimmed)
-        key = line.split(":")[0].strip()
-        if key and key != "sensors":
-            return key
-
-        return None
-
-    def _check_for_duplicate_sensor_keys(self, sensor_keys: list[str]) -> None:
-        """Check for duplicate sensor keys and raise error if found.
-
-        Args:
-            sensor_keys: List of sensor keys to check
-
-        Raises:
-            ConfigEntryError: If duplicate keys are found
-        """
-        seen_keys = set()
-        duplicates = set()
-
-        for key in sensor_keys:
-            if key in seen_keys:
-                duplicates.add(key)
-            else:
-                seen_keys.add(key)
-
+        sensor_keys = extract_sensor_keys_from_yaml(yaml_content)
+        duplicates = check_duplicate_sensor_keys(sensor_keys)
         if duplicates:
-            duplicate_list = sorted(duplicates)
-            raise ConfigEntryError(f"Duplicate sensor keys found in YAML: {', '.join(duplicate_list)}")
+            duplicate_list = ", ".join(duplicates)
+            raise ConfigEntryError(f"Duplicate sensor keys found in YAML: {duplicate_list}")
 
         # Note: Duplicate attributes and variables within sensors will be checked
         # during the parsed config validation phase, not in raw YAML validation
@@ -377,18 +283,47 @@ class ConfigManager:
         """Parse exception handler from YAML data.
 
         Args:
-            handler_data: Dictionary containing UNAVAILABLE and/or UNKNOWN keys
+            handler_data: Dictionary containing either:
+                - Direct UNAVAILABLE, UNKNOWN, NONE, and/or FALLBACK keys (old format)
+                - alternate_states key containing the handlers (new format)
 
         Returns:
             AlternateStateHandler object or None if no handlers found
         """
-        unavailable_handler = handler_data.get("UNAVAILABLE")
-        unknown_handler = handler_data.get("UNKNOWN")
+        # Check for new alternate_states structure first
+        if "alternate_states" in handler_data:
+            alternate_states = handler_data["alternate_states"]
+            unavailable_handler = self._convert_yaml_to_python_value(alternate_states.get("UNAVAILABLE"))
+            unknown_handler = self._convert_yaml_to_python_value(alternate_states.get("UNKNOWN"))
+            none_handler = self._convert_yaml_to_python_value(alternate_states.get("NONE"))
+            fallback_handler = self._convert_yaml_to_python_value(alternate_states.get("FALLBACK"))
+        else:
+            # Fall back to old direct structure
+            unavailable_handler = self._convert_yaml_to_python_value(handler_data.get("UNAVAILABLE"))
+            unknown_handler = self._convert_yaml_to_python_value(handler_data.get("UNKNOWN"))
+            none_handler = self._convert_yaml_to_python_value(handler_data.get("NONE"))
+            fallback_handler = self._convert_yaml_to_python_value(handler_data.get("FALLBACK"))
 
-        if not unavailable_handler and not unknown_handler:
+        if unavailable_handler is None and unknown_handler is None and none_handler is None and fallback_handler is None:
             return None
 
-        return AlternateStateHandler(unavailable=unavailable_handler, unknown=unknown_handler)
+        handler = AlternateStateHandler(
+            unavailable=unavailable_handler, unknown=unknown_handler, none=none_handler, fallback=fallback_handler
+        )
+
+        # Validate for circular dependencies
+        validate_alternate_state_handler_circular_deps(handler)
+
+        return handler
+
+    def _convert_yaml_to_python_value(self, value: Any) -> Any:
+        """Convert YAML values to Python representation.
+
+        Specifically handles STATE_NONE → Python None.
+        """
+        if isinstance(value, str) and value == STATE_NONE_YAML:
+            return None
+        return value
 
     def _parse_variables(self, variables_data: dict[str, Any]) -> dict[str, str | int | float | ComputedVariable]:
         """Parse variables dictionary, handling computed variables with formula key and exception handlers.
@@ -410,8 +345,11 @@ class ConfigManager:
                     if not formula_expr or not str(formula_expr).strip():
                         raise ValueError(f"Variable '{var_name}' has empty formula expression")
 
-                    # Parse exception handler if present
+                    # Parse exception handler if present (supports both old and new structure)
                     alternate_state_handler = self._parse_alternate_state_handler(var_value)
+
+                    # Parse allow_unresolved_states if present
+                    allow_unresolved_states = var_value.get("allow_unresolved_states", False)
 
                     # Create ComputedVariable object
                     # Note: Dependencies will be resolved during context building phase
@@ -419,12 +357,20 @@ class ConfigManager:
                         formula=str(formula_expr).strip(),
                         dependencies=set(),  # Will be populated during dependency resolution
                         alternate_state_handler=alternate_state_handler,
+                        allow_unresolved_states=allow_unresolved_states,
                     )
-                elif "UNAVAILABLE" in var_value or "UNKNOWN" in var_value:
+                elif "UNAVAILABLE" in var_value or "UNKNOWN" in var_value or "NONE" in var_value or "FALLBACK" in var_value:
                     # This appears to be a simple variable with exception handlers
                     raise ValueError(
                         f"Variable '{var_name}' has exception handlers but no base value. "
                         f"Simple variables with exception handlers are not yet supported. "
+                        f"Consider using a computed variable with formula."
+                    )
+                elif "alternate_states" in var_value:
+                    # This appears to be a simple variable with alternate_states structure
+                    raise ValueError(
+                        f"Variable '{var_name}' has alternate_states but no base value. "
+                        f"Simple variables with alternate_states are not yet supported. "
                         f"Consider using a computed variable with formula."
                     )
                 else:

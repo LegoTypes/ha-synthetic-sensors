@@ -13,6 +13,7 @@ import pytest
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
+from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
 class TestCacheContextValidation:
@@ -38,8 +39,8 @@ class TestCacheContextValidation:
         )  # Same formula text  # Different entity
 
         # Evaluate with different contexts (simulating different entity values)
-        context1: dict[str, Any] = {"power_reading": 200}  # From sensor.power_meter_a
-        context2: dict[str, Any] = {"power_reading": 300}  # From sensor.power_meter_b
+        context1: dict[str, Any] = {"power_reading": ReferenceValue("sensor.power_meter_a", 200)}  # From sensor.power_meter_a
+        context2: dict[str, Any] = {"power_reading": ReferenceValue("sensor.power_meter_b", 300)}  # From sensor.power_meter_b
 
         result1 = evaluator.evaluate_formula(config1, context1)
         result2 = evaluator.evaluate_formula(config2, context2)
@@ -66,11 +67,17 @@ class TestCacheContextValidation:
         )
 
         # First evaluation
-        context1: dict[str, Any] = {"current_power": 1000, "efficiency_factor": 0.9}
+        context1: dict[str, Any] = {
+            "current_power": ReferenceValue("sensor.power_meter", 1000),
+            "efficiency_factor": ReferenceValue("input_number.efficiency", 0.9),
+        }
         result1 = evaluator.evaluate_formula(config, context1)
 
         # Second evaluation with different values (simulating entity state changes)
-        context2: dict[str, Any] = {"current_power": 1500, "efficiency_factor": 0.85}
+        context2: dict[str, Any] = {
+            "current_power": ReferenceValue("sensor.power_meter", 1500),
+            "efficiency_factor": ReferenceValue("input_number.efficiency", 0.85),
+        }
         result2 = evaluator.evaluate_formula(config, context2)
 
         assert result1["success"] is True
@@ -87,10 +94,13 @@ class TestCacheContextValidation:
 
         # Multiple evaluations with different contexts
         test_cases = [
-            ({"var_a": 10, "var_b": 20}, 30),
-            ({"var_a": 100, "var_b": 200}, 300),
-            ({"var_a": 5, "var_b": 15}, 20),
-            ({"var_a": 10, "var_b": 20}, 30),  # Repeat first case - should be cached
+            ({"var_a": ReferenceValue("var_a", 10), "var_b": ReferenceValue("var_b", 20)}, 30),
+            ({"var_a": ReferenceValue("var_a", 100), "var_b": ReferenceValue("var_b", 200)}, 300),
+            ({"var_a": ReferenceValue("var_a", 5), "var_b": ReferenceValue("var_b", 15)}, 20),
+            (
+                {"var_a": ReferenceValue("var_a", 10), "var_b": ReferenceValue("var_b", 20)},
+                30,
+            ),  # Repeat first case - should be cached
         ]
 
         results = []
@@ -153,7 +163,7 @@ class TestCacheContextValidation:
         )  # Equivalent to power_input=100 + 50
 
         # Evaluate first with context
-        context: dict[str, Any] = {"power_input": 100}
+        context: dict[str, Any] = {"power_input": ReferenceValue("sensor.power_meter", 100)}
         result1 = evaluator.evaluate_formula(config1, context)
 
         # Evaluate second without context (direct formula)

@@ -99,10 +99,20 @@ class TestStateVariableInAttributes:
 
             # Verify the attributes were calculated correctly
             assert "daily_total" in sensor._calculated_attributes
-            assert sensor._calculated_attributes["daily_total"] == 2400.0
+            # With ReferenceValue architecture, extract the value for comparison
+            daily_total_value = sensor._calculated_attributes["daily_total"]
+            if hasattr(daily_total_value, "value"):
+                assert daily_total_value.value == 2400.0
+            else:
+                assert daily_total_value == 2400.0
 
             assert "weekly_total" in sensor._calculated_attributes
-            assert sensor._calculated_attributes["weekly_total"] == 16800.0
+            # With ReferenceValue architecture, extract the value for comparison
+            weekly_total_value = sensor._calculated_attributes["weekly_total"]
+            if hasattr(weekly_total_value, "value"):
+                assert weekly_total_value.value == 16800.0
+            else:
+                assert weekly_total_value == 16800.0
 
             # Optional attribute verified via mocked evaluator path only
 
@@ -154,4 +164,9 @@ class TestStateVariableInAttributes:
 
             # Verify the attribute was calculated
             assert "simple_attr" in sensor._calculated_attributes
-            assert sensor._calculated_attributes["simple_attr"] == 100.0
+            # With ReferenceValue architecture, extract the value for comparison
+            simple_attr_value = sensor._calculated_attributes["simple_attr"]
+            if hasattr(simple_attr_value, "value"):
+                assert simple_attr_value.value == 100.0
+            else:
+                assert simple_attr_value == 100.0

@@ -2,9 +2,9 @@
 
 ## Introduction
 
-The HA Synthetic Sensors system implements a layered architecture for creating and managing synthetic sensors in Home
-Assistant. This architecture follows compiler-like design principles with clear separation of concerns, enabling extensible
-formula evaluation, robust dependency management, and type-safe entity reference handling.
+The HA Synthetic Sensors system implements a layered architecture for creating and managing synthetic sensors in Home Assistant.
+This architecture follows compiler-like design principles with clear separation of concerns, enabling extensible formula
+evaluation, robust dependency management, and type-safe entity reference handling.
 
 ## Architectural Design
 
@@ -17,11 +17,59 @@ The system is organized into distinct layers, each with specific responsibilitie
 - **Storage Layer**: Manages persistence, CRUD operations, and YAML export/import
 - **Integration Layer**: Provides Home Assistant integration and entity management
 
+### Evaluator Architecture
+
+The evaluation system implements a **layered evaluator architecture** with clear separation of concerns:
+
+#### Evaluator (`evaluator.py`)
+
+**High-level orchestrator** that manages the entire evaluation pipeline:
+
+- **Multi-Phase Coordination**: Orchestrates 5 distinct evaluation phases in strict order
+- **Dependency Management**: Handles cross-sensor references and attribute dependencies
+- **Circuit Breaker Pattern**: Implements two-tier error handling (fatal vs transient errors)
+- **Caching & Performance**: Manages evaluation caching and compilation optimizations
+- **Configuration Integration**: Handles sensor configurations and entity mappings
+- **Cross-Sensor References**: Manages sensor registry for cross-sensor value sharing
+
+#### CoreFormulaEvaluator (`core_formula_evaluator.py`)
+
+**Focused evaluation service** implementing the CLEAN SLATE routing architecture:
+
+- **CLEAN SLATE Routing**: Two-path routing system for formula evaluation
+  - Path 1: Metadata functions → MetadataHandler
+  - Path 2: Everything else → Enhanced SimpleEval (99% of cases)
+- **Value Resolution**: Substitutes ReferenceValue objects with their actual values
+- **Missing State Detection**: Identifies when sensors should be unavailable
+- **Result Normalization**: Converts various result types to consistent return types
+- **Reusable Service**: Designed for use across different contexts (main formulas, computed variables, attributes)
+- **Deterministic Behavior**: Single responsibility with no fallback code
+
+#### Hierarchical Relationship
+
+```text
+Evaluator (High-level orchestrator)
+    ↓ uses
+FormulaExecutionEngine (Execution coordination)
+    ↓ uses
+CoreFormulaEvaluator (Core evaluation logic)
+    ↓ uses
+EnhancedSimpleEvalHelper (Math operations)
+```
+
+#### FormulaEvaluatorService
+
+**Shared service layer** that provides unified access to CoreFormulaEvaluator:
+
+- **Unified Interface**: Single entry point for all formula types
+- **Shared Core**: All formulas use the same CoreFormulaEvaluator instance
+- **Pipeline Support**: Enables full pipeline evaluation for computed variables and attributes
+
 ### ReferenceValue Architecture
 
-At the heart of the system is the ReferenceValue architecture that ensures type safety and provides handlers with access to
-both entity references and their resolved values. This enables features like the `metadata()` function that require knowledge
-of the reference from which the value was derived at any point in the resolution and evaluation pipeline.
+At the heart of the system is the ReferenceValue architecture that ensures type safety and provides handlers with access to both
+entity references and their resolved values. This enables features like the `metadata()` function that require knowledge of the
+reference from which the value was derived at any point in the resolution and evaluation pipeline.
 
 #### Lazy Value Resolution
 
@@ -30,8 +78,8 @@ pipeline:
 
 - **Reference Preservation**: ReferenceValue objects maintain the original entity reference (e.g., `sensor.power_meter`)
   alongside the resolved value (e.g., `1000.0`)
-- **Computed Variable Handling**: Computed variables containing metadata functions use lazy ReferenceValue resolution to
-  prevent premature value extraction
+- **Computed Variable Handling**: Computed variables containing metadata functions use lazy ReferenceValue resolution to prevent
+  premature value extraction
 - **Evaluation Order Control**: The 4-phase pipeline ensures metadata processing occurs before value resolution, preserving
   references for metadata handlers
 
@@ -40,14 +88,16 @@ pipeline:
 Formula evaluation follows a multi-phase approach with distinct responsibilities:
 
 - **Phase 0**: Pre-evaluation validation and preparation
-- **Phase 1**: Entity ID resolution and ReferenceValue creation
+- **Phase 1**: Entity ID resolution and ReferenceValue creation with early result detection
 - **Phase 2**: Metadata function processing and context building
+- **Phase 2**: Dependency management and evaluation routing
 - **Phase 3**: Value resolution and formula execution
-- **Phase 4**: Result processing and caching
+- **Phase 4**: Consolidated result processing, alternate state handling, and caching
 
 This phased approach ensures proper evaluation order, particularly for evaluation handlers that require access to original
-entity references rather than resolved values. All formula artifacts (main sensor formulas, computed variables, and
-attributes) share the same pipeline via a core evaluation service.
+entity references rather than resolved values. All formula artifacts (main sensor formulas, computed variables, and attributes)
+share the same pipeline via a core evaluation service. Phase 4 serves as the single consolidation point for all alternate state
+processing, eliminating duplicate logic across phases.
 
 ## Formula Evaluation Order by Artifact Type
 
@@ -88,18 +138,23 @@ whether in the main sensor, attributes, or variables use a single formula evalua
 
 ### Core Formula Evaluation Service
 
+- **Shared Service Pattern**: `FormulaEvaluatorService` provides a unified interface for all formula types using the same
+  CoreFormulaEvaluator
 - Entry points:
   - `FormulaEvaluatorService.evaluate_formula(resolved_formula, original_formula, context)` for main formulas (Phase 3
     execution).
   - `FormulaEvaluatorService.evaluate_formula_via_pipeline(formula, context, *, variables=None, bypass_dependency_management=False)`
     for computed variables and attributes to run the full pipeline (Phases 1–3) with dependency management.
-- Computed variables are evaluated by creating a temporary `FormulaConfig` (id `temp_cv_<hash>`) and invoking the same
-  evaluator used for main/attribute formulas. A variables view can be supplied to expose global/sensor-level simple variables
-  to the computed variable (excluding nested `ComputedVariable` instances to avoid recursion).
+- **Layered Architecture**:
+  - Evaluator (high-level orchestrator) → FormulaExecutionEngine (execution coordination) → CoreFormulaEvaluator (core
+    evaluation logic)
+- Computed variables are evaluated by creating a temporary `FormulaConfig` (id `temp_cv_<hash>`) and invoking the same evaluator
+  used for main/attribute formulas. A variables view can be supplied to expose global/sensor-level simple variables to the
+  computed variable (excluding nested `ComputedVariable` instances to avoid recursion).
 - All formula artifacts therefore share identical ordering: variable resolution → pre-eval handlers like metadata → reduction
   from ReferenceValue or numeric from string → evaluation.
-- simpleeval evaluation is enhanced with additional functions for datetime, duration, and other capabilities beyond its
-  native features
+- simpleeval evaluation is enhanced with additional functions for datetime, duration, and other capabilities beyond its native
+  features
 
 ### Variable Scoping and Inheritance
 
@@ -120,27 +175,26 @@ whether in the main sensor, attributes, or variables use a single formula evalua
   - Main formula strings.
   - Sensor-level `variables` including recursive extraction from `ComputedVariable.formula` values.
   - Attribute `formulas` and attribute `variables` (including recursive extraction from `ComputedVariable.formula`).
-- This ensures entity references inside computed variables and attributes are tracked, so missing entities trigger
-  re-evaluation when they become available (fixes "Undefined variable: 'sensor'" caused by untracked dependencies).
+- This ensures entity references inside computed variables and attributes are tracked, so missing entities trigger re-evaluation
+  when they become available (fixes "Undefined variable: 'sensor'" caused by untracked dependencies).
 
 ### Lazy ReferenceValue Lifecycle and Substitution
 
-- Phase 1 places `ReferenceValue` objects in the context for entity references and `state`, preserving original references
-  and deferring value extraction.
+- Phase 1 places `ReferenceValue` objects in the context for entity references and `state`, preserving original references and
+  deferring value extraction.
 - Phase 2 processes `metadata()` with access to preserved references.
 - Phase 3 performs value substitution and evaluation:
-  - Variable names in the formula are substituted with values from the handler context, converting numeric strings to
-    numbers.
+  - Variable names in the formula are substituted with values from the handler context, converting numeric strings to numbers.
   - Secondary safeguard: any remaining dotted entity_id tokens (e.g., `sensor.x`) are substituted by looking up both an alias
     form (`sensor_x`) and the raw entity_id in the handler context. This covers cases where earlier phases deliberately
     preserved dotted tokens for metadata.
-  - Unknown/unavailable states propagate as transient (non-fatal) and will make the synthetic sensor unavailable/unknown
-    rather than raising configuration errors.
+  - Unknown/unavailable states propagate as transient (non-fatal) and will make the synthetic sensor unavailable/unknown rather
+    than raising configuration errors.
 
 ### Startup and Transient States
 
-- During startup, entities may report `unknown` or `unavailable`. These are treated as transient conditions and do not
-  generate errors:
+- During startup, entities may report `unknown` or `unavailable`. These are treated as transient conditions and do not generate
+  errors:
   - Dependency checks classify these states separately from fatal missing entities.
   - Evaluation substitutes values accordingly and propagates transient state to synthetic sensors.
 - Logging related to early context building and unresolved tokens is at DEBUG level to keep startup logs clean.
@@ -149,13 +203,13 @@ whether in the main sensor, attributes, or variables use a single formula evalua
 
 - Context tracing (e.g., `ENTITY_REFERENCE_CONTEXT_DEBUG`) logs at DEBUG.
 - Hints about non-substitution in early phases log at DEBUG.
-- Core evaluation only logs errors for genuine evaluation failures; dotted token presence is traced at DEBUG before/after
-  Phase 3 substitution.
+- Core evaluation only logs errors for genuine evaluation failures; dotted token presence is traced at DEBUG before/after Phase
+  3 substitution.
 
 ### Phase Coordination and Data Flow
 
-The Evaluator orchestrates phase execution through the `_evaluate_formula_core` method (invoked by
-`FormulaEvaluatorService`), which:
+The Evaluator orchestrates phase execution through the `_evaluate_formula_core` method (invoked by `FormulaEvaluatorService`),
+which:
 
 1. **Guards Against Premature Execution**: Pre-evaluation checks prevent processing of invalid or cached formulas
 2. **Ensures Type Safety**: Variable resolution creates ReferenceValue objects before any handler execution
@@ -191,13 +245,23 @@ The system implements a two-tier error handling approach:
 
 ## Evaluation Pipeline Diagram
 
-The following diagram illustrates the complete evaluation pipeline with all phases, components, and data flow:
+The following diagrams illustrate the complete evaluation pipeline with all phases, components, and data flow.
+
+- **Method-level diagram**: `evaluation_pipeline_flow_with_methods.jpeg` — maps pipeline nodes to implementing modules.
+  - **Examples**: `Evaluator._evaluate_formula_core`, `CoreFormulaEvaluator.evaluate_formula`, `MetadataHandler.evaluate`,
+    `VariableResolutionPhase`.
+  - **Purpose**: Helps trace runtime behavior back to source implementation for easier navigation and debugging.
+
+![Evaluation Pipeline (method-level)](evaluation_pipeline_flow_with_methods.jpeg)
+
+- **Overview diagram**: a high-level conceptual flow retained for orientation and design discussion.
 
 ![Evaluator Flow Diagram](evaluator_flow_diagram.jpeg)
 
-_Figure: Multi-phase evaluation pipeline showing the flow from formula input through entity ID resolution, metadata
-processing, value resolution, formula execution, and result processing. The 4-phase approach with lazy ReferenceValue
-resolution ensures metadata functions receive original entity references rather than prematurely resolved values._
+_Figure: Multi-phase evaluation pipeline showing the flow from formula input through entity ID resolution, metadata processing,
+value resolution, formula execution, and result processing. The 4-phase approach with lazy ReferenceValue resolution ensures
+metadata functions receive original entity references rather than prematurely resolved values. The method-level diagram above
+provides direct mapping between pipeline steps and their implementing functions/modules for easier navigation of the codebase._
 
 ## Major Components
 
@@ -270,8 +334,11 @@ Main evaluation orchestrator that coordinates the multi-phase evaluation process
 - **Dependency Management**: Handles cross-sensor references and attribute dependencies
 - **Error Resilience**: Distinguishes between configuration errors and runtime failures
 - **Performance Optimization**: Integrates caching and compilation optimizations
-- **Metadata Function Support**: Ensures metadata functions receive original entity references, not prematurely resolved
-  values
+- **Metadata Function Support**: Ensures metadata functions receive original entity references, not prematurely resolved values
+- **High-Level Orchestration**: Coordinates the entire evaluation pipeline including dependency management, caching, and error
+  handling
+- **Cross-Sensor References**: Manages sensor registry for cross-sensor value sharing
+- **Configuration Integration**: Handles sensor configurations and entity mappings
 
 #### VariableResolutionPhase
 
@@ -325,17 +392,47 @@ Phase 2 component that builds the final evaluation context:
 
 #### FormulaExecutionEngine
 
-Phase 3 component that executes resolved formulas using specialized handlers:
+Phase 3 component that coordinates formula execution and delegates to CoreFormulaEvaluator:
 
-- **Handler Selection**: Uses HandlerFactory to select appropriate handler based on formula content
-- **Expression Evaluation**: Integrates with SimpleEval for mathematical expressions
+- **Execution Coordination**: Manages the execution flow and delegates to CoreFormulaEvaluator
+- **Handler Integration**: Provides access to HandlerFactory and EnhancedSimpleEvalHelper
 - **Error Handling**: Provides structured error reporting and state propagation
 - **Result Processing**: Converts handler results to standardized EvaluationResult objects
+- **Core Evaluator Access**: Exposes CoreFormulaEvaluator for shared service usage
 
-### 4. Handler Architecture (Phase 3 Components)
+### 4. Core Formula Evaluation and Handler Architecture
+
+#### CoreFormulaEvaluator
+
+Core formula evaluation service implementing the CLEAN SLATE routing architecture:
+
+- **CLEAN SLATE Routing**: Implements two-path routing system for formula evaluation
+  - Path 1: Metadata functions → MetadataHandler
+  - Path 2: Everything else → Enhanced SimpleEval (99% of cases)
+- **Value Resolution**: Substitutes ReferenceValue objects with their actual values in formulas
+- **Missing State Detection**: Identifies when sensors should be unavailable due to missing state values
+- **Result Normalization**: Converts various result types to consistent return types
+- **Reusable Service**: Designed to be used across different contexts (main formulas, computed variables, attributes)
+- **Deterministic Behavior**: Implements single responsibility with no fallback code
+
+#### Handler Architecture (Phase 3 Components)
 
 The handler system executes resolved formulas based on their content type. All handlers operate on ReferenceValue objects
 created during Phase 1.
+
+**AST Caching Integration**: Handlers that perform formula transformations for AST caching compatibility implement a specific
+protocol:
+
+- **Transformation Protocol**: Handlers return `tuple[str, dict[str, str]]` from `evaluate()` method
+  - First element: Transformed formula string suitable for AST caching
+  - Second element: Dictionary of pre-computed values for context injection
+- **Cache Consistency**: Transformed formulas maintain consistent structure for cache key generation
+- **Value Preservation**: Pre-computed values are injected into evaluation context for SimpleEval access
+- **Optional Protocol**: This is an optional protocol - handlers that don't need AST caching transformations can return single
+  values
+- **Future Handler Support**: This pattern enables other handlers to implement similar AST caching transformations
+- **Base Class Compatibility**: The base `FormulaHandler` class maintains `evaluate() -> Any` signature for backward
+  compatibility
 
 #### HandlerFactory
 
@@ -367,6 +464,10 @@ Provides access to Home Assistant entity metadata:
 - **ReferenceValue Support**: Processes ReferenceValue objects containing original entity references
 - **Lazy Resolution Integration**: Works with the 4-phase pipeline to receive original references, not prematurely resolved
   values
+- **AST Caching Transformation**: Transforms metadata function calls for AST caching compatibility
+  - Replaces `metadata(entity, 'key')` with `metadata_result(_metadata_N)` in formula strings
+  - Returns tuple of `(transformed_formula, metadata_results_dict)` for cache consistency
+  - Enables AST caching while preserving metadata lookup functionality
 
 ### 5. Variable Resolution System
 
@@ -593,10 +694,10 @@ allowing lazy value extraction during later phases.
 
 #### Phase 2: Entity Reference-Reliant Handler Processing (VariableResolutionPhase)
 
-Certain handlers are reliant on entity references to carry out work before evaluation. The metadata handler is one such
-entity that needs an entity_id or 'state' token as its first parameter (by convention) to perform work just before
-evaluation. The metadata handler needs an entity_id to query HA about metadata like 'last_changed' state. Normally entity
-references would be resolve to values but we avoid this step to allow these handlers to use that entity reference first.
+Certain handlers are reliant on entity references to carry out work before evaluation. The metadata handler is one such entity
+that needs an entity_id or 'state' token as its first parameter (by convention) to perform work just before evaluation. The
+metadata handler needs an entity_id to query HA about metadata like 'last_changed' state. Normally entity references would be
+resolve to values but we avoid this step to allow these handlers to use that entity reference first.
 
 1. **Metadata Function Detection**: Identifies `metadata()` function calls in formulas
 2. **MetadataHandler Processing**: Processes metadata functions with access to ReferenceValue objects containing original
@@ -604,40 +705,134 @@ references would be resolve to values but we avoid this step to allow these hand
 3. **Function Replacement**: Replaces metadata function calls with their resolved results
 4. **Context Preservation**: Maintains ReferenceValue objects in context for subsequent processing
 
-**Key Feature**: Entity Reference Handlers, e.g., Metadata functions receive ReferenceValue objects with original entity
-references (e.g., `sensor.power_meter`), not prematurely resolved values (e.g., `1000.0`), enabling proper metadata lookup.
+Entity Reference Handlers, e.g., Metadata functions receive ReferenceValue objects with original entity references (e.g.,
+`sensor.power_meter`), not prematurely resolved values (e.g., `1000.0`), enabling proper metadata lookup.
 
-#### Gated evaluation of entity reference reliant handlers (e.g., metadata) containing computed variables
+#### Evaluation of entity reference reliant handlers (e.g., metadata) containing computed variables
 
 - Computed variables whose formulas contain `metadata(...)` are discovered during variable resolution.
-- To preserve the single-entry evaluation model and avoid spreading handler awareness, they are evaluated (when possible) in
-  the same resolver pass that already processes metadata for the current formula.
+- To preserve the single-entry evaluation model and avoid spreading handler awareness, they are evaluated (when possible) in the
+  same resolver pass that already processes metadata for the current formula.
 - Gate conditions:
   - `_hass` and `current_sensor_entity_id` exist in context, and
   - `hass.states.get(current_sensor_entity_id)` returns a state object.
-- When the gate passes, the computed variable is evaluated via the unified pipeline and its `ReferenceValue` is updated to
+- When the gate passes, the computed variable is evaluated via the evaluation pipeline and its `ReferenceValue` is updated to
   hold the concrete boolean/numeric result. When the gate fails (e.g., during startup), a lazy `ReferenceValue` with
   `value=None` is kept for that cycle. On later polls, once the entity is present, the resolver evaluates and updates the
   computed variable, so attribute formulas that reference it (e.g., `grace_period_active: within_grace`) substitute a real
   boolean instead of `None`.
 
-#### Phase 3: Value Resolution (CoreFormulaEvaluator)
+#### Phase 3: Value Resolution and Formula Execution (CoreFormulaEvaluator)
 
-1. **ReferenceValue Extraction**: Extracts actual values from ReferenceValue objects for final formula evaluation
-2. **Formula Substitution**: Replaces variable references with resolved values in the formula string
-3. **SimpleEval Execution**: Performs final mathematical evaluation using SimpleEval
-4. **Result Processing**: Converts evaluation results to standardized format
+1. **Pipeline Routing**: Processes formula elements through pipeline in order using the handlers first
+   - Metadata functions → MetadataHandler
+   - Everything else → Enhanced SimpleEval
+2. **Handler Transformation**: Handlers perform formula transformations for AST caching compatibility
+   - MetadataHandler transforms `metadata(entity, 'key')` → `metadata_result(_metadata_N)`
+   - Returns `(transformed_formula, metadata_results_dict)` for cache consistency
+   - Pre-computed values are injected into evaluation context
+3. **ReferenceValue Extraction**: Extracts actual values from ReferenceValue objects for final formula evaluation
+4. **Formula Substitution**: Replaces variable references with resolved values in the formula string
+5. **Missing State Detection**: Identifies missing states that should trigger unavailable sensor behavior
+6. **Enhanced SimpleEval Execution**: Performs final mathematical evaluation using enhanced SimpleEval
+7. **Result Processing**: Converts evaluation results to standardized format
 
-**Key Feature**: Value extraction occurs only at the final evaluation stage, ensuring metadata functions have access to
-original references throughout the pipeline.
+Value extraction occurs only at the final evaluation stage, ensuring metadata functions have access to original references
+throughout the pipeline.
 
-#### Phase 4: Formula Execution (FormulaExecutionEngine)
+**AST Caching Integration**: The transformation pattern ensures cache consistency by:
 
-1. **HandlerFactory** selects appropriate handler based on formula content
-2. **NumericHandler** processes mathematical expressions using SimpleEval (default handler)
-3. **MetadataHandler** provides entity metadata access via metadata() function (processed in Phase 2)
+- Using transformed formulas (e.g., `metadata_result(_metadata_0)`) as cache keys
+- Maintaining consistent formula structure across evaluations
+- Enabling cache hits for formulas with dynamic metadata values
 
-#### Phase 5: Result Processing
+**AST Cache Setup Call Chain for Metadata Functions**:
+
+1. **CoreFormulaEvaluator.evaluate_formula()** (Phase 3)
+   - Receives original formula: `"metadata(sensor_1, 'last_changed')"`
+   - Calls: `handler.evaluate(original_formula, handler_context)`
+
+2. **MetadataHandler.evaluate()**
+   - Transforms formula: `"metadata(sensor_1, 'last_changed')"` → `"metadata_result(_metadata_0)"`
+   - Returns: `("metadata_result(_metadata_0)", {"_metadata_0": "2025-01-01T12:00:00+00:00"})`
+
+3. **CoreFormulaEvaluator.evaluate_formula()** (continued)
+   - Sets: `resolved_formula = "metadata_result(_metadata_0)"`
+   - Calls: `self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)`
+
+4. **EnhancedSimpleEvalHelper.try_enhanced_eval()**
+   - Calls: `self._compilation_cache.get_compiled_formula(formula)` ← **AST CACHE SETUP HAPPENS HERE**
+   - Formula parameter: `"metadata_result(_metadata_0)"` (transformed formula)
+
+5. **FormulaCompilationCache.get_compiled_formula()**
+   - Generates cache key from: `"metadata_result(_metadata_0)"`
+   - Creates: `CompiledFormula("metadata_result(_metadata_0)", math_functions)`
+   - Parses AST: `self.evaluator.parse("metadata_result(_metadata_0)")` ← **AST PARSING HAPPENS HERE**
+   - Stores in cache: `self._cache[cache_key] = compiled`
+
+For metadata functions we resolve its two parameters before simpleeval evaluation. We then need the AST cache to reflect a
+single parameter call because we already have resolved the metadata value and we are only doing single parameter substitution.
+The metadata function simpleeval knows about simply returns the parameter it was given. The AST cache is set up using the
+**transformed function** (`"metadata_result(_metadata_0)"`), not the original formula (`"metadata(sensor_1, 'last_changed')"`).
+This ensures cache consistency because subsequent evaluations will use the same transformed formula structure.
+
+**Subsequent Evaluations (Cache Hit)**:
+
+1. **CoreFormulaEvaluator.evaluate_formula()** (Phase 3)
+   - Receives same original formula: `"metadata(sensor_1, 'last_changed')"`
+   - Calls: `handler.evaluate(original_formula, handler_context)`
+
+2. **MetadataHandler.evaluate()**
+   - Transforms to same structure: `"metadata_result(_metadata_0)"` (different metadata value)
+   - Returns: `("metadata_result(_metadata_0)", {"_metadata_0": "2025-01-01T12:30:00+00:00"})` (updated value)
+
+3. **CoreFormulaEvaluator.evaluate_formula()** (continued)
+   - Sets: `resolved_formula = "metadata_result(_metadata_0)"` (same structure)
+   - Calls: `self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)`
+
+4. **EnhancedSimpleEvalHelper.try_enhanced_eval()**
+   - Calls: `self._compilation_cache.get_compiled_formula(formula)`
+   - Formula parameter: `"metadata_result(_metadata_0)"` (same transformed formula)
+
+5. **FormulaCompilationCache.get_compiled_formula()**
+   - Generates same cache key from: `"metadata_result(_metadata_0)"`
+   - **CACHE HIT**: Returns existing `CompiledFormula` with pre-parsed AST
+   - **No AST parsing needed**: Uses cached AST for evaluation
+
+**Result**: The same formula structure enables cache hits, while different metadata values are handled through context injection
+rather than formula changes.
+
+#### Phase 4: Consolidated Result Processing and Alternate State Handling
+
+1. **Early Result Processing**: Handles early results from Phase 1 (HA state detection)
+2. **Evaluation Result Processing**: Processes results from Phase 3 evaluation
+3. **Exception Processing**: Handles exceptions from Phase 3 evaluation
+4. **Consolidated Alternate State Handling**: Single point for all alternate state handler processing
+5. **Result Finalization**: Final result processing and caching
+
+**Key Feature**: Phase 4 serves as the single consolidation point for all alternate state processing. 2. **Handler
+Integration**: Provides access to HandlerFactory and EnhancedSimpleEvalHelper 3. **Error Propagation**: Handles and propagates
+evaluation errors appropriately 4. **Result Standardization**: Converts CoreFormulaEvaluator results to standardized format
+
+### Single Value Detection and Alternate State Processing
+
+The system implements early detection of single value cases and consolidates all alternate state processing in Phase 4:
+
+#### Phase 1: Formula-Level Single Value Detection
+
+- **Location**: End of Variable Resolution Phase
+- **Purpose**: Detects when entire formula resolves to single HA state value
+- **Examples**: `"unknown"`, `"unavailable"`, `"none"`
+- **Flow**: Returns early result → Phase 4 processing
+
+#### Phase 4: Consolidated Alternate State Processing
+
+- **Location**: Post-Evaluation Processing
+- **Purpose**: Single point for all alternate state handler processing
+- **Inputs**: Early results from Phase 1, evaluation results from Phase 3, exceptions from Phase 3
+- **Handler**: `process_evaluation_result()` (unified logic)
+
+### Result Processing
 
 1. **EvaluatorResults** creates standardized result objects
 2. **EvaluatorCache** caches successful results for performance
@@ -665,6 +860,16 @@ original references throughout the pipeline.
 The handler architecture, pluggable comparison, and modular design enable extension of functionality through new handlers,
 resolvers, and evaluation phases.
 
+**AST Caching Transformation Protocol**: The system supports handlers that need to transform formulas for AST caching
+compatibility:
+
+- **Optional Protocol**: Handlers can implement the transformation protocol by returning `tuple[str, dict[str, str]]` from
+  `evaluate()`
+- **Cache Consistency**: Transformed formulas maintain consistent structure for cache key generation
+- **Value Preservation**: Pre-computed values are injected into evaluation context for SimpleEval access
+- **Backward Compatibility**: Existing handlers continue to work without modification
+- **Future Handler Support**: New handlers can implement similar transformations for AST caching benefits
+
 ### Performance
 
 Multi-layered caching, compiled formulas, and efficient reference resolution provide high performance for complex sensor
@@ -672,8 +877,7 @@ configurations.
 
 ### Resilience
 
-The system gracefully handles entity changes, configuration updates, and error conditions without requiring manual
-intervention.
+The system gracefully handles entity changes, configuration updates, and error conditions without requiring manual intervention.
 
 ### Maintainability
 

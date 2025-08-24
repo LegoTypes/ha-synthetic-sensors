@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import re
-from typing import TypedDict
+from typing import Any, TypedDict
 
-from .comparison_handlers import compare_values as factory_compare_values
 from .exceptions import DataValidationError
 from .type_analyzer import OperandType
 
@@ -155,35 +155,99 @@ class ConditionParser:
         return value_str
 
     @staticmethod
+    def _convert_value_for_comparison(value_str: str) -> int | float | bool | str:
+        """Convert a string value to the appropriate type for comparison.
+
+        Args:
+            value_str: String value to convert
+
+        Returns:
+            Converted value (int, float, bool, or str)
+        """
+        # Try to convert to numeric types first
+        try:
+            if "." in value_str:
+                return float(value_str)
+            return int(value_str)
+        except ValueError:
+            pass
+
+        # Try to convert to boolean
+        if value_str.lower() in ("true", "false"):
+            return value_str.lower() == "true"
+
+        # Return as string
+        return value_str
+
+    @staticmethod
     def evaluate_condition(actual_value: OperandType, condition: ParsedCondition) -> bool:
         """Evaluate a parsed condition against an actual value.
 
-        This method can handle any type supported by the extensible comparison system,
-        including built-in types (numeric, string, boolean, datetime, version) and
-        user-defined types registered with the comparison factory.
+        This method handles basic type comparisons using Python's built-in operators.
 
         Args:
-            actual_value: The actual value to compare (any supported type)
+            actual_value: The actual value to compare
             condition: Parsed condition with operator and expected value
 
         Returns:
             True if the condition matches
         """
-        return factory_compare_values(actual_value, condition["value"], condition["operator"])
+        expected_value = ConditionParser._convert_value_for_comparison(condition["value"])
+        operator = condition["operator"]
+
+        # Convert actual_value to comparable type
+        actual_converted = ConditionParser._convert_value_for_comparison(str(actual_value))
+
+        # Define operator functions with explicit type annotations
+        operator_functions: dict[str, Callable[[Any, Any], bool]] = {
+            "==": lambda a, b: a == b,
+            "!=": lambda a, b: a != b,
+            "<": lambda a, b: a < b,
+            "<=": lambda a, b: a <= b,
+            ">": lambda a, b: a > b,
+            ">=": lambda a, b: a >= b,
+        }
+
+        try:
+            if operator in operator_functions:
+                return operator_functions[operator](actual_converted, expected_value)
+            return False
+        except TypeError:
+            # If comparison fails due to type mismatch, return False
+            return False
 
     @staticmethod
     def compare_values(actual: OperandType, op: str, expected: OperandType) -> bool:
         """Compare two values using the specified operator.
 
-        This method can handle any types supported by the extensible comparison system,
-        including built-in types and user-defined types registered with the factory.
+        This method handles basic type comparisons using Python's built-in operators.
 
         Args:
-            actual: Actual value (any supported type)
+            actual: Actual value
             op: Comparison operator
-            expected: Expected value (any supported type)
+            expected: Expected value
 
         Returns:
             True if comparison is true
         """
-        return factory_compare_values(actual, expected, op)
+        # Convert both values to comparable types
+        actual_converted = ConditionParser._convert_value_for_comparison(str(actual))
+        expected_converted = ConditionParser._convert_value_for_comparison(str(expected))
+
+        # Define operator functions with explicit type annotations
+        operator_functions: dict[str, Callable[[Any, Any], bool]] = {
+            "==": lambda a, b: a == b,
+            "!=": lambda a, b: a != b,
+            "<": lambda a, b: a < b,
+            "<=": lambda a, b: a <= b,
+            ">": lambda a, b: a > b,
+            ">=": lambda a, b: a >= b,
+        }
+
+        try:
+            if op in operator_functions:
+                return operator_functions[op](actual_converted, expected_converted)
+            return False
+        except TypeError:
+            # If comparison fails due to type mismatch, return False
+            return False

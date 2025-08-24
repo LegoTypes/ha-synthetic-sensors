@@ -69,11 +69,14 @@ sensors:
     entity_id: "sensor.span_grace_period_test"
     formula: "state"
     # Test that literal entity IDs in metadata functions now work with validation fix
-    UNAVAILABLE: "state if within_grace else UNAVAILABLE"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "state if within_grace else UNAVAILABLE"
     variables:
       within_grace:
         formula: "minutes_between(metadata(sensor.span_grace_period_test, 'last_changed'), now()) < grace_period_minutes"
-        UNAVAILABLE: 'false'
+        alternate_states:
+          UNAVAILABLE: false
       grace_period_minutes: "15"
     attributes:
       grace_period_active:

@@ -13,21 +13,69 @@ from .config_models import FormulaConfig, SensorConfig
 from .evaluator_helpers import EvaluatorHelpers
 
 
+def _looks_like_formula(s: str) -> bool:
+    """Return True if a string appears to be a formula/expression."""
+    operators = ["+", "-", "*", "/", "(", ")", "<", ">", "=", " and ", " or ", " not "]
+    return any(op in s for op in operators)
+
+
+def _strip_quotes(s: str) -> str:
+    """If string is quoted, return inner content, otherwise return original."""
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        return s[1:-1]
+    return s
+
+
+def _try_convert_numeric(s: str) -> Any:
+    """Attempt to convert a numeric-looking string to int or float, otherwise return original."""
+    if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
+        try:
+            return int(s)
+        except ValueError:
+            pass
+    if "." in s and s.replace(".", "").replace("-", "").isdigit():
+        # safe float conversion when string structure is numeric
+        try:
+            return float(s)
+        except ValueError:
+            # Fall through to returning original string
+            return s
+    return s
+
+
 def evaluate_formula_alternate(
     handler_formula: Any,
     eval_context: dict[str, Any],
     sensor_config: SensorConfig | None,
     config: FormulaConfig,
-    handler_factory: Any,
+    core_evaluator: Any,
     resolve_all_references_in_formula: Any,
 ) -> bool | str | float | int | None:
     """Evaluate sensor-level alternate handler for a formula.
 
-    Supports literal, object form {formula, variables}, or string expression.
+    Supports literal values or object form {formula, variables}.
     """
-    # Literal value
+
+    result_value: bool | str | float | int | None = None
+
+    if handler_formula is None:
+        return None
+
+    # Literal values including numeric and boolean
     if isinstance(handler_formula, bool | int | float):
-        return handler_formula
+        result_value = handler_formula
+    elif isinstance(handler_formula, str):
+        # Quoted strings should be treated as literals
+        if (handler_formula.startswith('"') and handler_formula.endswith('"')) or (
+            handler_formula.startswith("'") and handler_formula.endswith("'")
+        ):
+            result_value = _strip_quotes(handler_formula)
+        elif not _looks_like_formula(handler_formula):
+            # Simple non-formula string -> literal
+            result_value = handler_formula
+        else:
+            # It's a formula-like string; fall through to evaluation path by wrapping
+            handler_formula = {"formula": handler_formula}
 
     # Object form with local variables
     if isinstance(handler_formula, dict) and "formula" in handler_formula:
@@ -40,27 +88,12 @@ def evaluate_formula_alternate(
         resolved_handler_formula = resolve_all_references_in_formula(
             str(handler_formula["formula"]), sensor_config, temp_context, config
         )
-        handler = handler_factory.get_handler_for_formula(resolved_handler_formula)
-        if handler:
-            result = handler.evaluate(resolved_handler_formula, temp_context)
-        else:
-            numeric_handler = handler_factory.get_handler("numeric")
-            if not numeric_handler:
-                return None
-            result = numeric_handler.evaluate(resolved_handler_formula, temp_context)
-        return EvaluatorHelpers.process_evaluation_result(result)
+        # Use the normal evaluation path through CoreFormulaEvaluator
+        original_formula = str(handler_formula["formula"])
+        eval_result = core_evaluator.evaluate_formula(resolved_handler_formula, original_formula, temp_context)
+        result_value = EvaluatorHelpers.process_evaluation_result(eval_result)
 
-    # String expression (back-compat)
-    resolved_handler_formula = resolve_all_references_in_formula(str(handler_formula), sensor_config, eval_context, config)
-    handler = handler_factory.get_handler_for_formula(resolved_handler_formula)
-    if handler:
-        result = handler.evaluate(resolved_handler_formula, eval_context)
-    else:
-        numeric_handler = handler_factory.get_handler("numeric")
-        if not numeric_handler:
-            return None
-        result = numeric_handler.evaluate(resolved_handler_formula, eval_context)
-    return EvaluatorHelpers.process_evaluation_result(result)
+    return result_value
 
 
 def evaluate_computed_alternate(
@@ -71,15 +104,31 @@ def evaluate_computed_alternate(
 ) -> bool | str | float | int | None:
     """Evaluate computed-variable alternate using enhanced SimpleEval path.
 
-    Supports literal, object form {formula, variables}, or string expression.
+    Supports literal values or object form {formula, variables}.
     """
-    # Literal value
+    result_value: bool | str | float | int | None = None
+
+    if handler_formula is None:
+        return None
+
+    # Literal numeric/bool
     if isinstance(handler_formula, bool | int | float):
-        return handler_formula
+        result_value = handler_formula
+    elif isinstance(handler_formula, str):
+        # Quoted literal
+        if (handler_formula.startswith('"') and handler_formula.endswith('"')) or (
+            handler_formula.startswith("'") and handler_formula.endswith("'")
+        ):
+            result_value = _strip_quotes(handler_formula)
+        elif not _looks_like_formula(handler_formula):
+            # Try numeric conversion for numeric-like strings
+            result_value = _try_convert_numeric(handler_formula)
+        else:
+            # It's a formula-like string; wrap for evaluation
+            handler_formula = {"formula": handler_formula}
 
     enhanced_helper = get_enhanced_helper()
 
-    # Object form with local variables
     if isinstance(handler_formula, dict) and "formula" in handler_formula:
         local_vars = handler_formula.get("variables") or {}
         temp_context = eval_context.copy()
@@ -89,12 +138,6 @@ def evaluate_computed_alternate(
         enhanced_context = extract_values_for_simpleeval(temp_context)
         success, result = enhanced_helper.try_enhanced_eval(str(handler_formula["formula"]), enhanced_context)
         if success:
-            return EvaluatorHelpers.process_evaluation_result(result)
-        return None
+            result_value = EvaluatorHelpers.process_evaluation_result(result)
 
-    # String expression (back-compat)
-    enhanced_context = extract_values_for_simpleeval(eval_context)
-    success, result = enhanced_helper.try_enhanced_eval(str(handler_formula), enhanced_context)
-    if success:
-        return EvaluatorHelpers.process_evaluation_result(result)
-    return None
+    return result_value

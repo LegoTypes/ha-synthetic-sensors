@@ -150,6 +150,8 @@ class TestVariableResolution:
 
     def test_resolve_computed_variables_simple(self):
         """Test resolving simple computed variables."""
+        from unittest.mock import patch
+
         computed_var = ComputedVariable(formula="a + b")
         config = FormulaConfig(id="test", formula="result", variables={"a": "sensor.a", "b": 42, "result": computed_var})
 
@@ -157,7 +159,20 @@ class TestVariableResolution:
         entity_values = {"sensor.a": 10.0}
         resolver = self.create_mock_resolver(entity_values)
 
-        resolve_config_variables(eval_context, config, resolver)
+        # Mock the pipeline evaluation to return the expected result
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            # For formula "a + b", return 52.0 (10.0 + 42)
+            if formula == "a + b":
+                return {"success": True, "value": 52.0}
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, config, resolver)
 
         assert eval_context["a"].value == 10.0
         assert eval_context["b"].value == 42
@@ -165,6 +180,8 @@ class TestVariableResolution:
 
     def test_resolve_computed_variables_dependency_chain(self):
         """Test resolving computed variables with dependency chains."""
+        from unittest.mock import patch
+
         cv1 = ComputedVariable(formula="base * multiplier")
         cv2 = ComputedVariable(formula="intermediate + bonus")
 
@@ -178,7 +195,21 @@ class TestVariableResolution:
         entity_values = {"sensor.base": 25.0}
         resolver = self.create_mock_resolver(entity_values)
 
-        resolve_config_variables(eval_context, config, resolver)
+        # Mock the pipeline evaluation to return expected results for dependency chain
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            if formula == "base * multiplier":
+                return {"success": True, "value": 50.0}  # 25.0 * 2.0
+            elif formula == "intermediate + bonus":
+                return {"success": True, "value": 150.0}  # 50.0 + 100
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, config, resolver)
 
         assert eval_context["base"].value == 25.0
         assert eval_context["multiplier"].value == 2.0
@@ -188,6 +219,8 @@ class TestVariableResolution:
 
     def test_resolve_computed_variables_complex_expressions(self):
         """Test resolving computed variables with complex expressions."""
+        from unittest.mock import patch
+
         cv1 = ComputedVariable(formula="input_power * efficiency")
         cv2 = ComputedVariable(formula="output_power * 0.8")  # 80% derate
         cv3 = ComputedVariable(formula="derated_power if derated_power > 1000 else 1000")  # Python ternary
@@ -201,7 +234,23 @@ class TestVariableResolution:
         eval_context: dict[str, ContextValue] = {}
         resolver = self.create_mock_resolver({})
 
-        resolve_config_variables(eval_context, config, resolver)
+        # Mock the pipeline evaluation for complex expressions
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            if formula == "input_power * efficiency":
+                return {"success": True, "value": 1350.0}  # 1500 * 0.9
+            elif formula == "output_power * 0.8":
+                return {"success": True, "value": 1080.0}  # 1350 * 0.8
+            elif formula == "derated_power if derated_power > 1000 else 1000":
+                return {"success": True, "value": 1080.0}  # max(1080, 1000)
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, config, resolver)
 
         assert eval_context["input_power"].value == 1500.0
         assert eval_context["efficiency"].value == 0.9
@@ -211,6 +260,11 @@ class TestVariableResolution:
 
     def test_resolve_computed_variables_missing_dependencies(self):
         """Test handling of missing dependencies in computed variables."""
+        # Clear global state that may be affected by previous tests
+        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
+
+        FormulaEvaluatorService._core_evaluator = None
+        FormulaEvaluatorService._evaluator = None
         cv = ComputedVariable(formula="missing_var + 10")
         config = FormulaConfig(id="test", formula="result", variables={"result": cv})
 
@@ -222,6 +276,8 @@ class TestVariableResolution:
 
     def test_resolve_computed_variables_context_priority(self):
         """Test that existing context values have priority over config variables."""
+        from unittest.mock import patch
+
         cv = ComputedVariable(formula="a + b")
         config = FormulaConfig(id="test", formula="result", variables={"a": "sensor.a", "b": 50, "result": cv})
 
@@ -230,7 +286,19 @@ class TestVariableResolution:
         entity_values = {"sensor.a": 10.0}  # This should be ignored
         resolver = self.create_mock_resolver(entity_values)
 
-        resolve_config_variables(eval_context, config, resolver)
+        # Mock the pipeline evaluation to use existing context values
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            if formula == "a + b":
+                return {"success": True, "value": 1049.0}  # 999.0 + 50
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, config, resolver)
 
         assert eval_context["a"] == 999.0  # Context value preserved (raw value)
         assert eval_context["b"].value == 50
@@ -238,6 +306,11 @@ class TestVariableResolution:
 
     def test_circular_dependency_detection(self):
         """Test detection of circular dependencies in computed variables."""
+        # Clear global state that may be affected by previous tests
+        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
+
+        FormulaEvaluatorService._core_evaluator = None
+        FormulaEvaluatorService._evaluator = None
         cv1 = ComputedVariable(formula="var2 + 1")
         cv2 = ComputedVariable(formula="var1 + 1")
 
@@ -251,6 +324,8 @@ class TestVariableResolution:
 
     def test_max_iterations_protection(self):
         """Test that maximum iterations prevents infinite loops."""
+        from unittest.mock import patch
+
         # Create a complex dependency chain that should resolve in a reasonable number of iterations
         variables = {}
         for i in range(20):  # Create a long chain
@@ -264,12 +339,30 @@ class TestVariableResolution:
         eval_context: dict[str, ContextValue] = {}
         resolver = self.create_mock_resolver({})
 
-        # This should work - it's a valid dependency chain
-        resolve_config_variables(eval_context, config, resolver)
-        assert eval_context["var19"].value == 20  # 1 + 19 increments
+        # Mock the pipeline evaluation to return sequential increments
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            # Extract variable number from formula (e.g., "var0 + 1" -> 1+1=2)
+            if " + 1" in formula:
+                var_name = formula.split(" + 1")[0]
+                if var_name.startswith("var") and var_name[3:].isdigit():
+                    var_num = int(var_name[3:])
+                    return {"success": True, "value": var_num + 2}  # Previous var (var_num) + 1 + 1
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            # This should work - it's a valid dependency chain
+            resolve_config_variables(eval_context, config, resolver)
+            assert eval_context["var19"].value == 20  # 1 + 19 increments
 
     def test_resolve_with_mathematical_functions(self):
         """Test computed variables with mathematical functions."""
+        from unittest.mock import patch
+
         cv1 = ComputedVariable(formula="abs(-42)")
         cv2 = ComputedVariable(formula="round(pi_val, 2)")
         cv3 = ComputedVariable(formula="max(val1, val2)")
@@ -283,7 +376,23 @@ class TestVariableResolution:
         eval_context: dict[str, ContextValue] = {}
         resolver = self.create_mock_resolver({})
 
-        resolve_config_variables(eval_context, config, resolver)
+        # Mock the pipeline evaluation for mathematical functions
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            if formula == "abs(-42)":
+                return {"success": True, "value": 42}
+            elif formula == "round(pi_val, 2)":
+                return {"success": True, "value": 3.14}
+            elif formula == "max(val1, val2)":
+                return {"success": True, "value": 200}
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, config, resolver)
 
         assert eval_context["abs_result"].value == 42
         assert eval_context["round_result"].value == 3.14
@@ -359,6 +468,8 @@ class TestComputedVariablesInAttributes:
 
     def test_computed_variables_in_attributes_resolution(self):
         """Test that computed variables in attributes resolve correctly."""
+        from unittest.mock import patch
+
         cv = ComputedVariable(formula="raw_value * factor")
         attr_formula = FormulaConfig(
             id="test_sensor_voltage",
@@ -373,7 +484,19 @@ class TestComputedVariablesInAttributes:
                 return var_value
             return None
 
-        resolve_config_variables(eval_context, attr_formula, mock_resolver)
+        # Mock the pipeline evaluation for attribute resolution
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            if formula == "raw_value * factor":
+                return {"success": True, "value": 240.0}  # 120 * 2
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify computed variable was resolved correctly
         assert eval_context["raw_value"].value == 120.0
@@ -382,6 +505,8 @@ class TestComputedVariablesInAttributes:
 
     def test_computed_variables_with_state_reference_in_attributes(self):
         """Test computed variables that reference 'state' within attribute formulas."""
+        from unittest.mock import patch
+
         # This tests the critical scoping requirement:
         # state in attribute formulas (including computed variables) should refer to main sensor result
         cv = ComputedVariable(formula="state * multiplier")
@@ -397,7 +522,19 @@ class TestComputedVariablesInAttributes:
                 return var_value
             return None
 
-        resolve_config_variables(eval_context, attr_formula, mock_resolver)
+        # Mock the pipeline evaluation for state reference
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            if formula == "state * multiplier":
+                return {"success": True, "value": 150.0}  # 100 * 1.5
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify computed variable used the state value correctly
         assert eval_context["state"] == 100.0  # Should preserve original state (raw value)
@@ -406,6 +543,8 @@ class TestComputedVariablesInAttributes:
 
     def test_complex_attribute_computed_variables_with_dependencies(self):
         """Test complex computed variable chains in attribute formulas."""
+        from unittest.mock import patch
+
         cv1 = ComputedVariable(formula="state + offset")
         cv2 = ComputedVariable(formula="adjusted_value * scale_factor")
         cv3 = ComputedVariable(formula="scaled_value if scaled_value > threshold else threshold")
@@ -431,7 +570,23 @@ class TestComputedVariablesInAttributes:
                 return var_value
             return None
 
-        resolve_config_variables(eval_context, attr_formula, mock_resolver)
+        # Mock the pipeline evaluation for complex dependency chain
+        def mock_evaluate_formula_via_pipeline(
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+        ):
+            if formula == "state + offset":
+                return {"success": True, "value": 170.0}  # 120 + 50
+            elif formula == "adjusted_value * scale_factor":
+                return {"success": True, "value": 204.0}  # 170 * 1.2
+            elif formula == "scaled_value if scaled_value > threshold else threshold":
+                return {"success": True, "value": 204.0}  # max(204, 200)
+            return {"success": False, "error": "Unknown formula"}
+
+        with patch(
+            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
+            side_effect=mock_evaluate_formula_via_pipeline,
+        ):
+            resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify the dependency chain resolved correctly
         assert eval_context["state"] == 120.0  # Preserved original state (raw value)

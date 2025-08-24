@@ -1,0 +1,21 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_direct"
+
+sensors:
+  direct_entity_test:
+    name: "Direct Entity Reference Test"
+    formula: "sensor.circuit_a_power"  # Direct entity reference only
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  direct_entity_arithmetic_test:
+    name: "Direct Entity Arithmetic Test"
+    formula: "sensor.circuit_a_power + 10"  # Direct entity reference with arithmetic
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

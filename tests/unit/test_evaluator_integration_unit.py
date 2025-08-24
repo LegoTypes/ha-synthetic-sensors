@@ -154,8 +154,13 @@ class TestEvaluationWorkflow:
 
             # Mock cache storage
             with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
-                # Create context with variable values
-                context = {"temp": 25.0, "humidity": 60.0}
+                # Create context with variable values - use ReferenceValue objects (ReferenceValue architecture)
+                from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+                context = {
+                    "temp": ReferenceValue("sensor.temperature", 25.0),
+                    "humidity": ReferenceValue("sensor.humidity", 60.0),
+                }
 
                 result = evaluator.evaluate_formula(sample_formula_config, context)
 
@@ -253,7 +258,10 @@ class TestEvaluationWorkflow:
 
             with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
                 # Provide context with resolved values
-                context = {"global_constant": 42.5, "variable_b": 57.5}
+                context = {
+                    "global_constant": ReferenceValue("global_constant", 42.5),
+                    "variable_b": ReferenceValue("variable_b", 57.5),
+                }
                 result = evaluator.evaluate_formula(formula_config, context)
 
                 # Verify success
@@ -314,7 +322,10 @@ class TestCircuitBreakerIntegration:
             # Mock cache storage
             with patch.object(evaluator._cache_handler, "cache_result") as mock_cache_store:
                 # Provide context with resolved values for successful evaluation
-                context = {"temp": 20.0, "humidity": 60.0}
+                context = {
+                    "temp": ReferenceValue("sensor.temperature", 20.0),
+                    "humidity": ReferenceValue("sensor.humidity", 60.0),
+                }
 
                 # Perform successful evaluation
                 result = evaluator.evaluate_formula(sample_formula_config, context)

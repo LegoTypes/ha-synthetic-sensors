@@ -1,5 +1,5 @@
 """
-Schema Validation - Comprehensive YAML configuration validation using JSON Schema.
+Schema Validation - YAML configuration validation using JSON Schema.
 
 This module provides schema-based validation for synthetic sensor YAML configurations,
 with detailed error reporting and support for schema versioning.
@@ -17,18 +17,28 @@ import re
 from typing import Any, TypedDict
 
 from homeassistant.exceptions import ConfigEntryError
+import jsonschema
 
-try:
-    import jsonschema
-
-    HAS_JSONSCHEMA = True
-except ImportError:
-    HAS_JSONSCHEMA = False
-
+from .boolean_states import BooleanStates
 from .constants_formula import FORMULA_RESERVED_WORDS
+from .constants_metadata import (
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+)
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
-from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS
+from .shared_constants import (
+    DATETIME_FUNCTIONS,
+    DURATION_FUNCTIONS,
+    ENGINE_BASE_RESERVED_ATTRIBUTES,
+    LAST_VALID_CHANGED_KEY,
+    LAST_VALID_STATE_KEY,
+    METADATA_FUNCTIONS,
+    get_variable_name_reserved_words,
+)
+
+HAS_JSONSCHEMA = True
 
 try:
     from jsonschema import Draft7Validator
@@ -199,7 +209,7 @@ class SchemaValidator:
             for sensor_key, sensor_config in sensors.items():
                 # Validate device class using HA's built-in validation
                 metadata = sensor_config.get("metadata", {})
-                device_class = metadata.get("device_class")
+                device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS)
                 if device_class:
                     self._validate_device_class(sensor_key, device_class, errors)
 
@@ -217,88 +227,125 @@ class SchemaValidator:
     ) -> None:
         """Validate state_class compatibility with device_class using HA's mappings."""
         metadata = sensor_config.get("metadata", {})
-        state_class = metadata.get("state_class")
-        device_class = metadata.get("device_class", "")
+        state_class = metadata.get(METADATA_PROPERTY_STATE_CLASS)
+        device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS, "")
 
         if not state_class or not device_class:
             return
 
-        # Import HA's official device class to state class mappings
         try:
-            # Convert string values to enum instances for lookup
-            try:
-                sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
-                sensor_state_class = HAConstantLoader.get_constant("SensorStateClass")
-                device_class_enum = sensor_device_class(device_class)
-                state_class_enum = sensor_state_class(state_class)
-            except ValueError:
-                # Check if the state class is valid using component constants
-                try:
-                    sensor_state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
-                    if state_class not in sensor_state_classes:
-                        errors.append(
-                            ValidationError(
-                                message=f"Invalid state_class '{state_class}'. Valid options: {sensor_state_classes}",
-                                path=f"sensors.{sensor_key}.state_class",
-                                severity=ValidationSeverity.ERROR,
-                            )
-                        )
-                except ValueError:
-                    pass  # Skip validation if we can't get the constants
+            enums = self._get_ha_state_class_enums(state_class, device_class, sensor_key, errors)
+            if not enums:
                 return
 
-            # Check if this combination is explicitly allowed by HA
-            try:
-                device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
-                allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
-
-                if allowed_state_classes and state_class_enum not in allowed_state_classes:
-                    errors.append(
-                        ValidationError(
-                            message=(
-                                f"Invalid state_class '{state_class}' for device_class '{device_class}'. "
-                                f"Valid options: {[sc.value for sc in allowed_state_classes]}"
-                            ),
-                            path=f"sensors.{sensor_key}.state_class",
-                            severity=ValidationSeverity.ERROR,
-                        )
-                    )
-            except ValueError:
-                pass  # Skip validation if we can't get the constants
-
+            device_class_enum, state_class_enum, sensor_state_class = enums
+            self._validate_device_state_class_combination(
+                sensor_key, device_class, state_class, device_class_enum, state_class_enum, errors
+            )
+            self._validate_total_increasing_compatibility(
+                sensor_key, device_class_enum, state_class_enum, sensor_state_class, errors
+            )
         except ImportError:
             # HA not available - skip validation
             pass
 
-    def _validate_state_class_fallback(
+    def _get_ha_state_class_enums(
+        self, state_class: str, device_class: str, sensor_key: str, errors: list[ValidationError]
+    ) -> tuple[Any, Any, Any] | None:
+        """Get HA enum instances for state_class and device_class validation."""
+        try:
+            sensor_device_class = HAConstantLoader.get_constant("SensorDeviceClass")
+            sensor_state_class = HAConstantLoader.get_constant("SensorStateClass")
+            device_class_enum = sensor_device_class(device_class)
+            state_class_enum = sensor_state_class(state_class)
+            return device_class_enum, state_class_enum, sensor_state_class
+        except ValueError:
+            self._validate_state_class_against_component_constants(state_class, sensor_key, errors)
+            return None
+
+    def _validate_state_class_against_component_constants(
+        self, state_class: str, sensor_key: str, errors: list[ValidationError]
+    ) -> None:
+        """Validate state_class against component constants when enum conversion fails."""
+        try:
+            sensor_state_classes = HAConstantLoader.get_constant("STATE_CLASSES", "homeassistant.components.sensor")
+            if state_class not in sensor_state_classes:
+                errors.append(
+                    ValidationError(
+                        message=f"Invalid state_class '{state_class}'. Valid options: {sensor_state_classes}",
+                        path=f"sensors.{sensor_key}.state_class",
+                        severity=ValidationSeverity.ERROR,
+                    )
+                )
+        except ValueError:
+            pass  # Skip validation if we can't get the constants
+
+    def _validate_device_state_class_combination(
         self,
         sensor_key: str,
-        sensor_config: dict[str, Any],
         device_class: str,
         state_class: str,
+        device_class_enum: Any,
+        state_class_enum: Any,
         errors: list[ValidationError],
     ) -> None:
-        """Fallback validation when HA constants are not available."""
-        # Basic validation for obvious mismatches
-        if state_class == "total_increasing":
-            problematic_classes = [
-                "battery",
-                "temperature",
-                "humidity",
-                "signal_strength",
-            ]
-            if any(pattern in device_class for pattern in problematic_classes):
+        """Validate if device_class and state_class combination is allowed by HA."""
+        try:
+            device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
+            allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
+
+            if allowed_state_classes and state_class_enum not in allowed_state_classes:
                 errors.append(
                     ValidationError(
                         message=(
-                            f"Sensor '{sensor_key}' uses state_class 'total_increasing' with "
-                            f"device_class '{device_class}' which typically doesn't increase monotonically."
+                            f"Invalid state_class '{state_class}' for device_class '{device_class}'. "
+                            f"Valid options: {[sc.value for sc in allowed_state_classes]}"
                         ),
                         path=f"sensors.{sensor_key}.state_class",
                         severity=ValidationSeverity.ERROR,
-                        suggested_fix="Consider using 'measurement' instead",
                     )
                 )
+        except ValueError:
+            pass  # Skip validation if we can't get the constants
+
+    def _validate_total_increasing_compatibility(
+        self,
+        sensor_key: str,
+        device_class_enum: Any,
+        state_class_enum: Any,
+        sensor_state_class: Any,
+        errors: list[ValidationError],
+    ) -> None:
+        """Validate TOTAL_INCREASING state_class compatibility and suggest alternatives."""
+        if state_class_enum != sensor_state_class.TOTAL_INCREASING:
+            return
+        try:
+            device_class_state_classes = HAConstantLoader.get_constant("DEVICE_CLASS_STATE_CLASSES")
+            allowed_state_classes = device_class_state_classes.get(device_class_enum, set())
+
+            if sensor_state_class.TOTAL_INCREASING not in allowed_state_classes:
+                suggested_state_class = self._find_suggested_state_class(allowed_state_classes, sensor_state_class)
+                errors.append(
+                    ValidationError(
+                        message=(
+                            f"Sensor '{sensor_key}' uses state_class '{sensor_state_class.TOTAL_INCREASING.value}' with "
+                            f"device_class '{device_class_enum.value}' which doesn't support this state class."
+                        ),
+                        path=f"sensors.{sensor_key}.state_class",
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix=f"Consider using '{suggested_state_class.value}' instead",
+                    )
+                )
+        except ValueError:
+            pass  # Skip validation if we can't get the constants
+
+    def _find_suggested_state_class(self, allowed_state_classes: set[Any], sensor_state_class: Any) -> Any:
+        """Find a suitable alternative state class from allowed options."""
+        if sensor_state_class.MEASUREMENT in allowed_state_classes:
+            return sensor_state_class.MEASUREMENT
+        if sensor_state_class.TOTAL in allowed_state_classes:
+            return sensor_state_class.TOTAL
+        return sensor_state_class.MEASUREMENT
 
     def _validate_sensor_config(
         self,
@@ -366,6 +413,19 @@ class SchemaValidator:
         self._validate_attribute_dependencies(sensor_key, attributes, errors)
 
         for attr_name, attr_config in attributes.items():
+            # Disallow engine-reserved attribute names at YAML validation time
+            # Use shared constants to detect collisions with engine-reserved attribute names
+            if attr_name in (LAST_VALID_STATE_KEY, LAST_VALID_CHANGED_KEY) or attr_name in ENGINE_BASE_RESERVED_ATTRIBUTES:
+                errors.append(
+                    ValidationError(
+                        message=f"Attribute name '{attr_name}' is reserved by the engine and cannot be used",
+                        path=f"sensors.{sensor_key}.attributes.{attr_name}",
+                        severity=ValidationSeverity.ERROR,
+                        suggested_fix=f"Rename attribute '{attr_name}' to avoid collision with engine-reserved attributes",
+                    )
+                )
+                continue
+
             self._validate_single_attribute(sensor_key, attr_name, attr_config, variables, attributes, errors, config_data)
 
     def _validate_single_attribute(
@@ -404,6 +464,18 @@ class SchemaValidator:
 
         # Identify literal attributes and other formula attributes for cross-references
         literal_attrs, other_attr_names = self._categorize_attributes(all_attributes, attr_name)
+
+        # Disallow attribute names that collide with engine-managed last-valid attribute keys
+        if attr_name in (LAST_VALID_STATE_KEY, LAST_VALID_CHANGED_KEY):
+            errors.append(
+                ValidationError(
+                    message=f"Attribute name '{attr_name}' is reserved by the engine and cannot be used",
+                    path=f"sensors.{sensor_key}.attributes.{attr_name}",
+                    severity=ValidationSeverity.ERROR,
+                    suggested_fix=f"Rename attribute '{attr_name}' to avoid collision with engine-reserved attributes",
+                )
+            )
+            return
 
         # Use _validate_formula_tokens for comprehensive validation
         self._validate_formula_tokens(
@@ -663,8 +735,8 @@ class SchemaValidator:
     ) -> None:
         """Validate unit_of_measurement compatibility with device_class (ERROR level)."""
         metadata = sensor_config.get("metadata", {})
-        device_class = metadata.get("device_class")
-        unit = metadata.get("unit_of_measurement")
+        device_class = metadata.get(METADATA_PROPERTY_DEVICE_CLASS)
+        unit = metadata.get(METADATA_PROPERTY_UNIT_OF_MEASUREMENT)
 
         if not device_class or not unit:
             return  # No validation needed if either is missing
@@ -795,6 +867,31 @@ class SchemaValidator:
             return
 
         tokens = tokenize_formula(formula)
+
+        # Get boolean state names for validation
+        boolean_names = set(BooleanStates.get_all_boolean_names().keys())
+
+        # Fallback list of common boolean states in case HA constants are not fully loaded
+        fallback_boolean_states = {
+            "on",
+            "off",
+            "home",
+            "not_home",
+            "locked",
+            "not_locked",
+            "occupied",
+            "not_occupied",
+            "motion",
+            "no_motion",
+            "true",
+            "false",
+            "yes",
+            "no",
+            "1",
+            "0",
+        }
+        boolean_names.update(fallback_boolean_states)
+
         for token in tokens:
             # Check if token is valid in any scope:
             # 1. Global variables (accessible from anywhere)
@@ -804,6 +901,7 @@ class SchemaValidator:
             # 5. Datetime function names (now, today, yesterday, etc.)
             # 6. Duration function names (days, hours, minutes, etc.)
             # 7. Entity references (domain.entity format)
+            # 8. Boolean state names (on, off, home, not_home, etc.)
             datetime_functions = DATETIME_FUNCTIONS
             duration_functions = DURATION_FUNCTIONS
             metadata_functions = METADATA_FUNCTIONS
@@ -818,6 +916,7 @@ class SchemaValidator:
                 or token in duration_functions
                 or token in metadata_functions
                 or token in FORMULA_RESERVED_WORDS
+                or token in boolean_names
                 or self._is_entity_id(token)
             )
 
@@ -921,6 +1020,14 @@ class SchemaValidator:
         attr_var_keys = set(attr_variables.keys())
 
         for var_name, var_value in attr_variables.items():
+            # Validate variable name against reserved words
+            self._validate_name_reserved_words(
+                var_name,
+                f"sensors.{sensor_key}.attributes.{attr_name}.variables.{var_name}",
+                errors,
+                "Variable",
+            )
+
             if isinstance(var_value, str):
                 # First validate formula expressions by tokenizing them
                 # Attribute variables can reference global vars, sensor vars, other attr vars, and sensor keys
@@ -944,6 +1051,33 @@ class SchemaValidator:
                             suggested_fix="Use a valid sensor key, entity ID (domain.entity), collection pattern (device_class:type), or simple literal value",
                         )
                     )
+
+    def _validate_name_reserved_words(
+        self,
+        name: str,
+        path: str,
+        errors: list[ValidationError],
+        name_type: str = "Variable",
+    ) -> None:
+        """Validate that a variable or attribute name is not a reserved word.
+
+        Args:
+            name: The variable or attribute name to validate
+            path: The YAML path for error reporting
+            errors: List to append validation errors to
+            name_type: Type of name being validated ("Variable" or "Attribute")
+        """
+        reserved_words = get_variable_name_reserved_words()
+
+        if name in reserved_words:
+            errors.append(
+                ValidationError(
+                    message=f"{name_type} name '{name}' is a reserved word and cannot be used as a {name_type.lower()} name",
+                    path=path,
+                    severity=ValidationSeverity.ERROR,
+                    suggested_fix=f"Rename {name_type.lower()} '{name}' to avoid collision with reserved words. Reserved words include Python keywords, built-in types, special tokens like 'state', and Home Assistant domains.",
+                )
+            )
 
     def _validate_global_settings(
         self,
@@ -970,6 +1104,14 @@ class SchemaValidator:
         available_sensor_keys = sensor_keys or set()
 
         for var_name, var_value in global_variables.items():
+            # Validate variable name against reserved words
+            self._validate_name_reserved_words(
+                var_name,
+                f"global_settings.variables.{var_name}",
+                errors,
+                "Variable",
+            )
+
             if isinstance(var_value, str):
                 # First validate formula expressions by tokenizing them
                 # Global variables can reference other global variables and sensor keys
@@ -1030,6 +1172,14 @@ class SchemaValidator:
             sensor_var_keys = set(sensor_variables.keys())
 
             for var_name, var_value in sensor_variables.items():
+                # Validate variable name against reserved words
+                self._validate_name_reserved_words(
+                    var_name,
+                    f"sensors.{sensor_key}.variables.{var_name}",
+                    errors,
+                    "Variable",
+                )
+
                 if isinstance(var_value, str):
                     # First validate formula expressions by tokenizing them
                     # Sensor variables can reference global vars, other sensor vars in same sensor, and sensor keys
@@ -1056,6 +1206,14 @@ class SchemaValidator:
             # Check attribute-level variables
             attributes = sensor_config.get("attributes", {})
             for attr_name, attr_config in attributes.items():
+                # Validate attribute name against reserved words
+                self._validate_name_reserved_words(
+                    attr_name,
+                    f"sensors.{sensor_key}.attributes.{attr_name}",
+                    errors,
+                    "Attribute",
+                )
+
                 if isinstance(attr_config, dict):
                     self._validate_attribute_variables(
                         sensor_key, attr_name, attr_config, sensor_keys, global_var_keys, sensor_var_keys, errors
@@ -1118,6 +1276,133 @@ class SchemaValidator:
                     "description": "Mathematical expression to evaluate",
                     "minLength": 1,
                 },
+                "alternate_states": {
+                    "type": "object",
+                    "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                    "properties": {
+                        "UNAVAILABLE": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                        },
+                        "UNKNOWN": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                        },
+                        "NONE": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                        },
+                        "FALLBACK": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                        },
+                    },
+                    "additionalProperties": False,
+                },
                 "variables": {
                     "type": "object",
                     "description": "Variable mappings to Home Assistant entities, numeric literals, boolean literals, datetime strings, or computed variables",
@@ -1139,70 +1424,144 @@ class SchemaValidator:
                                 },
                                 {
                                     "type": "object",
-                                    "description": "Computed variable with formula and optional exception handlers",
+                                    "description": "Computed variable with formula and optional alternate state handlers",
                                     "properties": {
                                         "formula": {
                                             "type": "string",
                                             "description": "Mathematical expression to evaluate for this variable",
                                             "minLength": 1,
                                         },
-                                        "UNAVAILABLE": {
-                                            "oneOf": [
-                                                {"type": "string", "minLength": 1},
-                                                {"type": "number"},
-                                                {"type": "boolean"},
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "formula": {"type": "string", "minLength": 1},
-                                                        "variables": {
-                                                            "type": "object",
-                                                            "patternProperties": {
-                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
-                                                                    "oneOf": [
-                                                                        {"type": "string"},
-                                                                        {"type": "number"},
-                                                                        {"type": "boolean"},
-                                                                    ]
-                                                                }
-                                                            },
-                                                            "additionalProperties": False,
-                                                        },
-                                                    },
-                                                    "required": ["formula"],
-                                                    "additionalProperties": False,
-                                                },
-                                            ],
-                                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
                                         },
-                                        "UNKNOWN": {
-                                            "oneOf": [
-                                                {"type": "string", "minLength": 1},
-                                                {"type": "number"},
-                                                {"type": "boolean"},
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "formula": {"type": "string", "minLength": 1},
-                                                        "variables": {
+                                        "alternate_states": {
+                                            "type": "object",
+                                            "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                                            "properties": {
+                                                "UNAVAILABLE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
                                                             "type": "object",
-                                                            "patternProperties": {
-                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
-                                                                    "oneOf": [
-                                                                        {"type": "string"},
-                                                                        {"type": "number"},
-                                                                        {"type": "boolean"},
-                                                                    ]
-                                                                }
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
                                                             },
+                                                            "required": ["formula"],
                                                             "additionalProperties": False,
                                                         },
-                                                    },
-                                                    "required": ["formula"],
-                                                    "additionalProperties": False,
+                                                    ],
+                                                    "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                                                 },
-                                            ],
-                                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                "UNKNOWN": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                },
+                                                "NONE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                                                },
+                                                "FALLBACK": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                                                },
+                                            },
+                                            "additionalProperties": False,
                                         },
                                     },
                                     "required": ["formula"],
@@ -1231,6 +1590,133 @@ class SchemaValidator:
                                             "type": "string",
                                             "description": "Attribute formula",
                                             "minLength": 1,
+                                        },
+                                        "alternate_states": {
+                                            "type": "object",
+                                            "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                                            "properties": {
+                                                "UNAVAILABLE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                                                },
+                                                "UNKNOWN": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                },
+                                                "NONE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                                                },
+                                                "FALLBACK": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                                                },
+                                            },
+                                            "additionalProperties": False,
                                         },
                                         "metadata": {
                                             "type": "object",
@@ -1261,7 +1747,152 @@ class SchemaValidator:
                                                                     "type": "string",
                                                                     "description": "Mathematical expression to evaluate for this variable",
                                                                     "minLength": 1,
-                                                                }
+                                                                },
+                                                                "allow_unresolved_states": {
+                                                                    "type": "boolean",
+                                                                    "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                                                    "default": False,
+                                                                },
+                                                                "alternate_states": {
+                                                                    "type": "object",
+                                                                    "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                                                                    "properties": {
+                                                                        "UNAVAILABLE": {
+                                                                            "oneOf": [
+                                                                                {"type": "string", "minLength": 1},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                                {"type": "null"},
+                                                                                {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "formula": {
+                                                                                            "type": "string",
+                                                                                            "minLength": 1,
+                                                                                        },
+                                                                                        "variables": {
+                                                                                            "type": "object",
+                                                                                            "patternProperties": {
+                                                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                                                    "oneOf": [
+                                                                                                        {"type": "string"},
+                                                                                                        {"type": "number"},
+                                                                                                        {"type": "boolean"},
+                                                                                                    ]
+                                                                                                }
+                                                                                            },
+                                                                                            "additionalProperties": False,
+                                                                                        },
+                                                                                    },
+                                                                                    "required": ["formula"],
+                                                                                    "additionalProperties": False,
+                                                                                },
+                                                                            ],
+                                                                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                                                                        },
+                                                                        "UNKNOWN": {
+                                                                            "oneOf": [
+                                                                                {"type": "string", "minLength": 1},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                                {"type": "null"},
+                                                                                {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "formula": {
+                                                                                            "type": "string",
+                                                                                            "minLength": 1,
+                                                                                        },
+                                                                                        "variables": {
+                                                                                            "type": "object",
+                                                                                            "patternProperties": {
+                                                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                                                    "oneOf": [
+                                                                                                        {"type": "string"},
+                                                                                                        {"type": "number"},
+                                                                                                        {"type": "boolean"},
+                                                                                                    ]
+                                                                                                }
+                                                                                            },
+                                                                                            "additionalProperties": False,
+                                                                                        },
+                                                                                    },
+                                                                                    "required": ["formula"],
+                                                                                    "additionalProperties": False,
+                                                                                },
+                                                                            ],
+                                                                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                                        },
+                                                                        "NONE": {
+                                                                            "oneOf": [
+                                                                                {"type": "string", "minLength": 1},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                                {"type": "null"},
+                                                                                {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "formula": {
+                                                                                            "type": "string",
+                                                                                            "minLength": 1,
+                                                                                        },
+                                                                                        "variables": {
+                                                                                            "type": "object",
+                                                                                            "patternProperties": {
+                                                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                                                    "oneOf": [
+                                                                                                        {"type": "string"},
+                                                                                                        {"type": "number"},
+                                                                                                        {"type": "boolean"},
+                                                                                                    ]
+                                                                                                }
+                                                                                            },
+                                                                                            "additionalProperties": False,
+                                                                                        },
+                                                                                    },
+                                                                                    "required": ["formula"],
+                                                                                    "additionalProperties": False,
+                                                                                },
+                                                                            ],
+                                                                            "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                                                                        },
+                                                                        "FALLBACK": {
+                                                                            "oneOf": [
+                                                                                {"type": "string", "minLength": 1},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                                {"type": "null"},
+                                                                                {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "formula": {
+                                                                                            "type": "string",
+                                                                                            "minLength": 1,
+                                                                                        },
+                                                                                        "variables": {
+                                                                                            "type": "object",
+                                                                                            "patternProperties": {
+                                                                                                "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                                                                                    "oneOf": [
+                                                                                                        {"type": "string"},
+                                                                                                        {"type": "number"},
+                                                                                                        {"type": "boolean"},
+                                                                                                    ]
+                                                                                                }
+                                                                                            },
+                                                                                            "additionalProperties": False,
+                                                                                        },
+                                                                                    },
+                                                                                    "required": ["formula"],
+                                                                                    "additionalProperties": False,
+                                                                                },
+                                                                            ],
+                                                                            "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                                                                            "additionalProperties": False,
+                                                                        },
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
                                                             },
                                                             "required": ["formula"],
                                                             "additionalProperties": False,
@@ -1358,6 +1989,133 @@ class SchemaValidator:
                     "description": "Mathematical expression to evaluate",
                     "minLength": 1,
                 },
+                "alternate_states": {
+                    "type": "object",
+                    "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                    "properties": {
+                        "UNAVAILABLE": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                        },
+                        "UNKNOWN": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                        },
+                        "NONE": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                        },
+                        "FALLBACK": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [
+                                                        {"type": "string"},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                    ]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                        },
+                    },
+                    "additionalProperties": False,
+                },
                 "variables": {
                     "type": "object",
                     "description": "Variable mappings to Home Assistant entities, collection patterns, numeric literals, or computed variables",
@@ -1378,70 +2136,144 @@ class SchemaValidator:
                                 },
                                 {
                                     "type": "object",
-                                    "description": "Computed variable with formula and optional exception handlers",
+                                    "description": "Computed variable with formula and optional alternate state handlers",
                                     "properties": {
                                         "formula": {
                                             "type": "string",
                                             "description": "Mathematical expression to evaluate for this variable",
                                             "minLength": 1,
                                         },
-                                        "UNAVAILABLE": {
-                                            "oneOf": [
-                                                {"type": "string", "minLength": 1},
-                                                {"type": "number"},
-                                                {"type": "boolean"},
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "formula": {"type": "string", "minLength": 1},
-                                                        "variables": {
-                                                            "type": "object",
-                                                            "patternProperties": {
-                                                                var_pattern: {
-                                                                    "oneOf": [
-                                                                        {"type": "string"},
-                                                                        {"type": "number"},
-                                                                        {"type": "boolean"},
-                                                                    ]
-                                                                }
-                                                            },
-                                                            "additionalProperties": False,
-                                                        },
-                                                    },
-                                                    "required": ["formula"],
-                                                    "additionalProperties": False,
-                                                },
-                                            ],
-                                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
                                         },
-                                        "UNKNOWN": {
-                                            "oneOf": [
-                                                {"type": "string", "minLength": 1},
-                                                {"type": "number"},
-                                                {"type": "boolean"},
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "formula": {"type": "string", "minLength": 1},
-                                                        "variables": {
+                                        "alternate_states": {
+                                            "type": "object",
+                                            "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                                            "properties": {
+                                                "UNAVAILABLE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
                                                             "type": "object",
-                                                            "patternProperties": {
-                                                                var_pattern: {
-                                                                    "oneOf": [
-                                                                        {"type": "string"},
-                                                                        {"type": "number"},
-                                                                        {"type": "boolean"},
-                                                                    ]
-                                                                }
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
                                                             },
+                                                            "required": ["formula"],
                                                             "additionalProperties": False,
                                                         },
-                                                    },
-                                                    "required": ["formula"],
-                                                    "additionalProperties": False,
+                                                    ],
+                                                    "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                                                 },
-                                            ],
-                                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                "UNKNOWN": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                },
+                                                "NONE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                                                },
+                                                "FALLBACK": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                                                },
+                                            },
+                                            "additionalProperties": False,
                                         },
                                     },
                                     "required": ["formula"],
@@ -1614,6 +2446,11 @@ class SchemaValidator:
                                                 "description": "Mathematical expression to evaluate for this variable",
                                                 "minLength": 1,
                                             },
+                                            "allow_unresolved_states": {
+                                                "type": "boolean",
+                                                "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                                "default": False,
+                                            },
                                             "UNAVAILABLE": {
                                                 "type": "string",
                                                 "description": "Exception handler for UNAVAILABLE state - formula or literal value to use when variable cannot be resolved",
@@ -1722,52 +2559,117 @@ class SchemaValidator:
                     "description": "Mathematical expression for sensor calculation",
                     "minLength": 1,
                 },
-                # Exception handlers for main formula
-                "UNAVAILABLE": {
-                    "oneOf": [
-                        {"type": "string", "minLength": 1},
-                        {"type": "number"},
-                        {"type": "boolean"},
-                        {
-                            "type": "object",
-                            "properties": {
-                                "formula": {"type": "string", "minLength": 1},
-                                "variables": {
+                # Alternative state handlers grouped under alternate_states
+                "alternate_states": {
+                    "type": "object",
+                    "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                    "properties": {
+                        "UNAVAILABLE": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
                                     "type": "object",
-                                    "patternProperties": {
-                                        var_pattern: {"oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]}
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
                                     },
+                                    "required": ["formula"],
                                     "additionalProperties": False,
                                 },
-                            },
-                            "required": ["formula"],
-                            "additionalProperties": False,
+                            ],
+                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                         },
-                    ],
-                    "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
-                },
-                "UNKNOWN": {
-                    "oneOf": [
-                        {"type": "string", "minLength": 1},
-                        {"type": "number"},
-                        {"type": "boolean"},
-                        {
-                            "type": "object",
-                            "properties": {
-                                "formula": {"type": "string", "minLength": 1},
-                                "variables": {
+                        "UNKNOWN": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
                                     "type": "object",
-                                    "patternProperties": {
-                                        var_pattern: {"oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]}
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
                                     },
+                                    "required": ["formula"],
                                     "additionalProperties": False,
                                 },
-                            },
-                            "required": ["formula"],
-                            "additionalProperties": False,
+                            ],
+                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
                         },
-                    ],
-                    "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                        "NONE": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                        },
+                        "FALLBACK": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {"type": "number"},
+                                {"type": "boolean"},
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "formula": {"type": "string", "minLength": 1},
+                                        "variables": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                var_pattern: {
+                                                    "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]
+                                                }
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                    "required": ["formula"],
+                                    "additionalProperties": False,
+                                },
+                            ],
+                            "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                        },
+                    },
+                    "additionalProperties": False,
                 },
                 "attributes": {
                     "type": "object",
@@ -1796,70 +2698,144 @@ class SchemaValidator:
                                 },
                                 {
                                     "type": "object",
-                                    "description": "Computed variable with formula and optional exception handlers",
+                                    "description": "Computed variable with formula and optional alternate state handlers",
                                     "properties": {
                                         "formula": {
                                             "type": "string",
                                             "description": "Mathematical expression to evaluate for this variable",
                                             "minLength": 1,
                                         },
-                                        "UNAVAILABLE": {
-                                            "oneOf": [
-                                                {"type": "string", "minLength": 1},
-                                                {"type": "number"},
-                                                {"type": "boolean"},
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "formula": {"type": "string", "minLength": 1},
-                                                        "variables": {
-                                                            "type": "object",
-                                                            "patternProperties": {
-                                                                var_pattern: {
-                                                                    "oneOf": [
-                                                                        {"type": "string"},
-                                                                        {"type": "number"},
-                                                                        {"type": "boolean"},
-                                                                    ]
-                                                                }
-                                                            },
-                                                            "additionalProperties": False,
-                                                        },
-                                                    },
-                                                    "required": ["formula"],
-                                                    "additionalProperties": False,
-                                                },
-                                            ],
-                                            "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
                                         },
-                                        "UNKNOWN": {
-                                            "oneOf": [
-                                                {"type": "string", "minLength": 1},
-                                                {"type": "number"},
-                                                {"type": "boolean"},
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "formula": {"type": "string", "minLength": 1},
-                                                        "variables": {
+                                        "alternate_states": {
+                                            "type": "object",
+                                            "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                                            "properties": {
+                                                "UNAVAILABLE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
                                                             "type": "object",
-                                                            "patternProperties": {
-                                                                var_pattern: {
-                                                                    "oneOf": [
-                                                                        {"type": "string"},
-                                                                        {"type": "number"},
-                                                                        {"type": "boolean"},
-                                                                    ]
-                                                                }
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
                                                             },
+                                                            "required": ["formula"],
                                                             "additionalProperties": False,
                                                         },
-                                                    },
-                                                    "required": ["formula"],
-                                                    "additionalProperties": False,
+                                                    ],
+                                                    "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
                                                 },
-                                            ],
-                                            "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                "UNKNOWN": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                                },
+                                                "NONE": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                                                },
+                                                "FALLBACK": {
+                                                    "oneOf": [
+                                                        {"type": "string", "minLength": 1},
+                                                        {"type": "number"},
+                                                        {"type": "boolean"},
+                                                        {"type": "null"},
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "formula": {"type": "string", "minLength": 1},
+                                                                "variables": {
+                                                                    "type": "object",
+                                                                    "patternProperties": {
+                                                                        var_pattern: {
+                                                                            "oneOf": [
+                                                                                {"type": "string"},
+                                                                                {"type": "number"},
+                                                                                {"type": "boolean"},
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "additionalProperties": False,
+                                                                },
+                                                            },
+                                                            "required": ["formula"],
+                                                            "additionalProperties": False,
+                                                        },
+                                                    ],
+                                                    "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                                                },
+                                            },
+                                            "additionalProperties": False,
                                         },
                                     },
                                     "required": ["formula"],
@@ -1872,57 +2848,41 @@ class SchemaValidator:
                 },
                 "metadata": {
                     "type": "object",
-                    "description": "Metadata dictionary for Home Assistant sensor properties",
-                    "properties": {
-                        "device_class": {
-                            "type": "string",
-                            "description": "Device class for the sensor (any string allowed)",
-                        },
-                        "state_class": {
-                            "type": "string",
-                            "enum": self._get_state_class_enum(),
-                            "description": "State class for the sensor",
-                        },
-                        "unit_of_measurement": {
-                            "type": "string",
-                            "description": "Unit of measurement for the sensor",
-                        },
-                        "icon": {
-                            "type": "string",
-                            "pattern": icon_pattern,
-                            "description": "Icon for the sensor",
-                        },
-                    },
+                    "description": "Sensor metadata including unit_of_measurement, device_class, etc.",
                     "additionalProperties": True,
                 },
-                # Device association properties
+                "extra_attributes": {
+                    "type": "object",
+                    "description": "Additional attributes for the entity",
+                    "additionalProperties": True,
+                },
                 "device_identifier": {
                     "type": "string",
-                    "description": "Unique identifier for the device this sensor belongs to",
+                    "description": "Device identifier to associate with",
                 },
                 "device_name": {
                     "type": "string",
-                    "description": "Human-readable name for the device",
+                    "description": "Optional device name override",
                 },
                 "device_manufacturer": {
                     "type": "string",
-                    "description": "Manufacturer of the device",
+                    "description": "Device manufacturer",
                 },
                 "device_model": {
                     "type": "string",
-                    "description": "Model of the device",
+                    "description": "Device model",
                 },
                 "device_sw_version": {
                     "type": "string",
-                    "description": "Software version of the device",
+                    "description": "Device software version",
                 },
                 "device_hw_version": {
                     "type": "string",
-                    "description": "Hardware version of the device",
+                    "description": "Device hardware version",
                 },
                 "suggested_area": {
                     "type": "string",
-                    "description": "Suggested area for the device in Home Assistant",
+                    "description": "Suggested area for the sensor",
                 },
             },
             "required": ["formula"],
@@ -1941,6 +2901,133 @@ class SchemaValidator:
                             "type": "string",
                             "description": ("Mathematical expression to evaluate for this attribute"),
                             "minLength": 1,
+                        },
+                        "alternate_states": {
+                            "type": "object",
+                            "description": "Alternative state handlers for UNAVAILABLE, UNKNOWN, NONE, and FALLBACK states",
+                            "properties": {
+                                "UNAVAILABLE": {
+                                    "oneOf": [
+                                        {"type": "string", "minLength": 1},
+                                        {"type": "number"},
+                                        {"type": "boolean"},
+                                        {"type": "null"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "formula": {"type": "string", "minLength": 1},
+                                                "variables": {
+                                                    "type": "object",
+                                                    "patternProperties": {
+                                                        var_pattern: {
+                                                            "oneOf": [
+                                                                {"type": "string"},
+                                                                {"type": "number"},
+                                                                {"type": "boolean"},
+                                                            ]
+                                                        }
+                                                    },
+                                                    "additionalProperties": False,
+                                                },
+                                            },
+                                            "required": ["formula"],
+                                            "additionalProperties": False,
+                                        },
+                                    ],
+                                    "description": "Alternate state handler for UNAVAILABLE (literal or {formula, variables}).",
+                                },
+                                "UNKNOWN": {
+                                    "oneOf": [
+                                        {"type": "string", "minLength": 1},
+                                        {"type": "number"},
+                                        {"type": "boolean"},
+                                        {"type": "null"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "formula": {"type": "string", "minLength": 1},
+                                                "variables": {
+                                                    "type": "object",
+                                                    "patternProperties": {
+                                                        var_pattern: {
+                                                            "oneOf": [
+                                                                {"type": "string"},
+                                                                {"type": "number"},
+                                                                {"type": "boolean"},
+                                                            ]
+                                                        }
+                                                    },
+                                                    "additionalProperties": False,
+                                                },
+                                            },
+                                            "required": ["formula"],
+                                            "additionalProperties": False,
+                                        },
+                                    ],
+                                    "description": "Alternate state handler for UNKNOWN (literal or {formula, variables}).",
+                                },
+                                "NONE": {
+                                    "oneOf": [
+                                        {"type": "string", "minLength": 1},
+                                        {"type": "number"},
+                                        {"type": "boolean"},
+                                        {"type": "null"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "formula": {"type": "string", "minLength": 1},
+                                                "variables": {
+                                                    "type": "object",
+                                                    "patternProperties": {
+                                                        var_pattern: {
+                                                            "oneOf": [
+                                                                {"type": "string"},
+                                                                {"type": "number"},
+                                                                {"type": "boolean"},
+                                                            ]
+                                                        }
+                                                    },
+                                                    "additionalProperties": False,
+                                                },
+                                            },
+                                            "required": ["formula"],
+                                            "additionalProperties": False,
+                                        },
+                                    ],
+                                    "description": "Alternate state handler for NONE (literal or {formula, variables}).",
+                                },
+                                "FALLBACK": {
+                                    "oneOf": [
+                                        {"type": "string", "minLength": 1},
+                                        {"type": "number"},
+                                        {"type": "boolean"},
+                                        {"type": "null"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "formula": {"type": "string", "minLength": 1},
+                                                "variables": {
+                                                    "type": "object",
+                                                    "patternProperties": {
+                                                        var_pattern: {
+                                                            "oneOf": [
+                                                                {"type": "string"},
+                                                                {"type": "number"},
+                                                                {"type": "boolean"},
+                                                            ]
+                                                        }
+                                                    },
+                                                    "additionalProperties": False,
+                                                },
+                                            },
+                                            "required": ["formula"],
+                                            "additionalProperties": False,
+                                        },
+                                    ],
+                                    "description": "Fallback alternate state handler (literal or {formula, variables}).",
+                                },
+                            },
+                            "additionalProperties": False,
                         },
                         # Exception handlers for attribute formula
                         "UNAVAILABLE": {
@@ -2019,6 +3106,11 @@ class SchemaValidator:
                                                     "type": "string",
                                                     "description": "Mathematical expression to evaluate for this variable",
                                                     "minLength": 1,
+                                                },
+                                                "allow_unresolved_states": {
+                                                    "type": "boolean",
+                                                    "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                                    "default": False,
                                                 },
                                                 "UNAVAILABLE": {
                                                     "type": "string",

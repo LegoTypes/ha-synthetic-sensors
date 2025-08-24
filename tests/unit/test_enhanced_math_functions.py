@@ -115,38 +115,37 @@ class TestEnhancedMathFunctions(unittest.TestCase):
         result = five_minutes + two_hours
         self.assertEqual(result.total_seconds(), 7500)  # 5*60 + 2*3600
 
-    def test_enhanced_vs_builtin_functions(self):
-        """Test that enhanced functions include all builtin functions plus new ones."""
-        builtin_functions = MathFunctions.get_builtin_functions()
-        enhanced_functions = MathFunctions.get_all_functions()
+    def test_all_enhanced_functions_available(self):
+        """Test that all enhanced functions are available and working."""
+        all_functions = MathFunctions.get_all_functions()
 
-        # Enhanced should include all builtin functions
-        for name, func in builtin_functions.items():
-            self.assertIn(name, enhanced_functions)
-
-        # Enhanced should have additional functions
-        self.assertGreater(len(enhanced_functions), len(builtin_functions))
-
-        # Check specific additions (excluding ones already in datetime registry)
-        new_functions = set(enhanced_functions.keys()) - set(builtin_functions.keys())
-        expected_new = {
-            # These are the ones we actually added (duration creation already exists)
+        # Check that enhanced datetime/duration functions are available
+        expected_enhanced_functions = {
+            # Duration creation functions
+            "minutes",
+            "hours",
+            "days",
+            "seconds",
+            "weeks",
+            # Duration calculation functions
             "minutes_between",
             "hours_between",
             "days_between",
             "seconds_between",
+            # Formatting functions
             "format_friendly",
             "format_date",
+            # Constructor functions
             "datetime",
-            "date",
             "timedelta",
+            "date",
         }
-        self.assertTrue(expected_new.issubset(new_functions))
 
-        # Verify duration creation functions exist (from existing datetime registry)
-        existing_duration_functions = {"minutes", "hours", "days", "seconds", "weeks"}
-        for func_name in existing_duration_functions:
-            self.assertIn(func_name, enhanced_functions)
+        for func_name in expected_enhanced_functions:
+            self.assertIn(func_name, all_functions, f"Enhanced function '{func_name}' should be available")
+
+        # Test that we have a reasonable number of functions (basic math + enhanced)
+        self.assertGreater(len(all_functions), 50, "Should have a substantial number of functions available")
 
     def test_static_method_access(self):
         """Test that static methods can be called directly."""

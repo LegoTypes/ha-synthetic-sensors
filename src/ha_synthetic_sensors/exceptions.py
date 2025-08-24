@@ -5,6 +5,8 @@ coordinator and integration patterns, similar to how other integrations
 like Span Panel handle exceptions.
 """
 
+from typing import Any
+
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
 
 
@@ -369,3 +371,25 @@ def should_trigger_not_ready(error: Exception) -> bool:
         error,
         SyntheticSensorsNotReadyError | IntegrationNotInitializedError,
     )
+
+
+class AlternateStateDetected(Exception):
+    """Exception raised when an alternate state is detected during evaluation.
+
+    This exception is used to break out of the normal evaluation pipeline
+    and trigger alternate state handling. It can be raised from:
+    1. Metadata handler - when entity reference is alternate state
+    2. Metadata handler - when metadata result is alternate state
+    3. Formula evaluation - when final result is alternate state
+    """
+
+    def __init__(self, message: str, alternate_state_value: Any):
+        """Initialize the exception.
+
+        Args:
+            message: Description of where the alternate state was detected
+            alternate_state_value: The alternate state value that was detected
+        """
+        super().__init__(message)
+        self.alternate_state_value = alternate_state_value
+        self.message = message

@@ -4,6 +4,7 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
+from ...exceptions import MissingDependencyError
 from ...type_definitions import DataProviderResult
 from .attribute_reference_resolver import AttributeReferenceResolver
 from .base_resolver import VariableResolver
@@ -28,6 +29,7 @@ class VariableResolverFactory:
         hass: Any = None,
     ) -> None:
         """Initialize the variable resolver factory with default resolvers."""
+
         self._resolvers: list[VariableResolver] = []
         self._cross_sensor_resolver: CrossSensorReferenceResolver | None = None
         self._self_reference_resolver: SelfReferenceResolver | None = None
@@ -97,6 +99,14 @@ class VariableResolverFactory:
                 resolver.set_resolver_factory(self)
         _LOGGER.debug("Updated resolvers with dependency handler and resolver factory")
 
+    def update_data_provider_callback(self, data_provider_callback: Callable[[str], DataProviderResult] | None) -> None:
+        """Update the data provider callback without recreating the factory."""
+        self._data_provider_callback = data_provider_callback
+        # Update the state resolver with the new data provider callback
+        if self._state_resolver:
+            self._state_resolver.set_data_provider_callback(data_provider_callback)
+        _LOGGER.debug("Updated data provider callback on existing resolver factory")
+
     def register_resolver(self, resolver: VariableResolver) -> None:
         """Register a resolver with the factory."""
         self._resolvers.append(resolver)
@@ -117,9 +127,9 @@ class VariableResolverFactory:
             if resolver.can_resolve(variable_name, variable_value):
                 result = resolver.resolve(variable_name, variable_value, context)
                 return result
-        # No resolver found
-        _LOGGER.debug("RESOLVER_FACTORY: No resolver found for variable %s", variable_name)
-        return None
+        # No resolver found - this is a missing dependency (fatal error)
+        _LOGGER.debug("RESOLVER_FACTORY: No resolver found for variable %s, raising MissingDependencyError", variable_name)
+        raise MissingDependencyError(f"Variable '{variable_name}' could not be resolved by any resolver")
 
     def get_all_resolvers(self) -> list[VariableResolver]:
         """Get all registered resolvers."""

@@ -56,17 +56,20 @@ sensors:
       # After the fix: should parse successfully
       within_grace:
         formula: "energy_grace_period_minutes > 25"
-        UNAVAILABLE: "false"
+        alternate_states:
+          UNAVAILABLE: "false"
       # This computed variable also references a global variable
       above_threshold:
         formula: "power_threshold_watts > 400"
-        UNAVAILABLE: "false"
+        alternate_states:
+          UNAVAILABLE: "false"
       # This computed variable uses built-in functions
       # Before the fix: minutes() would not be recognized during validation
       # After the fix: should be recognized as a valid built-in function
       time_calculation:
         formula: "minutes(30) + hours(2)"
-        UNAVAILABLE: "0"
+        alternate_states:
+          UNAVAILABLE: "0"
 """
 
         # Save original state for cleanup
@@ -169,11 +172,13 @@ sensors:
       # This should pass validation (references valid global)
       valid_computed:
         formula: "valid_global > 25"
-        UNAVAILABLE: "false"
+        alternate_states:
+          UNAVAILABLE: "false"
       # This should fail validation (references truly undefined variable)
       invalid_computed:
         formula: "truly_undefined_variable > 50"
-        UNAVAILABLE: "false"
+        alternate_states:
+          UNAVAILABLE: "false"
 """
 
         # Save original state for cleanup

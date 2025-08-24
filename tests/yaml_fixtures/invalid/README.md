@@ -4,8 +4,8 @@ This directory contains YAML fixtures that are intentionally invalid for testing
 
 ## Purpose
 
-These fixtures are used to test the YAML validation functionality and ensure that the integration properly handles and
-reports errors for:
+These fixtures are used to test the YAML validation functionality and ensure that the integration properly handles and reports
+errors for:
 
 - Malformed YAML syntax
 - Missing required fields
@@ -27,5 +27,5 @@ invalid.
 
 ## Usage
 
-These fixtures are loaded in test files using the `load_yaml_fixture()` function, which automatically detects invalid
-fixtures by filename prefix and loads them from this directory.
+These fixtures are loaded in test files using the `load_yaml_fixture()` function, which automatically detects invalid fixtures
+by filename prefix and loads them from this directory.

@@ -1,0 +1,15 @@
+# Test YAML file with 'def' as an attribute variable name
+# This should fail validation - 'def' is a reserved word
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Reserved Word 'def' in Attribute"
+    formula: "value + 10"
+    variables:
+      value: "sensor.source_entity"
+    attributes:
+      computed_attr:
+        formula: "temp_value * 2"
+        variables:
+          temp_value: "sensor.another_temp"
+          def: "sensor.function_entity"  # Reserved word - should fail

@@ -14,19 +14,22 @@ sensors:
 
   mixed_string_variable_sensor:
     name: "Mixed String Variable Test"
-    formula: "'Status: ' + state + ' active'"
+    formula: "'Status: ' + ha_string_variable + ' active'"
     variables:
-      state: "sensor.test_sensor"
+      ha_string_variable: "sensor.test_sensor"
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
 
   numeric_default_sensor:
     name: "Numeric Default Test"
-    formula: "state * 1.1"
+    formula: "ha_numeric_variable * 1.1"
     variables:
-      state: "sensor.power_meter"
+      ha_numeric_variable: "sensor.power_meter"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
       state_class: "measurement"
+    attributes:
+      result_description:
+        formula: "'Result is: ' + ha_numeric_variable"

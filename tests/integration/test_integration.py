@@ -339,25 +339,25 @@ class TestPublicAPIConfiguration:
     def test_yaml_validation_scenarios(self):
         """Test various YAML validation scenarios using public API."""
         # Test minimal valid YAML
-        minimal_yaml = load_yaml_fixture("integration_test_minimal_valid.yaml")
+        minimal_yaml = load_yaml_fixture("integration_test_valid_simple.yaml")
         result = validate_yaml_content(minimal_yaml)
         assert result["is_valid"] is True
         assert result["sensors_count"] == 1
 
         # Test complex valid YAML
-        complex_yaml = load_yaml_fixture("integration_test_complex_valid.yaml")
+        complex_yaml = load_yaml_fixture("integration_test_valid_comprehensive.yaml")
         result = validate_yaml_content(complex_yaml)
         assert result["is_valid"] is True
-        assert result["sensors_count"] == 2
+        assert result["sensors_count"] == 5
 
         # Test invalid YAML structure
-        invalid_yaml = load_yaml_fixture("integration_test_invalid_missing_formula.yaml")
+        invalid_yaml = load_yaml_fixture("invalid/integration_test_invalid_missing_formula.yaml")
         result = validate_yaml_content(invalid_yaml)
         assert result["is_valid"] is False
         assert len(result["errors"]) > 0
 
         # Test malformed YAML
-        malformed_yaml = load_yaml_fixture("integration_test_malformed.yaml")
+        malformed_yaml = load_yaml_fixture("invalid/integration_test_malformed.yaml")
         result = validate_yaml_content(malformed_yaml)
         assert result["is_valid"] is False
         assert len(result["errors"]) > 0

@@ -6,8 +6,15 @@ from ha_synthetic_sensors.evaluator_phases.context_building.context_building_pha
 )
 
 
-def test_is_attribute_reference_variants() -> None:
+def test_is_attribute_reference_variants(mock_hass, mock_entity_registry, mock_states) -> None:
     phase = ContextBuildingPhase()
+    # Set the hass dependency so _is_attribute_reference can check domains
+    phase.set_evaluator_dependencies(
+        hass=mock_hass,
+        data_provider_callback=None,
+        dependency_handler=None,
+        sensor_to_backing_mapping={},
+    )
     assert phase._is_attribute_reference("state.voltage") is True  # noqa: SLF001
     assert phase._is_attribute_reference("attribute.name") is True  # noqa: SLF001
     assert phase._is_attribute_reference("sensor.kitchen") is False  # noqa: SLF001

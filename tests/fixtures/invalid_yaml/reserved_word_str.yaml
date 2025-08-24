@@ -1,0 +1,13 @@
+# Test YAML file with 'str' as a variable name
+# This should fail validation - 'str' is a reserved word
+
+global_settings:
+  variables:
+    str: "sensor.string_entity"  # Reserved word - should fail
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Reserved Word 'str'"
+    formula: "value + 10"
+    variables:
+      value: "sensor.source_entity"

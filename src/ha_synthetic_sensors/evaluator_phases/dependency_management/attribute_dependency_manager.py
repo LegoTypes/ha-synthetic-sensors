@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError
 from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_reserved_words
@@ -123,10 +124,18 @@ class AttributeDependencyManager:
                 # Evaluate the attribute formula with current context
                 result = evaluator.evaluate_formula_with_sensor_config(formula, context, sensor_config)
 
-                if result["success"] and result["value"] is not None:
+                if result[RESULT_KEY_SUCCESS]:
                     # Add calculated value to context for subsequent attributes
-                    context[attr_name] = result["value"]
-                    _LOGGER.debug("Added attribute '%s' = %s to context", attr_name, result["value"])
+                    # Use ReferenceValueManager to preserve reference metadata and avoid raw value injection
+                    ReferenceValueManager.set_variable_with_reference_value(
+                        context, attr_name, f"{sensor_config.unique_id}_{attr_name}", result.get(RESULT_KEY_VALUE)
+                    )
+                    _LOGGER.debug(
+                        "ATTR_EVAL_DEBUG: attribute '%s' evaluated -> success=%s value=%s",
+                        attr_name,
+                        result.get(RESULT_KEY_SUCCESS),
+                        result.get(RESULT_KEY_VALUE),
+                    )
                 else:
                     _LOGGER.warning("Failed to evaluate attribute '%s': %s", attr_name, result)
                     # Don't add failed attributes to context

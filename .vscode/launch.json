@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "delayed entity availability",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_delayed_entity_availability.py::test_delayed_entity_availability_with_dependency_tracking",
+        "-v",
+        "-s"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug String Operations Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_string_operations.py::TestStringOperationsIntegration::test_basic_string_concatenation",
+        "-v",
+        "-s"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    }
+  ]
+}

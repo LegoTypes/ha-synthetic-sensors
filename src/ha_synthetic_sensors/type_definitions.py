@@ -16,17 +16,32 @@ class ReferenceValue:
 
     This preserves both the original reference and its resolved value for ALL variables,
     allowing handlers to access either the original reference or the resolved value as needed.
+
+    Additionally this object exposes optional fields for engine-managed "last valid"
+    information so resolvers and handlers can access that metadata explicitly instead
+    of embedding it inside the generic `.value` field.
     """
 
-    def __init__(self, reference: str, value: StateType):
+    def __init__(
+        self,
+        reference: str,
+        value: StateType,
+        last_valid_state: FormulaResult | None = None,
+        last_valid_changed: str | None = None,
+    ) -> None:
         """Initialize a reference/value pair.
 
         Args:
             reference: Original reference (variable name, entity ID, etc.)
             value: Resolved value (e.g., "25.5", 42, True)
+            last_valid_state: Optional last-good value (engine-managed)
+            last_valid_changed: Optional ISO timestamp string for last-good change
         """
         self._reference = reference
         self._value = value
+        # Engine-managed last-good metadata (optional)
+        self._last_valid_state: FormulaResult | None = last_valid_state
+        self._last_valid_changed: str | None = last_valid_changed
 
     @property
     def reference(self) -> str:
@@ -38,13 +53,29 @@ class ReferenceValue:
         """Get the resolved value."""
         return self._value
 
+    @property
+    def last_valid_state(self) -> FormulaResult | None:
+        """Last-good value if available (engine-managed)."""
+        return self._last_valid_state
+
+    @property
+    def last_valid_changed(self) -> str | None:
+        """ISO timestamp string when last_valid_state was recorded, if available."""
+        return self._last_valid_changed
+
     def __str__(self) -> str:
-        """String representation showing both reference and value."""
-        return f"ReferenceValue(reference='{self._reference}', value={self._value})"
+        """String representation showing reference, value and last-good metadata."""
+        return (
+            f"ReferenceValue(reference='{self._reference}', value={self._value}, "
+            f"last_valid_state={self._last_valid_state}, last_valid_changed={self._last_valid_changed})"
+        )
 
     def __repr__(self) -> str:
         """Debug representation."""
-        return f"ReferenceValue(reference='{self._reference}', value={self._value!r})"
+        return (
+            f"ReferenceValue(reference='{self._reference}', value={self._value!r}, "
+            f"last_valid_state={self._last_valid_state!r}, last_valid_changed={self._last_valid_changed!r})"
+        )
 
 
 # Type-safe evaluation context for handlers - STRICT: Only ReferenceValue objects for variables

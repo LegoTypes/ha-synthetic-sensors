@@ -1,0 +1,22 @@
+version: "1.0"
+
+sensors:
+  complex_collection:
+    name: "Complex Collection"
+    formula: "sum('device_class:power|area:living_room') + count('state:on|device_class:switch')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  multi_pattern:
+    name: "Multi Pattern"
+    formula: "avg('device_class:temperature|area:bedroom|state:>20')"
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+
+  exclusion_pattern:
+    name: "Exclusion Pattern"
+    formula: "count('device_class:!diagnostic|area:!basement')"
+    metadata:
+      unit_of_measurement: "devices"

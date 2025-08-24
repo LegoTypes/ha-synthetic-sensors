@@ -5,9 +5,9 @@ import re
 from typing import Any
 
 from ha_synthetic_sensors.config_models import FormulaConfig
-from ha_synthetic_sensors.constants_formula import is_ha_state_value, normalize_ha_state_value
+from ha_synthetic_sensors.constants_alternate import identify_alternate_state_value
 
-from .resolution_types import VariableResolutionResult
+from .resolution_types import HADependency, VariableResolutionResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,69 +112,91 @@ class FormulaHelpers:
 
     @staticmethod
     def detect_ha_state_in_formula(
-        resolved_formula: str, unavailable_dependencies: list[str], entity_to_value_mappings: dict[str, str]
+        resolved_formula: str,
+        unavailable_dependencies: list[HADependency] | list[str],
+        entity_to_value_mappings: dict[str, str],
     ) -> Any:  # Returns VariableResolutionResult or None
-        """Detect HA state values in resolved formula and return early result if found."""
+        """Single state optimization: detect if entire resolved formula is a single HA state value.
 
-        # If any unavailable dependencies exist, escalate the final state to 'unavailable'
-        unavailable = [dep for dep in (unavailable_dependencies or []) if dep.endswith("is unavailable")]
-        unknown = [dep for dep in (unavailable_dependencies or []) if dep.endswith("is unknown")]
-        if unavailable:
-            return VariableResolutionResult(
-                resolved_formula=resolved_formula,
-                has_ha_state=True,
-                ha_state_value="unavailable",
-                unavailable_dependencies=unavailable_dependencies or [],
-                entity_to_value_mappings=entity_to_value_mappings,
-            )
-        if unknown:
-            return VariableResolutionResult(
-                resolved_formula=resolved_formula,
-                has_ha_state=True,
-                ha_state_value="unknown",
-                unavailable_dependencies=unavailable_dependencies or [],
-                entity_to_value_mappings=entity_to_value_mappings,
-            )
+        This optimization bypasses formula evaluation when the entire formula resolves
+        to a single alternate state (e.g. "unknown", "unavailable", "none").
 
-        # Check for HA state values in the resolved formula - both quoted and unquoted
-        for state_value in ["unknown", "unavailable"]:
-            # Check for quoted HA state values in expressions (e.g., "unavailable" + 10)
-            if f'"{state_value}"' in resolved_formula:
-                _LOGGER.debug("Formula contains quoted HA state '%s', returning HA state", state_value)
-                return VariableResolutionResult(
-                    resolved_formula=resolved_formula,
-                    has_ha_state=True,
-                    ha_state_value=state_value,
-                    unavailable_dependencies=unavailable_dependencies or [],
-                    entity_to_value_mappings=entity_to_value_mappings,
-                )
+        Note: Main alternate state detection happens in CoreFormulaEvaluator when
+        extracting values from ReferenceValue objects.
 
-            # Check for unquoted HA state values
-            if state_value in resolved_formula:
-                _LOGGER.debug("Formula contains unquoted HA state '%s', returning HA state", state_value)
-                return VariableResolutionResult(
-                    resolved_formula=resolved_formula,
-                    has_ha_state=True,
-                    ha_state_value=state_value,
-                    unavailable_dependencies=unavailable_dependencies or [],
-                    entity_to_value_mappings=entity_to_value_mappings,
-                )
+        Returns early result that will be processed by Phase 4 alternate state handling.
+        """
+        # Check 1: If formula is a single entity with unavailable dependency, check for alternate states
+        if unavailable_dependencies and len(unavailable_dependencies) == 1:
+            # Only proceed if the resolved formula is exactly one entity token
+            single_token = FormulaHelpers.get_single_entity_token(resolved_formula, entity_to_value_mappings)
+            if single_token:
+                dep = unavailable_dependencies[0]
+                # Extract the value to check (state from HADependency, or the string itself)
+                value_to_check = dep.state if isinstance(dep, HADependency) else dep
 
-        # Check for other HA state values that should result in corresponding sensor states
+                # Check for alternate states using the centralized function
+                alt_state = identify_alternate_state_value(value_to_check)
+                if isinstance(alt_state, str):
+                    return VariableResolutionResult(
+                        resolved_formula=resolved_formula,
+                        has_ha_state=True,
+                        ha_state_value=alt_state,
+                        unavailable_dependencies=unavailable_dependencies,
+                        entity_to_value_mappings=entity_to_value_mappings,
+                        early_result=alt_state,
+                    )
+
+        # Check 2: Single state detection - check if entire formula is a single alternate state
         stripped_formula = resolved_formula.strip()
-        # Handle quoted strings by removing quotes
+
+        # Remove quotes if present (for string literals)
         if stripped_formula.startswith('"') and stripped_formula.endswith('"'):
             stripped_formula = stripped_formula[1:-1]
 
-        if is_ha_state_value(stripped_formula):
-            state_value = normalize_ha_state_value(stripped_formula)
-            _LOGGER.debug("Formula resolved to HA state '%s'", state_value)
+        # Use the alternate state detection logic
+        alt_state = identify_alternate_state_value(stripped_formula)
+        if isinstance(alt_state, str):
+            _LOGGER.debug(
+                "Single state optimization: Formula '%s' resolved to alternate state '%s'", resolved_formula, alt_state
+            )
             return VariableResolutionResult(
                 resolved_formula=resolved_formula,
                 has_ha_state=True,
-                ha_state_value=state_value,
-                unavailable_dependencies=unavailable_dependencies or [],
+                ha_state_value=alt_state,
+                unavailable_dependencies=unavailable_dependencies,
                 entity_to_value_mappings=entity_to_value_mappings,
+                early_result=alt_state,
             )
+
+        return None
+
+    @staticmethod
+    def get_single_entity_token(resolved_formula: str, entity_to_value_mappings: dict[str, str] | None) -> str | None:
+        """Return the single entity/variable token if the formula is exactly one token.
+
+        The token may be a variable name (e.g. "state"), a dotted entity id (e.g. "sensor.foo"),
+        or a simple quoted literal. Returns the stripped token string when the formula is
+        exactly that token, otherwise returns None.
+        """
+        if not resolved_formula:
+            return None
+
+        token = resolved_formula.strip()
+        # Remove surrounding quotes for string literals
+        if token.startswith('"') and token.endswith('"') and len(token) >= 2:
+            token = token[1:-1].strip()
+
+        # Single-token pattern: variable, optional dotted entity id
+        single_token_pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)?$")
+        if single_token_pattern.match(token):
+            return token
+
+        # If there is exactly one mapping and the resolved formula equals that mapping's key or value,
+        # accept it as a single token (handles cases where entity_to_value_mappings uses different forms).
+        if entity_to_value_mappings and len(entity_to_value_mappings) == 1:
+            key, val = next(iter(entity_to_value_mappings.items()))
+            if token in (key, val):
+                return token
 
         return None

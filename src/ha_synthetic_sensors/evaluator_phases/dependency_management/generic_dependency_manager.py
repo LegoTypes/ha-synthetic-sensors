@@ -6,6 +6,8 @@ import re
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...constants_entities import COMMON_ENTITY_DOMAINS
+from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
 from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_reserved_words
@@ -184,9 +186,10 @@ class GenericDependencyManager:
                 # Evaluate the formula with current context
                 if node.node_type == "main":
                     # Main sensor evaluation - use direct evaluation to avoid recursion
-                    result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
-                    if result is not None:
-                        main_sensor_value = result
+                    eval_result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
+                    # Accept successful result even when the value is None (state reflection)
+                    if eval_result and eval_result.get(RESULT_KEY_SUCCESS):
+                        main_sensor_value = eval_result.get(RESULT_KEY_VALUE)
                         # ARCHITECTURE FIX: Use ReferenceValueManager for state token
                         entity_id = sensor_config.entity_id if sensor_config else "state"
                         ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
@@ -202,11 +205,14 @@ class GenericDependencyManager:
                         entity_id = sensor_config.entity_id if sensor_config else "state"
                         ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
 
-                    result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
-                    if result is not None:
+                    eval_result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
+                    if eval_result and eval_result.get(RESULT_KEY_SUCCESS):
                         attr_name = self._extract_attribute_name(formula, sensor_config.unique_id)
-                        context[attr_name] = result
-                        _LOGGER.debug("Added attribute '%s' = %s to context", attr_name, result)
+                        # Use ReferenceValueManager to preserve reference metadata for attributes
+                        ReferenceValueManager.set_variable_with_reference_value(
+                            context, attr_name, f"{sensor_config.unique_id}_{attr_name}", eval_result.get(RESULT_KEY_VALUE)
+                        )
+                        _LOGGER.debug("Added attribute '%s' = %s to context", attr_name, eval_result.get(RESULT_KEY_VALUE))
                     else:
                         raise FormulaEvaluationError(f"Failed to evaluate attribute '{node_id}' for {sensor_config.unique_id}")
 
@@ -249,10 +255,19 @@ class GenericDependencyManager:
             # Use the evaluator's fallback method with enhanced context
             result = evaluator.fallback_to_normal_evaluation(formula, enhanced_context, sensor_config)
 
-            # Extract the value from the result
-            if result and result.get("success") and result.get("value") is not None:
-                return result["value"]
-            return None
+            # Diagnostic: log when direct evaluation returns success with None value
+            try:
+                if result and result.get(RESULT_KEY_SUCCESS) and result.get(RESULT_KEY_VALUE) is None:
+                    _LOGGER.debug(
+                        "DIRECT_EVAL_DEBUG: direct evaluation for '%s' returned success with None (state=%s)",
+                        getattr(formula, "id", formula.formula),
+                        result.get("state"),
+                    )
+            except Exception as exc:  # Log unexpected structure instead of silencing
+                _LOGGER.exception("Unexpected result structure during direct evaluation debug check: %s", exc)
+
+            # Return the full result dict for caller to inspect success/state/value
+            return result
 
         except Exception as e:
             _LOGGER.error("Direct formula evaluation failed for '%s': %s", formula.formula, e)
@@ -307,7 +322,14 @@ class GenericDependencyManager:
 
         # Entity references (contain dots and start with known prefixes)
         if "." in identifier:
-            entity_prefixes = ["sensor", "binary_sensor", "switch", "light", "climate", "input_number", "input_text", "span"]
+            entity_prefixes = [
+                *COMMON_ENTITY_DOMAINS,
+                "input_number",
+                "input_text",
+                "span",
+                "device_tracker",
+                "cover",
+            ]
             if identifier.split(".")[0] in entity_prefixes:
                 return DependencyType.ENTITY
 

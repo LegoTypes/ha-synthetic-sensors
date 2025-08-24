@@ -5,6 +5,55 @@ from homeassistant.core import HomeAssistant
 
 from .constants_entities import get_ha_entity_domains
 
+# Entity domain constants
+SENSOR_DOMAIN = "sensor"
+BINARY_SENSOR_DOMAIN = "binary_sensor"
+DOMAIN_SEPARATOR = "."
+
+# Computed constants for entity ID prefixes
+SENSOR_PREFIX = f"{SENSOR_DOMAIN}{DOMAIN_SEPARATOR}"
+BINARY_SENSOR_PREFIX = f"{BINARY_SENSOR_DOMAIN}{DOMAIN_SEPARATOR}"
+SENSOR_PREFIX_LENGTH = len(SENSOR_PREFIX)
+BINARY_SENSOR_PREFIX_LENGTH = len(BINARY_SENSOR_PREFIX)
+
+
+def extract_entity_key_from_domain(entity_id: str, domain: str) -> str | None:
+    """Extract the key part from a domain.key entity ID.
+
+    Args:
+        entity_id: The full entity ID (e.g., "sensor.my_sensor")
+        domain: The domain to check for (e.g., "sensor")
+
+    Returns:
+        The key part if the entity_id matches the domain, None otherwise
+
+    Examples:
+        >>> extract_entity_key_from_domain("sensor.my_sensor", "sensor")
+        "my_sensor"
+        >>> extract_entity_key_from_domain("binary_sensor.door", "binary_sensor")
+        "door"
+        >>> extract_entity_key_from_domain("sensor.temp", "binary_sensor")
+        None
+    """
+    prefix = f"{domain}{DOMAIN_SEPARATOR}"
+    if entity_id.startswith(prefix):
+        return entity_id[len(prefix) :]
+    return None
+
+
+def is_entity_from_domain(entity_id: str, domain: str) -> bool:
+    """Check if an entity ID belongs to a specific domain.
+
+    Args:
+        entity_id: The full entity ID (e.g., "sensor.my_sensor")
+        domain: The domain to check for (e.g., "sensor")
+
+    Returns:
+        True if the entity_id belongs to the domain, False otherwise
+    """
+    return entity_id.startswith(f"{domain}{DOMAIN_SEPARATOR}")
+
+
 # Python keywords that should be excluded from variable extraction
 PYTHON_KEYWORDS: frozenset[str] = frozenset(
     {
@@ -185,6 +234,22 @@ def get_reserved_words(hass: HomeAssistant | None = None) -> frozenset[str]:
     )
 
 
+# Function to get reserved words for variable name validation
+# This excludes function names since they're only reserved when used as function calls
+def get_variable_name_reserved_words(hass: HomeAssistant | None = None) -> frozenset[str]:
+    """Get reserved words for variable name validation (excludes function names).
+
+    Args:
+        hass: Home Assistant instance (optional, for registry access)
+
+    Returns:
+        Frozenset of reserved words that cannot be used as variable names
+    """
+    if hass is None:
+        return PYTHON_KEYWORDS | BUILTIN_TYPES | BOOLEAN_LITERALS | STATE_KEYWORDS
+    return PYTHON_KEYWORDS | BUILTIN_TYPES | BOOLEAN_LITERALS | STATE_KEYWORDS | get_ha_entity_domains(hass)
+
+
 # Legacy constant for backward compatibility (lazy loaded)
 def get_ha_domains(hass: HomeAssistant | None = None) -> frozenset[str]:
     """Get HA entity domains (lazy loaded).
@@ -212,4 +277,25 @@ __all__ = [
     "STRING_FUNCTIONS",
     "get_ha_domains",
     "get_reserved_words",
+    "get_variable_name_reserved_words",
+]
+
+# Last-good attribute names exposed on entities (engine-managed)
+LAST_VALID_STATE_KEY = "last_valid_state"
+LAST_VALID_CHANGED_KEY = "last_valid_changed"
+
+# Base extra state attribute names used by the engine for every sensor
+ENGINE_BASE_RESERVED_ATTRIBUTES: frozenset[str] = frozenset(
+    {
+        "formula",
+        "dependencies",
+        "last_update",
+        "sensor_category",
+    }
+)
+
+__all__ += [
+    "ENGINE_BASE_RESERVED_ATTRIBUTES",
+    "LAST_VALID_CHANGED_KEY",
+    "LAST_VALID_STATE_KEY",
 ]

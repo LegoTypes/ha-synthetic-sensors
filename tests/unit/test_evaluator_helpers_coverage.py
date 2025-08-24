@@ -103,6 +103,6 @@ class TestEvaluatorHelpersCoverage:
 
     def test_process_evaluation_result_none(self):
         """Test processing None evaluation results."""
-        # None gets converted to string "None"
+        # None should be preserved for Home Assistant to handle
         result = EvaluatorHelpers.process_evaluation_result(None)
-        assert result == "None"
+        assert result is None

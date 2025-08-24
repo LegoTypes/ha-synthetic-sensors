@@ -13,7 +13,13 @@ from typing import TYPE_CHECKING, Any
 import yaml as yaml_lib
 
 from .config_models import FormulaConfig, SensorConfig
-from .constants_alternate import UNAVAILABLE_KEY, UNKNOWN_KEY
+from .constants_alternate import FALLBACK_KEY, NONE_KEY, STATE_NONE_YAML, UNAVAILABLE_KEY, UNKNOWN_KEY
+from .constants_metadata import (
+    METADATA_PROPERTY_DEVICE_CLASS,
+    METADATA_PROPERTY_ICON,
+    METADATA_PROPERTY_STATE_CLASS,
+    METADATA_PROPERTY_UNIT_OF_MEASUREMENT,
+)
 
 if TYPE_CHECKING:
     from .storage_manager import StorageManager
@@ -162,6 +168,32 @@ class YamlHandler:
         if metadata:
             attr_dict["metadata"] = metadata
 
+        # Add attribute-level alternate state handlers if present
+        if hasattr(formula, "alternate_state_handler") and formula.alternate_state_handler:
+            has_handlers = False
+            alternate_states: dict[str, Any] = {}
+
+            if (
+                hasattr(formula.alternate_state_handler, "unavailable")
+                and formula.alternate_state_handler.unavailable is not None
+            ):
+                alternate_states[UNAVAILABLE_KEY] = self._convert_python_to_yaml_value(
+                    formula.alternate_state_handler.unavailable
+                )
+                has_handlers = True
+            if hasattr(formula.alternate_state_handler, "unknown") and formula.alternate_state_handler.unknown is not None:
+                alternate_states[UNKNOWN_KEY] = self._convert_python_to_yaml_value(formula.alternate_state_handler.unknown)
+                has_handlers = True
+            if hasattr(formula.alternate_state_handler, "none") and formula.alternate_state_handler.none is not None:
+                alternate_states[NONE_KEY] = self._convert_python_to_yaml_value(formula.alternate_state_handler.none)
+                has_handlers = True
+            if hasattr(formula.alternate_state_handler, "fallback") and formula.alternate_state_handler.fallback is not None:
+                alternate_states[FALLBACK_KEY] = self._convert_python_to_yaml_value(formula.alternate_state_handler.fallback)
+                has_handlers = True
+
+            if has_handlers:
+                attr_dict["alternate_states"] = alternate_states
+
         return attr_dict
 
     def _extract_formula_metadata(self, formula: FormulaConfig) -> dict[str, Any] | None:
@@ -178,14 +210,14 @@ class YamlHandler:
         """Extract legacy metadata fields from formula configuration."""
         legacy_metadata = {}
 
-        if hasattr(formula, "unit_of_measurement") and formula.unit_of_measurement:
-            legacy_metadata["unit_of_measurement"] = formula.unit_of_measurement
-        if hasattr(formula, "device_class") and formula.device_class:
-            legacy_metadata["device_class"] = formula.device_class
-        if hasattr(formula, "state_class") and formula.state_class:
-            legacy_metadata["state_class"] = formula.state_class
-        if hasattr(formula, "icon") and formula.icon:
-            legacy_metadata["icon"] = formula.icon
+        if hasattr(formula, METADATA_PROPERTY_UNIT_OF_MEASUREMENT) and getattr(formula, METADATA_PROPERTY_UNIT_OF_MEASUREMENT):
+            legacy_metadata[METADATA_PROPERTY_UNIT_OF_MEASUREMENT] = getattr(formula, METADATA_PROPERTY_UNIT_OF_MEASUREMENT)
+        if hasattr(formula, METADATA_PROPERTY_DEVICE_CLASS) and getattr(formula, METADATA_PROPERTY_DEVICE_CLASS):
+            legacy_metadata[METADATA_PROPERTY_DEVICE_CLASS] = getattr(formula, METADATA_PROPERTY_DEVICE_CLASS)
+        if hasattr(formula, METADATA_PROPERTY_STATE_CLASS) and getattr(formula, METADATA_PROPERTY_STATE_CLASS):
+            legacy_metadata[METADATA_PROPERTY_STATE_CLASS] = getattr(formula, METADATA_PROPERTY_STATE_CLASS)
+        if hasattr(formula, METADATA_PROPERTY_ICON) and getattr(formula, METADATA_PROPERTY_ICON):
+            legacy_metadata[METADATA_PROPERTY_ICON] = getattr(formula, METADATA_PROPERTY_ICON)
 
         return legacy_metadata if legacy_metadata else None
 
@@ -283,10 +315,44 @@ class YamlHandler:
 
     def _add_alternate_state_handlers(self, sensor_dict: dict[str, Any], alternate_state_handler: Any) -> None:
         """Add alternate state handlers to sensor dictionary with proper casing."""
+        # Check if any alternate state handlers exist
+        has_handlers = False
+        alternate_states = {}
+
         if hasattr(alternate_state_handler, "unavailable") and alternate_state_handler.unavailable is not None:
-            sensor_dict[UNAVAILABLE_KEY] = alternate_state_handler.unavailable
+            alternate_states[UNAVAILABLE_KEY] = self._convert_python_to_yaml_value(alternate_state_handler.unavailable)
+            has_handlers = True
         if hasattr(alternate_state_handler, "unknown") and alternate_state_handler.unknown is not None:
-            sensor_dict[UNKNOWN_KEY] = alternate_state_handler.unknown
+            alternate_states[UNKNOWN_KEY] = self._convert_python_to_yaml_value(alternate_state_handler.unknown)
+            has_handlers = True
+        if hasattr(alternate_state_handler, "none") and alternate_state_handler.none is not None:
+            alternate_states[NONE_KEY] = self._convert_python_to_yaml_value(alternate_state_handler.none)
+            has_handlers = True
+        if hasattr(alternate_state_handler, "fallback") and alternate_state_handler.fallback is not None:
+            alternate_states[FALLBACK_KEY] = self._convert_python_to_yaml_value(alternate_state_handler.fallback)
+            has_handlers = True
+
+        # Add alternate_states group if any handlers exist
+        if has_handlers:
+            sensor_dict["alternate_states"] = alternate_states
+
+    def _convert_python_to_yaml_value(self, value: Any) -> Any:
+        """Convert Python values to YAML representation.
+
+        Specifically handles Python None → STATE_NONE for YAML readability.
+        """
+        if value is None:
+            return STATE_NONE_YAML
+        return value
+
+    def _convert_yaml_to_python_value(self, value: Any) -> Any:
+        """Convert YAML values to Python representation.
+
+        Specifically handles STATE_NONE → Python None.
+        """
+        if isinstance(value, str) and value == STATE_NONE_YAML:
+            return None
+        return value
 
     def _serialize_variables(self, variables: dict[str, Any]) -> dict[str, Any]:
         """Serialize variables dictionary, converting ComputedVariable objects to YAML format."""
@@ -298,13 +364,41 @@ class YamlHandler:
 
                 # Add alternate state handlers with proper casing
                 if hasattr(value, "alternate_state_handler") and value.alternate_state_handler:
+                    has_handlers = False
+                    alternate_states = {}
+
                     if (
                         hasattr(value.alternate_state_handler, "unavailable")
                         and value.alternate_state_handler.unavailable is not None
                     ):
-                        var_dict[UNAVAILABLE_KEY] = value.alternate_state_handler.unavailable
+                        alternate_states[UNAVAILABLE_KEY] = self._convert_python_to_yaml_value(
+                            value.alternate_state_handler.unavailable
+                        )
+                        has_handlers = True
                     if hasattr(value.alternate_state_handler, "unknown") and value.alternate_state_handler.unknown is not None:
-                        var_dict[UNKNOWN_KEY] = value.alternate_state_handler.unknown
+                        alternate_states[UNKNOWN_KEY] = self._convert_python_to_yaml_value(
+                            value.alternate_state_handler.unknown
+                        )
+                        has_handlers = True
+                    if hasattr(value.alternate_state_handler, "none") and value.alternate_state_handler.none is not None:
+                        alternate_states[NONE_KEY] = self._convert_python_to_yaml_value(value.alternate_state_handler.none)
+                        has_handlers = True
+                    if (
+                        hasattr(value.alternate_state_handler, "fallback")
+                        and value.alternate_state_handler.fallback is not None
+                    ):
+                        alternate_states[FALLBACK_KEY] = self._convert_python_to_yaml_value(
+                            value.alternate_state_handler.fallback
+                        )
+                        has_handlers = True
+
+                    # Add alternate_states group if any handlers exist
+                    if has_handlers:
+                        var_dict["alternate_states"] = alternate_states
+
+                # Add allow_unresolved_states if set
+                if hasattr(value, "allow_unresolved_states") and value.allow_unresolved_states:
+                    var_dict["allow_unresolved_states"] = value.allow_unresolved_states
 
                 serialized_variables[name] = var_dict
             else:

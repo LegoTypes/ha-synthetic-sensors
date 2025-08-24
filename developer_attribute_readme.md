@@ -58,9 +58,9 @@ The reason these attributes are public varies:
 
 ## Type Annotations and Custom EntityDescriptions
 
-When extending an entity description with custom attributes, type checkers will often complain when you try to access the
-custom attributes. This is because the type system only sees the base class type (e.g., `BinarySensorEntityDescription`), not
-your custom type.
+When extending an entity description with custom attributes, type checkers will often complain when you try to access the custom
+attributes. This is because the type system only sees the base class type (e.g., `BinarySensorEntityDescription`), not your
+custom type.
 
 ### Example Issue
 
@@ -214,8 +214,8 @@ def device_class(self) -> str | None:
     return None
 ```
 
-This pattern appears throughout Home Assistant's code. The framework first checks the direct attribute, then falls back to
-the entity description if available.
+This pattern appears throughout Home Assistant's code. The framework first checks the direct attribute, then falls back to the
+entity description if available.
 
 ## Why The Dual Pattern Exists
 
@@ -230,10 +230,9 @@ Home Assistant's approach evolved over time:
 
 Home Assistant likely uses a public attribute for `entity_description` for several reasons:
 
-1. **API Contract**: The entity description represents a public API contract that is meant to be preserved and directly
-   accessed
-2. **Composition vs. Inheritance**: It emphasizes composition (an entity has a description) rather than inheritance (an
-   entity is a description)
+1. **API Contract**: The entity description represents a public API contract that is meant to be preserved and directly accessed
+2. **Composition vs. Inheritance**: It emphasizes composition (an entity has a description) rather than inheritance (an entity
+   is a description)
 3. **Interoperability**: Allows for more flexible interoperability between integrations and the core framework
 4. **Serialization**: May facilitate easier serialization/deserialization when needed
 5. **Accessor Pattern**: Other parts of Home Assistant can access the description directly without needing accessor methods

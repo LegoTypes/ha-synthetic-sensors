@@ -1,30 +1,14 @@
-"""Example: Using TypedDict for Condition Parsing
+"""Example: Using ConditionParser for Condition Evaluation
 
-This example demonstrates how the ConditionParser now uses TypedDict structures
-to represent parsed conditions, making them extensible for any type - built-in
-or user-defined.
+This example demonstrates how to use the ConditionParser for parsing and evaluating
+conditions without the removed comparison handler system.
 """
 
-import os
-
-# Import from the same directory
-import sys
-
-from ha_synthetic_sensors.comparison_handlers import register_user_comparison_handler
 from ha_synthetic_sensors.condition_parser import ConditionParser, ParsedAttributeCondition, ParsedCondition
 
-sys.path.append(os.path.dirname(__file__))
-from custom_comparison_type import ColorComparisonType, IPAddressComparisonType
 
-
-def demo_typed_dict_conditions():
-    """Demonstrate TypedDict-based condition parsing and evaluation."""
-
-    # Register custom comparison types
-    ip_handler = IPAddressComparisonType()
-    color_handler = ColorComparisonType()
-    register_user_comparison_handler(ip_handler)
-    register_user_comparison_handler(color_handler)
+def demo_condition_parsing():
+    """Demonstrate condition parsing and evaluation using ConditionParser."""
 
     print("=== Built-in Type Conditions ===")
 
@@ -36,18 +20,8 @@ def demo_typed_dict_conditions():
     boolean_condition = ConditionParser.parse_state_condition("!off")
     print(f"Boolean condition: {boolean_condition}")
 
-    version_condition = ConditionParser.parse_state_condition("== 2.1.0")
-    print(f"Version condition: {version_condition}")
-
-    print("\n=== User-Defined Type Conditions ===")
-
-    # IP address conditions
-    ip_condition = ConditionParser.parse_state_condition("== 192.168.1.1")
-    print(f"IP condition: {ip_condition}")
-
-    # Color conditions
-    color_condition = ConditionParser.parse_state_condition("!= red")
-    print(f"Color condition: {color_condition}")
+    string_condition = ConditionParser.parse_state_condition("== hello")
+    print(f"String condition: {string_condition}")
 
     print("\n=== Attribute Conditions ===")
 
@@ -56,52 +30,81 @@ def demo_typed_dict_conditions():
     print(f"Temperature attribute: {temp_attr}")
     print(f"Type: {type(temp_attr)}")
 
-    ip_attr = ConditionParser.parse_attribute_condition("device_ip == 192.168.1.100")
-    print(f"IP attribute: {ip_attr}")
+    battery_attr = ConditionParser.parse_attribute_condition("battery_level <= 50")
+    print(f"Battery attribute: {battery_attr}")
 
     print("\n=== Evaluating Conditions ===")
 
     # Test evaluations with actual values
     print(f"75 >= 50: {ConditionParser.evaluate_condition(75, numeric_condition)}")
     print(f"'on' != 'off': {ConditionParser.evaluate_condition('on', boolean_condition)}")
-    print(f"'3.0.0' == '2.1.0': {ConditionParser.evaluate_condition('3.0.0', version_condition)}")
+    print(f"'hello' == 'hello': {ConditionParser.evaluate_condition('hello', string_condition)}")
 
-    # Custom type evaluations
-    print(f"'192.168.1.1' == '192.168.1.1': {ConditionParser.evaluate_condition('192.168.1.1', ip_condition)}")
-    print(f"'blue' != 'red': {ConditionParser.evaluate_condition('blue', color_condition)}")
+    # Test attribute evaluations
+    print(f"Temperature 25 > 20: {ConditionParser.evaluate_condition(25, temp_attr)}")
+    print(f"Battery 30 <= 50: {ConditionParser.evaluate_condition(30, battery_attr)}")
 
     print("\n=== Working with Raw TypedDict ===")
 
     # You can also create conditions manually
     manual_condition: ParsedCondition = {
-        "operator": "in",
-        "value": "192.168.1.0",  # Subnet check
+        "operator": ">",
+        "value": "100",
     }
 
-    result = ConditionParser.evaluate_condition("192.168.1.5", manual_condition)
-    print(f"Manual subnet condition: {manual_condition}")
-    print(f"'192.168.1.5' in '192.168.1.0': {result}")
+    result = ConditionParser.evaluate_condition(150, manual_condition)
+    print(f"Manual condition: {manual_condition}")
+    print(f"150 > 100: {result}")
 
     # Attribute condition creation
     manual_attr: ParsedAttributeCondition = {"attribute": "friendly_name", "operator": "==", "value": "Living Room"}
     print(f"Manual attribute condition: {manual_attr}")
 
+    print("\n=== Type Conversion Examples ===")
+
+    # ConditionParser handles type conversion automatically
+    string_number_condition = ConditionParser.parse_state_condition("== 42")
+    print(f"'42' == 42: {ConditionParser.evaluate_condition('42', string_number_condition)}")
+    print(f"42 == '42': {ConditionParser.evaluate_condition(42, string_number_condition)}")
+
+    boolean_string_condition = ConditionParser.parse_state_condition("== true")
+    print(f"True == 'true': {ConditionParser.evaluate_condition(True, boolean_string_condition)}")
+    print(f"'true' == True: {ConditionParser.evaluate_condition('true', boolean_string_condition)}")
+
+    print("\n=== Error Handling ===")
+
+    # Invalid operators return False
+    invalid_condition = {"operator": "invalid", "value": "test"}
+    print(f"Invalid operator: {ConditionParser.evaluate_condition('test', invalid_condition)}")
+
+    # Type errors return False
+    numeric_condition = ConditionParser.parse_state_condition("> 10")
+    print(f"String > number: {ConditionParser.evaluate_condition('hello', numeric_condition)}")
+
     print("\n=== Extensibility Benefits ===")
 
-    # The TypedDict approach means:
+    # The ConditionParser approach means:
     # 1. Type safety at compile time
     # 2. Easy serialization/deserialization (JSON, YAML, etc.)
-    # 3. Works with any comparison type (built-in or user-defined)
+    # 3. Works with any comparison type
     # 4. Clean, structured interface
 
     import json
 
-    serialized = json.dumps(ip_condition)
+    serialized = json.dumps(numeric_condition)
     print(f"JSON serializable: {serialized}")
 
-    deserialized = json.loads(serialized)
-    print(f"Deserialized works: {ConditionParser.evaluate_condition('192.168.1.1', deserialized)}")
+    # You can extend the evaluation logic for custom types
+    def custom_evaluate_with_logging(actual_value, condition):
+        """Custom evaluation with logging."""
+        print(f"Evaluating: {actual_value} {condition['operator']} {condition['value']}")
+        result = ConditionParser.evaluate_condition(actual_value, condition)
+        print(f"Result: {result}")
+        return result
+
+    print("\n=== Custom Evaluation with Logging ===")
+    custom_evaluate_with_logging(75, numeric_condition)
 
 
 if __name__ == "__main__":
-    demo_typed_dict_conditions()
+    demo_condition_parsing()

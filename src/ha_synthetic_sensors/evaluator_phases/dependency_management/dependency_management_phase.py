@@ -4,6 +4,14 @@ import logging
 from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
+from ...constants_evaluation_results import (
+    RESULT_KEY_ERROR,
+    RESULT_KEY_MISSING_DEPENDENCIES,
+    RESULT_KEY_STATE,
+    RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from ...exceptions import MissingDependencyError
 from ...type_definitions import ContextValue
 from .manager_factory import DependencyManagerFactory
@@ -89,12 +97,13 @@ class DependencyManagementPhase:
     def validate_evaluation_context(self, eval_context: dict[str, ContextValue], formula_name: str) -> Any | None:
         """Validate that evaluation context has all required variables."""
         try:
-            # Check for any None values in the context that would break evaluation
+            # Allow None values to pass through to formula evaluation where alternate handlers can handle them
             none_variables = [var for var, value in eval_context.items() if value is None]
             if none_variables:
                 error_msg = f"Variables with None values: {', '.join(none_variables)}"
-                _LOGGER.warning("Formula '%s': %s", formula_name, error_msg)
-                return self._create_error_result(error_msg, "unavailable")
+                _LOGGER.warning(
+                    "Formula '%s': %s - allowing to pass through for alternate handler processing", formula_name, error_msg
+                )
             return None
         except Exception as err:
             _LOGGER.error("Formula '%s': Context validation error: %s", formula_name, err)
@@ -176,17 +185,21 @@ class DependencyManagementPhase:
     def _create_error_result(self, error_msg: str, state: str, missing_dependencies: list[str] | None = None) -> dict[str, Any]:
         """Create an error result (placeholder for integration)."""
         # This will be implemented when we integrate with the evaluator
-        return {"error": error_msg, "state": state, "missing_dependencies": missing_dependencies or []}
+        return {
+            RESULT_KEY_ERROR: error_msg,
+            RESULT_KEY_STATE: state,
+            RESULT_KEY_MISSING_DEPENDENCIES: missing_dependencies or [],
+        }
 
     def _create_unavailable_result(self, unavailable_dependencies: list[str]) -> dict[str, Any]:
         """Create an unavailable result (placeholder for integration)."""
         # This will be implemented when we integrate with the evaluator
-        return {"state": "unavailable", "unavailable_dependencies": unavailable_dependencies}
+        return {RESULT_KEY_STATE: STATE_UNAVAILABLE, RESULT_KEY_UNAVAILABLE_DEPENDENCIES: unavailable_dependencies}
 
     def _create_unknown_result(self, unknown_dependencies: list[str]) -> dict[str, Any]:
         """Create an unknown result (placeholder for integration)."""
         # This will be implemented when we integrate with the evaluator
-        return {"state": "unknown", "unavailable_dependencies": unknown_dependencies}
+        return {RESULT_KEY_STATE: STATE_UNKNOWN, RESULT_KEY_UNAVAILABLE_DEPENDENCIES: unknown_dependencies}
 
     def analyze_cross_sensor_dependencies(self, sensors: list[SensorConfig]) -> dict[str, set[str]]:
         """Analyze cross-sensor dependencies for a list of sensors.

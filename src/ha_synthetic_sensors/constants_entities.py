@@ -8,6 +8,15 @@ from homeassistant.helpers import entity_registry as er
 from .exceptions import IntegrationSetupError
 from .ha_constants import get_ha_constant
 
+# Common Home Assistant entity domains for dependency detection
+COMMON_ENTITY_DOMAINS = [
+    "sensor",
+    "binary_sensor",
+    "switch",
+    "light",
+    "climate",
+]
+
 _LOGGER = logging.getLogger(__name__)
 
 # Device class constants for categorization

@@ -21,6 +21,7 @@ import logging
 import re
 from typing import Any
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er, label_registry as lr
 
@@ -829,7 +830,7 @@ class CollectionResolver:
         for entity_id in entity_ids:
             try:
                 state = self._hass.states.get(entity_id)
-                if state and state.state not in ("unavailable", "unknown"):
+                if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                     try:
                         value = float(state.state)
                         values.append(value)

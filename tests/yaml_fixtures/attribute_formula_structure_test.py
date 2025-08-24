@@ -14,8 +14,9 @@ sensors:
     variables:
       within_grace:
         formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
-        UNAVAILABLE: 'false'
-        UNKNOWN: 'false'
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
     attributes:
       # This should be preserved as formula structure, not flattened to direct reference
       grace_period_active:

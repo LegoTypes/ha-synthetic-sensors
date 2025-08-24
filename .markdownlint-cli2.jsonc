@@ -8,10 +8,11 @@
       "maximum": 1
     },
     "MD013": {
-      "line_length": 125,
-      "heading_line_length": 125,
-      "code_block_line_length": 125,
-      "tables": false
+      "line_length": 128,
+      "heading_line_length": 128,
+      "code_block_line_length": false,
+      "tables": false,
+      "code_blocks": false
     },
     "MD022": {
       "lines_above": 1,

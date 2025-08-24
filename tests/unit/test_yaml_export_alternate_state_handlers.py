@@ -60,7 +60,8 @@ class TestYamlExportAlternateStateHandlers:
         assert "within_grace:" in yaml_output
         assert "formula: minutes_between" in yaml_output
 
-        # Verify uppercase alternate state handler keys
+        # Verify alternate_states structure for computed variable
+        assert "alternate_states:" in yaml_output
         assert "UNAVAILABLE: 'false'" in yaml_output
         assert "UNKNOWN: 'false'" in yaml_output
 
@@ -94,6 +95,7 @@ class TestYamlExportAlternateStateHandlers:
         yaml_output = yaml_handler.export_yaml("test_set")
 
         # Verify sensor-level alternate state handlers are present with proper casing
+        assert "alternate_states:" in yaml_output
         assert "UNAVAILABLE: state if within_grace else UNKNOWN" in yaml_output
         assert "UNKNOWN: state if within_grace else UNKNOWN" in yaml_output
 
@@ -152,6 +154,7 @@ class TestYamlExportAlternateStateHandlers:
         assert "formula: state" in yaml_output
 
         # Verify sensor-level handlers
+        assert "alternate_states:" in yaml_output
         assert "UNAVAILABLE: state if within_grace else UNKNOWN" in yaml_output
         assert "UNKNOWN: state if within_grace else UNKNOWN" in yaml_output
 
@@ -167,8 +170,9 @@ class TestYamlExportAlternateStateHandlers:
             if "within_grace:" in line:
                 variable_section_found = True
                 # Check subsequent lines for the variable's alternate handlers
-                remaining_lines = lines[i : i + 5]  # Check next few lines
+                remaining_lines = lines[i : i + 10]  # Check next few lines for alternate_states
                 remaining_text = "\n".join(remaining_lines)
+                assert "alternate_states:" in remaining_text
                 assert "UNAVAILABLE: 'false'" in remaining_text
                 assert "UNKNOWN: 'false'" in remaining_text
                 break
@@ -210,11 +214,13 @@ class TestYamlExportAlternateStateHandlers:
         yaml_output = YamlHandler(mock_storage).export_yaml("set")
 
         # Sensor-level literal booleans should appear as YAML booleans
+        assert "alternate_states:" in yaml_output
         assert "UNAVAILABLE: true" in yaml_output or "UNAVAILABLE: True" in yaml_output
         assert "UNKNOWN: false" in yaml_output or "UNKNOWN: False" in yaml_output
 
         # Ensure computed variable still exports handlers as strings for back-compat
         assert "cv:" in yaml_output
-        # Adjacent lines should include UNAVAILABLE/UNKNOWN under cv
+        # Adjacent lines should include alternate_states with UNAVAILABLE/UNKNOWN under cv
+        assert "alternate_states:" in yaml_output
         assert ("UNAVAILABLE: '0'" in yaml_output) or ('UNAVAILABLE: "0"' in yaml_output)
         assert ("UNKNOWN: '1'" in yaml_output) or ('UNKNOWN: "1"' in yaml_output)

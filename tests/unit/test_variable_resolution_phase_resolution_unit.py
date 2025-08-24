@@ -11,11 +11,21 @@ class _Hass:
     def __init__(self):
         # minimal states object for compatibility
         self.states = SimpleNamespace(get=lambda _eid: None)
+        # Add entity registry mock
+        from unittest.mock import Mock
+
+        self.entity_registry = Mock()
+        mock_entities = Mock()
+        mock_entities.values.return_value = [Mock(domain="sensor"), Mock(domain="binary_sensor"), Mock(domain="switch")]
+        self.entity_registry.entities = mock_entities
 
 
 def test_state_attribute_resolution_substitutes_values(monkeypatch) -> None:
     # Ensure entity regex can be built if needed
-    monkeypatch.setattr("ha_synthetic_sensors.shared_constants.get_ha_domains", lambda _h: frozenset({"sensor"}))
+    monkeypatch.setattr(
+        "ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resolution_phase.get_ha_domains",
+        lambda _h: frozenset({"sensor"}),
+    )
     phase = VariableResolutionPhase()
     phase.set_dependency_handler(SimpleNamespace(hass=_Hass(), data_provider_callback=None))
     # Provide mapping and provider for state.* resolution
@@ -37,7 +47,10 @@ def test_state_attribute_resolution_substitutes_values(monkeypatch) -> None:
 
 def test_entity_reference_resolution_with_tracking(monkeypatch) -> None:
     # Patch domains and provide hass
-    monkeypatch.setattr("ha_synthetic_sensors.shared_constants.get_ha_domains", lambda _h: frozenset({"sensor"}))
+    monkeypatch.setattr(
+        "ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resolution_phase.get_ha_domains",
+        lambda _h: frozenset({"sensor"}),
+    )
     phase = VariableResolutionPhase()
     phase.set_dependency_handler(SimpleNamespace(hass=_Hass(), data_provider_callback=None))
 

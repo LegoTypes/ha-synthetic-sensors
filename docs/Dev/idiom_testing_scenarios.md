@@ -4,8 +4,8 @@ description: Comprehensive testing scenarios for synthetic sensor idioms and ref
 
 # Idiom Testing Scenarios
 
-This document outlines specific testing scenarios for each idiom defined in the State and Entity Reference Guide. Each
-scenario includes corresponding YAML examples in the `examples/` folder.
+This document outlines specific testing scenarios for each idiom defined in the State and Entity Reference Guide. Each scenario
+includes corresponding YAML examples in the `examples/` folder.
 
 ## Overview
 

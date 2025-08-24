@@ -420,7 +420,7 @@ def pytest_runtest_setup(item):
 
 
 @pytest.fixture
-def mock_hass(mock_entity_registry, mock_states):
+def mock_hass(mock_entity_registry, mock_states, monkeypatch):
     """Provide a mock Home Assistant instance for tests."""
     hass = MockHomeAssistant()
     hass.entity_registry = mock_entity_registry
@@ -439,6 +439,17 @@ def mock_hass(mock_entity_registry, mock_states):
     mock_states_get.side_effect = mock_states_get_impl
 
     hass.states.get = mock_states_get
+
+    # Patch get_ha_domains for entity resolution and collection functions
+    # This ensures that entity domain resolution works in integration tests
+    monkeypatch.setattr(
+        "ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resolution_phase.get_ha_domains",
+        lambda _h: frozenset({"sensor", "binary_sensor", "switch", "light", "climate", "cover", "fan", "device_tracker"}),
+    )
+
+    # Patch collection resolver entity registry access for collection functions
+    monkeypatch.setattr("ha_synthetic_sensors.collection_resolver.er.async_get", lambda _h: mock_entity_registry)
+    monkeypatch.setattr("ha_synthetic_sensors.constants_entities.er.async_get", lambda _h: mock_entity_registry)
 
     # Note: async_create_task is not mocked globally to avoid breaking tests that need it to work
     # Individual tests that need to mock it should do so locally

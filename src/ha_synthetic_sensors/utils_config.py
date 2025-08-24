@@ -12,6 +12,8 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
 from .alternate_state_eval import evaluate_computed_alternate
 from .config_models import ComputedVariable, FormulaConfig
+from .constants_entities import get_ha_entity_domains
+from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import FatalEvaluationError, MissingDependencyError
@@ -169,7 +171,7 @@ def _is_entity_id_reference(reference: str) -> bool:
     """Check if a reference looks like a valid entity ID.
 
     Entity IDs typically follow the pattern: domain.object_id
-    Common domains include: sensor, binary_sensor, switch, light, etc.
+    Uses lazy loading to get valid domains from Home Assistant registry.
 
     Args:
         reference: The reference string to check
@@ -180,51 +182,69 @@ def _is_entity_id_reference(reference: str) -> bool:
     if not isinstance(reference, str) or "." not in reference:
         return False
 
-    # Common Home Assistant entity domains
-    valid_domains = {
-        "sensor",
-        "binary_sensor",
-        "switch",
-        "light",
-        "climate",
-        "cover",
-        "fan",
-        "lock",
-        "media_player",
-        "vacuum",
-        "camera",
-        "alarm_control_panel",
-        "device_tracker",
-        "person",
-        "zone",
-        "automation",
-        "script",
-        "scene",
-        "input_boolean",
-        "input_number",
-        "input_select",
-        "input_text",
-        "input_datetime",
-        "timer",
-        "counter",
-        "weather",
-        "sun",
-        "calendar",
-        "water_heater",
-        "humidifier",
-        "air_quality",
-        "button",
-        "number",
-        "select",
-        "text",
-    }
+    parts = reference.split(".", 1)
+    if len(parts) != 2:
+        return False
+
+    domain, object_id = parts
+
+    # Basic validation: domain and object_id must exist and object_id must not be empty
+    if not domain or not object_id:
+        return False
+
+    # For now, we'll do basic pattern validation since we don't have access to hass context here
+    # The actual domain validation will happen during evaluation when hass is available
+    # This prevents false negatives during config validation while still catching obvious syntax errors
+
+    # Check for valid domain pattern (alphanumeric + underscore, no leading/trailing underscores)
+    import re  # pylint: disable=import-outside-toplevel
+
+    domain_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+    if not domain_pattern.match(domain):
+        return False
+
+    # Check for valid object_id pattern (alphanumeric + underscore, no leading/trailing underscores)
+    object_id_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+    return object_id_pattern.match(object_id) is not None
+
+
+def _is_entity_id_reference_with_hass(reference: str, hass: Any) -> bool:
+    """Check if a reference is a valid entity ID using Home Assistant context.
+
+    This function should be used during evaluation when hass context is available.
+    Uses the lazy loader system from constants_entities to get valid domains.
+
+    Args:
+        reference: The reference string to check
+        hass: Home Assistant instance
+
+    Returns:
+        True if the reference is a valid entity ID
+    """
+    if not isinstance(reference, str) or "." not in reference:
+        return False
 
     parts = reference.split(".", 1)
     if len(parts) != 2:
         return False
 
     domain, object_id = parts
-    return domain in valid_domains and len(object_id) > 0
+
+    # Basic validation: domain and object_id must exist and object_id must not be empty
+    if not domain or not object_id:
+        return False
+
+    # Use lazy loader to get valid domains from Home Assistant registry
+    try:
+        valid_domains = get_ha_entity_domains(hass)
+        return domain in valid_domains
+    except Exception:
+        # If we can't get domains from registry, fall back to basic pattern validation
+        import re  # pylint: disable=import-outside-toplevel
+
+        domain_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+        object_id_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
+        return domain_pattern.match(domain) is not None and object_id_pattern.match(object_id) is not None
 
 
 # CLEAN SLATE: Removed exception handler fallback logic - deterministic system should not fallback to 0
@@ -361,22 +381,27 @@ def _resolve_simple_variables(
             _LOGGER.debug("Skipping config variable %s (already set in context)", var_name)
             continue
 
+        _LOGGER.debug("UTILS_CONFIG_DEBUG: Calling resolver_callback for '%s' = '%s'", var_name, var_value)
         resolved_value = resolver_callback(var_name, var_value, eval_context, sensor_config)
-        if resolved_value is not None:
-            # Check if resolver already returned a ReferenceValue object
-            if isinstance(resolved_value, ReferenceValue):
-                # Resolver already created ReferenceValue - use it directly
-                eval_context[var_name] = resolved_value
-                # Update the registry if needed
-                entity_registry_key = "_entity_reference_registry"
-                if entity_registry_key not in eval_context:
-                    eval_context[entity_registry_key] = {}
-                entity_registry = eval_context[entity_registry_key]
-                if isinstance(entity_registry, dict):
-                    entity_registry[resolved_value.reference] = resolved_value
-            else:
-                # Resolver returned raw value - wrap in ReferenceValue
-                ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_value, resolved_value)
+        _LOGGER.debug("UTILS_CONFIG_DEBUG: resolver_callback returned %s for '%s'", resolved_value, var_name)
+
+        # Always set the variable in context - resolver should always return ReferenceValue
+        if isinstance(resolved_value, ReferenceValue):
+            # Resolver already created ReferenceValue - use it directly
+            eval_context[var_name] = resolved_value
+            # Update the registry if needed
+            entity_registry_key = "_entity_reference_registry"
+            if entity_registry_key not in eval_context:
+                eval_context[entity_registry_key] = {}
+            entity_registry = eval_context[entity_registry_key]
+            if isinstance(entity_registry, dict):
+                entity_registry[resolved_value.reference] = resolved_value
+        elif resolved_value is not None:
+            # Resolver returned raw value - wrap in ReferenceValue
+            ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_value, resolved_value)
+        else:
+            # Resolver returned None - this is a missing dependency (fatal error)
+            raise MissingDependencyError(f"Variable '{var_name}' could not be resolved")
 
 
 def _resolve_computed_variables(
@@ -444,7 +469,7 @@ def _process_computed_variables_iteration(
         except Exception as err:
             # Check if this is a real evaluation error vs entity unavailable/unknown
             error_str = str(err).lower()
-            if any(pattern in error_str for pattern in [STATE_UNAVAILABLE, STATE_UNKNOWN]):
+            if STATE_UNKNOWN in error_str:
                 # Entity state issues - use YAML exception handlers
                 handled = _try_handle_computed_variable_error(var_name, computed_var, eval_context, error_details_map, err)
                 if handled:
@@ -540,6 +565,7 @@ def _evaluate_cv_via_pipeline(
     formula: str,
     eval_context: dict[str, ContextValue],
     parent_config: FormulaConfig | None,
+    allow_unresolved_states: bool = False,
 ) -> dict[str, Any]:
     variables_view = _build_simple_variables_view(parent_config)
     return FormulaEvaluatorService.evaluate_formula_via_pipeline(
@@ -547,6 +573,7 @@ def _evaluate_cv_via_pipeline(
         eval_context,
         variables=variables_view,
         bypass_dependency_management=False,
+        allow_unresolved_states=allow_unresolved_states,
     )
 
 
@@ -575,9 +602,11 @@ def _resolve_metadata_computed_variable(
         _LOGGER.debug("Computed variable %s stored as lazy ReferenceValue (awaiting HA readiness)", var_name)
         return True
 
-    eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
-    if eval_result.get("success"):
-        result = eval_result["value"]
+    eval_result = _evaluate_cv_via_pipeline(
+        computed_var.formula, eval_context, parent_config, computed_var.allow_unresolved_states
+    )
+    if eval_result.get(RESULT_KEY_SUCCESS):
+        result = eval_result[RESULT_KEY_VALUE]
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
         _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
         return True
@@ -585,7 +614,7 @@ def _resolve_metadata_computed_variable(
     _LOGGER.debug(
         "Computed variable %s pipeline evaluation failed or returned error: %s; will keep lazy",
         var_name,
-        eval_result.get("error"),
+        eval_result.get(RESULT_KEY_ERROR),
     )
     _set_lazy_reference(eval_context, var_name, computed_var.formula)
     return True
@@ -597,14 +626,16 @@ def _resolve_non_metadata_computed_variable(
     eval_context: dict[str, ContextValue],
     parent_config: FormulaConfig | None,
 ) -> bool:
-    eval_result = _evaluate_cv_via_pipeline(computed_var.formula, eval_context, parent_config)
-    if eval_result.get("success"):
-        result = eval_result["value"]
+    eval_result = _evaluate_cv_via_pipeline(
+        computed_var.formula, eval_context, parent_config, computed_var.allow_unresolved_states
+    )
+    if eval_result.get(RESULT_KEY_SUCCESS):
+        result = eval_result[RESULT_KEY_VALUE]
         _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
         return True
 
-    error_msg = str(eval_result.get("error"))
+    error_msg = str(eval_result.get(RESULT_KEY_ERROR))
     _LOGGER.debug("Computed variable %s failed via pipeline: %s", var_name, error_msg)
     return False
 
@@ -684,14 +715,28 @@ def _try_alternate_state_handler(
         )
         return None  # Let the error propagate as fatal
 
-    # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN fallbacks
+    # NON-FATAL ERRORS: Legitimate cases for UNAVAILABLE/UNKNOWN/NONE fallbacks
+    handler_formula = None
+
+    # Try specific handlers first
     if STATE_UNAVAILABLE in error_str:
         handler_formula = computed_var.alternate_state_handler.unavailable
     elif STATE_UNKNOWN in error_str:
         handler_formula = computed_var.alternate_state_handler.unknown
-    # For other non-fatal errors, try unavailable handler first, then unknown
-    else:
-        handler_formula = computed_var.alternate_state_handler.unavailable or computed_var.alternate_state_handler.unknown
+    elif "none" in error_str:
+        handler_formula = computed_var.alternate_state_handler.none
+
+    # If no specific handler found, try fallback handler
+    if handler_formula is None:
+        handler_formula = computed_var.alternate_state_handler.fallback
+
+    # Final fallback: try specific handlers in priority order
+    if handler_formula is None:
+        handler_formula = (
+            computed_var.alternate_state_handler.none
+            or computed_var.alternate_state_handler.unavailable
+            or computed_var.alternate_state_handler.unknown
+        )
 
     if not handler_formula:
         return None

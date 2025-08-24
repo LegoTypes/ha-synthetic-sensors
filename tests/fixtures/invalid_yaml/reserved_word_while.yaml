@@ -1,0 +1,10 @@
+# Test YAML file with 'while' as a variable name
+# This should fail validation - 'while' is a reserved word
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Reserved Word 'while'"
+    formula: "value + 10"
+    variables:
+      value: "sensor.source_entity"
+      while: "sensor.condition"  # Reserved word - should fail

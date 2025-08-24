@@ -7,6 +7,7 @@ from typing import cast
 
 from .cache import CacheConfig, FormulaCache
 from .config_models import FormulaConfig
+from .constants_evaluation_results import RESULT_KEY_CACHED, RESULT_KEY_STATE, RESULT_KEY_SUCCESS, RESULT_KEY_VALUE, STATE_OK
 from .type_definitions import CacheStats, ContextValue, EvaluationResult, ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,12 +42,14 @@ class EvaluatorCache:
         variables = cast(dict[str, str | int | float | None] | None, config.variables if hasattr(config, "variables") else None)
         cached_result = self._cache.get_result(config.formula, filtered_context, cache_key_id, variables)
         if cached_result is not None:
-            return {
-                "success": True,
-                "value": cached_result,
-                "cached": True,
-                "state": "ok",
+            # Build result using constants
+            base_fields = {
+                RESULT_KEY_SUCCESS: True,
+                RESULT_KEY_VALUE: cached_result,
+                RESULT_KEY_CACHED: True,
+                RESULT_KEY_STATE: STATE_OK,
             }
+            return cast(EvaluationResult, base_fields)
         return None
 
     def cache_result(

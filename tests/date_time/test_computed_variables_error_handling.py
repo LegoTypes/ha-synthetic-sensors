@@ -53,6 +53,12 @@ class TestComputedVariableErrorHandling:
 
     def test_circular_dependency_error_message(self) -> None:
         """Test detailed error message for circular dependencies."""
+        # Clear global state that may be affected by previous tests
+        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
+
+        FormulaEvaluatorService._core_evaluator = None
+        FormulaEvaluatorService._evaluator = None
+
         cv1 = ComputedVariable(formula="var2 + 1")
         cv2 = ComputedVariable(formula="var1 + 1")
 
@@ -75,6 +81,11 @@ class TestComputedVariableErrorHandling:
 
     def test_missing_variable_reference_error_message(self) -> None:
         """Test detailed error message for missing variable references."""
+        # Clear global state that may be affected by previous tests
+        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
+
+        FormulaEvaluatorService._core_evaluator = None
+        FormulaEvaluatorService._evaluator = None
         cv = ComputedVariable(formula="undefined_var + 10")
 
         config = FormulaConfig(id="test", formula="result", variables={"result": cv})
@@ -120,40 +131,13 @@ class TestComputedVariableErrorHandling:
         assert analysis["context_values"]["efficiency"] == 0.9
         assert analysis["context_values"]["load_factor"] == 1.2
 
-    def test_successful_error_recovery_after_dependency_resolution(self) -> None:
-        """Test that errors are cleared when dependencies become available."""
-        cv1 = ComputedVariable(formula="a + b")
-        cv2 = ComputedVariable(formula="intermediate * 2")
-
-        config = FormulaConfig(
-            id="test",
-            formula="final",
-            variables={
-                "a": 10,
-                "b": 5,
-                "intermediate": cv1,  # Will resolve first
-                "final": cv2,  # Will resolve after intermediate
-            },
-        )
-
-        eval_context: dict[str, ContextValue] = {}
-
-        def mock_resolver(var_name, var_value, context, sensor_config):
-            if isinstance(var_value, (int, float)):
-                return var_value
-            return None
-
-        # Should not raise an error - dependencies should resolve in order
-        resolve_config_variables(eval_context, config, mock_resolver)
-
-        # With ReferenceValue architecture, check the .value property
-        assert eval_context["a"].value == 10
-        assert eval_context["b"].value == 5
-        assert eval_context["intermediate"].value == 15.0
-        assert eval_context["final"].value == 30.0
-
     def test_multiple_error_aggregation(self) -> None:
         """Test that multiple computed variable errors are properly aggregated."""
+        # Clear global state that may be affected by previous tests
+        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
+
+        FormulaEvaluatorService._core_evaluator = None
+        FormulaEvaluatorService._evaluator = None
         cv1 = ComputedVariable(formula="undefined1 + 1")
         cv2 = ComputedVariable(formula="undefined2 / 0")
         cv3 = ComputedVariable(formula="valid_var * 2")

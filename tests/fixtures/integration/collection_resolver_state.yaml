@@ -1,0 +1,20 @@
+version: "1.0"
+
+sensors:
+  active_devices:
+    name: "Active Devices"
+    formula: "count('state:on')"
+    metadata:
+      unit_of_measurement: "devices"
+
+  high_value_sensors:
+    name: "High Value Sensors"
+    formula: "count('state:>50')"
+    metadata:
+      unit_of_measurement: "sensors"
+
+  mixed_state_patterns:
+    name: "Mixed State Patterns"
+    formula: "count('state:on|active|connected')"
+    metadata:
+      unit_of_measurement: "devices"

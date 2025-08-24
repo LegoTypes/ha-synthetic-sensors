@@ -3,9 +3,9 @@
 import pytest
 from unittest.mock import Mock, MagicMock
 
-from src.ha_synthetic_sensors.core_formula_evaluator import CoreFormulaEvaluator
-from src.ha_synthetic_sensors.exceptions import FormulaEvaluationError
-from src.ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.core_formula_evaluator import CoreFormulaEvaluator
+from ha_synthetic_sensors.exceptions import FormulaEvaluationError, AlternateStateDetected
+from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
 class TestCoreFormulaEvaluator:
@@ -27,6 +27,7 @@ class TestCoreFormulaEvaluator:
         # Setup mocks - for enhanced simple eval path
         self.enhanced_helper.try_enhanced_eval.return_value = (True, "test_result")
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute
@@ -48,6 +49,7 @@ class TestCoreFormulaEvaluator:
         # Enhanced helper should be used as fallback
         self.enhanced_helper.try_enhanced_eval.return_value = (True, 42.0)
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute
@@ -63,15 +65,15 @@ class TestCoreFormulaEvaluator:
         test_exception = ValueError("test error")
         self.enhanced_helper.try_enhanced_eval.return_value = (False, test_exception)
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute and verify exception
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(AlternateStateDetected) as exc_info:
             self.evaluator.evaluate_formula(
                 resolved_formula="invalid_formula", original_formula="invalid_formula", handler_context=context
             )
 
-        assert "Formula evaluation error" in str(exc_info.value)
         assert "test error" in str(exc_info.value)
 
     def test_evaluate_formula_metadata_path(self):
@@ -79,12 +81,13 @@ class TestCoreFormulaEvaluator:
         # Setup mocks for metadata path
         mock_handler = Mock()
         mock_handler.can_handle.return_value = True
-        mock_handler.evaluate.return_value = "metadata_result"
+        mock_handler.evaluate.return_value = ("metadata_result(_metadata_0)", {"_metadata_0": "test_value"})
         self.handler_factory.get_handler.return_value = mock_handler
 
         # Setup enhanced helper mock for continued evaluation after metadata processing
-        self.enhanced_helper.try_enhanced_eval.return_value = (True, "metadata_result")
+        self.enhanced_helper.try_enhanced_eval.return_value = (True, "test_value")
 
+        # EvaluationContext should contain ReferenceValue objects
         context = {"test_var": ReferenceValue("test", "value")}
 
         # Execute with metadata formula
@@ -93,7 +96,7 @@ class TestCoreFormulaEvaluator:
         )
 
         # Verify metadata path was used
-        assert result == "metadata_result"
+        assert result == "test_value"
         self.handler_factory.get_handler.assert_called_with("metadata")
         mock_handler.can_handle.assert_called_once()
         mock_handler.evaluate.assert_called_once()

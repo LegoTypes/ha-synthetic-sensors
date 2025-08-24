@@ -8,6 +8,7 @@ from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.exceptions import DataValidationError
 from ha_synthetic_sensors.type_definitions import DataProviderResult
+from homeassistant.const import STATE_UNKNOWN
 
 
 def test_data_provider_returns_none(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -36,11 +37,11 @@ def test_data_provider_returns_none_value(mock_hass, mock_entity_registry, mock_
 
     config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
-    # Should handle None values gracefully by converting to "unknown"
+    # Should handle None values gracefully by returning an alternate HA state with no numeric value
     result = evaluator.evaluate_formula(config)
     assert result["success"] is True
-    assert result["state"] == "unknown"
-    assert result["value"] is None
+    assert result.get("state") == STATE_UNKNOWN
+    assert result.get("value") is None
 
 
 def test_evaluator_handles_none_from_data_provider(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -57,11 +58,11 @@ def test_evaluator_handles_none_from_data_provider(mock_hass, mock_entity_regist
     # Test simple variable reference with None value
     config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
 
-    # Should handle None values gracefully by returning "unknown" state
+    # Should handle None values gracefully by returning an alternate HA state with no numeric value
     result = evaluator.evaluate_formula(config)
     assert result["success"] is True
-    assert result["state"] == "unknown"
-    assert result["value"] is None
+    assert result.get("state") == STATE_UNKNOWN
+    assert result.get("value") is None
 
 
 def test_evaluator_handles_callback_returning_none(mock_hass, mock_entity_registry, mock_states) -> None:

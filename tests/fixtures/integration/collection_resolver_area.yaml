@@ -1,0 +1,22 @@
+version: "1.0"
+
+sensors:
+  living_room_power:
+    name: "Living Room Power"
+    formula: "sum('area:living_room')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  kitchen_devices:
+    name: "Kitchen Devices"
+    formula: "count('area:kitchen')"
+    metadata:
+      unit_of_measurement: "devices"
+
+  bedroom_temperature:
+    name: "Bedroom Temperature"
+    formula: "avg('area:bedroom')"
+    metadata:
+      unit_of_measurement: "°C"
+      device_class: "temperature"

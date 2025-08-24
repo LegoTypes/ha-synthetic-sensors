@@ -37,7 +37,8 @@ def get_true_states() -> set[Any]:
     }
 
     # Only add truly generic boolean representations not covered by HA
-    package_semantics = {"true", "yes", "1"}
+    # Note: Removed "1" to avoid conflicts with numeric variables
+    package_semantics = {"true", "yes"}
 
     return ha_turned_on | ha_basic_states | package_semantics
 
@@ -58,7 +59,8 @@ def get_false_states() -> set[Any]:
     }
 
     # Only add truly generic boolean representations not covered by HA
-    package_semantics = {"false", "no", "0"}
+    # Note: Removed "0" to avoid conflicts with numeric variables
+    package_semantics = {"false", "no"}
 
     return ha_turned_off | ha_basic_states | package_semantics
 
@@ -71,6 +73,54 @@ def get_current_true_states() -> set[Any]:
 def get_current_false_states() -> set[Any]:
     """Get current false states - always fresh."""
     return get_false_states()
+
+
+def get_core_true_states() -> set[Any]:
+    """Get core boolean states that should be considered True (1.0).
+
+    Only includes universal HA boolean states, not domain-specific states
+    that should remain as strings (like lock states, cover states, etc.).
+    """
+    # Core HA fundamental boolean states only
+    ha_basic_states = {
+        _get_constant("STATE_ON"),
+        _get_constant("STATE_HOME"),  # Device tracker: home
+    }
+
+    # Only add truly generic boolean representations
+    # Note: Removed "1" to avoid conflicts with numeric variables
+    package_semantics = {"true", "yes"}
+
+    return ha_basic_states | package_semantics
+
+
+def get_core_false_states() -> set[Any]:
+    """Get core boolean states that should be considered False (0.0).
+
+    Only includes universal HA boolean states, not domain-specific states
+    that should remain as strings (like lock states, cover states, etc.).
+    """
+    # Core HA fundamental boolean states only
+    ha_basic_states = {
+        _get_constant("STATE_OFF"),
+        _get_constant("STATE_NOT_HOME"),  # Device tracker: not_home
+    }
+
+    # Only add truly generic boolean representations
+    # Note: Removed "0" to avoid conflicts with numeric variables
+    package_semantics = {"false", "no"}
+
+    return ha_basic_states | package_semantics
+
+
+def get_current_core_true_states() -> set[Any]:
+    """Get current core true states - always fresh."""
+    return get_core_true_states()
+
+
+def get_current_core_false_states() -> set[Any]:
+    """Get current core false states - always fresh."""
+    return get_core_false_states()
 
 
 # Backwards compatibility - provide constants that are computed fresh each time

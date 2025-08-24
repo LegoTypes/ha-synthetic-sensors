@@ -169,8 +169,9 @@ sensors:
       # Computed variable defined at sensor level (parent)
       within_grace:
         formula: "minutes_between(metadata(state, 'last_changed'), now()) < grace_period_minutes"
-        UNAVAILABLE: 'false'
-        UNKNOWN: 'false'
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
       grace_period_minutes: 15
     attributes:
       # Direct reference to parent computed variable (this was broken before our fix)

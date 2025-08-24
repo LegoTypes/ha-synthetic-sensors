@@ -1,69 +1,22 @@
-"""Example: Creating Custom Comparison Types
+"""Example: Using ConditionParser for Custom Comparisons
 
-This example demonstrates how to extend the comparison system with your own
-custom comparison types using the extensible protocol-based architecture.
+This example demonstrates how to use the ConditionParser for custom comparison logic
+without the need for the removed comparison handler system.
 """
 
-from ha_synthetic_sensors.comparison_handlers import ComparisonTypeInfo, compare_values, register_user_comparison_handler
-from ha_synthetic_sensors.exceptions import UnsupportedComparisonError
+from ha_synthetic_sensors.condition_parser import ConditionParser, ParsedCondition
 from ha_synthetic_sensors.type_analyzer import OperandType
 
 
-class IPAddressComparisonType:
-    """Example user-defined comparison type for IP addresses.
+class IPAddressComparisonHelper:
+    """Example helper class for IP address comparisons.
 
-    This handler can:
-    - Compare IP addresses for equality
-    - Check if an IP is in a subnet (simplified implementation)
-    - Handle IP address strings like "192.168.1.1"
+    This demonstrates how to implement custom comparison logic
+    using the ConditionParser's evaluate_condition method.
     """
 
-    def get_type_info(self) -> ComparisonTypeInfo:
-        """Get type information for IP address comparisons."""
-        return ComparisonTypeInfo(
-            type_name="ip_address",
-            priority=5,  # Higher priority than built-in handlers
-            supported_operators={"==", "!=", "in", "not in"},
-            can_handle_user_types=True,
-        )
-
-    def can_handle_user_type(self, value: OperandType, metadata: dict[str, any]) -> bool:
-        """Check if this handler can process a user-defined type with metadata."""
-        return metadata.get("type") == "ip_address"
-
-    def can_handle_raw(self, left_raw: OperandType, right_raw: OperandType, op: str) -> bool:
-        """Check if this handler can compare these raw values."""
-        if op not in self.get_type_info()["supported_operators"]:
-            return False
-
-        # Handle if either value looks like an IP address
-        return self._is_ip_address(left_raw) or self._is_ip_address(right_raw)
-
-    def compare_raw(self, left_raw: OperandType, right_raw: OperandType, op: str) -> bool:
-        """Compare raw IP address values."""
-        if not self.can_handle_raw(left_raw, right_raw, op):
-            raise UnsupportedComparisonError(
-                f"IPAddressComparisonType cannot handle comparison between "
-                f"{type(left_raw).__name__} and {type(right_raw).__name__} with operator '{op}'"
-            )
-
-        # Convert to comparable format
-        left_parsed = self._parse_ip(left_raw)
-        right_parsed = self._parse_ip(right_raw)
-
-        if op == "==":
-            return left_parsed == right_parsed
-        elif op == "!=":
-            return left_parsed != right_parsed
-        elif op == "in":
-            # Check if left IP is in right subnet/range
-            return self._ip_in_subnet(left_parsed, right_parsed)
-        elif op == "not in":
-            return not self._ip_in_subnet(left_parsed, right_parsed)
-        else:
-            raise UnsupportedComparisonError(f"Unsupported operator for IP address: {op}")
-
-    def _is_ip_address(self, value: OperandType) -> bool:
+    @staticmethod
+    def is_ip_address(value: OperandType) -> bool:
         """Check if value looks like an IP address."""
         if not isinstance(value, str):
             return False
@@ -81,161 +34,150 @@ class IPAddressComparisonType:
         except (ValueError, AttributeError):
             return False
 
-    def _parse_ip(self, value: OperandType) -> tuple[int, int, int, int]:
+    @staticmethod
+    def parse_ip(value: OperandType) -> tuple[int, int, int, int]:
         """Parse IP address string to tuple of integers."""
-        if isinstance(value, str) and self._is_ip_address(value):
+        if isinstance(value, str) and IPAddressComparisonHelper.is_ip_address(value):
             return tuple(int(part) for part in value.split("."))
         raise ValueError(f"Invalid IP address: {value}")
 
-    def _ip_in_subnet(self, ip: tuple[int, int, int, int], subnet: tuple[int, int, int, int]) -> bool:
+    @staticmethod
+    def ip_in_subnet(ip: tuple[int, int, int, int], subnet: tuple[int, int, int, int]) -> bool:
         """Simplified subnet check (checks if first 3 octets match)."""
         return ip[:3] == subnet[:3]
 
+    @staticmethod
+    def compare_ip_addresses(left: OperandType, right: OperandType, operator: str) -> bool:
+        """Compare IP addresses using the specified operator."""
+        if not IPAddressComparisonHelper.is_ip_address(left) or not IPAddressComparisonHelper.is_ip_address(right):
+            return False
 
-class ColorComparisonType:
-    """Example comparison type for color values.
+        left_parsed = IPAddressComparisonHelper.parse_ip(left)
+        right_parsed = IPAddressComparisonHelper.parse_ip(right)
+
+        if operator == "==":
+            return left_parsed == right_parsed
+        elif operator == "!=":
+            return left_parsed != right_parsed
+        elif operator == "in":
+            return IPAddressComparisonHelper.ip_in_subnet(left_parsed, right_parsed)
+        elif operator == "not in":
+            return not IPAddressComparisonHelper.ip_in_subnet(left_parsed, right_parsed)
+        else:
+            return False
+
+
+class ColorComparisonHelper:
+    """Example helper class for color comparisons.
 
     Supports hex colors like "#FF0000" and named colors like "red".
     """
 
-    COLOR_NAMES = {
+    # Simple color mapping for demonstration
+    NAMED_COLORS = {
         "red": "#FF0000",
         "green": "#00FF00",
         "blue": "#0000FF",
-        "white": "#FFFFFF",
-        "black": "#000000",
         "yellow": "#FFFF00",
         "cyan": "#00FFFF",
         "magenta": "#FF00FF",
+        "white": "#FFFFFF",
+        "black": "#000000",
     }
 
-    def get_type_info(self) -> ComparisonTypeInfo:
-        """Get type information for color comparisons."""
-        return ComparisonTypeInfo(
-            type_name="color",
-            priority=8,  # Higher priority than built-ins
-            supported_operators={"==", "!="},
-            can_handle_user_types=True,
-        )
-
-    def can_handle_user_type(self, value: OperandType, metadata: dict[str, any]) -> bool:
-        """Check if this handler can process a user-defined type with metadata."""
-        return metadata.get("type") == "color"
-
-    def can_handle_raw(self, left_raw: OperandType, right_raw: OperandType, op: str) -> bool:
-        """Check if this handler can compare these raw values."""
-        if op not in self.get_type_info()["supported_operators"]:
-            return False
-
-        return self._is_color(left_raw) and self._is_color(right_raw)
-
-    def compare_raw(self, left_raw: OperandType, right_raw: OperandType, op: str) -> bool:
-        """Compare color values."""
-        if not self.can_handle_raw(left_raw, right_raw, op):
-            raise UnsupportedComparisonError(
-                f"ColorComparisonType cannot handle comparison between "
-                f"{type(left_raw).__name__} and {type(right_raw).__name__} with operator '{op}'"
-            )
-
-        # Normalize both colors to hex format
-        left_hex = self._normalize_color(left_raw)
-        right_hex = self._normalize_color(right_raw)
-
-        if op == "==":
-            return left_hex == right_hex
-        elif op == "!=":
-            return left_hex != right_hex
-        else:
-            raise UnsupportedComparisonError(f"Unsupported operator for color: {op}")
-
-    def _is_color(self, value: OperandType) -> bool:
-        """Check if value is a color (hex or named)."""
+    @staticmethod
+    def is_hex_color(value: OperandType) -> bool:
+        """Check if value is a hex color."""
         if not isinstance(value, str):
             return False
+        return value.startswith("#") and len(value) == 7 and all(c in "0123456789ABCDEFabcdef" for c in value[1:])
 
-        value = value.lower().strip()
-
-        # Check named colors
-        if value in self.COLOR_NAMES:
-            return True
-
-        # Check hex colors
-        if value.startswith("#") and len(value) == 7:
-            try:
-                int(value[1:], 16)
-                return True
-            except ValueError:
-                pass
-
-        return False
-
-    def _normalize_color(self, value: OperandType) -> str:
-        """Convert color to normalized hex format."""
-        if not isinstance(value, str):
-            raise ValueError(f"Color must be string, got {type(value)}")
-
-        value = value.lower().strip()
-
-        # Named color
-        if value in self.COLOR_NAMES:
-            return self.COLOR_NAMES[value].upper()
-
-        # Hex color
-        if value.startswith("#") and len(value) == 7:
-            try:
-                int(value[1:], 16)  # Validate hex
+    @staticmethod
+    def normalize_color(value: OperandType) -> str:
+        """Normalize color to hex format."""
+        if isinstance(value, str):
+            # If it's already hex, return as is
+            if ColorComparisonHelper.is_hex_color(value):
                 return value.upper()
-            except ValueError:
-                pass
 
-        raise ValueError(f"Invalid color: {value}")
+            # If it's a named color, convert to hex
+            if value.lower() in ColorComparisonHelper.NAMED_COLORS:
+                return ColorComparisonHelper.NAMED_COLORS[value.lower()]
+
+        return str(value)
+
+    @staticmethod
+    def compare_colors(left: OperandType, right: OperandType, operator: str) -> bool:
+        """Compare colors using the specified operator."""
+        left_normalized = ColorComparisonHelper.normalize_color(left)
+        right_normalized = ColorComparisonHelper.normalize_color(right)
+
+        if operator == "==":
+            return left_normalized == right_normalized
+        elif operator == "!=":
+            return left_normalized != right_normalized
+        else:
+            return False
 
 
-def demo_custom_comparison_types():
-    """Demonstrate the custom comparison types."""
-
-    # Register our custom comparison types
-    ip_handler = IPAddressComparisonType()
-    color_handler = ColorComparisonType()
-
-    register_user_comparison_handler(ip_handler)
-    register_user_comparison_handler(color_handler)
+def demo_custom_comparisons():
+    """Demonstrate custom comparison logic using ConditionParser."""
 
     print("=== IP Address Comparisons ===")
 
-    # Basic IP equality
-    print(f"'192.168.1.1' == '192.168.1.1': {compare_values('192.168.1.1', '192.168.1.1', '==')}")
-    print(f"'192.168.1.1' != '192.168.1.2': {compare_values('192.168.1.1', '192.168.1.2', '!=')}")
+    # Create conditions using ConditionParser
+    ip_condition = ConditionParser.parse_state_condition("== 192.168.1.1")
+    subnet_condition = ConditionParser.parse_state_condition("in 192.168.1.0")
 
-    # Subnet membership (simplified - checks first 3 octets)
-    print(f"'192.168.1.5' in '192.168.1.0': {compare_values('192.168.1.5', '192.168.1.0', 'in')}")
-    print(f"'192.168.2.5' not in '192.168.1.0': {compare_values('192.168.2.5', '192.168.1.0', 'not in')}")
+    # Test IP comparisons
+    test_ip = "192.168.1.1"
+    test_ip2 = "192.168.1.5"
+
+    # Use custom helper for IP-specific logic
+    print(f"IP equality: {IPAddressComparisonHelper.compare_ip_addresses(test_ip, '192.168.1.1', '==')}")
+    print(f"IP in subnet: {IPAddressComparisonHelper.compare_ip_addresses(test_ip2, '192.168.1.0', 'in')}")
+
+    # Use ConditionParser for standard comparisons
+    print(f"Standard equality: {ConditionParser.evaluate_condition(test_ip, ip_condition)}")
 
     print("\n=== Color Comparisons ===")
 
-    # Color equality (hex vs named)
-    print(f"'red' == '#FF0000': {compare_values('red', '#FF0000', '==')}")
-    print(f"'blue' != 'red': {compare_values('blue', 'red', '!=')}")
-    print(f"'#00FF00' == 'green': {compare_values('#00FF00', 'green', '==')}")
+    # Create color conditions
+    color_condition = ConditionParser.parse_state_condition("!= red")
 
-    print("\n=== Built-in Types Still Work ===")
+    # Test color comparisons
+    test_color = "blue"
+    test_hex = "#FF0000"
 
-    # Non-custom values fall back to built-in handlers
-    print(f"'hello' == 'hello': {compare_values('hello', 'hello', '==')}")
-    print(f"5 > 3: {compare_values(5, 3, '>')}")
-    print(f"'2.1.0' > '1.0.0': {compare_values('2.1.0', '1.0.0', '>')}")  # Version comparison
+    print(f"Color inequality: {ColorComparisonHelper.compare_colors(test_color, 'red', '!=')}")
+    print(f"Hex to named: {ColorComparisonHelper.compare_colors(test_hex, 'red', '==')}")
+    print(f"Standard color comparison: {ConditionParser.evaluate_condition(test_color, color_condition)}")
 
-    print("\n=== Handler Priority Order ===")
+    print("\n=== Integration with ConditionParser ===")
 
-    # Show all registered handlers by priority
-    from ha_synthetic_sensors.comparison_handlers import get_extensible_registry
+    # You can extend ConditionParser.evaluate_condition for custom types
+    def custom_evaluate_condition(actual_value: OperandType, condition: ParsedCondition) -> bool:
+        """Custom evaluation that handles IP addresses and colors."""
+        operator = condition["operator"]
+        expected_value = condition["value"]
 
-    registry = get_extensible_registry()
+        # Try custom handlers first
+        if IPAddressComparisonHelper.is_ip_address(actual_value) or IPAddressComparisonHelper.is_ip_address(expected_value):
+            return IPAddressComparisonHelper.compare_ip_addresses(actual_value, expected_value, operator)
 
-    for handler in registry.get_ordered_handlers():
-        info = handler.get_type_info()
-        print(f"  {info['type_name']} (priority {info['priority']}): {list(info['supported_operators'])}")
+        if ColorComparisonHelper.is_hex_color(actual_value) or ColorComparisonHelper.is_hex_color(expected_value):
+            return ColorComparisonHelper.compare_colors(actual_value, expected_value, operator)
+
+        # Fall back to standard ConditionParser
+        return ConditionParser.evaluate_condition(actual_value, condition)
+
+    # Test custom evaluation
+    custom_ip_condition = {"operator": "in", "value": "192.168.1.0"}
+    print(f"Custom IP evaluation: {custom_evaluate_condition('192.168.1.5', custom_ip_condition)}")
+
+    custom_color_condition = {"operator": "==", "value": "red"}
+    print(f"Custom color evaluation: {custom_evaluate_condition('#FF0000', custom_color_condition)}")
 
 
 if __name__ == "__main__":
-    demo_custom_comparison_types()
+    demo_custom_comparisons()

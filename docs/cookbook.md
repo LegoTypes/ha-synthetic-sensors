@@ -8,9 +8,9 @@ A guide to using HA Synthetic Sensors with detailed syntax examples and patterns
 - [References in YAML](#references-in-yaml)
 - [Variables and Configuration](#variables-and-configuration)
 - [Globals](#globals)
-- [Formlas](#formlas)
+- [Formulas](#formulas)
 - [Attributes and Metadata](#attributes-and-metadata)
-- [Comparison Handlers](#comparison-handlers)
+- [Comparison Logic](#comparison-logic)
 - [Cross-Sensor Dependencies](#cross-sensor-dependencies)
 - [Device Association](#device-association)
 - [String Operations](#string-operations)
@@ -157,11 +157,10 @@ Variables can be:
 
 ## Globals
 
-Global device information, variables, and metadata apply to all sensors in a sensor set. Globals _cannot_ have formulas.
-Globals alleviate the user from defining the same information in individual sensors like device or literals. Individual
-sensors and their attributes may contain the same global name but the value must also be the same to avoid conflicts in
-sensor formulas. This override restriction is the same concept as programming languages that disallow renaming from outer to
-innner scope.
+Global device information, variables, and metadata apply to all sensors in a sensor set. Globals _cannot_ have formulas. Globals
+alleviate the user from defining the same information in individual sensors like device or literals. Individual sensors and
+their attributes may contain the same global name but the value must also be the same to avoid conflicts in sensor formulas.
+This override restriction is the same concept as programming languages that disallow renaming from outer to innner scope.
 
 ### Global Settings Structure
 
@@ -194,7 +193,7 @@ global_settings:
     notes: "Primary measurement device"
 ```
 
-## Formlas
+## Formulas
 
 The main sensor must have a formula. Attributes, or variables can contain formulas that calculate values dynamically with
 automatic dependency resolution.
@@ -349,8 +348,7 @@ sensors:
 - Attributes are calculated _second_ and have access to the sensor `state` variable
 - Attribute `state` tokens refers to the _calculated_ main sensor state
 - Attributes can reference other attributes
-- Attributes can define their own `variables` section for attribute-specific entity references or use the main sensors
-  variables
+- Attributes can define their own `variables` section for attribute-specific entity references or use the main sensors variables
 - Attributes can define their own `formula` section
 - Attributes can also reference other entities (like `sensor.max_power_capacity` above)
 
@@ -405,7 +403,7 @@ sensors:
   # Data staleness detection
   power_data_freshness:
     name: "Power Data Freshness"
-    formula: "(now() - metadata(power_entity, 'last_changed')) < hours(1) ? 1 : 0" # Using metadata function to retrieve last_changed
+    formula: "1 if (now() - metadata(power_entity, \"last_changed\")) < hours(1) else 0" # Using metadata function to retrieve last_changed
     variables:
       power_entity: "sensor.power_meter"
     metadata: # metadata you set on your sensor
@@ -414,7 +412,7 @@ sensors:
   # Entity domain validation
   entity_type_check:
     name: "Entity Type Validation"
-    formula: "metadata(sensor.temp_probe, 'domain') == 'sensor' ? 1 : 0"
+    formula: "1 if metadata(sensor.temp_probe, \"domain\") == \"sensor\" else 0"
     metadata:
       unit_of_measurement: "binary"
 
@@ -427,14 +425,14 @@ sensors:
       efficiency_factor: 0.95
     attributes:
       source_name:
-        formula: "metadata(power_sensor, 'friendly_name')" # Retrieve friendly name
-      data_age_minutes:
-        formula: "(now() - metadata(power_sensor, 'last_changed')) / minutes(1)"
-        metadata:
-          unit_of_measurement: "min"
-          suggested_display_precision: 1
-      is_recent:
-        formula: "metadata(power_sensor, 'last_updated') > (now() - minutes(5)) ? 'Yes' : 'No'"
+        formula: "metadata(power_sensor, \"friendly_name\")" # Retrieve friendly name
+              data_age_minutes:
+          formula: "(now() - metadata(power_sensor, \"last_changed\")) / minutes(1)"
+          metadata:
+            unit_of_measurement: "min"
+            suggested_display_precision: 1
+        is_recent:
+          formula: "metadata(power_sensor, \"last_updated\") > (now() - minutes(5)) ? \"Yes\" : \"No\""
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -443,7 +441,7 @@ sensors:
   self_reference_metadata:
     name: "Self Reference Metadata"
     entity_id: "sensor.power_meter"
-    formula: "metadata(state, 'object_id')" # Uses state token to reference current sensor by entity_id
+    formula: "metadata(state, \"object_id\")" # Uses state token to reference current sensor by entity_id
     metadata:
       unit_of_measurement: ""
 ```
@@ -455,10 +453,64 @@ sensors:
 - **State token**: `metadata(state, 'entity_id')` - References the current sensor's backing entity
 - **Global variables**: `metadata(external_sensor, 'domain')` - Uses global variable reference
 
+### Engine-managed last-good attributes
+
+The engine records the most recent valid (non-alternate) calculated result on each sensor as two extra state attributes that are
+exposed on the entity at runtime:
+
+- `last_valid_state` — the last valid calculated state (number or string)
+- `last_valid_changed` — ISO timestamp (string) when that value was recorded
+
+Access patterns:
+
+```yaml
+variables:
+  source: "sensor.span_panel_main_meter_produced_energy"
+formula: "minutes_between(metadata(source, 'last_valid_changed'), now()) < energy_grace_period_minutes"
+```
+
+Avoid direct `entity.attribute` access (e.g., `source.last_valid_state` / `source.last_valid_changed`) for engine-provided
+last-good values in templates.
+
+### Prefer central variables for last-good values
+
+When multiple formulas or attributes need the engine-provided last-good values, define sensor-level variables that resolve
+`metadata(state, ...)` once and reference those variables throughout the sensor. This centralizes the lookup, reduces repeated
+metadata calls, and makes templates easier to read and maintain.
+
+Recommended pattern (sensor-level variables):
+
+```yaml
+sensors:
+  example_energy_sensor:
+    name: "Example Energy"
+    formula: state
+    variables:
+      # centralize last-good references once
+      last_valid_state: "metadata(state, 'last_valid_state')"
+      last_valid_changed: "metadata(state, 'last_valid_changed')"
+      within_grace:
+        formula: "last_valid_changed is not None and minutes_between(last_valid_changed, now()) < energy_grace_period_minutes"
+    alternate_states:
+      FALLBACK:
+        formula: "state if state is not None else (last_valid_state if within_grace else None)"
+    attributes:
+      energy_reporting_status:
+        formula: "'Live' if state is not None else ('Off-Line, reporting previous value' if within_grace else None)"
+        alternate_states:
+          FALLBACK: false
+```
+
+Benefits:
+
+- Single location to update if the key name or behavior changes.
+- Cleaner formulas and attributes that reference `last_valid_*` without repeating `metadata()`.
+- Easier to debug because `within_grace` and the last-good variables are centralized and logged consistently.
+
 ### Metadata Dictionary
 
-The `metadata` dictionary provides extensible support for all Home Assistant sensor properties. This metadata is added
-directly to the sensor when the sensor is created in Home Assistant.
+The `metadata` dictionary provides extensible support for all Home Assistant sensor properties. This metadata is added directly
+to the sensor when the sensor is created in Home Assistant.
 
 ```yaml
 sensors:
@@ -495,14 +547,86 @@ sensors:
       custom_property: "custom_value"
 ```
 
-## Comparison Handlers
+## Boolean Logic and State Comparisons
 
-The synthetic sensors library provides built-in comparison handlers for common data types, enabling sophisticated filtering
-and analysis in collection functions.
+Synthetic sensors support boolean logic using Python operators (`and`, `or`, `not`) and state comparisons.
 
-For detailed documentation on creating and using custom comparison handlers, see the dedicated guide:
+### Boolean vs String Comparisons
 
-**[User-Defined Comparison Handlers](User_Defined_Comparison_Handlers.md)**
+The system provides explicit control over boolean and string comparisons:
+
+**For boolean comparisons (use unquoted names):**
+
+```yaml
+sensors:
+  door_sensor:
+    formula: "binary_sensor.front_door == on"
+    # Uses boolean mapping: 'on' -> True
+```
+
+**For string comparisons (use quoted strings):**
+
+```yaml
+sensors:
+  alarm_sensor:
+    formula: "alarm_control_panel.home == 'armed_away'"
+    # Uses string comparison: 'armed_away' == 'armed_away'
+```
+
+### Boolean Logic Examples
+
+```yaml
+sensors:
+  security_check:
+    name: "Security Check"
+    formula: "door_state == locked and motion_state == 'clear'"
+    variables:
+      door_state: "binary_sensor.front_door"
+      motion_state: "binary_sensor.motion_detector"
+    # door_state == locked: boolean comparison (locked -> True)
+    # motion_state == 'clear': string comparison ('clear' == 'clear')
+
+  presence_logic:
+    name: "Presence Logic"
+    formula: "home_presence == home or work_presence == 'office'"
+    variables:
+      home_presence: "device_tracker.phone_home"
+      work_presence: "device_tracker.phone_work"
+    # home_presence == home: boolean comparison (home -> True)
+    # work_presence == 'office': string comparison ('office' == 'office')
+```
+
+### Available Boolean States
+
+Common boolean states that can be used unquoted:
+
+- `on`, `off`
+- `home`, `not_home`
+- `locked`, `not_locked`
+- `occupied`, `not_occupied`
+- `motion`, `no_motion`
+- `true`, `false`
+
+### Comparison Logic
+
+The system has built-in support for:
+
+- Numeric comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`)
+- Boolean logic (`and`, `or`, `not`)
+- String comparisons (with quoted strings)
+- Boolean conversions (with unquoted names)
+
+For custom comparison logic, see the [Custom Comparison Logic](../examples/custom_comparison_type.py) example.
+
+## Comparison Logic
+
+The synthetic sensors library provides built-in comparison logic for common data types, enabling sophisticated filtering and
+analysis in collection functions.
+
+For examples of implementing custom comparison logic, see:
+
+- **examples/custom_comparison_type.py**: Shows how to create helper classes for custom comparisons
+- **examples/using_typed_conditions.py**: Demonstrates condition parsing and evaluation
 
 ### Built-in Comparison Handlers
 
@@ -514,7 +638,7 @@ Compare datetime strings with full timezone support:
 sensors:
   recent_devices:
     name: "Recent Devices"
-    formula: count("attribute:last_seen>=cutoff_date")
+    formula: "count(attribute:last_seen>=cutoff_date)"
     variables:
       cutoff_date: "2024-01-01T00:00:00Z"
     metadata:
@@ -523,7 +647,7 @@ sensors:
 
   maintenance_due:
     name: "Maintenance Due"
-    formula: count("attribute:last_maintenance<cutoff_date|attribute:next_service<=recent_threshold")
+    formula: "count(attribute:last_maintenance<cutoff_date|attribute:next_service<=recent_threshold)"
     variables:
       cutoff_date: "2024-01-01T00:00:00Z"
       recent_threshold: "2024-06-01T12:00:00+00:00"
@@ -540,7 +664,7 @@ Compare semantic version strings with automatic parsing:
 sensors:
   compatible_firmware:
     name: "Compatible Firmware"
-    formula: count("attribute:firmware_version>=min_firmware")
+    formula: "count(attribute:firmware_version>=min_firmware)"
     variables:
       min_firmware: "v2.1.0"
     metadata:
@@ -549,7 +673,7 @@ sensors:
 
   upgrade_candidates:
     name: "Upgrade Candidates"
-    formula: "count('attribute:current_version<target_version') - count('attribute:min_supported_version>target_version')"
+    formula: "count(attribute:current_version<target_version) - count(attribute:min_supported_version>target_version)"
     variables:
       target_version: "v3.0.0"
     metadata:
@@ -565,7 +689,7 @@ Use `in` and `not in` operators for substring matching:
 sensors:
   living_room_devices:
     name: "Living Room Devices"
-    formula: count("attribute:name in living_filter")
+    formula: "count(attribute:name in living_filter)"
     variables:
       living_filter: "Living"
     metadata:
@@ -574,7 +698,7 @@ sensors:
 
   non_error_devices:
     name: "Non Error Devices"
-    formula: count("state not in error_pattern")
+    formula: "count(state not in error_pattern)"
     variables:
       error_pattern: "error"
     metadata:
@@ -583,7 +707,7 @@ sensors:
 
   multi_room_devices:
     name: "Multi Room Devices"
-    formula: count("attribute:name in 'Living'|attribute:name in 'Bedroom'")
+    formula: "count(attribute:name in 'Living'|attribute:name in 'Bedroom')"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:home-variant"
@@ -597,7 +721,7 @@ Standard numeric comparisons with support for floating-point precision:
 sensors:
   high_power_devices:
     name: "High Power Devices"
-    formula: count("attribute:power_rating>=high_threshold")
+    formula: "count(attribute:power_rating>=high_threshold)"
     variables:
       high_threshold: 800
     metadata:
@@ -606,7 +730,7 @@ sensors:
 
   efficient_devices:
     name: "Efficient Devices"
-    formula: count("attribute:efficiency_rating<=precision_value")
+    formula: "count(attribute:efficiency_rating<=precision_value)"
     variables:
       precision_value: 42.5
     metadata:
@@ -622,7 +746,7 @@ Compare values for exact matches or differences:
 sensors:
   active_devices:
     name: "Active Devices"
-    formula: count("state:==target_state")
+    formula: "count(state==target_state)"
     variables:
       target_state: "on"
     metadata:
@@ -631,7 +755,7 @@ sensors:
 
   non_auto_devices:
     name: "Non Auto Devices"
-    formula: count("attribute:mode!=target_mode")
+    formula: "count(attribute:mode!=target_mode)"
     variables:
       target_mode: "auto"
     metadata:
@@ -783,8 +907,7 @@ sensors:
 **Device Behavior:**
 
 - **New devices**: If a device with the `device_identifier` doesn't exist, it will be created with the provided information
-- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are
-  ignored)
+- **Existing devices**: If a device already exists, the sensor will be associated with it (additional device fields are ignored)
 - **No device association**: Sensors without `device_identifier` behave as standalone entities (default behavior)
 - **Entity ID generation**: When using device association, entity IDs automatically include the device name prefix (e.g.,
   `sensor.span_panel_main_power`)
@@ -918,7 +1041,7 @@ sensors:
     name: "Concatenation with Functions Test"
     formula: "'Device: ' + trim(device_name) + ' | Length: ' + len(device_name)"
     variables:
-      device_name: "sensor.device_name"
+      device_name: sensor.device_name # attribute reference
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
@@ -929,7 +1052,7 @@ sensors:
     formula: "contains('Device: ' + device_type, prefix + ' Type')"
     variables:
       device_type: "sensor.device_type"
-      prefix: "sensor.type_prefix"
+      prefix: sensor.type_prefix # attribute reference
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
@@ -940,7 +1063,7 @@ sensors:
     formula: "'Power: ' + str(power_value * 1.1) + 'W | Status: ' + upper(status)"
     variables:
       power_value: "sensor.power_reading"
-      status: "sensor.device_status"
+      status: sensor.device_status # attribute reference
     metadata:
       unit_of_measurement: ""
       device_class: "enum"
@@ -999,6 +1122,8 @@ sensors:
 - `tomorrow()` - Tomorrow's date at midnight in local timezone (ISO format)
 - `utc_today()` - Today's date at midnight in UTC timezone (ISO format)
 - `utc_yesterday()` - Yesterday's date at midnight in UTC timezone (ISO format)
+- `date(year, month, day)` - Create date object from integers
+- `date("YYYY-MM-DD")` - Parse date string to ISO datetime format
 
 **Duration Functions:**
 
@@ -1016,7 +1141,7 @@ sensors:
   # Basic date arithmetic
   future_date:
     name: "Future Date"
-    formula: "date('2025-01-01') + days(30)"
+    formula: "date(2025, 1, 1) + days(30)"
     metadata:
       device_class: "date"
 
@@ -1025,7 +1150,7 @@ sensors:
     name: "Next Maintenance"
     formula: "date(last_service_date) + months(6)"
     variables:
-      last_service_date: "sensor.last_maintenance_date"
+      last_service_date: sensor.last_maintenance_date # attribute reference
     metadata:
       device_class: "date"
 
@@ -1034,16 +1159,16 @@ sensors:
     name: "Project Deadline"
     formula: "date(start_date) + weeks(4) + days(3)"
     variables:
-      start_date: "sensor.project_start_date"
+      start_date: sensor.project_start_date # attribute reference
     metadata:
       device_class: "date"
 
   # Date differences
   days_since_created:
     name: "Days Since Created"
-    formula: "date(now()) - date(created_timestamp)"
+    formula: "now() - date(created_timestamp)"
     variables:
-      created_timestamp: "sensor.creation_date"
+      created_timestamp: sensor.creation_date # attribute reference
     metadata:
       unit_of_measurement: "days"
       device_class: "duration"
@@ -1051,9 +1176,9 @@ sensors:
   # Conditional date arithmetic
   maintenance_overdue:
     name: "Maintenance Overdue"
-    formula: "date(now()) > date(last_service) + months(12) ? 1 : 0"
+    formula: "1 if now() > date(last_service) + months(12) else 0"
     variables:
-      last_service: "sensor.last_maintenance_date"
+      last_service: sensor.last_maintenance_date # attribute reference
     metadata:
       unit_of_measurement: "binary"
       icon: "mdi:alert"
@@ -1061,7 +1186,7 @@ sensors:
   # Time-based calculations
   device_uptime:
     name: "Device Uptime"
-    formula: "date(now()) - date(state.last_changed)"
+    formula: "now() - date(state.last_changed)"
     metadata:
       unit_of_measurement: "days"
       device_class: "duration"
@@ -1069,7 +1194,7 @@ sensors:
   # Recent activity monitoring
   recent_activity:
     name: "Recent Activity"
-    formula: "count(state.last_changed >= date(now()) - hours(24))"
+    formula: "count(state.last_changed >= now() - hours(24))"
     metadata:
       unit_of_measurement: "events"
 ```
@@ -1083,14 +1208,14 @@ sensors:
     name: "Complex Schedule"
     formula: "date(base_date) + months(3) + weeks(2) + days(5)"
     variables:
-      base_date: "sensor.base_date"
+      base_date: sensor.base_date # attribute reference
     metadata:
       device_class: "date"
 
   # Date arithmetic with conditional logic
   smart_maintenance:
     name: "Smart Maintenance"
-    formula: "date(last_service) + (is_critical ? months(3) : months(6))"
+    formula: "date(last_service) + (months(3) if is_critical else months(6))"
     variables:
       last_service: "sensor.last_service_date"
       is_critical: "binary_sensor.critical_equipment"
@@ -1102,7 +1227,7 @@ sensors:
     name: "UTC Conversion"
     formula: "date(local_time) + hours(offset)"
     variables:
-      local_time: "sensor.local_timestamp"
+      local_time: sensor.local_timestamp # attribute reference
       offset: -5
     metadata:
       device_class: "timestamp"
@@ -1110,9 +1235,9 @@ sensors:
   # Duration-based calculations
   energy_period:
     name: "Energy Period"
-    formula: "date(now()) - date(period_start) + days(1)"
+    formula: "now() - date(period_start) + days(1)"
     variables:
-      period_start: "sensor.energy_period_start"
+      period_start: sensor.energy_period_start # attribute reference
     metadata:
       unit_of_measurement: "days"
       device_class: "duration"
@@ -1163,9 +1288,9 @@ sensors:
   # Basic collection patterns
   total_circuit_power:
     name: "Total Circuit Power"
-    formula: sum("regex:circuit_pattern")
+    formula: "sum(regex:circuit_pattern)"
     variables:
-      circuit_pattern: "input_text.circuit_regex_pattern"
+      circuit_pattern: input_text.circuit_regex_pattern
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1174,7 +1299,7 @@ sensors:
   # Collection with attribute comparisons - filter by thresholds
   high_power_devices:
     name: "High Power Devices"
-    formula: count("attribute:power_rating>=1000")
+    formula: "count("attribute:power_rating>=1000)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:flash"
@@ -1182,7 +1307,7 @@ sensors:
   # Collection with exclusions - exclude specific sensors
   power_without_kitchen:
     name: "Power Without Kitchen"
-    formula: sum("device_class:power", !"kitchen_oven", !"kitchen_fridge")
+    formula: "sum(device_class:power, !"kitchen_oven", !"kitchen_fridge")"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1191,7 +1316,7 @@ sensors:
   # Collection with pattern exclusions - exclude entire areas
   main_floor_power:
     name: "Main Floor Power"
-    formula: sum("device_class:power", !"area:basement", !"area:garage")
+    formula: "sum("device_class:power, !area:basement, !area:garage)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1200,7 +1325,7 @@ sensors:
   # OR patterns for multiple conditions
   security_monitoring:
     name: "Security Device Count"
-    formula: count("device_class:door|device_class:window|device_class:lock")
+    formula: "count(device_class:door|device_class:window|device_class:lock)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:security"
@@ -1208,7 +1333,7 @@ sensors:
   # Enhanced syntax examples with string containment
   room_devices:
     name: "Living Room Devices"
-    formula: count("attribute:name in 'Living'")
+    formula: "count(attribute:name in 'Living')"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:sofa"
@@ -1216,7 +1341,7 @@ sensors:
   # Version-based filtering
   updated_firmware:
     name: "Updated Firmware Devices"
-    formula: count("attribute:firmware_version>='v2.1.0'")
+    formula: "count(attribute:firmware_version>='v2.1.0')"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:update"
@@ -1224,7 +1349,7 @@ sensors:
   # Enhanced syntax examples
   active_devices:
     name: "Active Devices"
-    formula: count("state:on|active|connected")
+    formula: "count(state:on|active|connected)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:check-circle"
@@ -1232,7 +1357,7 @@ sensors:
   # Complex collection with mixed exclusions
   filtered_power_analysis:
     name: "Filtered Power Analysis"
-    formula: avg("device_class:power", !"high_power_device", !"area:utility_room")
+    formula: "avg(device_class:power, !high_power_device, !area:utility_room)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1248,7 +1373,7 @@ sensors:
   # Basic negation
   non_error_devices:
     name: "Non Error Devices"
-    formula: count("state:!error")
+    formula: "count(state!=error)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:shield-check"
@@ -1256,7 +1381,7 @@ sensors:
   # Multiple negations
   filtered_devices:
     name: "Filtered Devices"
-    formula: count("device_class:power", !"area:basement", !"high_power_device")
+    formula: "count(device_class:power !area:basement | !attribute:high_power_device)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:filter"
@@ -1264,7 +1389,7 @@ sensors:
   # Negation with patterns
   non_kitchen_power:
     name: "Non Kitchen Power"
-    formula: sum("device_class:power", !"area:kitchen")
+    formula: "sum(device_class:power, !area:kitchen)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1273,7 +1398,7 @@ sensors:
   # Complex negation patterns
   selective_devices:
     name: "Selective Devices"
-    formula: count("device_class:sensor", !"attribute:name in 'test'", !"area:utility")
+    formula: "count(device_class:sensor, !attribute:name in 'test', !area:utility)"
     metadata:
       unit_of_measurement: "devices"
       icon: "mdi:select"
@@ -1281,7 +1406,7 @@ sensors:
   # Negation with multiple conditions
   filtered_analysis:
     name: "Filtered Analysis"
-    formula: avg("device_class:power", !"state:off", !"attribute:maintenance_mode:true")
+    formula: "avg(device_class:power, !state:off, !attribute:maintenance_mode:true)"
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
@@ -1318,15 +1443,23 @@ Collection functions support excluding entities using the `!` prefix:
 
 ### Calculations That Reference None, Unavailable, or Unknown States
 
-Handle entities that are not ready gracefully in dependency chains by using UNAVAILABLE or UNKONWN: Note that entities that
+Handle entities that are not ready gracefully in dependency chains by using UNAVAILABLE or UNKNOWN: Note that entities that
 cannot be referenced are fatal errors and checked on YAML import.
+
+**State Value Handling**:
+
+- `None` values are `STATE_NONE` (Python None)
+- `"unavailable"` values are `STATE_UNAVAILABLE`
+- `"unknown"` values are `STATE_UNKNOWN`
+- Missing entities raise `MissingDependencyError` (fatal)
 
 ```yaml
 sensors:
   robust_dependency_sensor:
     name: "Robust Dependency Sensor"
-    formula: "primary_source + backup_source" # Resolves to None or unready state...
-    UNAVAILABLE: "fallback_calculation" # Use this calculation instead
+    formula: "primary_source + backup_source" # Resolves to STATE_UNKNOWN if entities are unready...
+    alternate_states:
+      UNAVAILABLE: "fallback_calculation" # Use this calculation instead
     variables:
       primary_source: "sensor.primary_entity"
       backup_source: "sensor.backup_entity"
@@ -1339,8 +1472,8 @@ sensors:
 
 ## Alternate State Handling
 
-Synthetic sensors support handling of `UNKNOWN` and `UNAVAILABLE` states through alternate state handling formulas. Alternate
-handlers now support two shapes:
+Synthetic sensors support handling of `UNKNOWN`, `UNAVAILABLE`, `NONE`, and `FALLBACK` states through alternate state handling
+formulas. Alternate handlers are grouped under the `alternate_states` key and support two shapes:
 
 - Literal value: boolean/number/string returned directly (typed via the analyzer)
 - Object with `formula:` and optional `variables:` evaluated via the standard pipeline
@@ -1348,25 +1481,61 @@ handlers now support two shapes:
 Examples:
 
 ```yaml
-UNAVAILABLE: false
-UNKNOWN: 0
+alternate_states:
+  UNAVAILABLE: false
+  UNKNOWN: 0
+  NONE: None
+  FALLBACK: 100
 ```
 
 ```yaml
-UNAVAILABLE:
-  formula: "backup + 1"
-  variables:
-    backup: 5
+alternate_states:
+  UNAVAILABLE:
+    formula: "backup + 1"
+    variables:
+      backup: 5
 ```
 
-When a formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead.
+When a formula references an entity that is unavailable or unknown, you can specify alternative formulas to evaluate instead. If
+no alternate state handlers are defined, the evaluation will proceed with the original values.
 
 - **UNAVAILABLE**: Triggered when an entity is unavailable or doesn't exist
 - **UNKNOWN**: Triggered when an entity exists but has an unknown state
+- **NONE**: Triggered when an entity returns None (useful for energy sensors)
+- **FALLBACK**: Catch-all handler for any alternate state when specific handlers aren't defined
 - **Fallback chains**: Alternate formulas can reference other entities that may also have alternate handling
 - **Nested handling**: Alternate formulas can themselves include alternate state handling
 - **Variable scope**: Alternate formulas inherit the same variable scope as the main formula
 - **Metadata**: Alternate formulas use the same metadata as the main formula
+
+### Early Detection vs. Formula Evaluation
+
+By default, alternate states are detected early during variable extraction and trigger handlers before formula evaluation. This
+prevents evaluation errors and provides predictable behavior. You can control this behavior using the `allow_unresolved_states`
+option:
+
+```yaml
+variables:
+  within_grace:
+    formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"
+    alternate_states:
+      UNAVAILABLE: false
+      UNKNOWN: false
+    allow_unresolved_states: true # Allow alternate states to proceed into formula evaluation
+```
+
+**Behavior Options:**
+
+- **`allow_unresolved_states: false`** (default): Alternate states are detected early during variable extraction and trigger
+  handlers immediately
+- **`allow_unresolved_states: true`**: Alternate states are allowed to proceed into formula evaluation, where they may trigger
+  handlers based on evaluation results or exceptions
+
+**Use Cases:**
+
+- **Early detection** (default): Provides predictable, fast handling of alternate states without evaluation overhead
+- **Formula evaluation**: Useful when you need the formula to process alternate states as part of complex calculations or when
+  alternate states should only trigger handlers under specific evaluation conditions
 
 ### Alternate State Handling Examples
 
@@ -1381,44 +1550,296 @@ sensors:
   power_analysis:
     name: "Power Analysis"
     formula: "missing_main_entity + 100"
-    UNAVAILABLE: "fallback_main_value"
-    UNKNOWN: "estimated_main_value * 2"
+    alternate_states:
+      UNAVAILABLE: "fallback_main_value"
+      UNKNOWN: "estimated_main_value * 2"
     variables:
       fallback_main_value: "50"
       estimated_main_value: "25"
       computed_adjustment:
         formula: "missing_sensor_a + missing_sensor_b"
-        UNAVAILABLE: "backup_calculation"
-        UNKNOWN: "conservative_estimate"
+        alternate_states:
+          UNAVAILABLE: "backup_calculation"
+          UNKNOWN: "conservative_estimate"
       backup_calculation:
         formula: "sensor.backup_entity * 0.8"
-        UNAVAILABLE: "10"
+        alternate_states:
+          UNAVAILABLE: "10"
       conservative_estimate: "5"
     attributes:
       efficiency:
         formula: "undefined_efficiency_sensor * 100"
-        UNAVAILABLE: "estimated_efficiency"
+        alternate_states:
+          UNAVAILABLE: "estimated_efficiency"
         variables:
           estimated_efficiency: "82.5"
         metadata:
           unit_of_measurement: "%"
       health_score:
         formula: "undefined_health_metric"
-        UNAVAILABLE: "calculated_health"
-        UNKNOWN: "default_health"
+        alternate_states:
+          UNAVAILABLE: "calculated_health"
+          UNKNOWN: "default_health"
         variables:
           calculated_health:
             formula: "state / 100 * 100"
-            UNAVAILABLE: "baseline_health"
+            alternate_states:
+              UNAVAILABLE: "baseline_health"
           baseline_health: "85"
           default_health: "75"
 ```
 
 This example shows alternate state handling in:
 
-- **Main sensor formulas** with alternative calculations
+- **Main sensor formulas** with alternative calculations using the `alternate_states` key
 - **Computed variables** with nested alternate state handling
 - **Attribute formulas** with independent fallback logic
 
 Alternate state handling ensures your synthetic sensors remain functional even when dependencies are unavailable, providing
-robust fallback mechanisms for critical calculations.
+robust fallback mechanisms for critical calculations. Users can define custom behavior for each type of alternate state.
+
+## Troubleshooting
+
+This section covers common issues and their solutions when working with synthetic sensors.
+
+### Reserved Word Validation Errors
+
+The system validates that variable names do not use reserved words. Reserved words include Python keywords, built-in types,
+function names, and Home Assistant entity domains.
+
+**Common Reserved Word Errors:**
+
+```yaml
+# This will fail validation
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "state + 10"
+    variables:
+      state: "sensor.source_entity" # Error: 'state' is reserved
+      if: "sensor.condition" # Error: 'if' is reserved
+      str: "sensor.string_entity" # Error: 'str' is reserved
+```
+
+**Solution:** Rename variables to avoid reserved words:
+
+```yaml
+# Fixed configuration
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "current_state + 10"
+    variables:
+      current_state: "sensor.source_entity" # Renamed from 'state'
+      condition: "sensor.condition" # Renamed from 'if'
+      string_value: "sensor.string_entity" # Renamed from 'str'
+```
+
+**Common Reserved Words to Avoid:**
+
+- Python keywords: `if`, `else`, `for`, `while`, `def`, `class`, `import`, `return`, `try`, `except`
+- Built-in types: `str`, `int`, `float`, `bool`, `list`, `dict`, `set`, `tuple`
+- Boolean literals: `True`, `False`, `None`
+- Math functions: `sum`, `avg`, `max`, `min`, `count`
+- String functions: `str`, `trim`, `lower`, `upper`, `contains`
+- State-related: `state`
+- Home Assistant domains: `sensor`, `binary_sensor`, `switch`, `light`, `climate`
+
+### Validation Error Messages
+
+When validation fails, the system provides specific error messages with paths to help identify issues:
+
+**Error Format:**
+
+```text
+Variable name '{name}' is a reserved word and cannot be used as a variable name
+Path: sensors.{sensor_key}.variables.{variable_name}
+```
+
+**Common Validation Error Types:**
+
+1. **Reserved word conflicts**: Variable names using reserved words
+2. **Missing dependencies**: References to non-existent entities
+3. **Invalid formulas**: Syntax errors in mathematical expressions
+4. **Circular dependencies**: Variables that reference themselves
+5. **Invalid metadata**: Unsupported device classes or state classes
+
+### Entity Reference Issues
+
+**Problem:** References to non-existent entities
+
+```yaml
+sensors:
+  test_sensor:
+    name: "Test Sensor"
+    formula: "missing_entity + 10"
+    variables:
+      missing_entity: "sensor.non_existent_sensor" # Entity doesn't exist
+```
+
+**Solution:** Verify entity IDs exist in Home Assistant before referencing them.
+
+**Problem:** Entity ID format errors
+
+```yaml
+variables:
+  invalid_entity: "invalid_entity_format" # Missing domain prefix
+```
+
+**Solution:** Use proper entity ID format: `domain.entity_name`
+
+### Formula Syntax Errors
+
+**Problem:** Invalid mathematical expressions
+
+```yaml
+formula: "sensor.power / 0"  # Division by zero
+formula: "sensor.power + "   # Incomplete expression
+formula: "sensor.power * (2 + 3"  # Unmatched parentheses
+```
+
+**Solution:** Ensure formulas are complete, valid mathematical expressions.
+
+**Problem:** Undefined variables in formulas
+
+```yaml
+formula: "undefined_variable + 10" # Variable not defined in variables section
+```
+
+**Solution:** Define all variables used in formulas in the variables section.
+
+### Circular Dependency Issues
+
+**Problem:** Variables that reference themselves
+
+```yaml
+variables:
+  circular_var:
+    formula: "circular_var + 1" # References itself
+```
+
+**Solution:** Restructure formulas to avoid self-references.
+
+**Problem:** Cross-sensor circular dependencies
+
+```yaml
+sensors:
+  sensor_a:
+    formula: "sensor_b + 10"
+  sensor_b:
+    formula: "sensor_a + 5" # Circular reference
+```
+
+**Solution:** Break circular dependencies by restructuring calculations.
+
+### Metadata Configuration Issues
+
+**Problem:** Invalid device classes
+
+```yaml
+metadata:
+  device_class: "invalid_device_class" # Not a valid HA device class
+```
+
+**Solution:** Use valid Home Assistant device classes from the official documentation.
+
+**Problem:** Invalid state classes
+
+```yaml
+metadata:
+  state_class: "invalid_state_class" # Not a valid HA state class
+```
+
+**Problem:** Incompatible unit and device class combinations
+
+```yaml
+metadata:
+  unit_of_measurement: "W"
+  device_class: "temperature" # Watts not valid for temperature
+```
+
+**Solution:** Ensure unit of measurement is compatible with the device class.
+
+### Collection Function Issues
+
+**Problem:** Invalid collection patterns
+
+```yaml
+formula: "sum(invalid_pattern)" # Pattern not recognized
+```
+
+**Solution:** Use valid collection patterns: `device_class:power`, `area:kitchen`, `state:on`, etc.
+
+**Problem:** Regex pattern variable not found
+
+```yaml
+formula: "sum(regex:pattern_var)"
+variables:
+  pattern_var: "input_text.non_existent_pattern" # Entity doesn't exist
+```
+
+**Solution:** Ensure regex pattern variables reference existing `input_text` entities.
+
+### Alternate State Handling Issues
+
+**Problem:** Missing alternate state handlers
+
+```yaml
+formula: "sensor.unavailable_entity + 10" # No fallback for unavailable entity
+```
+
+**Solution:** Add appropriate alternate state handlers:
+
+```yaml
+alternate_states:
+  UNAVAILABLE: 0
+  UNKNOWN: 0
+  NONE: 0
+```
+
+**Problem:** Circular references in alternate state handlers
+
+```yaml
+alternate_states:
+  UNAVAILABLE:
+    formula: "sensor.another_unavailable_entity" # May also be unavailable
+```
+
+**Solution:** Use literal values or ensure alternate handlers reference available entities.
+
+### Performance Issues
+
+**Problem:** Complex formulas with many dependencies
+
+```yaml
+formula: "sensor_a + sensor_b + sensor_c + ... + sensor_z" # Many dependencies
+```
+
+**Solution:** Break complex formulas into computed variables for better performance and readability.
+
+**Problem:** Frequent updates causing excessive calculations
+
+```yaml
+update_interval: 1 # Updates every second
+```
+
+**Solution:** Increase update intervals for sensors that don't need frequent updates.
+
+### Debugging Techniques
+
+**Enable Debug Logging:** Add to your Home Assistant configuration:
+
+```yaml
+logger:
+  default: info
+  logs:
+    ha_synthetic_sensors: debug
+```
+
+**Check Entity States:** Verify referenced entities exist and have valid states in Home Assistant.
+
+**Validate YAML Syntax:** Use YAML validators to check for syntax errors before loading.
+
+**Test Formulas Incrementally:** Build complex formulas step by step, testing each component.
+
+**Check Dependencies:** Review the dependency graph to identify circular references or missing entities.

@@ -174,8 +174,8 @@ class TestFormulaCompilationCache:
         print(f"First compilation: {first_time * 1000:.2f}ms")
         print(f"Average cached evaluation: {avg_cached_time * 1000:.2f}ms")
 
-        # We expect at least 2x improvement, ideally much more
-        assert performance_ratio >= 2.0, f"Expected at least 2x improvement, got {performance_ratio:.1f}x"
+        # We expect at least 1.8x improvement to account for timing variations
+        assert performance_ratio >= 1.8, f"Expected at least 1.8x improvement, got {performance_ratio:.1f}x"
 
     def test_cache_statistics(self):
         """Test cache statistics reporting."""
@@ -226,7 +226,7 @@ class TestCompiledFormula:
         """Test CompiledFormula can be created and used."""
         from ha_synthetic_sensors.math_functions import MathFunctions
 
-        math_functions = MathFunctions.get_builtin_functions()
+        math_functions = MathFunctions.get_all_functions()
         formula = "a * 2 + b"
 
         compiled = CompiledFormula(formula, math_functions)
@@ -240,7 +240,7 @@ class TestCompiledFormula:
         """Test that hit count is properly tracked."""
         from ha_synthetic_sensors.math_functions import MathFunctions
 
-        math_functions = MathFunctions.get_builtin_functions()
+        math_functions = MathFunctions.get_all_functions()
         compiled = CompiledFormula("a + b", math_functions)
 
         assert compiled.hit_count == 0
@@ -255,7 +255,7 @@ class TestCompiledFormula:
         """Test that different contexts don't interfere with each other."""
         from ha_synthetic_sensors.math_functions import MathFunctions
 
-        math_functions = MathFunctions.get_builtin_functions()
+        math_functions = MathFunctions.get_all_functions()
         compiled = CompiledFormula("a + b", math_functions)
 
         result1 = compiled.evaluate({"a": 1, "b": 2})

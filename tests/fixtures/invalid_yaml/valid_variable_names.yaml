@@ -1,0 +1,26 @@
+# Test YAML file with valid variable names
+# This should pass validation - no reserved words used, including partial matches
+
+sensors:
+  test_sensor:
+    name: "Test Sensor with Valid Variable Names"
+    formula: "temperature + humidity + the_state"
+    variables:
+      temperature: "sensor.temp_sensor"
+      humidity: "sensor.humidity_sensor"
+      pressure: "sensor.pressure_sensor"
+      the_state: "sensor.state_sensor"  # Should be allowed - contains 'state' but not exact match
+      my_if_condition: "sensor.condition_sensor"  # Should be allowed - contains 'if' but not exact match
+      string_value: "sensor.string_sensor"  # Should be allowed - contains 'str' but not exact match
+      for_loop_counter: "sensor.counter_sensor"  # Should be allowed - contains 'for' but not exact match
+      hours: "sensor.hours_sensor"  # Should be allowed - common variable name
+      hours_per_day: "24"  # Should be allowed - common variable name
+    attributes:
+      computed_attr:
+        formula: "temp_value * 2"
+        variables:
+          temp_value: "sensor.another_temp"
+      hours_attr:
+        formula: "hours * 2"
+        variables:
+          hours: "sensor.hours_sensor"

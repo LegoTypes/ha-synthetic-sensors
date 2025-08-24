@@ -65,7 +65,10 @@ class TestDateTimeFunctionsIntegration:
         """Test basic datetime functions integration with synthetic sensors."""
 
         # Set up test data - external datetime entity for comparison tests
-        mock_states["sensor.external_datetime_entity"] = self.create_mock_state("2025-07-30T12:00:00")
+        from datetime import datetime, timedelta
+
+        future_ts = (datetime.now() + timedelta(days=1)).replace(microsecond=0).isoformat()
+        mock_states["sensor.external_datetime_entity"] = self.create_mock_state(future_ts)
 
         # Set up storage manager with proper mocking (following the guide)
         with (
@@ -130,38 +133,42 @@ class TestDateTimeFunctionsIntegration:
             # Test actual formula evaluation results
             # Test: "session_start >= yesterday() ? 1 : 0" - should be 1 (true) since session_start is now()
             datetime_comparison_entity = sensor_entities.get("datetime_comparison_sensor")
-            if datetime_comparison_entity and datetime_comparison_entity.native_value is not None:
-                # session_start (now()) should definitely be >= yesterday(), so result should be 1
-                expected = 1
-                assert datetime_comparison_entity.native_value == expected, (
-                    f"DateTime comparison failed: expected '{expected}', got '{datetime_comparison_entity.native_value}'"
-                )
+            assert datetime_comparison_entity is not None, "datetime_comparison_sensor not created"
+            assert datetime_comparison_entity.native_value is not None, "datetime_comparison_sensor has no native_value"
+            # session_start (now()) should definitely be >= yesterday(), so result should be 1
+            expected = 1
+            assert datetime_comparison_entity.native_value == expected, (
+                f"DateTime comparison failed: expected '{expected}', got '{datetime_comparison_entity.native_value}'"
+            )
 
             # Test: "power_reading" where power_reading=1000 - should be literal value
             datetime_literals_entity = sensor_entities.get("datetime_literals_sensor")
-            if datetime_literals_entity and datetime_literals_entity.native_value is not None:
-                expected = 1000
-                assert datetime_literals_entity.native_value == expected, (
-                    f"DateTime literals sensor failed: expected '{expected}', got '{datetime_literals_entity.native_value}'"
-                )
+            assert datetime_literals_entity is not None, "datetime_literals_sensor not created"
+            assert datetime_literals_entity.native_value is not None, "datetime_literals_sensor has no native_value"
+            expected = 1000
+            assert datetime_literals_entity.native_value == expected, (
+                f"DateTime literals sensor failed: expected '{expected}', got '{datetime_literals_entity.native_value}'"
+            )
 
             # Test: "utc_now() >= utc_yesterday() ? 1 : 0" - should be 1 (true)
             timezone_comparison_entity = sensor_entities.get("timezone_comparison_sensor")
-            if timezone_comparison_entity and timezone_comparison_entity.native_value is not None:
-                # utc_now() should definitely be >= utc_yesterday(), so result should be 1
-                expected = 1
-                assert timezone_comparison_entity.native_value == expected, (
-                    f"Timezone comparison failed: expected '{expected}', got '{timezone_comparison_entity.native_value}'"
-                )
+            assert timezone_comparison_entity is not None, "timezone_comparison_sensor not created"
+            assert timezone_comparison_entity.native_value is not None, "timezone_comparison_sensor has no native_value"
+            # utc_now() should definitely be >= utc_yesterday(), so result should be 1
+            expected = 1
+            assert timezone_comparison_entity.native_value == expected, (
+                f"Timezone comparison failed: expected '{expected}', got '{timezone_comparison_entity.native_value}'"
+            )
 
             # Test: "entity_timestamp >= today() ? 1 : 0" where entity_timestamp is "2025-07-30T12:00:00"
             entity_datetime_entity = sensor_entities.get("entity_datetime_comparison")
-            if entity_datetime_entity and entity_datetime_entity.native_value is not None:
-                # The entity timestamp "2025-07-30T12:00:00" should be >= today(), so result should be 1
-                expected = 1
-                assert entity_datetime_entity.native_value == expected, (
-                    f"Entity datetime comparison failed: expected '{expected}', got '{entity_datetime_entity.native_value}'"
-                )
+            assert entity_datetime_entity is not None, "entity_datetime_comparison not created"
+            assert entity_datetime_entity.native_value is not None, "entity_datetime_comparison has no native_value"
+            # The entity timestamp "2025-07-30T12:00:00" should be >= today(), so result should be 1
+            expected = 1
+            assert entity_datetime_entity.native_value == expected, (
+                f"Entity datetime comparison failed: expected '{expected}', got '{entity_datetime_entity.native_value}'"
+            )
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)

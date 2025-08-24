@@ -5,6 +5,7 @@ from unittest.mock import Mock, MagicMock
 import pytest
 
 from ha_synthetic_sensors.evaluator_handlers.metadata_handler import MetadataHandler
+from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
 class TestMetadataHandler:
@@ -42,11 +43,13 @@ class TestMetadataHandler:
 
         # Test evaluation
         formula = "metadata(sensor.test_entity, 'last_changed')"
-        result = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula)
 
-        # Should return ISO formatted timestamp string (quoted for formula evaluation)
-        expected = f'"{test_timestamp.isoformat()}"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0)"
+        expected_metadata = {"_metadata_0": test_timestamp.isoformat()}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
         # Verify hass.states.get was called correctly
         mock_hass.states.get.assert_called_once_with("sensor.test_entity")
@@ -65,33 +68,35 @@ class TestMetadataHandler:
 
         # Test evaluation
         formula = "metadata(sensor.test_power, 'entity_id')"
-        result = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula)
 
-        # Should return entity_id string (quoted for safe formula evaluation)
-        expected = '"sensor.test_power"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0)"
+        expected_metadata = {"_metadata_0": "sensor.test_power"}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
-    def test_metadata_function_with_variable_resolution(self):
-        """Test metadata() function with variable context."""
-        # Create mock Home Assistant instance
-        mock_hass = Mock()
+    def test_metadata_function_with_variable_resolution(self, mock_hass, mock_entity_registry, mock_states):
+        """Test metadata() function with variable resolution using ReferenceValue."""
+        # Set up mock state
         mock_state = Mock()
-
         mock_state.entity_id = "sensor.power_meter"
         mock_hass.states.get.return_value = mock_state
 
-        # Create handler with mock hass
         handler = MetadataHandler(hass=mock_hass)
 
-        # Test evaluation with context variable
+        # Test evaluation with context variable - use ReferenceValue (ReferenceValue architecture)
         formula = "metadata(power_var, 'entity_id')"
-        context = {"power_var": "sensor.power_meter"}
+        # EvaluationContext should contain ReferenceValue objects
+        context = {"power_var": ReferenceValue("sensor.power_meter", "sensor.power_meter")}
 
-        result = handler.evaluate(formula, context)
+        result, metadata_results = handler.evaluate(formula, context)
 
-        # Should resolve variable and return entity_id (quoted for safe formula evaluation)
-        expected = '"sensor.power_meter"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0)"
+        expected_metadata = {"_metadata_0": "sensor.power_meter"}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
         # Verify the resolved entity_id was used
         mock_hass.states.get.assert_called_once_with("sensor.power_meter")
@@ -99,12 +104,28 @@ class TestMetadataHandler:
     def test_metadata_function_invalid_key(self):
         """Test metadata() function with invalid metadata key."""
         mock_hass = Mock()
+
+        # Create a custom state object that only has specific attributes
+        class MockState:
+            def __init__(self):
+                self.entity_id = "sensor.test"
+                self.attributes = {}
+
+            def __getattr__(self, name):
+                # Only allow access to known attributes
+                if name in ["entity_id", "attributes"]:
+                    return getattr(self, name)
+                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        mock_state = MockState()
+        mock_hass.states.get.return_value = mock_state
+
         handler = MetadataHandler(hass=mock_hass)
 
         # Test with invalid key
         formula = "metadata(sensor.test, 'invalid_key')"
 
-        with pytest.raises(ValueError, match="Invalid metadata key: invalid_key"):
+        with pytest.raises(ValueError, match="Metadata key 'invalid_key' not found for entity 'sensor.test'"):
             handler.evaluate(formula)
 
     def test_metadata_function_missing_entity(self):
@@ -167,11 +188,13 @@ class TestMetadataHandler:
 
         # Test formula with multiple metadata calls
         formula = "metadata(sensor.power, 'entity_id') + metadata(sensor.temp, 'entity_id')"
-        result = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula)
 
-        # Should replace both calls (quoted for safe formula evaluation)
-        expected = '"sensor.power" + "sensor.temp"'
-        assert result == expected
+        # Should return transformed formula and metadata results
+        expected_formula = "metadata_result(_metadata_0) + metadata_result(_metadata_1)"
+        expected_metadata = {"_metadata_0": "sensor.power", "_metadata_1": "sensor.temp"}
+        assert result == expected_formula
+        assert metadata_results == expected_metadata
 
     def test_get_handler_info(self):
         """Test handler information methods."""

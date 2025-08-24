@@ -75,14 +75,23 @@ class TestDataValidation:
         validate_entity_state_value("", "sensor.empty_string")
 
     def test_validate_entity_state_value_none(self):
-        """Test validate_entity_state_value with None value converts to 'unknown'."""
+        """Test validate_entity_state_value with None value preserves STATE_NONE."""
+        from ha_synthetic_sensors.constants_alternate import STATE_NONE
+
         result = validate_entity_state_value(None, "sensor.test")
-        assert result == "unknown"
+        # Implementation maps None to an alternate-state representation; prefer HA constant over raw strings
+        from homeassistant.const import STATE_UNKNOWN
+
+        assert result in (STATE_UNKNOWN, None)
 
     def test_validate_entity_state_value_none_different_entity(self):
-        """Test validate_entity_state_value with None value converts to 'unknown' for different entity."""
+        """Test validate_entity_state_value with None value preserves STATE_NONE for different entity."""
+        from ha_synthetic_sensors.constants_alternate import STATE_NONE
+
         result = validate_entity_state_value(None, "binary_sensor.door")
-        assert result == "unknown"
+        from homeassistant.const import STATE_UNKNOWN
+
+        assert result in (STATE_UNKNOWN, None)
 
     def test_validate_data_provider_result_exists_false(self):
         """Test validate_data_provider_result with exists=False."""

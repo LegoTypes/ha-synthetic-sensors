@@ -5,11 +5,14 @@ from __future__ import annotations
 from typing import Any, cast
 
 
-def build_compilation_cache_stats(enhanced_helper: Any, numeric_handler: Any) -> dict[str, Any]:
-    """Aggregate compilation cache stats from enhanced helper and numeric handler."""
+def build_compilation_cache_stats(enhanced_helper: Any) -> dict[str, Any]:
+    """Aggregate compilation cache stats from enhanced helper.
+
+    Note: NumericHandler has been removed as it duplicated the AST cache functionality
+    that EnhancedSimpleEvalHelper already provides.
+    """
     stats: dict[str, Any] = {
         "enhanced_helper": {},
-        "numeric_handler": {},
         "total_entries": 0,
         "total_hits": 0,
         "total_misses": 0,
@@ -22,13 +25,6 @@ def build_compilation_cache_stats(enhanced_helper: Any, numeric_handler: Any) ->
         stats["total_entries"] += enhanced_stats.get("total_entries", 0)
         stats["total_hits"] += enhanced_stats.get("hits", 0)
         stats["total_misses"] += enhanced_stats.get("misses", 0)
-
-    if numeric_handler is not None and hasattr(numeric_handler, "get_compilation_cache_stats"):
-        numeric_stats = numeric_handler.get_compilation_cache_stats()
-        stats["numeric_handler"] = numeric_stats
-        stats["total_entries"] += numeric_stats.get("total_entries", 0)
-        stats["total_hits"] += numeric_stats.get("hits", 0)
-        stats["total_misses"] += numeric_stats.get("misses", 0)
 
     total_hits: int = stats["total_hits"]
     total_misses: int = stats["total_misses"]

@@ -10,28 +10,13 @@ from typing import Any, cast
 import aiofiles
 import yaml
 
+from .config_helpers.yaml_helpers import trim_yaml_keys
 from .config_models import Config, FormulaConfig, SensorConfig
 from .config_types import YAML_SYNTAX_ERROR_TEMPLATE, ConfigDict
 from .exceptions import SchemaValidationError
 from .formula_utils import add_optional_formula_fields
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def trim_yaml_keys(obj: Any) -> Any:
-    """Recursively trim whitespace from dictionary keys in YAML data.
-
-    Args:
-        obj: The object to process (dict, list, or other)
-
-    Returns:
-        The processed object with trimmed keys
-    """
-    if isinstance(obj, dict):
-        return {key.strip() if isinstance(key, str) else key: trim_yaml_keys(value) for key, value in obj.items()}
-    if isinstance(obj, list):
-        return [trim_yaml_keys(item) for item in obj]
-    return obj
 
 
 class YAMLConfigParser:

@@ -2,9 +2,9 @@
 
 ## Overview
 
-This document provides a comprehensive guide for extending simpleeval with datetime and duration functionality. Since
-simpleeval only includes basic functions by default (`rand()`, `randint()`, `int()`, `float()`, `str()`), datetime
-capabilities must be added through custom functions and configurations.
+This document provides a comprehensive guide for extending simpleeval with datetime and duration functionality. Since simpleeval
+only includes basic functions by default (`rand()`, `randint()`, `int()`, `float()`, `str()`), datetime capabilities must be
+added through custom functions and configurations.
 
 ## Table of Contents
 

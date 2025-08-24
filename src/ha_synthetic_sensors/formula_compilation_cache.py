@@ -7,6 +7,7 @@ from typing import Any
 
 from simpleeval import SimpleEval
 
+from .boolean_states import BooleanStates
 from .math_functions import MathFunctions
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,10 +23,16 @@ class CompiledFormula:
             formula: The formula string to compile
             math_functions: Math functions to include in evaluator
         """
+        # Store the original formula - let users control boolean vs string comparisons explicitly
         self.formula = formula
-        self.evaluator = SimpleEval(functions=math_functions)
-        # Pre-parse the formula AST for reuse
-        self.parsed_ast = self.evaluator.parse(formula)
+        _LOGGER.debug("Formula compilation: '%s' (unquoted names for boolean, quoted strings for comparison)", formula)
+
+        # Get boolean state mappings for SimpleEval
+        boolean_names = BooleanStates.get_all_boolean_names()
+
+        self.evaluator = SimpleEval(functions=math_functions, names=boolean_names)
+        # Pre-parse the processed formula AST for reuse
+        self.parsed_ast = self.evaluator.parse(self.formula)
         self.hit_count = 0
 
     def evaluate(
@@ -41,7 +48,13 @@ class CompiledFormula:
             Evaluation result
         """
         self.hit_count += 1
-        self.evaluator.names = context or {}
+        # Start with boolean names, then let context variables override them
+        boolean_names = BooleanStates.get_all_boolean_names()
+        context_with_booleans = boolean_names.copy()
+        # Context variables should take precedence over boolean names
+        if context:
+            context_with_booleans.update(context)
+        self.evaluator.names = context_with_booleans
         # Use the pre-parsed AST for fast evaluation
         result = self.evaluator.eval(self.formula, previously_parsed=self.parsed_ast)
 
@@ -67,22 +80,15 @@ class FormulaCompilationCache:
     improvement for frequently used formulas.
     """
 
-    def __init__(self, max_entries: int = 1000, use_enhanced_functions: bool = False):
+    def __init__(self, max_entries: int = 1000):
         """Initialize the compilation cache.
 
         Args:
             max_entries: Maximum number of compiled formulas to cache
-            use_enhanced_functions: If True, use enhanced functions for SimpleEval integration
         """
         self._cache: dict[str, CompiledFormula] = {}
         self._max_entries = max_entries
-        self._use_enhanced_functions = use_enhanced_functions
-
-        # Choose function set based on enhancement flag
-        if use_enhanced_functions:
-            self._math_functions = MathFunctions.get_all_functions()  # Enhanced with timedelta support
-        else:
-            self._math_functions = MathFunctions.get_builtin_functions()  # Standard string-based duration
+        self._math_functions = MathFunctions.get_all_functions()  # Enhanced functions only
 
         self._hits = 0
         self._misses = 0

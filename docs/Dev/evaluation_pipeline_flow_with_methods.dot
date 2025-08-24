@@ -1,0 +1,117 @@
+digraph EvaluationPipelinePhases {
+    rankdir=TB;
+    node [shape=box, style=filled, fontname="Arial", fontsize=10];
+    edge [fontname="Arial", fontsize=9];
+
+    // Color scheme for phases
+    subgraph cluster_phase0 {
+        label="Phase 0: Pre-Evaluation";
+        style=filled;
+        color=lightyellow;
+
+        P0_FormulaInput [label="Formula Input\n(evaluate_formula_with_sensor_config)", shape=oval, fillcolor=lightgreen];
+        P0_CacheCheck [label="Cache Check\n(_cache_handler.check_cache)", fillcolor=yellow];
+        P0_CircuitBreaker [label="Circuit Breaker Check\n(_cache_handler.check_circuit_breaker)", fillcolor=yellow];
+        P0_SyntaxValidation [label="Syntax Validation\n(validate_formula_syntax)", fillcolor=yellow];
+    }
+
+    subgraph cluster_phase1 {
+        label="Phase 1: Variable Resolution";
+        style=filled;
+        color=lightblue;
+
+        P1_CollectionResolution [label="Collection Resolution\n(_variable_resolution_phase.resolve_collections)", fillcolor=lightblue];
+        P1_EntityResolution [label="Entity Resolution\n(_variable_resolution_phase.resolve_entities)", fillcolor=lightblue];
+        P1_CrossSensorResolution [label="Cross-Sensor Resolution\n(_variable_resolution_phase.resolve_cross_sensor_references)", fillcolor=lightblue];
+        P1_MetadataProcessing [label="Metadata Processing\n(_variable_resolution_phase.resolve_metadata)", fillcolor=lightblue];
+        P1_EntityReferenceResolution [label="Entity Reference Resolution\n(_variable_resolution_phase.resolve_entity_references)", fillcolor=lightblue];
+        P1_SingleValueCheck [label="SINGLE VALUE CHECK\n(HA State Detection)\n(_variable_resolution_phase.resolve_all_references_with_ha_detection)", shape=diamond, fillcolor=orange];
+    }
+
+    subgraph cluster_phase2 {
+        label="Phase 2: Main Evaluator";
+        style=filled;
+        color=lightpink;
+
+        P2_DependencyCheck [label="Dependency Management Check\n(_should_use_dependency_management)", fillcolor=pink];
+        P2_DependencyAware [label="Dependency-Aware Evaluation\n(_evaluate_with_dependency_management)", fillcolor=pink];
+        P2_NormalEvaluation [label="Normal Evaluation Path\n(_evaluate_formula_normally)", fillcolor=pink];
+    }
+
+    subgraph cluster_phase3 {
+        label="Phase 3: Formula Execution";
+        style=filled;
+        color=lightsteelblue;
+
+        P3_HandlerContext [label="Handler Context Preparation\n(_prepare_handler_context)", fillcolor=steelblue];
+        P3_CoreEvaluator [label="CoreFormulaEvaluator\n(FormulaEvaluatorService.evaluate_formula)", fillcolor=steelblue];
+        P3_CleanSlate [label="CLEAN SLATE Routing\n(_execute_formula_evaluation)", fillcolor=steelblue];
+        P3_MetadataHandler [label="MetadataHandler\n(config.metadata())", fillcolor=steelblue];
+        P3_ProcessedFormula [label="Processed Formula\n(_execute_with_handler)", fillcolor=steelblue];
+        P3_SimpleEval [label="Enhanced SimpleEval\n(CoreFormulaEvaluator.evaluate_formula)", fillcolor=steelblue];
+    }
+
+    subgraph cluster_phase4 {
+        label="Phase 4: Post-Evaluation (Consolidated)";
+        style=filled;
+        color=lightgreen;
+
+        P4_ResultCheck [label="Result Check\n(From Phases 1/3)\n(_process_early_result)", shape=diamond, fillcolor=orange];
+        P4_AlternateHandler [label="Alternate State Handler\n(Consolidated)\n(alternate_state_processor.process_evaluation_result)", shape=diamond, fillcolor=orange];
+        P4_ResultFinalization [label="Result Finalization\n(_finalize_result)", fillcolor=green];
+    }
+
+    // Phase 0 Flow
+    P0_FormulaInput -> P0_CacheCheck [color=blue];
+    P0_CacheCheck -> P4_ResultFinalization [label="Cache Hit", color=green];
+    P0_CacheCheck -> P0_CircuitBreaker [color=black];
+    P0_CircuitBreaker -> P4_ResultFinalization [label="Circuit Closed", color=green];
+    P0_CircuitBreaker -> P0_SyntaxValidation [color=black];
+    P0_SyntaxValidation -> P1_CollectionResolution [color=blue];
+
+    // Phase 1 Flow
+    P1_CollectionResolution -> P1_EntityResolution [color=blue];
+    P1_EntityResolution -> P1_CrossSensorResolution [color=blue];
+    P1_CrossSensorResolution -> P1_MetadataProcessing [color=blue];
+    P1_MetadataProcessing -> P1_EntityReferenceResolution [color=blue];
+    P1_EntityReferenceResolution -> P1_SingleValueCheck [color=blue];
+    P1_SingleValueCheck -> P4_AlternateHandler [label="AlternateStateDetected\n(entity/result)", color=red, penwidth=2];
+    P1_SingleValueCheck -> P2_DependencyCheck [label="No Early Result", color=black];
+
+    // Phase 2 Flow
+    P2_DependencyCheck -> P2_DependencyAware [label="Needs Dependencies", color=black];
+    P2_DependencyCheck -> P2_NormalEvaluation [label="No Dependencies", color=black];
+    P2_DependencyAware -> P3_HandlerContext [color=blue];
+    P2_NormalEvaluation -> P3_HandlerContext [color=blue];
+
+    // Phase 3 Flow
+    P3_HandlerContext -> P3_CoreEvaluator [color=blue];
+    P3_CoreEvaluator -> P4_ResultCheck [label="Early Result", color=red];
+    P3_CoreEvaluator -> P3_CleanSlate [color=blue];
+    P3_CleanSlate -> P4_ResultCheck [label="Early Result", color=red];
+    P3_CleanSlate -> P3_MetadataHandler [label="Check for\nMetadata Functions", color=black];
+    P3_MetadataHandler -> P4_ResultCheck [label="Single Variable\nEarly Result", color=red];
+    P3_MetadataHandler -> P3_ProcessedFormula [color=blue];
+    P3_ProcessedFormula -> P4_ResultCheck [label="Single Variable\nEarly Result", color=red];
+    P3_ProcessedFormula -> P3_SimpleEval [color=blue];
+    P3_SimpleEval -> P4_AlternateHandler [label="AlternateStateDetected\n(entity/result)", color=red, penwidth=2];
+
+    // Phase 4 Flow
+    P4_ResultCheck -> P4_ResultFinalization [label="Normal Result", color=blue];
+    P4_ResultCheck -> P4_AlternateHandler [label="Exception or\nAlternate State", color=black];
+    P4_AlternateHandler -> P4_ResultFinalization [label="Handler Result", color=black];
+
+    // Legend
+    subgraph cluster_legend {
+        label="Legend";
+        style=filled;
+        color=white;
+
+        Legend_BlueLine [label="Blue Line: Normal Flow", shape=plaintext];
+        Legend_RedLine [label="Red Line: Alternate State Flow", shape=plaintext, color=red];
+        Legend_GreenLine [label="Green Line: Cache/Circuit Flow", shape=plaintext, color=green];
+        Legend_ExceptionTrigger [label="Exception Trigger (AlternateStateDetected)", shape=box, color=red, fillcolor=red, fontcolor=white];
+        Legend_SingleValueCheck [label="Single Value Check", shape=diamond, fillcolor=orange];
+        Legend_AlternateHandler [label="Alternate State Handler", shape=diamond, fillcolor=orange];
+    }
+}

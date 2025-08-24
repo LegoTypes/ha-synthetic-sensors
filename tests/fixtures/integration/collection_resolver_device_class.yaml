@@ -1,0 +1,22 @@
+version: "1.0"
+
+sensors:
+  power_sum:
+    name: "Power Sum"
+    formula: "sum('device_class:power')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+
+  temperature_count:
+    name: "Temperature Count"
+    formula: "count('device_class:temperature')"
+    metadata:
+      unit_of_measurement: "sensors"
+
+  mixed_collection:
+    name: "Mixed Collection"
+    formula: "sum('device_class:power') + avg('device_class:temperature')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

@@ -15,7 +15,8 @@ sensors:
       # THE EXACT FORMULA that was causing validation failures
       within_grace:
         formula: "energy_grace_period_minutes > 25"
-        UNAVAILABLE: "false"
+        alternate_states:
+          UNAVAILABLE: false
     metadata:
       unit_of_measurement: "kWh"
       device_class: "energy"
@@ -28,10 +29,12 @@ sensors:
       # Realistic duration function usage - converting time differences to numeric values
       time_diff_minutes:
         formula: "minutes(5) / minutes(1)"  # 5 minutes ÷ 1 minute = 5 (numeric)
-        UNAVAILABLE: "0"
+        alternate_states:
+          UNAVAILABLE: 0
       hours_in_minutes:
         formula: "hours(1) / minutes(1)"    # 1 hour ÷ 1 minute = 60 (numeric)
-        UNAVAILABLE: "0"
+        alternate_states:
+          UNAVAILABLE: 0
     metadata:
       unit_of_measurement: "min"
       device_class: "duration"
@@ -44,11 +47,13 @@ sensors:
       # Computed variable doing math with global variable
       calculated_threshold:
         formula: "energy_grace_period_minutes * 2"  # 30 * 2 = 60
-        UNAVAILABLE: "0"
+        alternate_states:
+          UNAVAILABLE: 0
       # Computed variable with conditional using global
       bonus_points:
         formula: "energy_grace_period_minutes if energy_grace_period_minutes > 20 else 0"  # Should be 30
-        UNAVAILABLE: "0"
+        alternate_states:
+          UNAVAILABLE: 0
     metadata:
       unit_of_measurement: "points"
 
@@ -60,10 +65,12 @@ sensors:
       # Test global variable in conditional
       grace_check:
         formula: "1 if energy_grace_period_minutes > 25 else 0"  # Should be 1
-        UNAVAILABLE: "0"
+        alternate_states:
+          UNAVAILABLE: 0
       # Test built-in function in math
       time_factor:
         formula: "as_minutes(minutes(2) + seconds(30))"  # 2.5 minutes
-        UNAVAILABLE: "0"
+        alternate_states:
+          UNAVAILABLE: 0
     metadata:
       unit_of_measurement: "units"

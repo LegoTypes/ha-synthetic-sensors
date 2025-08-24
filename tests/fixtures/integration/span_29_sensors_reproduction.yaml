@@ -49,13 +49,17 @@ sensors:
       state_class: total_increasing
       suggested_display_precision: 2
     formula: state
-    UNAVAILABLE: state if within_grace else UNKNOWN
-    UNKNOWN: state if within_grace else UNKNOWN
+    alternate_states:
+      UNAVAILABLE:
+        formula: state if within_grace else UNKNOWN
+      UNKNOWN:
+        formula: state if within_grace else UNKNOWN
     variables:
       within_grace:
         formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
-        UNAVAILABLE: 'false'
-        UNKNOWN: 'false'
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
     attributes:
       tabs: panel
       voltage: 240
@@ -70,13 +74,17 @@ sensors:
       state_class: total_increasing
       suggested_display_precision: 2
     formula: state
-    UNAVAILABLE: state if within_grace else UNKNOWN
-    UNKNOWN: state if within_grace else UNKNOWN
+    alternate_states:
+      UNAVAILABLE:
+        formula: state if within_grace else UNKNOWN
+      UNKNOWN:
+        formula: state if within_grace else UNKNOWN
     variables:
       within_grace:
         formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
-        UNAVAILABLE: 'false'
-        UNKNOWN: 'false'
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
     attributes:
       tabs: panel
       voltage: 240
@@ -91,13 +99,17 @@ sensors:
       state_class: total_increasing
       suggested_display_precision: 2
     formula: state
-    UNAVAILABLE: state if within_grace else UNKNOWN
-    UNKNOWN: state if within_grace else UNKNOWN
+    alternate_states:
+      UNAVAILABLE:
+        formula: state if within_grace else UNKNOWN
+      UNKNOWN:
+        formula: state if within_grace else UNKNOWN
     variables:
       within_grace:
         formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
-        UNAVAILABLE: 'false'
-        UNKNOWN: 'false'
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
     attributes:
       tabs: panel
       voltage: 240
@@ -112,13 +124,17 @@ sensors:
       state_class: total_increasing
       suggested_display_precision: 2
     formula: state
-    UNAVAILABLE: state if within_grace else UNKNOWN
-    UNKNOWN: state if within_grace else UNKNOWN
+    alternate_states:
+      UNAVAILABLE:
+        formula: state if within_grace else UNKNOWN
+      UNKNOWN:
+        formula: state if within_grace else UNKNOWN
     variables:
       within_grace:
         formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
-        UNAVAILABLE: 'false'
-        UNKNOWN: 'false'
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
     attributes:
       tabs: panel
       voltage: 240

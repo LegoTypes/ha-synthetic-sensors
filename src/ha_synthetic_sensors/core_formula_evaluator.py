@@ -18,10 +18,21 @@ from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
+from .constants_alternate import (
+    ALTERNATE_STATE_NONE,
+    ALTERNATE_STATE_UNAVAILABLE,
+    ALTERNATE_STATE_UNKNOWN,
+    STATE_NONE,
+    identify_alternate_state_value,
+)
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_handlers import HandlerFactory
 from .evaluator_helpers import EvaluatorHelpers
+from .exceptions import AlternateStateDetected, MissingDependencyError
 from .type_definitions import ContextValue, ReferenceValue
+
+# Type for alternate state values
+AlternateStateValue = str | None
 
 
 class MissingStateError(ValueError):
@@ -37,15 +48,41 @@ class MissingStateError(ValueError):
         self.missing_value = missing_value
 
 
+class AlternateStateDetectedError(Exception):
+    """Exception raised when alternate states are detected in a formula that should not reach SimpleEval.
+
+    This exception is used for flow control to prevent alternate state values from being
+    processed by SimpleEval, which would cause evaluation errors. Instead, the formula
+    should be routed to the alternate state handler.
+    """
+
+    def __init__(self, formula: str, detected_states: list[str]) -> None:
+        """Initialize the alternate state detected error.
+
+        Args:
+            formula: The formula containing alternate states
+            detected_states: List of alternate state values detected
+        """
+        super().__init__(f"Formula contains alternate states {detected_states} - routing to alternate state handler")
+        self.formula = formula
+        self.detected_states = detected_states
+
+
 _LOGGER = logging.getLogger(__name__)
 
 
 class CoreFormulaEvaluator:
-    """Core formula evaluation service implementing CLEAN SLATE routing.
+    """Core formula evaluation service implementing Phase 3 of the Pipeline Formula Execution.
 
-    This class encapsulates the formula evaluation logic that was previously
-    embedded in FormulaExecutionEngine, making it reusable across different
-    contexts (main formulas, computed variables, attributes).
+    This class encapsulates the pure formula evaluation logic, making it reusable across different
+    contexts (main formulas, computed variables, attributes). It focuses solely on evaluating
+    a resolved formula with a given context, without handling variable resolution, caching,
+    or pipeline orchestration.
+
+    RELATIONSHIP: This is the core evaluation engine that is used by FormulaEvaluatorService
+    and called by the main evaluator pipeline via _execute_with_handler -> FormulaEvaluatorService.
+    The main evaluator handles the full pipeline (variable resolution, caching, error handling)
+    while this class handles only the formula evaluation itself.
     """
 
     def __init__(
@@ -61,14 +98,31 @@ class CoreFormulaEvaluator:
         """
         self._handler_factory = handler_factory
         self._enhanced_helper = enhanced_helper
+        self._allow_unresolved_states = False
+
+    def set_allow_unresolved_states(self, allow: bool) -> None:
+        """Set whether to allow unresolved states to proceed into evaluation.
+
+        Args:
+            allow: If True, alternate states will be allowed to proceed into formula evaluation
+                  If False (default), alternate states will be detected early and trigger handlers
+        """
+        self._allow_unresolved_states = allow
 
     def evaluate_formula(
         self,
         resolved_formula: str,
         original_formula: str,
         handler_context: dict[str, ContextValue],
-    ) -> float | str | bool:
-        """Evaluate a formula using the CLEAN SLATE routing architecture.
+    ) -> float | str | bool | None:
+        """Evaluate a formula using the routing architecture.
+
+        This method implements pure formula evaluation logic - it takes a resolved formula
+        and context, then evaluates it using Enhanced SimpleEval with metadata function
+        processing and alternate state detection.
+
+        This is the core evaluation engine that can be reused across different contexts
+        (main formulas, computed variables, attributes) without pipeline orchestration.
 
         Args:
             resolved_formula: Formula with variables resolved (used for Enhanced SimpleEval)
@@ -79,44 +133,50 @@ class CoreFormulaEvaluator:
             Evaluation result
 
         Raises:
+            AlternateStateDetected: If the formula result is an alternate state
             ValueError: If evaluation fails
+
+        RELATIONSHIP: This is called by FormulaEvaluatorService.evaluate_formula, which is
+        called by _execute_with_handler in the main evaluator pipeline. This method focuses
+        purely on formula evaluation while the pipeline handles variable resolution,
+        caching, and error management.
         """
 
         try:
-            # Only 2 routing paths needed simpleeval for 99% of cases and then other handlers (like metadata)
-
-            # NOTE: Metadata functions are now processed in Phase 2: Metadata Processing (VariableResolutionPhase)
-            # before values are extracted from ReferenceValues
-
-            # Path 1: Route metadata() to MetadataHandler if present
+            # Process metadata functions in the formula before evaluation
+            # This handles metadata() function calls by replacing them with their results
+            # and adding the results to the handler context for SimpleEval
             if "metadata(" in original_formula.lower():
                 handler = self._handler_factory.get_handler("metadata")
                 if handler and handler.can_handle(original_formula):
-                    processed = handler.evaluate(original_formula, handler_context)
-                    # After metadata returns string/numeric, evaluate through enhanced path uniformly
+                    # Use the helper method to ensure consistent transformation for AST caching
+                    processed, metadata_results = handler.evaluate(original_formula, handler_context)
+                    # Metadata functions return their final values directly
+                    # This is a formula that needs further evaluation (may contain alternate states)
                     resolved_formula = str(processed)
 
-            # Path 2: Enhanced SimpleEval (default)
-            # Phase 3: Value Resolution (CoreFormulaEvaluator): Substitute ReferenceValue objects with their values in formula
-            # Guard design (future-proof):
-            # - We only apply missing-state guard to variables that are actually value-substituted for evaluation.
-            # - Specialized handlers (by convention) take their first parameter as an entity reference (or None).
-            #   Those reference arguments should NOT trigger the missing-state guard because they do not consume the
-            #   numeric/boolean state; they consume the entity reference itself. The metadata() handler follows this
-            #   convention today. Future handlers should do the same.
-            pre_sub_formula = resolved_formula
-            resolved_formula = self._substitute_values_in_formula(resolved_formula, handler_context)
+                    # Add metadata results to handler context for SimpleEval
+                    if metadata_results:
+                        handler_context.update(metadata_results)
 
-            # Extract raw values for enhanced evaluation
-            enhanced_context = self._extract_values_for_enhanced_evaluation(handler_context, pre_sub_formula)
-
-            # Check if extraction found missing states that should make sensor unavailable
-            if enhanced_context is None:
-                # Get the missing state value for the error message
-                state_value = handler_context.get("state")
-                missing_value = state_value.value if isinstance(state_value, ReferenceValue) else STATE_UNKNOWN
-                # Raise a specific exception to trigger unavailable state
-                raise MissingStateError(str(missing_value))
+            # Enhanced SimpleEval with AST Caching (default path for all formulas)
+            #
+            # How SimpleEval AST Caching Works:
+            # 1. Formula string (e.g., "sensor_1 + sensor_2") is parsed into an Abstract Syntax Tree (AST) once
+            # 2. The AST is cached using the formula string as the key
+            # 3. For evaluation, SimpleEval uses the cached AST + variable context dictionary
+            # 4. Variables in the formula are looked up in the context: {"sensor_1": 25.5, "sensor_2": 30.2}
+            #
+            # Why We Do It This Way:
+            # - AST parsing is expensive (5-20x slower than evaluation)
+            # - Same formula = same cached AST = massive performance improvement
+            # - If we substituted values into the formula string ("25.5 + 30.2"), every evaluation
+            #   would create a unique formula string, making AST caching useless
+            # - By keeping variable names in the formula and using context lookup, we get maximum
+            #   cache hits and optimal performance
+            #
+            # Extract raw values for enhanced evaluation - SimpleEval will handle variable lookup
+            enhanced_context = self._extract_values_for_enhanced_evaluation(handler_context, resolved_formula)
 
             success, result = self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)
 
@@ -132,6 +192,12 @@ class CoreFormulaEvaluator:
                     final_result = str(result.isoformat())
                 else:
                     final_result = str(result)
+
+                # Check 3: Is the final formula result an alternate state?
+                alternate_state = self._get_alternate_state(final_result)
+                if alternate_state is not False:
+                    raise AlternateStateDetected(f"Formula result '{final_result}' is alternate state", alternate_state)
+
                 return final_result
 
             # Enhanced SimpleEval failed - check if we have exception details
@@ -139,64 +205,80 @@ class CoreFormulaEvaluator:
             if isinstance(result, Exception):
                 eval_error = result
                 error_msg = str(eval_error)
-                is_zero_div = isinstance(eval_error, ZeroDivisionError)
-                is_undefined = isinstance(eval_error, NameError) or (
-                    "undefined" in error_msg.lower() or "not defined" in error_msg.lower()
-                )
-                if is_zero_div:
-                    raise ValueError("Division by zero in formula")
-                if is_undefined:
-                    raise ValueError(f"Undefined variable: {error_msg}")
-                raise ValueError(f"Formula evaluation error: {error_msg}")
+
+                raise AlternateStateDetected(error_msg, STATE_NONE)
 
             # No exception details available
-            raise ValueError("Formula evaluation failed: unable to process expression")
+            raise AlternateStateDetected("Formula evaluation failed: unable to process expression", STATE_NONE)
 
-        except Exception as err:
-            _LOGGER.error("Core formula evaluation failed for %s: %s", resolved_formula, err)
+        # Definitive Alternate State Detected (actual instance of one of the alternate states as the formula result)
+        except AlternateStateDetected as e:
+            _LOGGER.debug("Alternate state detected: %s", e.message)
             raise
+        # General failure in evaluation will result in STATE_NONE alternate state (i.e. None as reference part of ReferenceValue)
+        except Exception as err:
+            # Any evaluation failure results in AlternateStateDetected with STATE_NONE
+            _LOGGER.debug("General formula evaluation failure: %s", str(err))
+            raise AlternateStateDetected(f"Formula evaluation failed: {err}", STATE_NONE) from err
 
     def _extract_values_for_enhanced_evaluation(
-        self, context: dict[str, ContextValue], referenced_formula: str | None = None
-    ) -> dict[str, Any] | None:
+        self, context: dict[str, ContextValue], referenced_formula: str
+    ) -> dict[str, Any]:
         """Extract raw values from ReferenceValue objects for enhanced SimpleEval evaluation.
 
         Args:
             context: Handler context containing ReferenceValue objects
+            referenced_formula: The formula that references these variables
 
         Returns:
-            Dictionary with variable names mapped to their preprocessed values for enhanced SimpleEval,
-            or None if missing state values are found that should trigger unavailable sensor
+            Dictionary with variable names mapped to their preprocessed values for enhanced SimpleEval
         """
         enhanced_context: dict[str, Any] = {}
-        referenced_names: set[str] | None = None
-        if referenced_formula:
-            try:
-                # Extract identifiers that will be substituted during value resolution.
-                # This approximates the set of variables that are value-consuming in Phase 3.
-                referenced_names = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", referenced_formula))
-            except Exception:
-                referenced_names = None
 
-        # Check for missing state values that should trigger unavailable sensor state
-        # Use Home Assistant constants for missing states
-        missing_states = [STATE_UNKNOWN, STATE_UNAVAILABLE]
+        # Precompute referenced variable tokens from the referenced_formula so we only
+        # early-detect alternate states for variables actually used by the formula.
+        # Handle both simple variable names and entity IDs with dots
+        referenced_tokens = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)?)\b", referenced_formula))
+        _LOGGER.debug("Referenced tokens from formula '%s': %s", referenced_formula, referenced_tokens)
 
         for key, value in context.items():
             if isinstance(value, ReferenceValue):
                 # Extract and preprocess raw value using priority analyzer.
                 raw_value = value.value
-                # Scoped missing-state guard:
-                # Apply guard only when this variable is referenced in the pre-substitution formula
-                # (i.e., it will be value-substituted). Reference arguments to specialized handlers
-                # (e.g., metadata(entity_ref, ...)) should not trigger the guard by convention.
-                if (
-                    (referenced_names is None or key in referenced_names)
-                    and isinstance(raw_value, str)
-                    and raw_value.lower() in missing_states
-                ):
-                    _LOGGER.debug("Found missing state '%s' = '%s', sensor should become unavailable", key, raw_value)
-                    return None
+                _LOGGER.debug("Processing key '%s' with raw_value '%s'", key, raw_value)
+
+                # Check for truly missing dependencies (None references)
+                if value.reference is None:
+                    _LOGGER.debug(
+                        "Found missing dependency '%s' with None reference, raising MissingDependencyError from _extract_values_for_enhanced_evaluation",
+                        key,
+                    )
+                    raise MissingDependencyError(f"Missing dependency for variable '{key}'")
+
+                # Early detection of alternate states (unless allow_unresolved_states is True).
+                # Only apply early detection to variables actually referenced in the formula.
+                if not getattr(self, "_allow_unresolved_states", False) and str(key) in referenced_tokens:
+                    # If the value comes from a ReferenceValue (i.e., backing entity or resolver)
+                    # and its inner value is None, treat this as an HA UNKNOWN state rather than
+                    # the YAML/literal STATE_NONE sentinel. This preserves the semantic that
+                    # missing backing entity values are transient (UNKNOWN) and should hit the
+                    # UNKNOWN handler if configured.
+                    # Preserve semantics: a ReferenceValue wrapper with an inner Python None
+                    # represents a resolved backing entity with no value (STATE_NONE). Use
+                    # the standard alternate-state detection to map that to STATE_NONE so
+                    # the NONE or FALLBACK handlers run. Only literal STATE_UNKNOWN strings
+                    # should map to STATE_UNKNOWN.
+                    alternate_state = self._get_alternate_state(raw_value)
+                    if alternate_state is not False:
+                        _LOGGER.debug(
+                            "Early detection: Variable '%s' contains alternate state '%s', raising AlternateStateDetected",
+                            key,
+                            alternate_state,
+                        )
+                        raise AlternateStateDetected(
+                            f"Variable '{key}' contains alternate state '{alternate_state}'",
+                            alternate_state,
+                        )
 
                 # Preprocess the value using priority analyzer (boolean-first, then numeric)
                 processed_value = EvaluatorHelpers.process_evaluation_result(raw_value)
@@ -209,61 +291,22 @@ class CoreFormulaEvaluator:
 
         return enhanced_context
 
-    def _substitute_values_in_formula(self, formula: str, handler_context: dict[str, ContextValue]) -> str:
-        """PHASE 3: Substitute ReferenceValue objects with their actual values in the formula."""
-        # Pattern to match variable names
-        variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
+    def _get_alternate_state(self, value: Any) -> AlternateStateValue | bool:
+        """Check if the final result value of a formula is an alternate state value.
 
-        def replace_with_value(match: re.Match[str]) -> str:
-            var_name = match.group(1)
+        Args:
+            value: The value to check
 
-            # Skip reserved words and function names
-            if var_name in ["metadata", "state", "min", "max", "abs", "round", "int", "float", "str", "len", "sum", "avg"]:
-                return var_name
-
-            # Check if variable exists in context
-            if var_name in handler_context:
-                value = handler_context[var_name]
-                actual_value = value.value if isinstance(value, ReferenceValue) else value
-
-                # Handle string values - convert numeric strings to numbers for math operations
-                if isinstance(actual_value, str):
-                    coerced = EvaluatorHelpers.preprocess_value_for_enhanced_eval(actual_value)
-                    if isinstance(coerced, bool | int | float):
-                        return str(coerced)
-                    return f'"{coerced}"'
-                return str(actual_value)
-
-            # Not in context, return unchanged
-            return var_name
-
-        substituted = variable_pattern.sub(replace_with_value, formula)
-
-        # Secondary safeguard: resolve any remaining dotted entity_id tokens using handler_context
-        # This covers cases where earlier phases intentionally preserved dotted tokens for metadata
-        # or missed substitution due to context propagation timing differences (runtime scenarios).
-        entity_pattern = re.compile(
-            r"(?:^|(?<=\s)|(?<=\()|(?<=[+\-*/]))([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z0-9_.]+)(?=\s|$|[+\-*/)])"
-        )
-
-        def replace_entity_with_value(match: re.Match[str]) -> str:
-            entity_id = match.group(1)
-            alias = entity_id.replace(".", "_").replace("-", "_")
-            context_value: Any | None = None
-            if alias in handler_context:
-                context_value = handler_context[alias]
-            elif entity_id in handler_context:
-                context_value = handler_context[entity_id]
-
-            if context_value is None:
-                # If not in context, leave unchanged and let SimpleEval error for true missing deps
-                return entity_id
-
-            actual_value = context_value.value if isinstance(context_value, ReferenceValue) else context_value
-            if isinstance(actual_value, str):
-                coerced = EvaluatorHelpers.preprocess_value_for_enhanced_eval(actual_value)
-                return str(coerced) if isinstance(coerced, bool | int | float) else f'"{coerced}"'
-            return str(actual_value)
-
-        substituted2 = entity_pattern.sub(replace_entity_with_value, substituted)
-        return substituted2
+        Returns:
+            The alternate state value if the value is an alternate state, None otherwise
+        """
+        # Delegate alternate-state identification to shared helper and map
+        alt = identify_alternate_state_value(value)
+        if isinstance(alt, str):
+            if alt == ALTERNATE_STATE_NONE:
+                return STATE_NONE
+            if alt == ALTERNATE_STATE_UNKNOWN:
+                return STATE_UNKNOWN
+            if alt == ALTERNATE_STATE_UNAVAILABLE:
+                return STATE_UNAVAILABLE
+        return False

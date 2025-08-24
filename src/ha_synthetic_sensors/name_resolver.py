@@ -8,23 +8,13 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Protocol, TypedDict
+from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
-from simpleeval import NameNotDefined, simple_eval
 
-from .constants_formula import is_ha_state_value, is_ha_unknown_equivalent
 from .device_classes import is_valid_ha_domain
-from .exceptions import MissingDependencyError
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class ASTNode(Protocol):
-    """Protocol for AST nodes used in name resolution."""
-
-    id: str
 
 
 class VariableValidationResult(TypedDict):
@@ -109,103 +99,6 @@ class NameResolver:
             normalized = f"_{normalized}"
 
         return normalized
-
-    def resolve_name(self, node: ASTNode) -> float:
-        """Resolve a variable name to its numeric value from Home Assistant.
-
-        This function is called by simpleeval for each variable in the formula.
-
-        Args:
-            node: AST node with .id attribute containing the variable name
-
-        Returns:
-            float: The numeric value of the entity state
-
-        Raises:
-            NameNotDefined: If variable name not found in variables mapping
-            HomeAssistantError: If entity state cannot be resolved to a number
-        """
-        variable_name = node.id
-
-        # First check if this variable is defined in our mapping
-        if variable_name in self._variables:
-            entity_id = self._variables[variable_name]
-        # Then check if it looks like a direct entity ID (contains dot)
-        elif "." in variable_name and self.is_valid_entity_id(variable_name):
-            entity_id = variable_name
-            self._logger.debug("Using direct entity ID reference: %s", variable_name)
-        else:
-            raise NameNotDefined(
-                variable_name,
-                f"Variable '{variable_name}' not defined and not a valid entity ID",
-            )
-
-        # Get the entity state from Home Assistant
-        entity_state = self._hass.states.get(entity_id)
-
-        if entity_state is None:
-            self._logger.error(
-                "Entity '%s' (for variable '%s') not found in Home Assistant",
-                entity_id,
-                variable_name,
-            )
-            raise HomeAssistantError(f"Entity '{entity_id}' for variable '{variable_name}' not found")
-
-        # Handle unavailable/unknown states
-        if entity_state.state is None or is_ha_state_value(entity_state.state) or is_ha_unknown_equivalent(entity_state.state):
-            raise HomeAssistantError(f"Entity '{entity_id}' for variable '{variable_name}' is unavailable")
-
-        # Convert state to numeric value
-        try:
-            numeric_value = float(entity_state.state)
-            self._logger.error(
-                "NAME_RESOLVER DEBUG: Resolved %s='%s' -> %s=%s (RAW FLOAT!)",
-                variable_name,
-                entity_id,
-                variable_name,
-                numeric_value,
-            )
-            return numeric_value
-
-        except (ValueError, TypeError) as exc:
-            self._logger.error(
-                "Cannot convert entity '%s' state '%s' to number for variable '%s': %s",
-                entity_id,
-                entity_state.state,
-                variable_name,
-                exc,
-            )
-            raise HomeAssistantError(
-                f"Entity '{entity_id}' state '{entity_state.state}' cannot be converted to number"
-            ) from exc
-
-    def get_static_names(self) -> dict[str, float]:
-        """Get all current variable values as a static dictionary.
-
-        This is an alternative to using the dynamic name resolver function.
-        Useful for debugging or when you want to capture values at a specific moment.
-
-        Returns:
-            dict: Mapping of variable names to their current numeric values
-
-        Raises:
-            HomeAssistantError: If any entity state cannot be resolved
-        """
-        static_names = {}
-
-        for variable_name, _entity_id in self._variables.items():
-            # Create a mock node for the resolve_name method
-            class MockNode:
-                def __init__(self, name: str):
-                    self.id = name
-
-            try:
-                static_names[variable_name] = self.resolve_name(MockNode(variable_name))
-            except (NameNotDefined, HomeAssistantError) as exc:
-                self._logger.error("Failed to resolve variable '%s': %s", variable_name, exc)
-                raise
-
-        return static_names
 
     def validate_variables(self) -> VariableValidationResult:
         """Validate all variable mappings exist in Home Assistant.
@@ -468,118 +361,3 @@ class NameResolver:
                     entity_ids.append(entity_id)
 
         return entity_ids
-
-
-class FormulaEvaluator:
-    """Evaluates mathematical formulas with Home Assistant entity resolution."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        formula: str,
-        variables: dict[str, str],
-        fallback_value: float = 0.0,
-    ) -> None:
-        """Initialize the formula evaluator.
-
-        Args:
-            hass: Home Assistant instance
-            formula: Mathematical expression string
-            variables: Mapping of formula variable names to entity IDs
-            fallback_value: Value to return if evaluation fails
-        """
-        self._hass = hass
-        self._formula = formula
-        self._variables = variables
-        self._fallback_value = fallback_value
-        self._name_resolver = NameResolver(hass, variables)
-        self._logger = _LOGGER.getChild(self.__class__.__name__)
-
-    @property
-    def formula(self) -> str:
-        """Get the formula string."""
-        return self._formula
-
-    @property
-    def variables(self) -> dict[str, str]:
-        """Get the variable mappings."""
-        return self._variables.copy()
-
-    @property
-    def fallback_value(self) -> float:
-        """Get the fallback value."""
-        return self._fallback_value
-
-    def evaluate(self) -> float:
-        """Evaluate the formula with current entity states.
-
-        Returns:
-            float: The calculated result or fallback_value if evaluation fails
-        """
-        try:
-            # Use the name resolver function for dynamic entity state lookup
-            result = simple_eval(self._formula, names=self._name_resolver.resolve_name)
-
-            self._logger.debug("Formula evaluation successful: '%s' = %s", self._formula, result)
-
-            return float(result)
-
-        except ImportError as exc:
-            self._logger.error("simpleeval library not installed: %s", exc)
-            return self._fallback_value
-
-        except NameNotDefined as exc:
-            # Variable not defined - this is a fatal error
-            raise MissingDependencyError(f"Formula evaluation failed: '{self._formula}' - {exc}") from exc
-
-        except HomeAssistantError as exc:
-            # Check if this is a missing entity (fatal) vs unavailable entity (non-fatal)
-            if "not found" in str(exc):
-                # Entity doesn't exist - this is a fatal error
-                raise MissingDependencyError(f"Formula evaluation failed: '{self._formula}' - {exc}") from exc
-            # Entity exists but is unavailable - use fallback (can't do math with "unavailable")
-            self._logger.error("Formula evaluation failed: '%s' - %s, using fallback", self._formula, exc)
-            return self._fallback_value
-
-        except Exception as exc:  # pylint: disable=broad-except
-            self._logger.error(
-                "Unexpected error evaluating formula '%s': %s, using fallback value %s",
-                self._formula,
-                exc,
-                self._fallback_value,
-            )
-            return self._fallback_value
-
-    def validate_formula(self) -> list[str]:
-        """Validate the formula and all variables.
-
-        Returns:
-            list: List of validation error messages, empty if valid
-        """
-        errors = []
-
-        # Validate variables first
-        validation_result = self._name_resolver.validate_variables()
-        errors.extend(validation_result["errors"])
-
-        # Test formula syntax with dummy values
-        try:
-            # Create dummy values for syntax testing
-            dummy_names = dict.fromkeys(self._variables.keys(), 1.0)
-            simple_eval(self._formula, names=dummy_names)
-
-        except ImportError:
-            errors.append("simpleeval library not installed")
-        except Exception as exc:  # pylint: disable=broad-except
-            errors.append(f"Formula syntax error: {exc}")
-
-        return errors
-
-    def get_dependencies(self) -> set[str]:
-        """Get all entity dependencies for this formula.
-
-        Returns:
-            set: Set of entity IDs that this formula depends on
-        """
-        deps = self._name_resolver.get_formula_dependencies(self._formula)
-        return deps["entity_ids"]

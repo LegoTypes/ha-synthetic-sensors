@@ -65,13 +65,3 @@ def test_resolve_attribute_references_no_resolver_returns_unchanged(monkeypatch)
     phase._resolver_factory.get_all_resolvers = lambda: []  # type: ignore[attr-defined]
     out = phase._resolve_attribute_references("level1 + 1", {})
     assert out == "level1 + 1"
-
-
-def test_early_metadata_resolution_private_method(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Provide hass with a state object so metadata handler can fetch entity_id
-    hass = _Hass({"sensor.alpha": _State("sensor.alpha")})
-    phase = VariableResolutionPhase(hass=hass)
-    ctx: dict[str, ReferenceValue] = {}
-    # No sensor/formula config needed for entity_id
-    out = phase._resolve_metadata_functions("metadata(sensor.alpha, 'entity_id')", None, ctx, None)
-    assert "sensor.alpha" in out
