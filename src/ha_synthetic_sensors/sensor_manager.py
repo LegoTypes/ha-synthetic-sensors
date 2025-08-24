@@ -424,7 +424,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # Get the self-reference resolver
             self_ref_resolver = None
             for resolver in resolver_factory.get_all_resolvers():
-                if hasattr(resolver, "_resolve_backing_entity_value"):
+                if hasattr(resolver, "resolve_backing_entity_value"):
                     self_ref_resolver = resolver
                     break
 
@@ -433,7 +433,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 return
 
             # Use the existing backing entity resolution logic
-            backing_value = self_ref_resolver._resolve_backing_entity_value(backing_entity_id, f"seed_{backing_entity_id}")
+            backing_value = self_ref_resolver.resolve_backing_entity_value(backing_entity_id, f"seed_{backing_entity_id}")
             _LOGGER.debug("Seeding result for %s: %s", backing_entity_id, backing_value)
 
             if backing_value is not None:

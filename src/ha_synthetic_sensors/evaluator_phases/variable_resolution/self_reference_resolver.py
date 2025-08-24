@@ -34,6 +34,10 @@ class SelfReferenceResolver(VariableResolver):
         """Set the sensor registry phase for cross-sensor references."""
         self._sensor_registry_phase = sensor_registry_phase
 
+    def resolve_backing_entity_value(self, backing_entity_id: str, original_reference: str) -> Any:
+        """Public method to resolve backing entity value."""
+        return self._resolve_backing_entity_value(backing_entity_id, original_reference)
+
     def can_resolve(self, variable_name: str, variable_value: str | Any) -> bool:
         """Determine if this resolver can handle entity ID self-reference patterns."""
         if not isinstance(variable_value, str):
