@@ -299,86 +299,85 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             Dictionary mapping variable names to entity state values, or None if no variables
             or if data provider callback is available (natural fallback will be used)
         """
-        if not formula_config.variables:
+        # Early returns for cases where we don't need to build context
+        if not self._should_build_variable_context(formula_config):
             return None
 
-        # If data provider callback is available,
-        # let the evaluator handle variable resolution through natural fallback
-        if self._evaluator.data_provider_callback:
-            return None
-
-        # If any computed variables are present, let the evaluator handle all variable resolution
-        # This ensures computed variables with exception handlers are processed correctly
-        for var_value in formula_config.variables.values():
-            if isinstance(var_value, ComputedVariable):
-                _LOGGER.debug("Found computed variables, delegating variable resolution to evaluator")
-                return None
-
-        # ARCHITECTURE FIX: Use ReferenceValueManager for type safety
+        # Build context from variables
         context: dict[str, Any] = {}
-
         for var_name, var_value in formula_config.variables.items():
-            # Check if this is a numeric literal (not a string entity ID)
-            if isinstance(var_value, int | float):
-                # Create ReferenceValue for numeric literals (reference = variable name)
-                ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, var_value)
-                continue
+            self._process_variable(context, var_name, var_value)
 
-            # Check if this is a string that doesn't look like an entity ID
-            if isinstance(var_value, str) and "." not in var_value:
-                # Try to convert to numeric if possible
-                try:
-                    numeric_value = float(var_value)
-                    # Create ReferenceValue for numeric string
-                    ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, numeric_value)
-                except ValueError:
-                    # Create ReferenceValue for string literal
-                    ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, var_value)
-                continue
+        # Inject canonical state reference
+        self._inject_canonical_state_reference(context)
 
-            # Handle entity references (strings with dots)
-            if isinstance(var_value, str) and "." in var_value:
-                # If HA lookups are allowed or no data provider callback is available,
-                # try to get values from HA state registry
-                state = self._hass.states.get(var_value)
-                if state is not None:
-                    try:
-                        # Try to get numeric value and create ReferenceValue with entity ID as reference
-                        numeric_value = float(state.state)
-                        ReferenceValueManager.set_variable_with_reference_value(
-                            context,
-                            var_name,
-                            var_value,
-                            numeric_value,  # var_value is entity ID
-                        )
-                    except (ValueError, TypeError):
-                        # Fall back to string value for non-numeric states with entity ID as reference
-                        ReferenceValueManager.set_variable_with_reference_value(
-                            context,
-                            var_name,
-                            var_value,
-                            state.state,  # var_value is entity ID
-                        )
-                else:
-                    # Entity not found - this is a missing dependency (fatal error)
-                    raise MissingDependencyError(f"Entity '{var_value}' not found")
+        return context if context else None
 
-        # CRITICAL: Inject canonical ReferenceValue for 'state' AFTER processing all other variables
-        # This ensures computed variables like state.last_valid_changed are resolvable and prevents
-        # the canonical ReferenceValue from being overwritten by formula variables.
+    def _should_build_variable_context(self, formula_config: FormulaConfig) -> bool:
+        """Determine if we should build variable context or delegate to evaluator."""
+        if not formula_config.variables:
+            return False
+
+        # If data provider callback is available, let evaluator handle resolution
+        if self._evaluator.data_provider_callback:
+            return False
+
+        # If any computed variables are present, let evaluator handle all resolution
+        return not any(isinstance(var_value, ComputedVariable) for var_value in formula_config.variables.values())
+
+    def _process_variable(self, context: dict[str, Any], var_name: str, var_value: Any) -> None:
+        """Process a single variable and add it to the context."""
+        # Handle numeric literals
+        if isinstance(var_value, int | float):
+            ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, var_value)
+            return
+
+        # Handle string values
+        if isinstance(var_value, str):
+            if "." not in var_value:
+                self._process_string_literal(context, var_name, var_value)
+            else:
+                self._process_entity_reference(context, var_name, var_value)
+
+    def _process_string_literal(self, context: dict[str, Any], var_name: str, var_value: str) -> None:
+        """Process a string literal variable (no dots, not an entity ID)."""
+        try:
+            # Try to convert to numeric if possible
+            numeric_value = float(var_value)
+            ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, numeric_value)
+        except ValueError:
+            # Create ReferenceValue for string literal
+            ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_name, var_value)
+
+    def _process_entity_reference(self, context: dict[str, Any], var_name: str, var_value: str) -> None:
+        """Process an entity reference variable (contains dots)."""
+        state = self._hass.states.get(var_value)
+        if state is None:
+            raise MissingDependencyError(f"Entity '{var_value}' not found")
+
+        try:
+            # Try to get numeric value
+            numeric_value = float(state.state)
+            ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_value, numeric_value)
+        except (ValueError, TypeError):
+            # Fall back to string value
+            ReferenceValueManager.set_variable_with_reference_value(context, var_name, var_value, state.state)
+
+    def _inject_canonical_state_reference(self, context: dict[str, Any]) -> None:
+        """Inject canonical ReferenceValue for 'state' after processing all other variables."""
         _LOGGER.debug(
             "CANONICAL_INJECT_DEBUG: checking conditions - has_attrs=%s, attrs=%s",
             hasattr(self, "_attr_extra_state_attributes"),
             getattr(self, "_attr_extra_state_attributes", None),
         )
+
         try:
             if hasattr(self, "_attr_extra_state_attributes") and self._attr_extra_state_attributes:
                 attrs_local = dict(self._attr_extra_state_attributes)
                 last_val = attrs_local.get(LAST_VALID_STATE_KEY)
                 last_changed = attrs_local.get(LAST_VALID_CHANGED_KEY)
-                # Use the real entity_id as reference when available
                 ref = self.entity_id or "state"
-                # Create a ReferenceValue with last-valid metadata attached
+
                 rv = ReferenceValue(
                     reference=ref,
                     value=last_val if last_val is not None else None,
@@ -393,8 +392,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 getattr(self, "entity_id", None),
                 exc,
             )
-
-        return context if context else None
 
     def _attempt_seed_last_valid(self, backing_entity_id: str | None = None) -> None:
         """Try to seed LAST_VALID_STATE_KEY/ LAST_VALID_CHANGED_KEY from backing data.
@@ -461,101 +458,120 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Clear previous calculated attributes
         self._calculated_attributes.clear()
 
-        # First: evaluate attribute formulas that are simple references to computed variables
-        remaining_attr_formulas: list[FormulaConfig] = []
-        # Do not pre-fill a base context with resolved 'state' here; let evaluator preserve
-        # entity references during variable resolution (important for metadata()).
-        main_result_dict = cast(dict[str, Any], main_result)
-        base_ctx: dict[str, Any] | None = None
+        # Process attributes in two phases: computed variables first, then remaining formulas
+        remaining_formulas = self._evaluate_computed_variable_attributes()
+        self._evaluate_remaining_attributes(remaining_formulas, main_result)
+
+    def _evaluate_computed_variable_attributes(self) -> list[FormulaConfig]:
+        """Evaluate attribute formulas that are simple references to computed variables."""
+        remaining_formulas: list[FormulaConfig] = []
 
         for formula in self._attribute_formulas:
-            # If attribute formula is exactly a computed variable name, evaluate that computed variable directly
-            token = formula.formula.strip()
-            computed_var = None
-            if token in self._main_formula.variables:
-                maybe_cv = self._main_formula.variables[token]
-                if isinstance(maybe_cv, ComputedVariable):
-                    computed_var = maybe_cv
-
-            if computed_var is not None:
-                try:
-                    # Build a temporary FormulaConfig for the computed variable
-                    temp_cfg = FormulaConfig(id=f"{self._config.unique_id}_{token}", formula=computed_var.formula)
-                    # Evaluate computed variable using evaluator; do NOT pass a pre-built base_ctx
-                    # so variable resolution preserves entity references for metadata().
-                    eval_result = self._evaluator.evaluate_formula_with_sensor_config(temp_cfg, None, self._config)
-                    eval_result_dict = cast(dict[str, Any], eval_result)
-                    if eval_result_dict[RESULT_KEY_SUCCESS] and eval_result_dict[RESULT_KEY_VALUE] is not None:
-                        attr_name = self._extract_attribute_name(formula)
-                        self._calculated_attributes[attr_name] = eval_result_dict[RESULT_KEY_VALUE]
-                        continue
-                except Exception as e:
-                    _LOGGER.debug("Computed variable attribute eval failed for %s: %s", token, e)
-                    # fall through to dependency manager for this attribute
+            computed_var = self._get_computed_variable_for_formula(formula)
+            if computed_var is not None and self._try_evaluate_computed_variable_attribute(formula, computed_var):
+                continue
             # Not a simple computed-var attribute, keep for later processing
-            remaining_attr_formulas.append(formula)
+            remaining_formulas.append(formula)
 
-        # Next: use dependency manager to evaluate remaining attributes as a group if available
+        return remaining_formulas
+
+    def _get_computed_variable_for_formula(self, formula: FormulaConfig) -> ComputedVariable | None:
+        """Get the computed variable if the formula is a simple reference to one."""
+        token = formula.formula.strip()
+        if token in self._main_formula.variables:
+            maybe_cv = self._main_formula.variables[token]
+            if isinstance(maybe_cv, ComputedVariable):
+                return maybe_cv
+        return None
+
+    def _try_evaluate_computed_variable_attribute(self, formula: FormulaConfig, computed_var: ComputedVariable) -> bool:
+        """Try to evaluate a computed variable attribute. Returns True if successful."""
         try:
-            # Use the sensor's attribute dependency manager to build a complete context
-            adm = getattr(self, "_attribute_dependency_manager", None)
-            if adm is not None and remaining_attr_formulas:
-                # Build base context from main_result so dependency manager has the resolved state
-                base_ctx = None
-                if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None:
-                    base_ctx = {}
-                    ReferenceValueManager.set_variable_with_reference_value(
-                        base_ctx, "state", self.entity_id or "state", main_result_dict[RESULT_KEY_VALUE]
-                    )
-                # Build complete evaluation context (this will evaluate computed variables and attributes)
-                # GenericDependencyManager.build_evaluation_context signature: (sensor_config, evaluator, base_context)
-                complete_ctx = adm.build_evaluation_context(self._config, self._evaluator, base_ctx)
-                for formula in remaining_attr_formulas:
-                    attr_name = self._extract_attribute_name(formula)
-                    if attr_name in complete_ctx and complete_ctx[attr_name] is not None:
-                        _LOGGER.debug(
-                            "ATTR_COPY_DEBUG: copying attribute '%s' from complete_ctx: type=%s value=%s",
-                            attr_name,
-                            type(complete_ctx[attr_name]).__name__,
-                            getattr(complete_ctx[attr_name], "value", complete_ctx[attr_name]),
-                        )
-                        self._calculated_attributes[attr_name] = complete_ctx[attr_name]
-            else:
-                # Fallback: evaluate attributes individually
-                for formula in remaining_attr_formulas:
-                    try:
-                        # Provide main result 'state' in context for individual attribute evals
-                        attr_ctx: dict[str, Any] | None = None
-                        if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None:
-                            attr_ctx = {}
-                            ReferenceValueManager.set_variable_with_reference_value(
-                                attr_ctx, "state", self.entity_id or "state", main_result_dict[RESULT_KEY_VALUE]
-                            )
-                        # Use evaluate_formula instead of evaluate_formula_with_sensor_config to avoid state resolution issues
-                        attr_result = self._evaluator.evaluate_formula(formula, attr_ctx)
-                        attr_result_dict = cast(dict[str, Any], attr_result)
-                        if attr_result_dict[RESULT_KEY_SUCCESS] and attr_result_dict[RESULT_KEY_VALUE] is not None:
-                            attr_name = self._extract_attribute_name(formula)
-                            self._calculated_attributes[attr_name] = attr_result_dict[RESULT_KEY_VALUE]
-                        else:
-                            raise RuntimeError(f"Attribute evaluation failed for {formula.id}")
-                    except Exception as e:
-                        _LOGGER.error(
-                            "Error evaluating attribute formula '%s' for sensor %s: %s",
-                            formula.id,
-                            self.entity_id,
-                            e,
-                        )
-                        # Continue without attributes rather than failing the entire sensor
-                        continue
+            temp_cfg = FormulaConfig(id=f"{self._config.unique_id}_{formula.formula.strip()}", formula=computed_var.formula)
+            eval_result = self._evaluator.evaluate_formula_with_sensor_config(temp_cfg, None, self._config)
+            eval_result_dict = cast(dict[str, Any], eval_result)
+
+            if eval_result_dict[RESULT_KEY_SUCCESS] and eval_result_dict[RESULT_KEY_VALUE] is not None:
+                attr_name = self._extract_attribute_name(formula)
+                self._calculated_attributes[attr_name] = eval_result_dict[RESULT_KEY_VALUE]
+                return True
+        except Exception as e:
+            _LOGGER.debug("Computed variable attribute eval failed for %s: %s", formula.formula.strip(), e)
+
+        return False
+
+    def _evaluate_remaining_attributes(self, remaining_formulas: list[FormulaConfig], main_result: EvaluationResult) -> None:
+        """Evaluate remaining attribute formulas using dependency manager or individual evaluation."""
+        if not remaining_formulas:
+            return
+
+        try:
+            # Try dependency manager approach first
+            if self._try_evaluate_with_dependency_manager(remaining_formulas, main_result):
+                return
+
+            # Fallback to individual evaluation
+            self._evaluate_attributes_individually(remaining_formulas, main_result)
 
         except Exception as e:
-            _LOGGER.error(
-                "Error evaluating attributes for sensor %s: %s",
-                self.entity_id,
-                e,
-            )
-            # Continue without calculated attributes rather than failing the entire sensor
+            _LOGGER.error("Error evaluating attributes for sensor %s: %s", self.entity_id, e)
+
+    def _try_evaluate_with_dependency_manager(self, formulas: list[FormulaConfig], main_result: EvaluationResult) -> bool:
+        """Try to evaluate attributes using the dependency manager. Returns True if successful."""
+        adm = getattr(self, "_attribute_dependency_manager", None)
+        if adm is None:
+            return False
+
+        main_result_dict = cast(dict[str, Any], main_result)
+        base_ctx = self._build_base_context_from_main_result(main_result_dict)
+
+        complete_ctx = adm.build_evaluation_context(self._config, self._evaluator, base_ctx)
+        for formula in formulas:
+            attr_name = self._extract_attribute_name(formula)
+            if attr_name in complete_ctx and complete_ctx[attr_name] is not None:
+                _LOGGER.debug(
+                    "ATTR_COPY_DEBUG: copying attribute '%s' from complete_ctx: type=%s value=%s",
+                    attr_name,
+                    type(complete_ctx[attr_name]).__name__,
+                    getattr(complete_ctx[attr_name], "value", complete_ctx[attr_name]),
+                )
+                self._calculated_attributes[attr_name] = complete_ctx[attr_name]
+        return True
+
+    def _evaluate_attributes_individually(self, formulas: list[FormulaConfig], main_result: EvaluationResult) -> None:
+        """Evaluate attributes individually as fallback."""
+        main_result_dict = cast(dict[str, Any], main_result)
+
+        for formula in formulas:
+            try:
+                attr_ctx = self._build_base_context_from_main_result(main_result_dict)
+                attr_result = self._evaluator.evaluate_formula(formula, attr_ctx)
+                attr_result_dict = cast(dict[str, Any], attr_result)
+
+                if attr_result_dict[RESULT_KEY_SUCCESS] and attr_result_dict[RESULT_KEY_VALUE] is not None:
+                    attr_name = self._extract_attribute_name(formula)
+                    self._calculated_attributes[attr_name] = attr_result_dict[RESULT_KEY_VALUE]
+                else:
+                    raise RuntimeError(f"Attribute evaluation failed for {formula.id}")
+            except Exception as e:
+                _LOGGER.error(
+                    "Error evaluating attribute formula '%s' for sensor %s: %s",
+                    formula.id,
+                    self.entity_id,
+                    e,
+                )
+                continue
+
+    def _build_base_context_from_main_result(self, main_result_dict: dict[str, Any]) -> dict[str, Any] | None:
+        """Build base context from main result for attribute evaluation."""
+        if not (main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None):
+            return None
+
+        base_ctx = {}
+        ReferenceValueManager.set_variable_with_reference_value(
+            base_ctx, "state", self.entity_id or "state", main_result_dict[RESULT_KEY_VALUE]
+        )
+        return base_ctx
 
     def _handle_main_result(self, main_result: EvaluationResult) -> None:
         """Handle the main formula evaluation result."""

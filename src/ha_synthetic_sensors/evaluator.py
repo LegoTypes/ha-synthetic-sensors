@@ -10,7 +10,6 @@ from typing import Any, cast
 
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import STATE_UNKNOWN, HomeAssistant
-from homeassistant.helpers.typing import StateType
 
 from .alternate_state_eval import evaluate_formula_alternate
 from .alternate_state_processor import alternate_state_processor
@@ -18,13 +17,7 @@ from .cache import CacheConfig
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
 from .constants_alternate import identify_alternate_state_value
-from .constants_evaluation_results import (
-    RESULT_KEY_ERROR,
-    RESULT_KEY_STATE,
-    RESULT_KEY_SUCCESS,
-    RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
-    RESULT_KEY_VALUE,
-)
+from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_STATE, RESULT_KEY_UNAVAILABLE_DEPENDENCIES
 from .constants_formula import is_reserved_word
 from .dependency_parser import DependencyParser
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
@@ -40,6 +33,7 @@ from .evaluation_error_handlers import (
 )
 from .evaluator_cache import EvaluatorCache
 from .evaluator_config import CircuitBreakerConfig, RetryConfig
+from .evaluator_config_utils import EvaluatorConfigUtils
 from .evaluator_dependency import EvaluatorDependency
 from .evaluator_error_handler import EvaluatorErrorHandler
 from .evaluator_execution import FormulaExecutionEngine
@@ -59,6 +53,7 @@ from .evaluator_stats import (
     build_compilation_cache_stats as _build_compilation_cache_stats,
     get_enhanced_evaluation_stats as _get_enhanced_evaluation_stats,
 )
+from .evaluator_utilities import EvaluatorUtilities
 from .exceptions import (
     AlternateStateDetected,
     BackingEntityResolutionError,
@@ -249,6 +244,10 @@ class Evaluator(FormulaEvaluator):
         # This enables sensors to reference other sensors by name (e.g., base_power_sensor)
         # Future: This registry can be extended to support different data types (strings, dates, etc.)
         # Now managed by the SensorRegistryPhase
+
+        # Initialize utilities
+        self._utilities = EvaluatorUtilities(hass)
+        self._config_utils = EvaluatorConfigUtils(circuit_breaker_config, retry_config)
 
     @property
     def data_provider_callback(self) -> DataProviderCallback | None:
@@ -444,7 +443,9 @@ class Evaluator(FormulaEvaluator):
             config, context, sensor_config, bypass_dependency_management, resolution_result, eval_context, formula_name
         )
 
-    def _perform_variable_resolution(self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]) -> Any:
+    def _perform_variable_resolution(
+        self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]
+    ) -> Any:
         """Perform variable resolution with HA state detection."""
         try:
             _LOGGER.debug("Variable resolution start: formula=%s, context_keys=%s", config.formula, list(eval_context.keys()))
@@ -464,7 +465,13 @@ class Evaluator(FormulaEvaluator):
             traceback.print_exc()
             raise
 
-    def _handle_ha_state_detection(self, resolution_result: Any, config: FormulaConfig, eval_context: dict[str, ContextValue], sensor_config: SensorConfig | None) -> EvaluationResult | None:
+    def _handle_ha_state_detection(
+        self,
+        resolution_result: Any,
+        config: FormulaConfig,
+        eval_context: dict[str, ContextValue],
+        sensor_config: SensorConfig | None,
+    ) -> EvaluationResult | None:
         """Handle HA state detection results from variable resolution."""
         if not getattr(resolution_result, "has_ha_state", False):
             return None
@@ -495,8 +502,14 @@ class Evaluator(FormulaEvaluator):
         )
 
     def _choose_evaluation_strategy(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None,
-        bypass_dependency_management: bool, resolution_result: Any, eval_context: dict[str, ContextValue], formula_name: str
+        self,
+        config: FormulaConfig,
+        context: dict[str, ContextValue] | None,
+        sensor_config: SensorConfig | None,
+        bypass_dependency_management: bool,
+        resolution_result: Any,
+        eval_context: dict[str, ContextValue],
+        formula_name: str,
     ) -> EvaluationResult:
         """Choose between dependency-aware and normal evaluation."""
         if self._should_use_dependency_management(sensor_config, context, bypass_dependency_management, config):
@@ -783,7 +796,11 @@ class Evaluator(FormulaEvaluator):
         return handlers
 
     def _execute_handler_candidates(
-        self, candidates: list[Any], config: FormulaConfig, eval_context: dict[str, ContextValue], sensor_config: SensorConfig | None
+        self,
+        candidates: list[Any],
+        config: FormulaConfig,
+        eval_context: dict[str, ContextValue],
+        sensor_config: SensorConfig | None,
     ) -> bool | str | float | int | None:
         """Execute handler candidates until one succeeds."""
         try:
@@ -989,67 +1006,48 @@ class Evaluator(FormulaEvaluator):
     # Delegate cache operations to handler
     def clear_cache(self, formula_name: str | None = None) -> None:
         """Clear cache for specific formula or all formulas."""
-        self._cache_handler.clear_cache(formula_name)
+        self._config_utils.clear_cache(self._cache_handler, formula_name)
 
     def start_update_cycle(self) -> None:
         """Start a new evaluation update cycle."""
-        self._cache_handler.start_update_cycle()
+        self._config_utils.start_update_cycle(self._cache_handler)
 
     def end_update_cycle(self) -> None:
         """End current evaluation update cycle."""
-        self._cache_handler.end_update_cycle()
+        self._config_utils.end_update_cycle(self._cache_handler)
 
     def get_cache_stats(self) -> CacheStats:
         """Get cache statistics."""
-        cache_stats = self._cache_handler.get_cache_stats()
-        # Add error counts from the error handler
-        cache_stats["error_counts"] = self._error_handler.get_error_counts()
-        return cache_stats
+        return self._config_utils.get_cache_stats(self._cache_handler, self._error_handler)
 
     def clear_compiled_formulas(self) -> None:
-        """Clear all compiled formulas from cache.
-
-        This should be called when formulas change or during configuration reload
-        to ensure that formula modifications take effect.
-        """
-        # Clear compiled formulas in enhanced helper (handles all formulas)
-        if hasattr(self._enhanced_helper, "clear_compiled_formulas"):
-            self._enhanced_helper.clear_compiled_formulas()
+        """Clear all compiled formulas from cache."""
+        self._config_utils.clear_compiled_formulas(self._enhanced_helper)
 
     def get_compilation_cache_stats(self) -> dict[str, Any]:
-        """Get formula compilation cache statistics.
-
-        Returns:
-            Dictionary with compilation cache statistics from enhanced helper
-        """
-        return _build_compilation_cache_stats(self._enhanced_helper)
+        """Get formula compilation cache statistics."""
+        return self._config_utils.get_compilation_cache_stats(_build_compilation_cache_stats, self._enhanced_helper)
 
     def get_enhanced_evaluation_stats(self) -> dict[str, Any]:
-        """Get enhanced evaluation usage statistics.
-
-        Returns:
-            Dictionary with enhanced evaluation usage and cache statistics
-        """
-        return _get_enhanced_evaluation_stats(self._enhanced_helper)
+        """Get enhanced evaluation usage statistics."""
+        return self._config_utils.get_enhanced_evaluation_stats(_get_enhanced_evaluation_stats, self._enhanced_helper)
 
     # Configuration methods
     def get_circuit_breaker_config(self) -> CircuitBreakerConfig:
         """Get current circuit breaker configuration."""
-        return self._circuit_breaker_config
+        return self._config_utils.get_circuit_breaker_config()
 
     def get_retry_config(self) -> RetryConfig:
         """Get current retry configuration."""
-        return self._retry_config
+        return self._config_utils.get_retry_config()
 
     def update_circuit_breaker_config(self, config: CircuitBreakerConfig) -> None:
         """Update circuit breaker configuration."""
-        self._circuit_breaker_config = config
-        _LOGGER.debug("Updated circuit breaker config: threshold=%d", config.max_fatal_errors)
+        self._config_utils.update_circuit_breaker_config(config)
 
     def update_retry_config(self, config: RetryConfig) -> None:
         """Update retry configuration."""
-        self._retry_config = config
-        _LOGGER.debug("Updated retry config: max_attempts=%d, backoff=%f", config.max_attempts, config.backoff_seconds)
+        self._config_utils.update_retry_config(config)
 
     @property
     def dependency_management_phase(self) -> Any:
@@ -1059,34 +1057,17 @@ class Evaluator(FormulaEvaluator):
     def update_sensor_to_backing_mapping(self, sensor_to_backing_mapping: dict[str, str]) -> None:
         """Update the sensor-to-backing entity mapping for state token resolution."""
         self._sensor_to_backing_mapping = sensor_to_backing_mapping.copy()
-
-        # Update the Variable Resolution Phase (Phase 1) - this is where state token resolution happens
-        self._variable_resolution_phase.update_sensor_to_backing_mapping(
-            self._sensor_to_backing_mapping, self._data_provider_callback
-        )
-
-        # Update all other phases that depend on this mapping
-        self._pre_evaluation_phase.set_evaluator_dependencies(
-            self._hass,
+        self._utilities.update_sensor_to_backing_mapping(
+            sensor_to_backing_mapping,
+            self._variable_resolution_phase,
+            self._pre_evaluation_phase,
+            self._context_building_phase,
+            self._dependency_management_phase,
             self._data_provider_callback,
             self._dependency_handler,
             self._cache_handler,
             self._error_handler,
-            self._sensor_to_backing_mapping,
-            self._variable_resolution_phase,
-            self._dependency_management_phase,
-            self._context_building_phase,
         )
-
-        self._context_building_phase.set_evaluator_dependencies(
-            self._hass, self._data_provider_callback, self._dependency_handler, self._sensor_to_backing_mapping
-        )
-
-        self._dependency_management_phase.set_evaluator_dependencies(
-            self._dependency_handler,
-            self._sensor_to_backing_mapping,
-        )
-        _LOGGER.debug("Updated sensor-to-backing mapping: %d mappings", len(sensor_to_backing_mapping))
 
     # CROSS-SENSOR REFERENCE MANAGEMENT
     def register_sensor(self, sensor_name: str, entity_id: str, initial_value: float | str | bool = 0.0) -> None:
@@ -1126,13 +1107,4 @@ class Evaluator(FormulaEvaluator):
         Returns:
             The evaluated result
         """
-        # Create a temporary FormulaConfig for the expression
-        temp_config = FormulaConfig(id=f"temp_expression_{hash(expression)}", name="Temporary Expression", formula=expression)
-
-        # Evaluate the expression using the main evaluation pipeline
-        result = self.evaluate_formula(temp_config, context)
-
-        result_dict = cast(dict[str, Any], result)
-        if result_dict[RESULT_KEY_SUCCESS]:
-            return cast(StateType, result_dict[RESULT_KEY_VALUE])
-        raise ValueError(f"Failed to evaluate expression '{expression}': {result.get('error', 'Unknown error')}")
+        return self._utilities.evaluate_expression_callback(expression, context, self.evaluate_formula)

@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from .alternate_state_processor import alternate_state_processor
-from .constants_alternate import identify_alternate_state_value
+from .alternate_state_utils import detect_alternate_state_value
 from .evaluator_helpers import EvaluatorHelpers
 from .evaluator_results import EvaluatorResults
 from .exceptions import DataValidationError, MissingDependencyError, SensorMappingError
@@ -61,14 +61,7 @@ def handle_alternate_state_detection(result: Any) -> tuple[bool, str | bool]:
     Returns:
         tuple: (is_alternate_state, alternate_state_value)
     """
-    try:
-        alt = identify_alternate_state_value(result)
-    except Exception:
-        alt = False
-
-    if isinstance(alt, str):
-        return True, alt
-    return False, alt
+    return detect_alternate_state_value(result)
 
 
 def handle_evaluation_exception(e: Exception, config: Any, formula_name: str) -> None:

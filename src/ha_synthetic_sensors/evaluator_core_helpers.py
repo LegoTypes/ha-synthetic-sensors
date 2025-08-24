@@ -72,6 +72,7 @@ def evaluate_with_dependency_management(
 ) -> EvaluationResult:
     """Evaluate a formula using dependency manager (extracted helper).
 
+
     This function encapsulates the logic of building a complete context via
     the generic dependency manager and then evaluating the formula.
     """

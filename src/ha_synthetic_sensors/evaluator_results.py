@@ -4,7 +4,7 @@ from typing import Any, cast
 
 from homeassistant.const import STATE_UNKNOWN
 
-from .constants_alternate import identify_alternate_state_value
+from .alternate_state_utils import detect_alternate_state_value
 from .constants_evaluation_results import (
     ERROR_RESULT_KEYS,
     RESULT_KEY_ERROR,
@@ -108,11 +108,8 @@ class EvaluatorResults:
             return EvaluatorResults.create_success_result(float(result))
         # If the result is a string that represents an HA alternate state, preserve HA semantics
         if isinstance(result, str):
-            try:
-                alt = identify_alternate_state_value(result)
-            except Exception:
-                alt = False
-            if isinstance(alt, str):
+            is_alternate, _ = detect_alternate_state_value(result)
+            if is_alternate:
                 # Preserve original HA state and no numeric value
                 return EvaluatorResults.create_success_from_ha_state(result, None)
 

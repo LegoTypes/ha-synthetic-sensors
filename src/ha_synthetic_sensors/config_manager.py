@@ -1,8 +1,8 @@
 """
-Configuration Manager - Core configuration loading and management.
+Configuration Manager - Main orchestration and public API.
 
-This module provides the ConfigManager class for loading, parsing, and managing
-YAML-based synthetic sensor configuration.
+This module provides the ConfigManager class as the main entry point for
+configuration management, delegating to specialized components.
 """
 
 from __future__ import annotations
@@ -222,106 +222,6 @@ class ConfigManager:
         if duplicates:
             duplicate_list = ", ".join(duplicates)
             raise ConfigEntryError(f"Duplicate sensor keys found in YAML: {duplicate_list}")
-
-    def _extract_sensor_keys_from_yaml(self, yaml_content: str) -> list[str]:
-        """Extract sensor keys from raw YAML content.
-
-        Args:
-            yaml_content: Raw YAML content string
-
-        Returns:
-            List of sensor keys found in the YAML
-        """
-        lines = yaml_content.split("\n")
-        sensor_keys = []
-        in_sensors_section = False
-
-        for line in lines:
-            if self._is_sensors_section_start(line):
-                in_sensors_section = True
-                continue
-
-            if not in_sensors_section:
-                continue
-
-            if self._should_skip_line(line):
-                continue
-
-            if self._is_end_of_sensors_section(line):
-                break
-
-            sensor_key = self._extract_sensor_key_from_line(line)
-            if sensor_key:
-                sensor_keys.append(sensor_key)
-
-        return sensor_keys
-
-    def _is_sensors_section_start(self, line: str) -> bool:
-        """Check if line marks the start of sensors section."""
-        return line.strip() == "sensors:"
-
-    def _should_skip_line(self, line: str) -> bool:
-        """Check if line should be skipped during parsing."""
-        stripped = line.strip()
-        return not stripped or stripped.startswith("#")
-
-    def _is_end_of_sensors_section(self, line: str) -> bool:
-        """Check if we've reached the end of the sensors section."""
-        stripped = line.strip()
-        return bool(stripped and not line.startswith(" "))
-
-    def _extract_sensor_key_from_line(self, line: str) -> str | None:
-        """Extract sensor key from a YAML line if it represents a sensor definition.
-
-        Args:
-            line: A line from the YAML content
-
-        Returns:
-            Sensor key if found, None otherwise
-        """
-        if ":" not in line:
-            return None
-
-        # Only process lines that appear to define keys (end with : or have : followed by content)
-        if not (line.strip().endswith(":") or ":" in line.split("#")[0]):
-            return None
-
-        # Count leading spaces to determine indentation level
-        leading_spaces = len(line) - len(line.lstrip())
-
-        # Sensor keys should be at the first indentation level (2 spaces)
-        # Nested properties like "metadata:" are at deeper levels
-        if leading_spaces != 2:
-            return None
-
-        # Extract the key (everything before the colon, trimmed)
-        key = line.split(":")[0].strip()
-        if key and key != "sensors":
-            return key
-
-        return None
-
-    def _check_for_duplicate_sensor_keys(self, sensor_keys: list[str]) -> None:
-        """Check for duplicate sensor keys and raise error if found.
-
-        Args:
-            sensor_keys: List of sensor keys to check
-
-        Raises:
-            ConfigEntryError: If duplicate keys are found
-        """
-        seen_keys = set()
-        duplicates = set()
-
-        for key in sensor_keys:
-            if key in seen_keys:
-                duplicates.add(key)
-            else:
-                seen_keys.add(key)
-
-        if duplicates:
-            duplicate_list = sorted(duplicates)
-            raise ConfigEntryError(f"Duplicate sensor keys found in YAML: {', '.join(duplicate_list)}")
 
         # Note: Duplicate attributes and variables within sensors will be checked
         # during the parsed config validation phase, not in raw YAML validation
