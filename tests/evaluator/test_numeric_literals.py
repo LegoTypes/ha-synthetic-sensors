@@ -254,8 +254,7 @@ class TestNumericLiterals:
         # Missing entities are now treated as non-fatal and result in unknown state
         result = evaluator.evaluate_formula(config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
-        # Accept either STATE_UNKNOWN or 'unknown'
-        # `STATE_UNKNOWN` equals the string 'unknown' — compare to the constant only for clarity
+        # Prefer the HA constant for alternate-state assertions
         from homeassistant.const import STATE_UNKNOWN
 
         assert result.get("state") == STATE_UNKNOWN  # Reflects missing dependency as unknown

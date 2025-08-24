@@ -19,6 +19,7 @@ from typing import Any, TypedDict
 from homeassistant.exceptions import ConfigEntryError
 import jsonschema
 
+from .boolean_states import BooleanStates
 from .constants_formula import FORMULA_RESERVED_WORDS
 from .constants_metadata import (
     METADATA_PROPERTY_DEVICE_CLASS,
@@ -833,8 +834,6 @@ class SchemaValidator:
         tokens = tokenize_formula(formula)
 
         # Get boolean state names for validation
-        from .boolean_states import BooleanStates
-
         boolean_names = set(BooleanStates.get_all_boolean_names().keys())
 
         # Fallback list of common boolean states in case HA constants are not fully loaded

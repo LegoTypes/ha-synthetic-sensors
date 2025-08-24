@@ -140,7 +140,7 @@ class TestFormulaEvaluation:
         result = evaluator.evaluate_formula(config, context)
         # Current implementation: undefined variables treated as alternate states
         assert result["success"] is True
-        assert result.get("state") in (STATE_UNKNOWN, "unknown")
+        assert result.get("state") == STATE_UNKNOWN
         assert result["value"] is None
 
     def test_complex_formulas(self, mock_hass, mock_entity_registry, mock_states):

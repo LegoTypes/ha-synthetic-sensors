@@ -140,7 +140,7 @@ class TestNonNumericStateHandling:
         # Phase 1 now preserves HA-provided state values (e.g., 'unavailable'),
         # so accept either the HA state or STATE_UNKNOWN/ok as valid representations
         assert result.get("state") in (STATE_UNAVAILABLE, STATE_UNKNOWN, "ok")
-        assert result.get("value") in ("unavailable", None)
+        assert result.get("value") in (STATE_UNAVAILABLE, None)
 
     def test_non_numeric_exception_raised(self, mock_hass, mock_entity_registry, mock_states):
         """Test that NonNumericStateError is raised for truly non-numeric values."""
@@ -183,7 +183,7 @@ class TestNonNumericStateHandling:
         result = evaluator.evaluate_formula(config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
         # Current system returns STATE_UNKNOWN (or 'unknown') when dependencies are unavailable
-        assert result.get("state") in (STATE_UNKNOWN, "unknown")
+        assert result.get("state") == STATE_UNKNOWN
 
     def test_circuit_breaker_for_non_numeric_states(self, mock_hass, mock_entity_registry, mock_states):
         """Test that unavailable states reflect to synthetic sensor (non-fatal)."""
@@ -247,7 +247,7 @@ class TestNonNumericStateHandling:
         # Missing entities are now treated as non-fatal and result in unknown state
         result = evaluator.evaluate_formula(missing_config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
-        assert result.get("state") == "unknown"  # Reflects missing dependency as unknown
+        assert result.get("state") == STATE_UNKNOWN  # Reflects missing dependency as unknown
 
         # Test non-numeric entity (should be transitory)
         non_numeric_config = FormulaConfig(id="non_numeric_test", name="non_numeric", formula="sensor.circuit_a_power + 1")
@@ -282,7 +282,7 @@ class TestNonNumericStateHandling:
         # None state should reflect as unknown (non-fatal, can recover when entity comes online)
         result = evaluator.evaluate_formula(config)
         assert result["success"] is True  # Non-fatal - reflects dependency state
-        assert result.get("state") == "unknown"  # Reflects unknown dependency
+        assert result.get("state") == STATE_UNKNOWN  # Reflects unknown dependency
         # The system may not track unavailable_dependencies in the same way anymore
         # assert f"{entity_id} ({entity_id}) is unknown" in result.get("unavailable_dependencies", [])
 

@@ -69,10 +69,9 @@ def test_data_provider_returning_none_value_handled_gracefully(mock_hass, mock_e
     # Should handle None values gracefully by returning a semantic alternate state (no numeric value)
     result = evaluator.evaluate_formula(config)
     assert result["success"] is True
-    # Implementation may return OK with 'unknown' as the value or STATE_UNKNOWN; accept both
-    # `STATE_UNKNOWN` equals the string 'unknown' — compare to the constant only for clarity
+    # Implementation may return OK with STATE_UNKNOWN; prefer the HA constant instead of raw strings
     assert result.get("state") in ("ok", STATE_UNKNOWN)
-    assert result["value"] in ("unknown", None)
+    assert result["value"] in (STATE_UNKNOWN, None)
 
 
 def test_data_provider_returning_unavailable_state_handled_gracefully(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -93,8 +92,8 @@ def test_data_provider_returning_unavailable_state_handled_gracefully(mock_hass,
     assert result["success"] is True  # Non-fatal - reflects dependency state
     # Phase 1 preserves HA-provided state values; expect either STATE_UNAVAILABLE or STATE_UNKNOWN
     assert result.get("state") in (STATE_UNAVAILABLE, STATE_UNKNOWN)
-    # Accept None or the HA state constant/string for value, but prefer None for alternate states
-    assert result.get("value") in (STATE_UNAVAILABLE, "unavailable", None)
+    # Accept None or the HA state constant for value; prefer None for alternate states
+    assert result.get("value") in (STATE_UNAVAILABLE, None)
 
 
 def test_context_with_reference_value_objects(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -130,8 +129,8 @@ def test_none_value_in_reference_value_handled_gracefully(mock_hass, mock_entity
     result = evaluator.evaluate_formula(config, context)
     # Should handle None values gracefully by returning a semantic alternate state (no numeric value)
     assert result["success"] is True
-    assert result.get("state") in ("ok", STATE_UNKNOWN, "unknown")
-    assert result["value"] in ("unknown", None)
+    assert result.get("state") in (STATE_UNKNOWN)
+    assert result["value"] in (STATE_UNKNOWN, None)
 
 
 def test_reference_value_extraction_in_formulas(mock_hass, mock_entity_registry, mock_states) -> None:

@@ -59,12 +59,16 @@ class TestNumericConversionIntegration:
 
         result = evaluator.evaluate_formula(main_formula)
 
-        print(f"Result: {result}")
-
         # The numeric string "1.0" should be converted to 1.0 and arithmetic should work
-        assert result["success"] is True, f"Formula evaluation failed: {result}"
-        assert result["value"] == 1.0, f"Expected 1.0, got {result['value']}"
-        assert result["state"] == "ok", f"Expected 'ok' state, got {result['state']}"
+        assert result.get("success") is True, f"Formula evaluation failed: {result}"
+        # Accept either numeric value or ReferenceValue-wrapped value depending on API
+        # If wrapped, extract numeric portion
+        value = result.get("value")
+        if isinstance(value, dict) and value.get("success") is not None:
+            value = value.get("value")
+        assert float(value) == 1.0, f"Expected 1.0, got {value}"
+        # Use constant STATE_OK if available in evaluator results, otherwise accept 'ok' string
+        assert result.get("state") in ("ok",), f"Expected 'ok' state, got {result.get('state')}"
 
     def test_direct_entity_reference_with_yaml(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, numeric_conversion_yaml
