@@ -29,14 +29,12 @@ class TestNonNumericStateHandling:
         # Test with direct entity resolution
         config = FormulaConfig(id="test_boolean_conversion", name="test", formula="switch.test + 1")
 
-        # Current behavior: "on" string causes type error in mathematical operation
+        # New behavior: "on" boolean state is converted to 1.0, so 1.0 + 1 = 2.0
         result = evaluator.evaluate_formula(config)
-        # Type errors should be treated as alternate states: success True, no numeric value
+        # Boolean states should now work correctly in mathematical operations
         assert result["success"] is True
-        # Accept either the HA constant STATE_UNKNOWN or the string 'unknown' depending on API
-        # `STATE_UNKNOWN` equals the string 'unknown' — compare to the constant only for clarity
-        assert result.get("state") == STATE_UNKNOWN
-        assert result.get("value") is None  # No numeric result
+        assert result.get("state") == "ok"  # Successful evaluation
+        assert result.get("value") == 2.0  # 1.0 (from 'on') + 1 = 2.0
 
         # Verify it called the right entity
         mock_hass.states.get.assert_called_with("switch.test")

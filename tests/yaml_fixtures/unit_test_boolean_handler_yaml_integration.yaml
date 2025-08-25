@@ -55,3 +55,12 @@ sensors:
     formula: "binary_sensor.test_direct == on"  # Direct binary_sensor entity reference comparison
     metadata:
       device_class: "safety"
+
+  variable_binary_test:
+    name: "Variable Binary Test"
+    formula: "test_sensor == on"  # Variable comparison with unquoted 'on'
+    variables:
+      test_sensor:
+        formula: "binary_sensor.test_direct == on"  # Formula that tests boolean
+    metadata:
+      device_class: "safety"

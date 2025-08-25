@@ -86,7 +86,7 @@ class TestBooleanHandlerIntegration:
                 yaml_content = f.read()
 
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-            assert result["sensors_imported"] == 5
+            assert result["sensors_imported"] == 6
 
             # Set up sensor manager to test boolean handler features
             sensor_manager = await async_setup_synthetic_sensors(
@@ -101,7 +101,7 @@ class TestBooleanHandlerIntegration:
 
             # Test that sensors were created and use proper Python operators
             sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            assert len(sensors) == 5
+            assert len(sensors) == 6
 
             # Find specific sensors and verify their formulas
             door_lock_and_sensor = next((s for s in sensors if s.unique_id == "door_lock_and"), None)
@@ -175,6 +175,16 @@ class TestBooleanHandlerIntegration:
             assert direct_binary_entity is not None, "Direct binary test sensor entity not found"
             assert direct_binary_entity.native_value == 1.0, (
                 f"Direct binary test sensor should be 1.0, got {direct_binary_entity.native_value}"
+            )
+
+            # variable_binary_test: test_sensor == on -> 0.0 (FAILING CASE - RUNTIME EVALUATION BUG)
+            # (test_sensor variable formula: binary_sensor.test_direct == on should evaluate to True but doesn't)
+            # (main formula: test_sensor == on -> False == True -> False -> 0.0)
+            # This demonstrates the bug in computed variable runtime evaluation with boolean equality
+            variable_binary_entity = entity_lookup.get("variable_binary_test")
+            assert variable_binary_entity is not None, "Variable binary test sensor entity not found"
+            assert variable_binary_entity.native_value == 1.0, (
+                f"Variable binary test sensor should be 1.0 but is {variable_binary_entity.native_value} - this demonstrates the bug in variable formula boolean equality"
             )
 
             # Verify all sensors have valid values
