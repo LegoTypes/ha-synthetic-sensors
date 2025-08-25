@@ -148,7 +148,7 @@ class VariableResolutionPhase:
         # STEP 8.5: Resolve entity references even without sensor config
         # This is needed for formulas like "switch.test + 1" to work in tests and simple evaluations
         resolved_formula, entity_mappings_from_entities, ha_deps_from_entities = self._resolve_entity_references_with_tracking(
-            resolved_formula, eval_context
+            resolved_formula, eval_context, sensor_config
         )
         # Collect dependencies from entity resolution
         unavailable_dependencies.extend(ha_deps_from_entities)
@@ -600,8 +600,62 @@ class VariableResolutionPhase:
 
         return str(actual_value)
 
+    def _replace_entity_reference(
+        self,
+        match: re.Match[str],
+        eval_context: dict[str, ContextValue],
+        sensor_config: SensorConfig | None,
+        entity_mappings: dict[str, str],
+        ha_dependencies: list[HADependency],
+    ) -> str:
+        """Replace a single entity reference with its resolved value."""
+        domain = match.group(1)
+        entity_name = match.group(2)
+        entity_id = f"{domain}.{entity_name}"
+        _LOGGER.debug("Entity reference match: domain='%s', entity_name='%s', entity_id='%s'", domain, entity_name, entity_id)
+
+        # Check if this entity reference is already defined as a variable in the formula config
+        # If so, leave it as is to avoid conflicts with variable resolution
+        if sensor_config and sensor_config.formulas:
+            for formula_config in sensor_config.formulas:
+                if formula_config.variables:
+                    for var_value in formula_config.variables.items():
+                        if isinstance(var_value, str) and var_value == entity_id:
+                            return entity_id
+
+        # First check if already resolved in context (try variable name)
+        var_name = entity_id.replace(".", "_").replace("-", "_")
+        if var_name in eval_context:
+            value = eval_context[var_name]
+            # Only return the variable name if it's already resolved (not a raw entity ID)
+            if value != entity_id:
+                entity_mappings[var_name] = entity_id
+                # Process the value for dependency tracking but return the variable name for substitution
+                self._process_resolved_entity_value(value, var_name, entity_id, ha_dependencies)
+                return var_name
+
+        # Check if already resolved in context (try entity ID directly)
+        if entity_id in eval_context:
+            value = eval_context[entity_id]
+            # Only return the variable name if it's already resolved (not a raw entity ID)
+            if value != entity_id:
+                entity_mappings[entity_id] = entity_id
+                # Process the value for dependency tracking but return the variable name for substitution
+                self._process_resolved_entity_value(value, entity_id, entity_id, ha_dependencies)
+                return var_name
+
+        # Use the resolver factory to resolve the entity reference
+        resolved_value = self._resolver_factory.resolve_variable(entity_id, entity_id, eval_context)
+        if resolved_value is not None:
+            entity_mappings[entity_id] = entity_id
+            # Process the value for dependency tracking but return the variable name for substitution
+            self._process_resolved_entity_value(resolved_value, entity_id, entity_id, ha_dependencies)
+            return var_name
+
+        raise MissingDependencyError(f"Failed to resolve entity reference '{entity_id}' in formula")
+
     def _resolve_entity_references_with_tracking(
-        self, formula: str, eval_context: dict[str, ContextValue]
+        self, formula: str, eval_context: dict[str, ContextValue], sensor_config: SensorConfig | None = None
     ) -> tuple[str, dict[str, str], list[HADependency]]:
         """Resolve entity references and track variable to entity mappings and HA states."""
         # Exclude state.attribute patterns and variable.attribute patterns where first part is not an entity domain
@@ -624,52 +678,7 @@ class VariableResolutionPhase:
         ha_dependencies: list[HADependency] = []
 
         def replace_entity_ref(match: re.Match[str]) -> str:
-            domain = match.group(1)
-            entity_name = match.group(2)
-            entity_id = f"{domain}.{entity_name}"
-            _LOGGER.debug(
-                "Entity reference match: domain='%s', entity_name='%s', entity_id='%s'", domain, entity_name, entity_id
-            )
-
-            # First check if already resolved in context (try variable name)
-            var_name = entity_id.replace(".", "_").replace("-", "_")
-            _LOGGER.debug("DEBUG: Checking for var_name '%s' in context", var_name)
-            if var_name in eval_context:
-                value = eval_context[var_name]
-                _LOGGER.debug("DEBUG: Found var_name '%s' in context with value %s", var_name, value)
-                # Only return the variable name if it's already resolved (not a raw entity ID)
-                if value != entity_id:
-                    entity_mappings[var_name] = entity_id
-                    # Process the value for dependency tracking but return the variable name for substitution
-                    self._process_resolved_entity_value(value, var_name, entity_id, ha_dependencies)
-                    _LOGGER.debug("DEBUG: Returning var_name '%s' for substitution", var_name)
-                    return var_name
-
-            # Check if already resolved in context (try entity ID directly)
-            _LOGGER.debug("DEBUG: Checking for entity_id '%s' in context", entity_id)
-            if entity_id in eval_context:
-                value = eval_context[entity_id]
-                _LOGGER.debug("DEBUG: Found entity_id '%s' in context with value %s", entity_id, value)
-                # Only return the variable name if it's already resolved (not a raw entity ID)
-                if value != entity_id:
-                    entity_mappings[entity_id] = entity_id
-                    # Process the value for dependency tracking but return the variable name for substitution
-                    self._process_resolved_entity_value(value, entity_id, entity_id, ha_dependencies)
-                    _LOGGER.debug("DEBUG: Returning var_name '%s' for substitution", var_name)
-                    return var_name
-
-            # Use the resolver factory to resolve the entity reference
-            _LOGGER.debug("DEBUG: Using resolver factory to resolve entity_id '%s'", entity_id)
-            resolved_value = self._resolver_factory.resolve_variable(entity_id, entity_id, eval_context)
-            if resolved_value is not None:
-                _LOGGER.debug("DEBUG: Resolved entity_id '%s' to value %s", entity_id, resolved_value)
-                entity_mappings[entity_id] = entity_id
-                # Process the value for dependency tracking but return the variable name for substitution
-                self._process_resolved_entity_value(resolved_value, entity_id, entity_id, ha_dependencies)
-                _LOGGER.debug("DEBUG: Returning var_name '%s' for substitution", var_name)
-                return var_name
-
-            raise MissingDependencyError(f"Failed to resolve entity reference '{entity_id}' in formula")
+            return self._replace_entity_reference(match, eval_context, sensor_config, entity_mappings, ha_dependencies)
 
         _LOGGER.debug("Resolving entity references in formula: '%s'", formula)
         had_entity_tokens = entity_pattern.search(formula) is not None
@@ -727,7 +736,7 @@ class VariableResolutionPhase:
         ha_deps_from_entities: list[HADependency] = []
         # Perform tracking without substituting values into the formula
         _, entity_mappings_from_entities, ha_deps_from_entities = self._resolve_entity_references_with_tracking(
-            resolved_formula, eval_context
+            resolved_formula, eval_context, None
         )
 
         # Additionally, pre-register dotted entity references found in the formula into context
@@ -888,7 +897,7 @@ class VariableResolutionPhase:
         self, formula: str, eval_context: dict[str, ContextValue], existing_mappings: dict[str, str]
     ) -> tuple[str, dict[str, str], list[HADependency], dict[str, str]]:
         """Resolve simple variable references with first-class EntityReference support."""
-        # NEW APPROACH: Don't extract values from ReferenceValue objects
+        # Don't extract values from ReferenceValue objects
         # Keep the original variable names in the formula and let handlers access ReferenceValue objects from context
         # Same negative look-ahead to avoid variable.attribute premature resolution
         variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)(?!\.)\b")
@@ -927,7 +936,7 @@ class VariableResolutionPhase:
                             ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
                             entity_mappings[var_name] = entity_id
 
-                    # NEW APPROACH: Keep the variable name in the formula
+                    # Keep the variable name in the formula
                     # Handlers will access the ReferenceValue objects from context
                     return var_name
 
@@ -945,13 +954,13 @@ class VariableResolutionPhase:
                         ha_dependencies.append(HADependency(var=var_name, entity_id=entity_id, state=str(value)))
                         entity_mappings[var_name] = entity_id
 
-                # NEW APPROACH: Keep the variable name in the formula
+                # Keep the variable name in the formula
                 return var_name
 
             # Variable not found in context - this will be handled by the evaluator as a missing dependency
             return var_name
 
-        # NEW APPROACH: Don't modify the formula, just validate variables exist
+        # Don't modify the formula, just validate variables exist
         # The original formula is returned unchanged, handlers get values from context
         validated_formula = variable_pattern.sub(validate_variable_ref, formula)
 

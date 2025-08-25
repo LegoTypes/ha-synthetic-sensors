@@ -623,15 +623,15 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             return
 
         if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict.get(RESULT_KEY_STATE) == EVAL_STATE_UNKNOWN:
-            # Handle case where evaluation succeeded but dependencies are unavailable
-            # Set sensor to unknown state per design guide
-            # Preserve a non-None native_value to avoid breaking downstream consumers/tests
-            # Use previous value if present, otherwise default to 0.0
-            self._attr_native_value = self._attr_native_value if self._attr_native_value is not None else 0.0
-            self._attr_available = False
+            # Handle case where evaluation succeeded but dependencies are unknown
+            # Keep sensor available but with unknown state - this allows the sensor to show as "unknown" in Home Assistant UI
+            # Only fatal errors (like MissingDependencyError) should make sensors unavailable
+            # Set native_value to None to properly represent unknown state
+            self._attr_native_value = None
+            self._attr_available = True  # Keep sensor available but with unknown state
             self._last_update = datetime.now()
             _LOGGER.debug(
-                "Sensor %s set to unknown due to unavailable dependencies - result: %s",
+                "Sensor %s set to unknown state but kept available - result: %s",
                 self.entity_id,
                 main_result_dict,
             )

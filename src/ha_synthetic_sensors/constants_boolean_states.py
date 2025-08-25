@@ -81,10 +81,9 @@ def get_core_true_states() -> set[Any]:
     Only includes universal HA boolean states, not domain-specific states
     that should remain as strings (like lock states, cover states, etc.).
     """
-    # Core HA fundamental boolean states only
+    # Core HA fundamental boolean states only (exclude device tracker states)
     ha_basic_states = {
         _get_constant("STATE_ON"),
-        _get_constant("STATE_HOME"),  # Device tracker: home
     }
 
     # Only add truly generic boolean representations
@@ -100,10 +99,9 @@ def get_core_false_states() -> set[Any]:
     Only includes universal HA boolean states, not domain-specific states
     that should remain as strings (like lock states, cover states, etc.).
     """
-    # Core HA fundamental boolean states only
+    # Core HA fundamental boolean states only (exclude device tracker states)
     ha_basic_states = {
         _get_constant("STATE_OFF"),
-        _get_constant("STATE_NOT_HOME"),  # Device tracker: not_home
     }
 
     # Only add truly generic boolean representations
