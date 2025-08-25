@@ -201,13 +201,14 @@ def _convert_boolean_state(state_value: str, entity_id: str, hass_state: Any = N
     """
     state_str = str(state_value).lower()
 
-    # For boolean comparisons, preserve the original string value
-    # SimpleEval will handle the boolean comparisons natively
-    if state_str in TRUE_STATES or state_str in FALSE_STATES:
-        _LOGGER.debug("Entity resolver: preserving '%s' as string for SimpleEval boolean comparison", entity_id)
-        return state_value  # Return original string, not numeric conversion
-
-    # For non-boolean states, also preserve as string for SimpleEval to handle
+    # Convert boolean states to numeric values for proper comparison
+    # This ensures that comparisons like "binary_sensor.test == on" work correctly
+    if state_str in TRUE_STATES:
+        _LOGGER.debug("Entity resolver: converting '%s' to 1.0 for boolean comparison", entity_id)
+        return 1.0  # Convert true states to 1.0
+    if state_str in FALSE_STATES:
+        _LOGGER.debug("Entity resolver: converting '%s' to 0.0 for boolean comparison", entity_id)
+        return 0.0  # Convert false states to 0.0
     _LOGGER.debug("Entity resolver: preserving '%s' as string for SimpleEval comparison", entity_id)
     return state_value  # Return original string for SimpleEval to handle
 

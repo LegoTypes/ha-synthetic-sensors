@@ -216,7 +216,7 @@ class StateResolver(VariableResolver):
             # Return ReferenceValue for numeric state
             return ReferenceValue(reference=entity_id or "unknown", value=numeric_value)
         except (ValueError, TypeError):
-            # Handle boolean-like states (on/off, true/false, etc.)
+            # Handle boolean-like states using centralized constants
             if isinstance(state_value, str):
                 state_lower = state_value.lower()
                 if state_lower in ("on", "true", "open", "locked", "home", "detected"):

@@ -442,8 +442,9 @@ def mock_hass(mock_entity_registry, mock_states, monkeypatch):
 
     # Patch get_ha_domains for entity resolution and collection functions
     # This ensures that entity domain resolution works in integration tests
+    # Patch in shared_constants since that's where EntityAttributeResolver imports it from
     monkeypatch.setattr(
-        "ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resolution_phase.get_ha_domains",
+        "ha_synthetic_sensors.shared_constants.get_ha_domains",
         lambda _h: frozenset({"sensor", "binary_sensor", "switch", "light", "climate", "cover", "fan", "device_tracker"}),
     )
 

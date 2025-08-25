@@ -9,6 +9,7 @@ import ast
 from enum import Enum
 import re
 
+from ..constants_boolean_states import get_core_false_states, get_core_true_states
 from ..shared_constants import BUILTIN_TYPES, METADATA_FUNCTIONS
 
 # Standard Python keywords and built-in functions that should be excluded
@@ -136,6 +137,14 @@ class FormulaVariableExtractor:
 
         # Add Home Assistant specific tokens that should be excluded
         exclusions.update({"state", "states", "entity", "attributes"})
+
+        # Add Home Assistant boolean state constants (on, off, home, not_home, etc.)
+        # These should not be treated as variables in computed variable validation
+        boolean_states: set[str] = set()
+        # Convert to strings to handle both string and constant values
+        boolean_states.update(str(state) for state in get_core_true_states())
+        boolean_states.update(str(state) for state in get_core_false_states())
+        exclusions.update(boolean_states)
 
         return exclusions
 

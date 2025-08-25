@@ -317,6 +317,197 @@ class TestMetadataFunctionIntegration:
             mock_states.clear()
             mock_states.update(original_states)
 
+    @pytest.mark.asyncio
+    async def test_metadata_state_token_in_computed_variables_startup_fix(
+        self,
+        mock_hass,
+        mock_entity_registry,
+        mock_states,
+        mock_device_registry,
+        mock_config_entry,
+        mock_async_add_entities,
+    ):
+        """Test that computed variables with metadata(state, ...) work during startup.
+
+        This test specifically covers the fix for the issue where computed variables
+        containing metadata(state, 'last_valid_state') would fail during startup with:
+        'State token cannot be resolved: no backing entity mapping, no sensor entity_id, and no previous value available'
+
+        The fix ensures that state tokens inside metadata function parameters are not
+        processed by variable resolution, allowing metadata processing to handle them properly.
+        """
+
+        # Set up required entities
+        required_entities = {
+            "sensor.test_backing_entity": {"state": "1000.0", "attributes": {"unit_of_measurement": "W"}},
+        }
+
+        # Set up virtual backing entity data
+        backing_data = {
+            "sensor.test_backing_entity": 1000.0,
+        }
+
+        # Define YAML file path and expected sensor count
+        yaml_file_path = "tests/fixtures/integration/metadata_state_token_startup_fix.yaml"
+        expected_sensor_count = 2  # Count of sensors in the YAML file
+        device_identifier = "test_device_metadata_state_fix"
+
+        # Create data provider for virtual backing entities
+        def create_data_provider_callback(backing_data: dict[str, any]):
+            def data_provider(entity_id: str):
+                return {"value": backing_data.get(entity_id), "exists": entity_id in backing_data}
+
+            return data_provider
+
+        data_provider_callback = create_data_provider_callback(backing_data)
+
+        # Create sensor-to-backing mapping for 'state' token resolution
+        sensor_to_backing_mapping = {
+            "metadata_state_computed_variable_test": "sensor.test_backing_entity",
+            "metadata_state_attribute_test": "sensor.test_backing_entity",
+        }
+
+        # Save original state for cleanup
+        original_entities = dict(mock_entity_registry._entities)
+        original_states = dict(mock_states)
+
+        try:
+            # Register required entities
+            for entity_id, data in required_entities.items():
+                mock_entity_registry.register_entity(entity_id, entity_id, "sensor")
+                mock_states.register_state(entity_id, data["state"], data["attributes"])
+
+            # Set up storage manager
+            with (
+                patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+                patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+            ):
+                # Standard mock setup
+                mock_store = AsyncMock()
+                mock_store.async_load.return_value = None
+                MockStore.return_value = mock_store
+                MockDeviceRegistry.return_value = mock_device_registry
+
+                # Create storage manager
+                storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+                storage_manager._store = mock_store
+                await storage_manager.async_load()
+
+                # Create sensor set
+                sensor_set_id = "test_sensor_set_state_fix"
+                await storage_manager.async_create_sensor_set(
+                    sensor_set_id=sensor_set_id, device_identifier=device_identifier, name="Test Sensor Set State Fix"
+                )
+
+                # Load YAML configuration
+                with open(yaml_file_path) as f:
+                    yaml_content = f.read()
+
+                result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+
+                # ASSERTION 1: YAML import must succeed
+                assert result["sensors_imported"] == expected_sensor_count, (
+                    f"YAML import failed: expected {expected_sensor_count} sensors, "
+                    f"got {result['sensors_imported']}. Result: {result}"
+                )
+
+                # Set up synthetic sensors - this is where the bug would have occurred
+                # The fix ensures that metadata(state, ...) in computed variables doesn't trigger
+                # state resolution during sensor creation
+                sensor_manager = await async_setup_synthetic_sensors(
+                    hass=mock_hass,
+                    config_entry=mock_config_entry,
+                    async_add_entities=mock_async_add_entities,
+                    storage_manager=storage_manager,
+                    sensor_to_backing_mapping=sensor_to_backing_mapping,
+                    data_provider_callback=data_provider_callback,
+                )
+
+                # ASSERTION 2: Sensor manager must be created successfully
+                assert sensor_manager is not None, "Sensor manager creation failed - the startup fix didn't work"
+
+                # ASSERTION 3: Entities must be added to HA
+                assert mock_async_add_entities.call_args_list, (
+                    "async_add_entities was never called - sensor creation failed during startup"
+                )
+
+                # Get all created entities
+                all_entities = []
+                for call in mock_async_add_entities.call_args_list:
+                    entities_list = call.args[0] if call.args else []
+                    all_entities.extend(entities_list)
+
+                # Set hass attribute on all entities
+                for entity in all_entities:
+                    entity.hass = mock_hass
+
+                # Add synthetic sensors to mock states
+                from datetime import datetime, timezone
+
+                for entity in all_entities:
+                    if hasattr(entity, "entity_id") and entity.entity_id:
+                        mock_state = type(
+                            "MockState",
+                            (),
+                            {
+                                "state": str(entity.native_value) if entity.native_value is not None else "unknown",
+                                "attributes": getattr(entity, "extra_state_attributes", {}) or {},
+                            },
+                        )()
+                        mock_state.entity_id = entity.entity_id
+                        mock_state.object_id = entity.entity_id.split(".")[-1] if "." in entity.entity_id else entity.entity_id
+                        mock_state.domain = entity.entity_id.split(".")[0] if "." in entity.entity_id else "sensor"
+                        mock_state.last_changed = datetime.now(timezone.utc)
+                        mock_state.last_updated = datetime.now(timezone.utc)
+                        mock_states[entity.entity_id] = mock_state
+
+                # Update sensors to trigger evaluation
+                await sensor_manager.async_update_sensors()
+
+                # ASSERTION 4: Exact entity count verification
+                assert len(all_entities) == expected_sensor_count, (
+                    f"Wrong number of entities created: expected {expected_sensor_count}, "
+                    f"got {len(all_entities)}. Entities: {[getattr(e, 'unique_id', 'no_id') for e in all_entities]}"
+                )
+
+                # Create lookup for testing
+                entity_lookup = {entity.unique_id: entity for entity in all_entities}
+
+                # Test the computed variable sensor that uses metadata(state, ...)
+                computed_var_sensor = entity_lookup.get("metadata_state_computed_variable_test")
+                assert computed_var_sensor is not None, (
+                    f"Sensor 'metadata_state_computed_variable_test' not found. Available: {list(entity_lookup.keys())}"
+                )
+
+                # The sensor should have been created successfully (the main fix verification)
+                assert computed_var_sensor.native_value is not None, (
+                    "Sensor with metadata(state, ...) computed variable failed to evaluate"
+                )
+
+                # Test the attribute sensor that uses metadata(state, ...) in attributes
+                attr_sensor = entity_lookup.get("metadata_state_attribute_test")
+                assert attr_sensor is not None, (
+                    f"Sensor 'metadata_state_attribute_test' not found. Available: {list(entity_lookup.keys())}"
+                )
+
+                # Check that attributes with metadata(state, ...) work
+                attrs = getattr(attr_sensor, "extra_state_attributes", {}) or {}
+                assert "last_valid_state_attr" in attrs, "Attribute using metadata(state, ...) was not created"
+
+                # The key test: both sensors were created without the startup error
+                # If the fix didn't work, sensor creation would have failed with:
+                # "State token cannot be resolved: no backing entity mapping, no sensor entity_id, and no previous value available"
+
+                # Clean up
+                await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+        finally:
+            # Restore original state
+            mock_entity_registry._entities.clear()
+            mock_entity_registry._entities.update(original_entities)
+            mock_states.clear()
+            mock_states.update(original_states)
+
 
 # =============================================================================
 # HELPER METHODS

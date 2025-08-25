@@ -123,14 +123,18 @@ class TestVariableResolution:
 
     def create_mock_resolver(self, entity_values: dict[str, any]) -> callable:
         """Create a mock resolver callback for testing."""
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
 
         def mock_resolver(var_name: str, var_value: any, context: dict, sensor_config: any) -> any:
             # Handle entity mappings
             if isinstance(var_value, str) and var_value.startswith("sensor."):
-                return entity_values.get(var_value, None)
+                resolved_value = entity_values.get(var_value, None)
+                if resolved_value is not None:
+                    return ReferenceValue(reference=var_value, value=resolved_value)
+                return None
             # Handle literals
             elif isinstance(var_value, (int, float)):
-                return var_value
+                return ReferenceValue(reference=var_name, value=var_value)
             return None
 
         return mock_resolver
@@ -480,8 +484,10 @@ class TestComputedVariablesInAttributes:
         eval_context: dict[str, ContextValue] = {}
 
         def mock_resolver(var_name: str, var_value: any, context: dict, sensor_config: any) -> any:
+            from ha_synthetic_sensors.type_definitions import ReferenceValue
+
             if isinstance(var_value, (int, float)):
-                return var_value
+                return ReferenceValue(reference=var_name, value=var_value)
             return None
 
         # Mock the pipeline evaluation for attribute resolution
@@ -518,8 +524,10 @@ class TestComputedVariablesInAttributes:
         eval_context: dict[str, ContextValue] = {"state": 100.0}  # Main sensor evaluated to 100
 
         def mock_resolver(var_name: str, var_value: any, context: dict, sensor_config: any) -> any:
+            from ha_synthetic_sensors.type_definitions import ReferenceValue
+
             if isinstance(var_value, (int, float)):
-                return var_value
+                return ReferenceValue(reference=var_name, value=var_value)
             return None
 
         # Mock the pipeline evaluation for state reference
@@ -566,8 +574,10 @@ class TestComputedVariablesInAttributes:
         eval_context: dict[str, ContextValue] = {"state": 120.0}
 
         def mock_resolver(var_name: str, var_value: any, context: dict, sensor_config: any) -> any:
+            from ha_synthetic_sensors.type_definitions import ReferenceValue
+
             if isinstance(var_value, (int, float)):
-                return var_value
+                return ReferenceValue(reference=var_name, value=var_value)
             return None
 
         # Mock the pipeline evaluation for complex dependency chain

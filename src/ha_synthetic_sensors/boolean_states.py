@@ -5,7 +5,7 @@ as names in SimpleEval to enable proper comparison between entity references
 and string literals in formulas.
 """
 
-from .constants_boolean_states import get_current_false_states, get_current_true_states
+from .constants_boolean_states import get_core_false_states, get_core_true_states
 
 
 class BooleanStates:
@@ -24,13 +24,13 @@ class BooleanStates:
         """
         boolean_names: dict[str, bool] = {}
 
-        # Add all true states
-        for state in get_current_true_states():
+        # Add core true states only (avoid domain-specific states that should remain as strings)
+        for state in get_core_true_states():
             if state is not None:
                 boolean_names[str(state)] = True
 
-        # Add all false states
-        for state in get_current_false_states():
+        # Add core false states only (avoid domain-specific states that should remain as strings)
+        for state in get_core_false_states():
             if state is not None:
                 boolean_names[str(state)] = False
 

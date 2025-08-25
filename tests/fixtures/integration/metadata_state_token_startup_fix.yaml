@@ -1,0 +1,67 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_metadata_state_fix"
+  variables:
+    energy_grace_period_minutes: 15
+  metadata:
+    attribution: "Metadata State Token Startup Fix Test"
+    entity_registry_enabled_default: true
+
+sensors:
+  # Test sensor with computed variable using metadata(state, ...)
+  # This would have failed during startup before the fix with:
+  # "State token cannot be resolved: no backing entity mapping, no sensor entity_id, and no previous value available"
+  metadata_state_computed_variable_test:
+    name: "Metadata State Computed Variable Test"
+    entity_id: "sensor.test_backing_entity"
+    formula: "state"
+    variables:
+      last_valid_state:
+        formula: "metadata(state, 'last_valid_state')"
+        alternate_states:
+          UNAVAILABLE: unknown
+          UNKNOWN: unknown
+      last_valid_changed:
+        formula: "metadata(state, 'last_valid_changed')"
+        alternate_states:
+          UNAVAILABLE: unknown
+          UNKNOWN: unknown
+      is_within_grace_period:
+        formula: "last_valid_state is not None and last_valid_state != 'unknown' and last_valid_changed != 'unknown'"
+        alternate_states:
+          UNAVAILABLE: false
+          UNKNOWN: false
+    alternate_states:
+      FALLBACK:
+        formula: "last_valid_state if is_within_grace_period else 'unknown'"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  # Test sensor with metadata(state, ...) in attribute formulas
+  # This also would have failed during startup before the fix
+  metadata_state_attribute_test:
+    name: "Metadata State Attribute Test"
+    entity_id: "sensor.test_backing_entity"
+    formula: "state"
+    variables:
+      last_valid_state:
+        formula: "metadata(state, 'last_valid_state')"
+        alternate_states:
+          UNAVAILABLE: unknown
+          UNKNOWN: unknown
+    attributes:
+      last_valid_state_attr:
+        formula: "last_valid_state"
+        alternate_states:
+          FALLBACK: "N/A"
+      grace_period_remaining:
+        formula: "energy_grace_period_minutes"
+        alternate_states:
+          FALLBACK: "N/A"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

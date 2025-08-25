@@ -57,12 +57,45 @@ async def test_delayed_entity_availability_with_dependency_tracking(
     )
 
     # Start with unavailable states to simulate entities not ready yet
-    mock_states.register_state("sensor.span_simulator_unmapped_tab_30_power", "unavailable", {})
-    mock_states.register_state("sensor.span_simulator_unmapped_tab_32_power", "unavailable", {})
-    mock_states.register_state("sensor.span_simulator_unmapped_tab_30_energy_produced", "unavailable", {})
-    mock_states.register_state("sensor.span_simulator_unmapped_tab_32_energy_produced", "unavailable", {})
-    mock_states.register_state("sensor.span_simulator_unmapped_tab_30_energy_consumed", "unavailable", {})
-    mock_states.register_state("sensor.span_simulator_unmapped_tab_32_energy_consumed", "unavailable", {})
+    # Create mock states with proper metadata attributes for metadata functions
+    from datetime import datetime, timezone
+
+    def create_mock_state(entity_id: str, state: str, attributes: dict) -> object:
+        """Create a mock state object with proper metadata attributes."""
+        mock_state = type(
+            "MockState",
+            (),
+            {
+                "state": state,
+                "attributes": attributes,
+                "entity_id": entity_id,
+                "object_id": entity_id.split(".")[-1] if "." in entity_id else entity_id,
+                "domain": entity_id.split(".")[0] if "." in entity_id else "sensor",
+                "last_changed": datetime.now(timezone.utc),
+                "last_updated": datetime.now(timezone.utc),
+            },
+        )()
+        return mock_state
+
+    # Register states with proper metadata
+    mock_states["sensor.span_simulator_unmapped_tab_30_power"] = create_mock_state(
+        "sensor.span_simulator_unmapped_tab_30_power", "unavailable", {}
+    )
+    mock_states["sensor.span_simulator_unmapped_tab_32_power"] = create_mock_state(
+        "sensor.span_simulator_unmapped_tab_32_power", "unavailable", {}
+    )
+    mock_states["sensor.span_simulator_unmapped_tab_30_energy_produced"] = create_mock_state(
+        "sensor.span_simulator_unmapped_tab_30_energy_produced", "unavailable", {}
+    )
+    mock_states["sensor.span_simulator_unmapped_tab_32_energy_produced"] = create_mock_state(
+        "sensor.span_simulator_unmapped_tab_32_energy_produced", "unavailable", {}
+    )
+    mock_states["sensor.span_simulator_unmapped_tab_30_energy_consumed"] = create_mock_state(
+        "sensor.span_simulator_unmapped_tab_30_energy_consumed", "unavailable", {}
+    )
+    mock_states["sensor.span_simulator_unmapped_tab_32_energy_consumed"] = create_mock_state(
+        "sensor.span_simulator_unmapped_tab_32_energy_consumed", "unavailable", {}
+    )
 
     # Set up storage manager
     with (
@@ -98,6 +131,42 @@ async def test_delayed_entity_availability_with_dependency_tracking(
             storage_manager=storage_manager,
         )
 
+        # Get all created entities and set up proper metadata for synthetic sensors
+        all_entities = []
+        for call in mock_async_add_entities.call_args_list:
+            entities_list = call.args[0] if call.args else []
+            all_entities.extend(entities_list)
+
+        # Set hass attribute on all entities BEFORE update (required to prevent "Attribute hass is None" errors)
+        for entity in all_entities:
+            entity.hass = mock_hass
+
+            # Add synthetic sensors to mock states so they can reference themselves for metadata queries
+            for entity in all_entities:
+                if hasattr(entity, "entity_id") and entity.entity_id:
+                    # Create mock state with proper metadata attributes for metadata handler
+                    mock_state = type(
+                        "MockState",
+                        (),
+                        {
+                            "state": str(entity.native_value) if entity.native_value is not None else "unknown",
+                            "attributes": getattr(entity, "extra_state_attributes", {}) or {},
+                        },
+                    )()
+                    # Add metadata properties that metadata handler expects
+                    mock_state.entity_id = entity.entity_id
+                    mock_state.object_id = entity.entity_id.split(".")[-1] if "." in entity.entity_id else entity.entity_id
+                    mock_state.domain = entity.entity_id.split(".")[0] if "." in entity.entity_id else "sensor"
+                    mock_state.last_changed = datetime.now(timezone.utc)
+                    mock_state.last_updated = datetime.now(timezone.utc)
+
+                    # Add last_valid_state metadata attribute that the alternate state handler needs
+                    if not hasattr(mock_state, "attributes"):
+                        mock_state.attributes = {}
+                    mock_state.attributes["last_valid_state"] = "0.0"  # Default value for synthetic sensors
+
+                    mock_states[entity.entity_id] = mock_state
+
         # PHASE 1 VERIFICATION: Initial update with missing entities
         await sensor_manager.async_update_sensors()
 
@@ -119,12 +188,24 @@ async def test_delayed_entity_availability_with_dependency_tracking(
         assert consumed_sensor.native_value is not None
 
         # PHASE 2: Entities become available (update states to actual values)
-        mock_states.register_state("sensor.span_simulator_unmapped_tab_30_power", "500.0", {})
-        mock_states.register_state("sensor.span_simulator_unmapped_tab_32_power", "600.0", {})
-        mock_states.register_state("sensor.span_simulator_unmapped_tab_30_energy_produced", "100.0", {})
-        mock_states.register_state("sensor.span_simulator_unmapped_tab_32_energy_produced", "200.0", {})
-        mock_states.register_state("sensor.span_simulator_unmapped_tab_30_energy_consumed", "50.0", {})
-        mock_states.register_state("sensor.span_simulator_unmapped_tab_32_energy_consumed", "75.0", {})
+        mock_states["sensor.span_simulator_unmapped_tab_30_power"] = create_mock_state(
+            "sensor.span_simulator_unmapped_tab_30_power", "500.0", {}
+        )
+        mock_states["sensor.span_simulator_unmapped_tab_32_power"] = create_mock_state(
+            "sensor.span_simulator_unmapped_tab_32_power", "600.0", {}
+        )
+        mock_states["sensor.span_simulator_unmapped_tab_30_energy_produced"] = create_mock_state(
+            "sensor.span_simulator_unmapped_tab_30_energy_produced", "100.0", {}
+        )
+        mock_states["sensor.span_simulator_unmapped_tab_32_energy_produced"] = create_mock_state(
+            "sensor.span_simulator_unmapped_tab_32_energy_produced", "200.0", {}
+        )
+        mock_states["sensor.span_simulator_unmapped_tab_30_energy_consumed"] = create_mock_state(
+            "sensor.span_simulator_unmapped_tab_30_energy_consumed", "50.0", {}
+        )
+        mock_states["sensor.span_simulator_unmapped_tab_32_energy_consumed"] = create_mock_state(
+            "sensor.span_simulator_unmapped_tab_32_energy_consumed", "75.0", {}
+        )
 
         # Simulate dependency change notification (entities now available)
         changed_entity_ids = {

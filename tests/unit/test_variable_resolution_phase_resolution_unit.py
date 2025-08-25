@@ -63,5 +63,8 @@ def test_entity_reference_resolution_with_tracking(monkeypatch) -> None:
     phase._resolver_factory.resolve_variable = fake_resolve  # type: ignore[attr-defined]
 
     result = phase.resolve_all_references_with_ha_detection("sensor.any + 1", SensorConfig(unique_id="unit_phase"), {})
-    # Entity should have been substituted to its numeric value
-    assert "42" in result.resolved_formula
+    # Entity should have been substituted to a variable name, not its numeric value
+    assert "sensor_any" in result.resolved_formula
+    # The entity mapping should contain the variable name as key and original entity as value
+    assert "sensor_any" in result.entity_to_value_mappings
+    assert result.entity_to_value_mappings["sensor_any"] == "sensor.any"

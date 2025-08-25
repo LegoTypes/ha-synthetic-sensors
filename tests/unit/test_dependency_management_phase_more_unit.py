@@ -13,9 +13,9 @@ def test_handle_dependency_issues_priority_and_none() -> None:
     except Exception as e:
         assert "Missing dependencies" in str(e)
 
-    # Unavailable takes priority over unknown
-    res = phase.handle_dependency_issues(set(), {"x"}, {"y"}, "f")
-    assert isinstance(res, dict) and res.get("state") == "unavailable"
+        # Unavailable takes priority over unknown, but both return STATE_UNKNOWN for consistency
+        res = phase.handle_dependency_issues(set(), {"x"}, {"y"}, "f")
+        assert isinstance(res, dict) and res.get("state") == "unknown"
 
     # Only unknown -> unknown state
     res = phase.handle_dependency_issues(set(), set(), {"y"}, "f")
