@@ -260,9 +260,9 @@ class TestYAMLConfigParser:
         # Verify the structure is valid
         assert result is not None
 
-        # Verify all 5 sensors are present
+        # Verify all 6 sensors are present
         sensors = result.get("sensors", {})
-        assert len(sensors) == 5
+        assert len(sensors) == 6
 
         # Verify specific sensors exist
         assert "door_lock_and" in sensors
@@ -270,6 +270,7 @@ class TestYAMLConfigParser:
         assert "security_check" in sensors
         assert "temperature_comfort" in sensors
         assert "direct_binary_test" in sensors
+        assert "variable_binary_test" in sensors
 
         # Verify boolean formulas use Python operators (not symbolic)
         door_lock_and = sensors["door_lock_and"]
