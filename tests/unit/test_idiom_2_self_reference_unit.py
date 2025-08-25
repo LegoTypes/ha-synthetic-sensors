@@ -195,9 +195,10 @@ class TestIdiom2SelfReference:
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        # Should reflect transient condition due to unresolved dependency
-        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
-        assert result["success"] is False or result.get("state") in ("unknown", "unavailable")
+        # Should raise MissingDependencyError for missing entity (fatal error)
+        with pytest.raises(MissingDependencyError) as exc_info:
+            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        assert "sensor.current_power" in str(exc_info.value)
 
     def test_self_reference_in_attributes(self, config_manager, mock_hass, mock_entity_registry, mock_states):
         """Test self-reference patterns in attribute formulas."""

@@ -206,7 +206,7 @@ class TestEvaluationWorkflow:
                     result = evaluator.evaluate_formula(sample_formula_config)
 
                     assert result["success"] is True  # State reflection - non-fatal
-                    assert result["state"] == "unavailable"  # Reflects unavailable dependency
+                    assert result["state"] == "unknown"  # Reflects unavailable dependency as unknown for consistency
                     assert "unavailable_sensor" in result.get("unavailable_dependencies", [])
 
     def test_evaluation_workflow_mixed_variable_validation_negative(

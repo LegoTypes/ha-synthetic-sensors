@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
 from .alternate_state_eval import evaluate_computed_alternate
+from .boolean_states import BooleanStates
 from .config_models import ComputedVariable, FormulaConfig
 from .constants_entities import get_ha_entity_domains
 from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
@@ -314,46 +315,6 @@ def _analyze_computed_variable_error(
     }
 
 
-def resolve_config_variables(
-    eval_context: dict[str, ContextValue],
-    config: FormulaConfig | None,
-    resolver_callback: Callable[[str, Any, dict[str, Any], Any | None], Any | None],
-    sensor_config: Any = None,
-) -> None:
-    """Resolve config variables using the provided resolver callback.
-
-    This is a shared utility to eliminate duplicate code between different
-    phases that need to resolve configuration variables. Handles dependency
-    ordering and error handling consistently.
-
-    Args:
-        eval_context: Context dictionary to populate with resolved values
-        config: FormulaConfig containing variables to resolve
-        resolver_callback: Callback function to resolve individual variables
-        sensor_config: Optional sensor configuration for context
-    """
-    if not config or not config.variables:
-        return
-
-    # Separate simple variables from computed variables
-    simple_variables: dict[str, Any] = {}
-    computed_variables: dict[str, ComputedVariable] = {}
-
-    for var_name, var_value in config.variables.items():
-        if isinstance(var_value, ComputedVariable):
-            computed_variables[var_name] = var_value
-        else:
-            simple_variables[var_name] = var_value
-
-    # Resolve simple variables first (they may be dependencies for computed variables)
-    if simple_variables:
-        _resolve_simple_variables(eval_context, simple_variables, resolver_callback, sensor_config, config)
-
-    # Resolve computed variables in dependency order
-    if computed_variables:
-        _resolve_computed_variables(eval_context, computed_variables, config)
-
-
 def _resolve_simple_variables(
     eval_context: dict[str, ContextValue],
     simple_variables: dict[str, Any],
@@ -548,6 +509,40 @@ def _build_simple_variables_view(parent_config: FormulaConfig | None) -> dict[st
     return variables_view
 
 
+def _ensure_boolean_constants_in_context(eval_context: dict[str, ContextValue]) -> None:
+    """Ensure boolean state constants are available in the evaluation context.
+
+    This fixes the issue where computed variables don't have access to boolean constants
+    like 'on', 'off', 'true', 'false', etc. that are needed for boolean comparisons.
+    """
+    try:
+        # Add boolean state mappings to evaluation context if not already present
+        boolean_names = BooleanStates.get_all_boolean_names()
+        for state_name, bool_value in boolean_names.items():
+            if state_name not in eval_context:
+                # Add as ReferenceValue to match the context structure
+                eval_context[state_name] = ReferenceValue(reference=state_name, value=bool_value)
+
+        _LOGGER.debug("Ensured %d boolean state constants in computed variable context", len(boolean_names))
+    except Exception as e:
+        _LOGGER.warning("Failed to add boolean state constants to computed variable context: %s", e)
+        # Fallback to basic boolean states
+        basic_boolean_states = {
+            "on": True,
+            "off": False,
+            "home": True,
+            "not_home": False,
+            "true": True,
+            "false": False,
+            "yes": True,
+            "no": False,
+        }
+        for state_name, bool_value in basic_boolean_states.items():
+            if state_name not in eval_context:
+                # Add as ReferenceValue to match the context structure
+                eval_context[state_name] = ReferenceValue(reference=state_name, value=bool_value)
+
+
 def _entity_available_in_hass(eval_context: dict[str, ContextValue]) -> bool:
     hass_val = eval_context.get("_hass")
     hass = hass_val.value if isinstance(hass_val, ReferenceValue) else hass_val
@@ -568,9 +563,17 @@ def _evaluate_cv_via_pipeline(
     allow_unresolved_states: bool = False,
 ) -> dict[str, Any]:
     variables_view = _build_simple_variables_view(parent_config)
+
+    # Ensure boolean state constants are available in computed variable evaluation context
+    # This fixes the issue where computed variables don't have access to boolean constants
+    enhanced_context = eval_context.copy()
+    _ensure_boolean_constants_in_context(enhanced_context)
+
+    # The FormulaEvaluatorService.evaluate_formula_via_pipeline already handles entity reference resolution
+    # through the full variable resolution phase, so we don't need to do it separately here
     return FormulaEvaluatorService.evaluate_formula_via_pipeline(
         formula,
-        eval_context,
+        enhanced_context,
         variables=variables_view,
         bypass_dependency_management=False,
         allow_unresolved_states=allow_unresolved_states,
@@ -820,3 +823,137 @@ def _handle_max_iterations_error(remaining_vars: dict[str, ComputedVariable], ma
         f"Could not resolve computed variables {remaining_var_names} within {max_iterations} iterations. "
         f"This likely indicates circular dependencies between variables:\n" + "\n".join(f"• {info}" for info in formulas_info)
     )
+
+
+def resolve_metadata_computed_variable(
+    var_name: str,
+    computed_var: ComputedVariable,
+    eval_context: dict[str, ContextValue],
+    parent_config: FormulaConfig | None,
+) -> bool:
+    """Resolve computed variables containing metadata functions.
+
+    This is the public API for resolving computed variables that contain metadata functions.
+    It delegates to the internal implementation while providing a clean public interface.
+
+    Args:
+        var_name: Name of the computed variable
+        computed_var: The ComputedVariable object to resolve
+        eval_context: Current evaluation context
+        parent_config: Parent FormulaConfig for context
+
+    Returns:
+        True if successfully resolved, False otherwise
+    """
+    return _resolve_metadata_computed_variable(var_name, computed_var, eval_context, parent_config)
+
+
+def resolve_non_metadata_computed_variable(
+    var_name: str,
+    computed_var: ComputedVariable,
+    eval_context: dict[str, ContextValue],
+    parent_config: FormulaConfig | None,
+) -> bool:
+    """Resolve computed variables that don't contain metadata functions.
+
+    This is the public API for resolving computed variables that don't contain metadata functions.
+    It delegates to the internal implementation while providing a clean public interface.
+
+    Args:
+        var_name: Name of the computed variable
+        computed_var: The ComputedVariable object to resolve
+        eval_context: Current evaluation context
+        parent_config: Parent FormulaConfig for context
+
+    Returns:
+        True if successfully resolved, False otherwise
+    """
+    return _resolve_non_metadata_computed_variable(var_name, computed_var, eval_context, parent_config)
+
+
+def metadata_function_present(formula: str) -> bool:
+    """Check if a formula contains metadata function calls.
+
+    This is the public API for detecting metadata functions in formulas.
+    It delegates to the internal implementation while providing a clean public interface.
+
+    Args:
+        formula: The formula string to check
+
+    Returns:
+        True if the formula contains metadata function calls, False otherwise
+    """
+    return _metadata_function_present(formula)
+
+
+def try_resolve_computed_variable(
+    var_name: str,
+    computed_var: ComputedVariable,
+    eval_context: dict[str, ContextValue],
+    parent_config: FormulaConfig | None,
+) -> bool:
+    """Try to resolve a single computed variable.
+
+    This is the public API for resolving computed variables. It handles both metadata
+    and non-metadata computed variables using the appropriate resolution method.
+
+    Args:
+        var_name: Name of the computed variable
+        computed_var: The ComputedVariable object to resolve
+        eval_context: Current evaluation context
+        parent_config: Parent FormulaConfig for context
+
+    Returns:
+        True if successfully resolved, False otherwise
+    """
+    _LOGGER.debug("Resolving computed variable %s with formula: %s", var_name, computed_var.formula)
+
+    try:
+        if metadata_function_present(computed_var.formula):
+            return resolve_metadata_computed_variable(var_name, computed_var, eval_context, parent_config)
+
+        return resolve_non_metadata_computed_variable(var_name, computed_var, eval_context, parent_config)
+
+    except Exception as err:
+        _LOGGER.debug("Computed variable %s failed to resolve: %s", var_name, err)
+        return False
+
+
+def resolve_config_variables(
+    eval_context: dict[str, ContextValue],
+    config: FormulaConfig | None,
+    resolver_callback: Callable[[str, Any, dict[str, Any], Any | None], Any | None],
+    sensor_config: Any = None,
+) -> None:
+    """Resolve config variables using the provided resolver callback.
+
+    This is a shared utility to eliminate duplicate code between different
+    phases that need to resolve configuration variables. Handles dependency
+    ordering and error handling consistently.
+
+    Args:
+        eval_context: Context dictionary to populate with resolved values
+        config: FormulaConfig containing variables to resolve
+        resolver_callback: Callback function to resolve individual variables
+        sensor_config: Optional sensor configuration for context
+    """
+    if not config or not config.variables:
+        return
+
+    # Separate simple variables from computed variables
+    simple_variables: dict[str, Any] = {}
+    computed_variables: dict[str, ComputedVariable] = {}
+
+    for var_name, var_value in config.variables.items():
+        if isinstance(var_value, ComputedVariable):
+            computed_variables[var_name] = var_value
+        else:
+            simple_variables[var_name] = var_value
+
+    # Resolve simple variables first (they may be dependencies for computed variables)
+    if simple_variables:
+        _resolve_simple_variables(eval_context, simple_variables, resolver_callback, sensor_config, config)
+
+    # Resolve computed variables in dependency order
+    if computed_variables:
+        _resolve_computed_variables(eval_context, computed_variables, config)

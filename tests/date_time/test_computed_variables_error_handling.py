@@ -5,7 +5,8 @@ import pytest
 
 from ha_synthetic_sensors.config_models import ComputedVariable, FormulaConfig
 from ha_synthetic_sensors.exceptions import MissingDependencyError
-from ha_synthetic_sensors.utils_config import resolve_config_variables, _analyze_computed_variable_error
+from ha_synthetic_sensors.utils_config import resolve_config_variables
+from ha_synthetic_sensors.utils_config import _analyze_computed_variable_error
 from ha_synthetic_sensors.type_definitions import ContextValue
 
 

@@ -9,7 +9,6 @@ from ...constants_evaluation_results import (
     RESULT_KEY_MISSING_DEPENDENCIES,
     RESULT_KEY_STATE,
     RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
-    STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
 from ...exceptions import MissingDependencyError
@@ -193,8 +192,8 @@ class DependencyManagementPhase:
 
     def _create_unavailable_result(self, unavailable_dependencies: list[str]) -> dict[str, Any]:
         """Create an unavailable result (placeholder for integration)."""
-        # This will be implemented when we integrate with the evaluator
-        return {RESULT_KEY_STATE: STATE_UNAVAILABLE, RESULT_KEY_UNAVAILABLE_DEPENDENCIES: unavailable_dependencies}
+        # Return STATE_UNKNOWN for consistency, even though we preserve unavailable values internally
+        return {RESULT_KEY_STATE: STATE_UNKNOWN, RESULT_KEY_UNAVAILABLE_DEPENDENCIES: unavailable_dependencies}
 
     def _create_unknown_result(self, unknown_dependencies: list[str]) -> dict[str, Any]:
         """Create an unknown result (placeholder for integration)."""
