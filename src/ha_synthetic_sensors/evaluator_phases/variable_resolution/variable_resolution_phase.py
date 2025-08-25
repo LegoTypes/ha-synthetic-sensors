@@ -418,6 +418,10 @@ class VariableResolutionPhase:
         if "state" not in formula:
             return formula, ha_dependencies
 
+        # Skip state resolution if state tokens are only inside metadata function parameters
+        if self._state_tokens_only_in_metadata_functions(formula):
+            return formula, ha_dependencies
+
         # Phase 1: Variable Resolution - Build ReferenceValue in context without formula substitution
         # Use the resolver factory to resolve the state reference and store in context
         resolved_value = self._resolver_factory.resolve_variable("state", "state", eval_context)
@@ -440,6 +444,27 @@ class VariableResolutionPhase:
 
         # Return formula unchanged - no substitution in Phase 1 (Variable Resolution)
         return formula, ha_dependencies
+
+    def _state_tokens_only_in_metadata_functions(self, formula: str) -> bool:
+        """Check if all 'state' tokens in the formula are inside metadata function parameters."""
+        # Get all protected ranges for metadata function parameters
+        protected_ranges = FormulaHelpers.find_metadata_function_parameter_ranges(formula)
+
+        # Find all 'state' token positions in the formula using regex for proper word boundaries
+        state_pattern = re.compile(r"\bstate\b")
+        state_positions = [match.start() for match in state_pattern.finditer(formula)]
+
+        # Check if all state positions are within protected ranges
+        for state_pos in state_positions:
+            is_protected = False
+            for start_range, end_range in protected_ranges:
+                if start_range <= state_pos < end_range:
+                    is_protected = True
+                    break
+            if not is_protected:
+                return False  # Found a state token outside metadata functions
+
+        return True  # All state tokens are inside metadata functions
 
     def _resolve_entity_references(self, formula: str, eval_context: dict[str, ContextValue]) -> str:
         """Register entity references in context without modifying the formula (lazy resolution)."""
