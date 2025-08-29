@@ -1,0 +1,86 @@
+# Test: test_solar_net_energy_variable_inheritance_export
+# Purpose: Tests that YAML export correctly excludes inherited variables from attributes
+#
+# This fixture simulates a SPAN solar sensor configuration where:
+# - Sensor-level variables are defined (consumed_energy, produced_energy, etc.)
+# - Attributes reference these variables (panel_status_is, energy_grace_period_minutes_is, etc.)
+# - The test verifies that exported YAML does NOT include inherited variables in attributes
+# - Variables should be inherited at runtime, not stored in YAML
+version: '1.0'
+global_settings:
+  device_identifier: "test-device"
+  variables:
+    energy_grace_period_minutes: 15
+sensors:
+  "solar_net_energy":
+    entity_id: sensor.solar_net_energy
+    name: Solar Net Energy
+    formula: consumed_energy - produced_energy
+    # Sensor-level variables that should be inherited by attributes at runtime
+    # These should NOT be duplicated in attribute YAML export
+    variables:
+      consumed_energy:
+        formula: sensor.solar_consumed_energy
+      produced_energy:
+        formula: sensor.solar_produced_energy
+      last_valid_state:
+        formula: metadata(state, 'last_valid_state')
+      last_valid_changed:
+        formula: metadata(state, 'last_valid_changed')
+      panel_status:
+        formula: binary_sensor.panel_status
+      panel_offline_minutes:
+        formula: minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), utc_now()) if not panel_status else 0
+      is_within_grace_period:
+        formula: last_valid_state is not None and last_valid_state != 'unknown' and last_valid_changed != 'unknown' and not panel_status and panel_offline_minutes < energy_grace_period_minutes
+      leg1_consumed: sensor.leg1_consumed_energy
+      leg2_consumed: sensor.leg2_consumed_energy
+    # Attributes that reference sensor-level variables
+    # Test verifies these are exported correctly without duplicating inherited variables
+    attributes:
+      # Literal attributes (not affected by variable inheritance)
+      tabs: "tabs [30:32]"
+      voltage: 240
+
+      # Simple attributes that reference single variables - should export as strings
+      panel_status_is:
+        formula: panel_status  # References sensor variable
+        alternate_states:
+          FALLBACK: 'unknown'
+      energy_grace_period_minutes_is:
+        formula: energy_grace_period_minutes  # References global variable
+        alternate_states:
+          FALLBACK: 'unknown'
+      panel_offline_minutes_is:
+        formula: "panel_offline_minutes"  # References sensor variable
+        alternate_states:
+          FALLBACK: 'unknown'
+      is_within_grace_is:
+        formula: "is_within_grace_period"  # References sensor variable
+        alternate_states:
+          FALLBACK: 'unknown'
+
+      # Complex attributes with formulas - should export with formula but NO variables section
+      grace_period_remaining:
+        formula: "round(max(0, energy_grace_period_minutes - panel_offline_minutes), 1) if is_within_grace_period else 0"
+        alternate_states:
+          FALLBACK: 'N/A'
+      energy_reporting_status:
+        formula: "'Live' if state != 'unknown' else ('Off-Line, reporting previous value' if grace_period_remaining > 0 else 'unknown')"
+        alternate_states:
+          FALLBACK: false
+
+      # Attribute with its own variables - these should be preserved in YAML export
+      custom_calculation:
+        formula: "local_temp * conversion_factor + offset"
+        variables:
+          local_temp: sensor.local_temperature  # Attribute-specific variable
+          conversion_factor: 1.8  # Attribute-specific constant
+          offset: 32  # Attribute-specific constant
+        alternate_states:
+          FALLBACK: 'unknown'
+    metadata:
+      unit_of_measurement: "Wh"
+      device_class: "energy"
+      state_class: "total"
+      suggested_display_precision: 2

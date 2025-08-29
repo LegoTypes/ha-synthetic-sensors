@@ -201,7 +201,7 @@ class TestComputedVariablesInAttributesIntegration:
         assert "state >=" in rating_formula.variables["is_good"].formula
 
     def test_span_grace_period_computed_variable_inheritance(self, config_manager, computed_vars_attributes_yaml):
-        """Test that attribute formulas inherit computed variables from parent sensor (critical bug fix test)."""
+        """Test that attribute formulas inherit computed variables from parent sensor at runtime (not in YAML)."""
         config = config_manager.load_from_dict(computed_vars_attributes_yaml)
 
         # Find the SPAN grace period sensor
@@ -213,39 +213,40 @@ class TestComputedVariablesInAttributesIntegration:
         assert isinstance(main_formula.variables["within_grace"], ComputedVariable)
         assert "grace_period_minutes" in main_formula.variables
 
-        # CRITICAL TEST: Attribute formulas should inherit computed variables from parent
+        # CRITICAL TEST: Attribute formulas should NOT have inherited variables stored in YAML
+        # Variables are inherited at runtime, not stored in the formula objects
         attr_formulas = span_sensor.formulas[1:]  # Skip main formula
 
         # Find grace_period_active attribute formula
         grace_active_formula = next(f for f in attr_formulas if f.id.endswith("_grace_period_active"))
-        # This should have inherited 'within_grace' from parent sensor
-        assert "within_grace" in grace_active_formula.variables, (
-            "Attribute formula should inherit 'within_grace' computed variable from parent sensor"
+        # This should NOT have 'within_grace' stored in its variables (inherited at runtime)
+        assert "within_grace" not in grace_active_formula.variables, (
+            "Attribute formula should NOT store inherited variables in YAML - they are inherited at runtime"
         )
-        assert isinstance(grace_active_formula.variables["within_grace"], ComputedVariable)
 
         # Find grace_status attribute formula
         grace_status_formula = next(f for f in attr_formulas if f.id.endswith("_grace_status"))
-        # This should also have inherited 'within_grace' from parent sensor
-        assert "within_grace" in grace_status_formula.variables, (
-            "Attribute formula should inherit 'within_grace' computed variable from parent sensor"
+        # This should also NOT have 'within_grace' stored in its variables
+        assert "within_grace" not in grace_status_formula.variables, (
+            "Attribute formula should NOT store inherited variables in YAML - they are inherited at runtime"
         )
 
         # Find grace_minutes_remaining attribute formula
         grace_remaining_formula = next(f for f in attr_formulas if f.id.endswith("_grace_minutes_remaining"))
-        # This should inherit 'grace_period_minutes' from parent sensor
-        assert "grace_period_minutes" in grace_remaining_formula.variables, (
-            "Attribute formula should inherit 'grace_period_minutes' variable from parent sensor"
+        # This should NOT have 'grace_period_minutes' stored in its variables
+        assert "grace_period_minutes" not in grace_remaining_formula.variables, (
+            "Attribute formula should NOT store inherited variables in YAML - they are inherited at runtime"
         )
 
-        # Verify the formulas are correct
+        # Verify the formulas are correct (they reference variables that will be inherited at runtime)
         assert grace_active_formula.formula == "within_grace"
         assert grace_status_formula.formula == "'active' if within_grace else 'expired'"
 
-        print(f"✅ SUCCESS: All attribute formulas properly inherited computed variables from parent sensor")
-        print(f"   - grace_period_active inherits: {list(grace_active_formula.variables.keys())}")
-        print(f"   - grace_status inherits: {list(grace_status_formula.variables.keys())}")
-        print(f"   - grace_minutes_remaining inherits: {list(grace_remaining_formula.variables.keys())}")
+        print(f"✅ SUCCESS: Attribute formulas correctly do NOT store inherited variables in YAML")
+        print(f"   - grace_period_active variables: {list(grace_active_formula.variables.keys())}")
+        print(f"   - grace_status variables: {list(grace_status_formula.variables.keys())}")
+        print(f"   - grace_minutes_remaining variables: {list(grace_remaining_formula.variables.keys())}")
+        print(f"   - Variables will be inherited at runtime from parent sensor")
 
     @pytest.mark.asyncio
     async def test_end_to_end_computed_variables_attributes_evaluation(
