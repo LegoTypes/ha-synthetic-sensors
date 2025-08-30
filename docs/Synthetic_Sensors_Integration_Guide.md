@@ -1268,6 +1268,215 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         "synthetic_coordinator": synthetic_coord,
     })
 
+## Bulk Sensor Set Modifications with async_modify
+
+The synthetic sensors library provides the `async_modify` function for performing comprehensive bulk modifications to sensor sets. This is the recommended approach for making multiple changes to a sensor set in a single atomic operation, rather than using `import_yaml` for bulk modifications.
+
+### Key Benefits of async_modify
+
+- **Atomic Operations**: All changes are applied atomically in a single operation
+- **Entity Index Management**: Properly handles entity index updates to prevent event storms
+- **Validation**: Validates all changes before applying them
+- **Performance**: More efficient than importing entire YAML configurations
+- **Preservation**: Preserves existing sensor unique_ids and configurations
+- **Comprehensive Changes**: Supports adding, removing, updating sensors, entity ID changes, and global settings updates
+
+### SensorSetModification Interface
+
+The `async_modify` function takes a `SensorSetModification` object that specifies all changes to make:
+
+```python
+from ha_synthetic_sensors import SensorSetModification
+
+@dataclass
+class SensorSetModification:
+    # Sensors to add (new unique_ids only)
+    add_sensors: list[SensorConfig] | None = None
+
+    # Sensors to remove (by unique_id)
+    remove_sensors: list[str] | None = None
+
+    # Sensors to update (existing unique_ids only)
+    update_sensors: list[SensorConfig] | None = None
+
+    # Entity ID changes (old_entity_id -> new_entity_id)
+    entity_id_changes: dict[str, str] | None = None
+
+    # Global settings changes
+    global_settings: dict[str, Any] | None = None
+```
+
+### Basic Usage Pattern
+
+```python
+async def bulk_modify_sensor_set_example(storage_manager: StorageManager, device_id: str):
+    """Example of bulk sensor set modifications using async_modify."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Create modification specification
+    modification = SensorSetModification(
+        add_sensors=[new_sensor_configs],
+        remove_sensors=["sensor_to_remove"],
+        update_sensors=[updated_sensor_configs],
+        entity_id_changes={"old_entity_id": "new_entity_id"},
+        global_settings=new_global_settings
+    )
+
+    # Apply all modifications in one bulk operation
+    result = await sensor_set.async_modify(modification)
+
+    # Result contains summary of changes made
+    print(f"Added: {result['sensors_added']}")
+    print(f"Removed: {result['sensors_removed']}")
+    print(f"Updated: {result['sensors_updated']}")
+    print(f"Entity IDs changed: {result['entity_ids_changed']}")
+    print(f"Global settings updated: {result['global_settings_updated']}")
+```
+
+### Advanced Bulk Modification Examples
+
+#### Example 1: Comprehensive Sensor Set Update
+
+```python
+async def comprehensive_sensor_update(storage_manager: StorageManager, device_data: DeviceData):
+    """Example of comprehensive sensor set modifications."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_data.serial_number}_sensors")
+
+    # Prepare new sensors to add
+    new_sensors = [
+        SensorConfig(
+            unique_id="new_power_factor",
+            name="Power Factor Calculator",
+            entity_id="sensor.power_factor_calculator",
+            formulas=[FormulaConfig(id="new_power_factor", formula="1")],
+        ),
+        SensorConfig(
+            unique_id="energy_cost",
+            name="Energy Cost Estimator",
+            entity_id="sensor.energy_cost_estimator",
+            formulas=[FormulaConfig(id="energy_cost", formula="1")],
+        ),
+    ]
+
+    # Prepare sensors to update
+    updated_sensors = [
+        SensorConfig(
+            unique_id="total_power",
+            name="Total Power Consumption (Updated)",
+            entity_id="sensor.total_power_consumption",
+            formulas=[FormulaConfig(id="total_power", formula="state * new_multiplier")],
+        ),
+    ]
+
+    # Prepare entity ID changes
+    entity_id_changes = {
+        "sensor.old_power_meter": "sensor.new_power_meter",
+        "sensor.old_voltage": "sensor.new_voltage",
+    }
+
+    # Prepare global settings update
+    new_global_settings = {
+        "device_name": "Updated Device Name",
+        "variables": {
+            "new_multiplier": 1.15,
+            "updated_threshold": 1000,
+        },
+    }
+
+    # Apply all modifications
+    modification = SensorSetModification(
+        add_sensors=new_sensors,
+        remove_sensors=["voltage_monitor"],  # Remove old sensor
+        update_sensors=updated_sensors,
+        entity_id_changes=entity_id_changes,
+        global_settings=new_global_settings,
+    )
+
+    result = await sensor_set.async_modify(modification)
+    return result
+```
+
+#### Example 2: Entity ID Migration
+
+```python
+async def migrate_entity_ids(storage_manager: StorageManager, device_id: str, migration_map: dict[str, str]):
+    """Example of bulk entity ID migration."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Apply entity ID changes across all sensors and global settings
+    modification = SensorSetModification(
+        entity_id_changes=migration_map
+    )
+
+    result = await sensor_set.async_modify(modification)
+    print(f"Migrated {result['entity_ids_changed']} entity IDs")
+    return result
+```
+
+#### Example 3: Selective Sensor Updates
+
+```python
+async def update_specific_sensors(storage_manager: StorageManager, device_id: str, sensor_updates: list[SensorConfig]):
+    """Example of updating specific sensors only."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    # Update only specific sensors, leaving others unchanged
+    modification = SensorSetModification(
+        update_sensors=sensor_updates
+    )
+
+    result = await sensor_set.async_modify(modification)
+    print(f"Updated {result['sensors_updated']} sensors")
+    return result
+```
+
+### When to Use async_modify vs Other Methods
+
+| Use Case | Recommended Method | Reason |
+|----------|-------------------|---------|
+| **Bulk modifications** (multiple sensors, entity IDs, global settings) | `async_modify` | Atomic, efficient, proper validation |
+| **Single sensor operations** | Individual CRUD methods | Simpler for single changes |
+| **YAML-based workflows** | YAML CRUD methods | Template-driven configuration |
+| **Complete replacement** | `async_replace_sensors` | When replacing entire sensor set |
+| **Initial setup** | `async_import_yaml` | One-time setup from YAML |
+
+### Error Handling
+
+The `async_modify` function provides comprehensive error handling and validation:
+
+```python
+async def safe_bulk_modification(storage_manager: StorageManager, device_id: str):
+    """Example of safe bulk modification with error handling."""
+
+    sensor_set = storage_manager.get_sensor_set(f"{device_id}_sensors")
+
+    try:
+        modification = SensorSetModification(
+            # Your modification specification
+        )
+
+        result = await sensor_set.async_modify(modification)
+        print("Bulk modification successful:", result)
+
+    except SyntheticSensorsError as e:
+        print(f"Validation error: {e}")
+        # Handle validation failures
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        # Handle other errors
+```
+
+### Performance Considerations
+
+- **Entity Index Optimization**: `async_modify` rebuilds the entity index only once, even for complex changes
+- **Event Storm Protection**: Properly coordinates entity ID changes to prevent excessive HA registry events
+- **Validation Efficiency**: Validates all changes upfront before applying any modifications
+- **Storage Efficiency**: Uses direct storage operations rather than YAML parsing for better performance
+
 ## YAML String-Based CRUD Operations
 
 The synthetic sensors library provides convenient YAML string-based CRUD operations for managing individual sensors within
