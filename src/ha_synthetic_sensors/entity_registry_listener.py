@@ -393,11 +393,26 @@ class EntityRegistryListener:
         if "variables" in sensor_config:
             for var_name, var_value in sensor_config["variables"].items():
                 if isinstance(var_value, str) and var_value == old_entity_id:
+                    # Handle string variables (direct entity ID references)
                     sensor_config["variables"][var_name] = new_entity_id
                     updated = True
                     self._logger.debug(
                         "Updated variable '%s' in sensor '%s': %s -> %s", var_name, unique_id, old_entity_id, new_entity_id
                     )
+                elif isinstance(var_value, dict) and "formula" in var_value:
+                    # Handle ComputedVariable objects (stored as dicts with "formula" key)
+                    formula = var_value["formula"]
+                    if isinstance(formula, str) and old_entity_id in formula:
+                        updated_formula = formula.replace(old_entity_id, new_entity_id)
+                        var_value["formula"] = updated_formula
+                        updated = True
+                        self._logger.debug(
+                            "Updated ComputedVariable '%s' in sensor '%s': %s -> %s",
+                            var_name,
+                            unique_id,
+                            old_entity_id,
+                            new_entity_id,
+                        )
 
         # Update formula
         if "formula" in sensor_config:

@@ -689,13 +689,16 @@ class SensorSet(SensorSetYamlOperationsMixin):
                 updated = True
                 _LOGGER.debug("Updated sensor %s entity_id: %s -> %s", sensor_config.unique_id, old_id, sensor_config.entity_id)
 
-            # Update formula variables
+            # Update formula variables (including ComputedVariable objects)
             for formula in sensor_config.formulas:
                 if formula.variables:
+                    old_variables = formula.variables.copy()
+                    update_formula_variables_for_entity_changes(formula, entity_id_changes)
+
+                    # Check if any variables were actually updated
                     for var_name, var_value in formula.variables.items():
-                        if isinstance(var_value, str) and var_value in entity_id_changes:
-                            old_value = var_value
-                            formula.variables[var_name] = entity_id_changes[var_value]
+                        old_value = old_variables.get(var_name)
+                        if old_value != var_value:
                             updated = True
                             _LOGGER.debug(
                                 "Updated sensor %s formula %s variable %s: %s -> %s",
@@ -703,12 +706,42 @@ class SensorSet(SensorSetYamlOperationsMixin):
                                 formula.id,
                                 var_name,
                                 old_value,
-                                formula.variables[var_name],
+                                var_value,
                             )
 
             # Save updated sensor directly to storage (bypass entity index updates)
             if updated:
                 await self._update_sensor_direct(sensor_config)
+
+        # Update global settings variables
+        await self._update_global_settings_for_entity_changes(entity_id_changes)
+
+    async def _update_global_settings_for_entity_changes(self, entity_id_changes: dict[str, str]) -> None:
+        """Update global settings variables for entity ID changes."""
+        current_global_settings = self.get_global_settings()
+        if not current_global_settings or "variables" not in current_global_settings:
+            return
+
+        updated = False
+        variables = current_global_settings["variables"]
+
+        for var_name, var_value in variables.items():
+            if isinstance(var_value, str) and var_value in entity_id_changes:
+                old_value = var_value
+                variables[var_name] = entity_id_changes[var_value]
+                updated = True
+                _LOGGER.debug(
+                    "Updated global settings variable %s: %s -> %s",
+                    var_name,
+                    old_value,
+                    variables[var_name],
+                )
+
+        # Save updated global settings if any changes were made
+        if updated:
+            # Cast to GlobalSettingsDict since it's compatible with the expected structure
+            typed_global_settings: GlobalSettingsDict = current_global_settings  # type: ignore[assignment]
+            await self._global_settings.async_set_global_settings(typed_global_settings, list(self.list_sensors()))
 
     async def _apply_entity_registry_changes(self, entity_id_changes: dict[str, str]) -> None:
         """
