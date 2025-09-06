@@ -12,19 +12,22 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
 from .alternate_state_eval import evaluate_computed_alternate
 from .boolean_states import BooleanStates
-from .config_models import ComputedVariable, FormulaConfig
+from .config_models import AlternateStateHandler, ComputedVariable, FormulaConfig
 from .constants_entities import get_ha_entity_domains
 from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
+from .context_utils import safe_context_contains, safe_context_set
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import FatalEvaluationError, MissingDependencyError
 from .formula_compilation_cache import FormulaCompilationCache
 from .formula_evaluator_service import FormulaEvaluatorService
 from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
+from .hierarchical_context_dict import HierarchicalContextDict
 from .math_functions import MathFunctions
 from .reference_value_manager import ReferenceValueManager
+from .regex_helper import extract_metadata_function_calls, regex_helper
 from .shared_constants import DATETIME_FUNCTIONS, DURATION_FUNCTIONS, METADATA_FUNCTIONS
-from .type_definitions import ContextValue, ReferenceValue
+from .type_definitions import ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,13 +56,13 @@ def _get_enhanced_helper() -> EnhancedSimpleEvalHelper:
     return _EnhancedHelperSingleton.get_instance()
 
 
-def _extract_values_for_simpleeval(eval_context: dict[str, ContextValue]) -> dict[str, ContextValue]:
+def _extract_values_for_simpleeval(eval_context: HierarchicalContextDict) -> dict[str, Any]:
     """Extract values from ReferenceValue objects for SimpleEval evaluation.
 
     SimpleEval doesn't understand ReferenceValue objects, so we need to extract
     the actual values while preserving other context items.
     """
-    simpleeval_context: dict[str, ContextValue] = {}
+    simpleeval_context: dict[str, Any] = {}
 
     for key, value in eval_context.items():
         if isinstance(value, ReferenceValue):
@@ -197,16 +200,12 @@ def _is_entity_id_reference(reference: str) -> bool:
     # The actual domain validation will happen during evaluation when hass is available
     # This prevents false negatives during config validation while still catching obvious syntax errors
 
-    # Check for valid domain pattern (alphanumeric + underscore, no leading/trailing underscores)
-    import re  # pylint: disable=import-outside-toplevel
+    # ARCHITECTURE FIX: Use centralized regex helper for validation
 
-    domain_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
-    if not domain_pattern.match(domain):
+    if not regex_helper.is_valid_domain_format(domain):
         return False
 
-    # Check for valid object_id pattern (alphanumeric + underscore, no leading/trailing underscores)
-    object_id_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
-    return object_id_pattern.match(object_id) is not None
+    return regex_helper.is_valid_object_id_format(object_id)
 
 
 def _is_entity_id_reference_with_hass(reference: str, hass: Any) -> bool:
@@ -241,18 +240,15 @@ def _is_entity_id_reference_with_hass(reference: str, hass: Any) -> bool:
         return domain in valid_domains
     except Exception:
         # If we can't get domains from registry, fall back to basic pattern validation
-        import re  # pylint: disable=import-outside-toplevel
-
-        domain_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
-        object_id_pattern = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
-        return domain_pattern.match(domain) is not None and object_id_pattern.match(object_id) is not None
+        # ARCHITECTURE FIX: Use centralized regex helper for validation
+        return regex_helper.is_valid_domain_format(domain) and regex_helper.is_valid_object_id_format(object_id)
 
 
 # CLEAN SLATE: Removed exception handler fallback logic - deterministic system should not fallback to 0
 
 
 def _analyze_computed_variable_error(
-    var_name: str, formula: str, eval_context: dict[str, ContextValue], error: Exception
+    var_name: str, formula: str, eval_context: HierarchicalContextDict, error: Exception
 ) -> dict[str, Any]:
     """Analyze a computed variable error and provide detailed diagnostic information.
 
@@ -316,9 +312,9 @@ def _analyze_computed_variable_error(
 
 
 def _resolve_simple_variables(
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     simple_variables: dict[str, Any],
-    resolver_callback: Callable[[str, Any, dict[str, Any], Any | None], Any | None],
+    resolver_callback: Callable[[str, Any, HierarchicalContextDict, Any | None], Any | None],
     sensor_config: Any,
     config: FormulaConfig,
 ) -> None:
@@ -331,34 +327,19 @@ def _resolve_simple_variables(
         sensor_config: Sensor configuration for context
         config: FormulaConfig for context
     """
-    # Entity-centric ReferenceValue registry: one ReferenceValue per unique entity_id
-    entity_registry_key = "_entity_reference_registry"
-    if entity_registry_key not in eval_context:
-        eval_context[entity_registry_key] = {}
+    # ARCHITECTURE FIX: No longer need separate registry dict
+    # Registry data is stored directly in hierarchical context with prefixed keys
 
     for var_name, var_value in simple_variables.items():
         # Skip if this variable is already set in context (context has higher priority)
-        if var_name in eval_context and var_name != entity_registry_key:
-            _LOGGER.debug("Skipping config variable %s (already set in context)", var_name)
+        if var_name in eval_context:
             continue
 
-        _LOGGER.debug("UTILS_CONFIG_DEBUG: Calling resolver_callback for '%s' = '%s'", var_name, var_value)
         resolved_value = resolver_callback(var_name, var_value, eval_context, sensor_config)
-        _LOGGER.debug("UTILS_CONFIG_DEBUG: resolver_callback returned %s for '%s'", resolved_value, var_name)
 
-        # Always set the variable in context - resolver should always return ReferenceValue
-        if isinstance(resolved_value, ReferenceValue):
-            # Resolver already created ReferenceValue - use it directly
-            eval_context[var_name] = resolved_value
-            # Update the registry if needed
-            entity_registry_key = "_entity_reference_registry"
-            if entity_registry_key not in eval_context:
-                eval_context[entity_registry_key] = {}
-            entity_registry = eval_context[entity_registry_key]
-            if isinstance(entity_registry, dict):
-                entity_registry[resolved_value.reference] = resolved_value
-        elif resolved_value is not None:
-            # Resolver returned raw value - wrap in ReferenceValue
+        # Always set the variable in context using ReferenceValueManager for consistency
+        if resolved_value is not None:
+            # Use ReferenceValueManager for all variable setting to ensure consistent registry handling
             ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_value, resolved_value)
         else:
             # Resolver returned None - this is a missing dependency (fatal error)
@@ -366,7 +347,7 @@ def _resolve_simple_variables(
 
 
 def _resolve_computed_variables(
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     computed_variables: dict[str, ComputedVariable],
     config: FormulaConfig,
 ) -> None:
@@ -396,7 +377,7 @@ def _resolve_computed_variables(
 def _process_computed_variables_iteration(
     remaining_vars: dict[str, ComputedVariable],
     resolved_vars: set[str],
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     error_details_map: dict[str, dict[str, Any]],
     parent_config: FormulaConfig | None,
 ) -> bool:
@@ -459,7 +440,7 @@ def _process_computed_variables_iteration(
 def _try_resolve_computed_variable(
     var_name: str,
     computed_var: ComputedVariable,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
 ) -> bool:
     """Try to resolve a single computed variable.
@@ -486,16 +467,16 @@ def _try_resolve_computed_variable(
         return False
 
 
-def _resolve_entity_references_in_computed_variable(formula: str, eval_context: dict[str, ContextValue]) -> str:
+def _resolve_entity_references_in_computed_variable(formula: str, eval_context: HierarchicalContextDict) -> str:
     """Deprecated: computed variables use unified evaluator pipeline; keep for compatibility."""
     return formula
 
 
 def _metadata_function_present(formula: str) -> bool:
-    import re  # pylint: disable=import-outside-toplevel
-
-    metadata_pattern = re.compile(r"\bmetadata\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)")
-    return metadata_pattern.search(formula) is not None
+    metadata_calls = extract_metadata_function_calls(formula)
+    result = len(metadata_calls) > 0
+    _LOGGER.debug("METADATA_DETECTION: Formula '%s' -> %s", formula, result)
+    return result
 
 
 def _build_simple_variables_view(parent_config: FormulaConfig | None) -> dict[str, Any] | None:
@@ -509,7 +490,7 @@ def _build_simple_variables_view(parent_config: FormulaConfig | None) -> dict[st
     return variables_view
 
 
-def _ensure_boolean_constants_in_context(eval_context: dict[str, ContextValue]) -> None:
+def _ensure_boolean_constants_in_context(eval_context: HierarchicalContextDict) -> None:
     """Ensure boolean state constants are available in the evaluation context.
 
     This fixes the issue where computed variables don't have access to boolean constants
@@ -519,31 +500,16 @@ def _ensure_boolean_constants_in_context(eval_context: dict[str, ContextValue]) 
         # Add boolean state mappings to evaluation context if not already present
         boolean_names = BooleanStates.get_all_boolean_names()
         for state_name, bool_value in boolean_names.items():
-            if state_name not in eval_context:
+            if not safe_context_contains(eval_context, state_name):
                 # Add as ReferenceValue to match the context structure
-                eval_context[state_name] = ReferenceValue(reference=state_name, value=bool_value)
+                safe_context_set(eval_context, state_name, ReferenceValue(reference=state_name, value=bool_value))
 
-        _LOGGER.debug("Ensured %d boolean state constants in computed variable context", len(boolean_names))
     except Exception as e:
         _LOGGER.warning("Failed to add boolean state constants to computed variable context: %s", e)
-        # Fallback to basic boolean states
-        basic_boolean_states = {
-            "on": True,
-            "off": False,
-            "home": True,
-            "not_home": False,
-            "true": True,
-            "false": False,
-            "yes": True,
-            "no": False,
-        }
-        for state_name, bool_value in basic_boolean_states.items():
-            if state_name not in eval_context:
-                # Add as ReferenceValue to match the context structure
-                eval_context[state_name] = ReferenceValue(reference=state_name, value=bool_value)
+        # Don't fall back to hardcoded strings - they should be defined in constants
 
 
-def _entity_available_in_hass(eval_context: dict[str, ContextValue]) -> bool:
+def _entity_available_in_hass(eval_context: HierarchicalContextDict) -> bool:
     hass_val = eval_context.get("_hass")
     hass = hass_val.value if isinstance(hass_val, ReferenceValue) else hass_val
     current_sensor_val = eval_context.get("current_sensor_entity_id")
@@ -558,33 +524,93 @@ def _entity_available_in_hass(eval_context: dict[str, ContextValue]) -> bool:
 
 def _evaluate_cv_via_pipeline(
     formula: str,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
     allow_unresolved_states: bool = False,
+    alternate_state_handler: AlternateStateHandler | None = None,
 ) -> dict[str, Any]:
+    _LOGGER.warning("EVAL_CV_PIPELINE_ENTRY: Function called with formula '%s'", formula)
+    # BULLETPROOF: Log context type and ID at entry point
+    _LOGGER.warning(
+        "CONTEXT_FLOW_PIPELINE: Received context id=%d type=%s for formula '%s'",
+        id(eval_context),
+        type(eval_context).__name__,
+        formula[:50],
+    )
+    # CONTEXT DUMP: Log what's in the context before evaluation
+    _LOGGER.warning("EVAL_CV_PIPELINE: About to get context_uuid")
+    context_uuid = eval_context.get("_context_uuid", None) or "NO_UUID"
+    _LOGGER.warning("EVAL_CV_PIPELINE: Got context_uuid: %s", context_uuid)
+    _LOGGER.warning(
+        "CONTEXT_DUMP_BEFORE_EVAL: UUID=%s Formula='%s' Context keys=%s",
+        context_uuid,
+        formula[:50],
+        {
+            k: type(v).__name__ + (f"(value={v.value})" if isinstance(v, ReferenceValue) else f"={v}")
+            for k, v in eval_context.items()
+            if not k.startswith("_")
+        },
+    )
+
     variables_view = _build_simple_variables_view(parent_config)
 
     # Ensure boolean state constants are available in computed variable evaluation context
     # This fixes the issue where computed variables don't have access to boolean constants
-    enhanced_context = eval_context.copy()
+    # CRITICAL FIX: Work with original context, not a copy, to preserve hierarchical context
+    enhanced_context = eval_context  # No .copy() - preserve reference to hierarchical context
     _ensure_boolean_constants_in_context(enhanced_context)
+
+    # ARCHITECTURAL FIX: Do NOT inject resolved values into variables_view
+    # This was causing timestamp contamination in dependency extraction
+    # Instead, let the pipeline resolve variables naturally from the context
+    # The enhanced_context already contains all resolved ReferenceValue objects
+
+    # Keep variables_view clean with only original variable definitions
+    if variables_view is None:
+        variables_view = {}
+
+    # The enhanced_context already contains all resolved variables as ReferenceValue objects
+    # The pipeline will resolve them naturally without contaminating dependency extraction
+    _LOGGER.debug("ARCHITECTURAL_FIX: Using clean variables_view without resolved values to prevent timestamp contamination")
 
     # The FormulaEvaluatorService.evaluate_formula_via_pipeline already handles entity reference resolution
     # through the full variable resolution phase, so we don't need to do it separately here
-    return FormulaEvaluatorService.evaluate_formula_via_pipeline(
-        formula,
-        enhanced_context,
-        variables=variables_view,
-        bypass_dependency_management=False,
-        allow_unresolved_states=allow_unresolved_states,
+    try:
+        result = FormulaEvaluatorService.evaluate_formula_via_pipeline(
+            formula,
+            enhanced_context,
+            variables=variables_view,
+            bypass_dependency_management=False,
+            allow_unresolved_states=allow_unresolved_states,
+            alternate_state_handler=alternate_state_handler,
+        )
+    except Exception:
+        raise
+
+    return result
+
+
+def _set_reference_value(eval_context: HierarchicalContextDict, var_name: str, formula: str, value: Any) -> None:
+    # BULLETPROOF: Log context type and ID before assignment
+    _LOGGER.warning(
+        "CONTEXT_FLOW_SET_REF: About to set %s in context id=%d type=%s",
+        var_name,
+        id(eval_context),
+        type(eval_context).__name__,
     )
 
-
-def _set_reference_value(eval_context: dict[str, ContextValue], var_name: str, formula: str, value: Any) -> None:
+    if "grace" in var_name.lower() or (isinstance(value, bool) and not value):
+        _LOGGER.warning(
+            "SET_REF_VALUE_DEBUG: Setting %s = %s (type: %s) with formula: %s",
+            var_name,
+            value,
+            type(value).__name__,
+            formula[:50],
+        )
     ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, formula, value)
 
 
-def _set_lazy_reference(eval_context: dict[str, ContextValue], var_name: str, formula: str) -> None:
+def _set_lazy_reference(eval_context: HierarchicalContextDict, var_name: str, formula: str) -> None:
     lazy_reference = ReferenceValue(reference=formula, value=None)
     ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, formula, lazy_reference)
 
@@ -592,33 +618,70 @@ def _set_lazy_reference(eval_context: dict[str, ContextValue], var_name: str, fo
 def _resolve_metadata_computed_variable(
     var_name: str,
     computed_var: ComputedVariable,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
 ) -> bool:
-    _LOGGER.debug(
-        "Computed variable %s contains metadata functions - attempting gated evaluation via pipeline",
-        var_name,
-    )
-
-    if not _entity_available_in_hass(eval_context):
+    # CRITICAL FIX: Now that HASS is available from the start, try to resolve metadata variables
+    hass_val = eval_context.get("_hass")
+    hass = hass_val.value if isinstance(hass_val, ReferenceValue) else hass_val
+    if not hass:
+        _LOGGER.warning("METADATA_NO_HASS: No HASS instance available, setting lazy reference for %s", var_name)
         _set_lazy_reference(eval_context, var_name, computed_var.formula)
-        _LOGGER.debug("Computed variable %s stored as lazy ReferenceValue (awaiting HA readiness)", var_name)
         return True
 
+    _LOGGER.warning(
+        "METADATA_RESOLVING: Attempting to resolve metadata variable %s with formula: %s", var_name, computed_var.formula
+    )
     eval_result = _evaluate_cv_via_pipeline(
-        computed_var.formula, eval_context, parent_config, computed_var.allow_unresolved_states
+        computed_var.formula,
+        eval_context,
+        parent_config,
+        computed_var.allow_unresolved_states,
+        computed_var.alternate_state_handler,
+    )
+    if eval_result.get(RESULT_KEY_SUCCESS):
+        value = eval_result.get(RESULT_KEY_VALUE)
+        _LOGGER.warning("METADATA_SUCCESS: Variable %s resolved to %s (type: %s)", var_name, value, type(value).__name__)
+        _set_reference_value(eval_context, var_name, computed_var.formula, value)
+        return True
+
+    _LOGGER.warning("METADATA_FAILED: Variable %s pipeline evaluation failed. Result: %s", var_name, eval_result)
+    _set_lazy_reference(eval_context, var_name, computed_var.formula)
+    return True
+
+    eval_result = _evaluate_cv_via_pipeline(
+        computed_var.formula,
+        eval_context,
+        parent_config,
+        computed_var.allow_unresolved_states,
+        computed_var.alternate_state_handler,
     )
     if eval_result.get(RESULT_KEY_SUCCESS):
         result = eval_result[RESULT_KEY_VALUE]
+
+        # Debug logging for grace period evaluation
+        if "grace" in var_name.lower():
+            _LOGGER.warning("EVAL_RESULT_DEBUG: Variable %s eval_result = %s", var_name, eval_result)
+
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
-        _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
+        _LOGGER.info("METADATA_CV_RESOLVED: Variable %s resolved to %s (type: %s)", var_name, result, type(result).__name__)
+
+        # CONTEXT DUMP: After setting reference value
+        _LOGGER.warning(
+            "CONTEXT_AFTER_VAR_SET: Set %s, Context now has %d items: %s",
+            var_name,
+            len(eval_context),
+            {
+                k: type(v).__name__ + (f"(value={v.value})" if isinstance(v, ReferenceValue) else f"={v}")
+                for k, v in eval_context.items()
+                if not k.startswith("_") and k != "sensor_config"
+            },
+        )
+
         return True
 
-    _LOGGER.debug(
-        "Computed variable %s pipeline evaluation failed or returned error: %s; will keep lazy",
-        var_name,
-        eval_result.get(RESULT_KEY_ERROR),
-    )
+    _LOGGER.warning("METADATA_CV_FAILED: Variable %s pipeline evaluation failed. Result: %s", var_name, eval_result)
+    _LOGGER.warning("METADATA_CV_FAILED_DETAIL: Formula was '%s'", computed_var.formula)
     _set_lazy_reference(eval_context, var_name, computed_var.formula)
     return True
 
@@ -626,16 +689,27 @@ def _resolve_metadata_computed_variable(
 def _resolve_non_metadata_computed_variable(
     var_name: str,
     computed_var: ComputedVariable,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
 ) -> bool:
     eval_result = _evaluate_cv_via_pipeline(
-        computed_var.formula, eval_context, parent_config, computed_var.allow_unresolved_states
+        computed_var.formula,
+        eval_context,
+        parent_config,
+        computed_var.allow_unresolved_states,
+        computed_var.alternate_state_handler,
     )
+
+    # Debug logging for all variables to see what's happening
+    _LOGGER.warning("NON_METADATA_CV_EVAL: Variable %s eval_result = %s", var_name, eval_result)
+
     if eval_result.get(RESULT_KEY_SUCCESS):
         result = eval_result[RESULT_KEY_VALUE]
-        _LOGGER.debug("Computed variable %s resolved via pipeline to: %s", var_name, result)
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
+
+        # CONTEXT DUMP: After setting non-metadata variable
+        _LOGGER.warning("CONTEXT_AFTER_NON_META_VAR: Set %s=%s, Context size=%d", var_name, result, len(eval_context))
+
         return True
 
     error_msg = str(eval_result.get(RESULT_KEY_ERROR))
@@ -646,7 +720,7 @@ def _resolve_non_metadata_computed_variable(
 def _try_handle_computed_variable_error(
     var_name: str,
     computed_var: ComputedVariable,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     error_details_map: dict[str, dict[str, Any]],
     err: Exception,
 ) -> bool:
@@ -663,7 +737,6 @@ def _try_handle_computed_variable_error(
         ReferenceValueManager.set_variable_with_reference_value(
             eval_context, var_name, computed_var.formula, alternate_state_result
         )
-        _LOGGER.debug("Resolved computed variable %s using alternate state handler = %s", var_name, alternate_state_result)
         return True
 
     # Alternate state handler failed or not available - provide detailed error context
@@ -676,7 +749,7 @@ def _try_handle_computed_variable_error(
 
 
 def _try_alternate_state_handler(
-    var_name: str, computed_var: ComputedVariable, eval_context: dict[str, ContextValue], error: Exception
+    var_name: str, computed_var: ComputedVariable, eval_context: HierarchicalContextDict, error: Exception
 ) -> bool | str | float | int | None:
     """Try to resolve a computed variable using its alternate state handler.
 
@@ -764,7 +837,7 @@ def _try_alternate_state_handler(
 def _handle_no_progress_error(
     remaining_vars: dict[str, ComputedVariable],
     error_details_map: dict[str, dict[str, Any]],
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
 ) -> None:
     """Handle the case where no progress was made in computed variable resolution."""
     # No progress made - provide detailed error analysis for each failed variable
@@ -790,25 +863,11 @@ def _handle_no_progress_error(
     for details in failed_var_details:
         error_messages.append(f"• {details['variable_name']}: {details['suggestion']}")
 
-    # Include specific undefined variables that were referenced in formulas
-    undefined_vars_raw = eval_context.get("_undefined_variables")
-    undefined_vars: set[str] = set()
-    if undefined_vars_raw and isinstance(undefined_vars_raw, str) and undefined_vars_raw.startswith("SET:"):
-        vars_str = undefined_vars_raw[4:]
-        if vars_str:
-            undefined_vars = set(vars_str.split(","))
-
-    if undefined_vars:
-        undefined_list = sorted(undefined_vars)
-        error_msg = (
-            f"Could not resolve computed variables {list(remaining_vars.keys())}: Missing variables: {undefined_list}.\n"
-            + "\n".join(error_messages)
-        )
-    else:
-        error_msg = (
-            f"Could not resolve computed variables {list(remaining_vars.keys())}: Missing variables: {list(remaining_vars)}.\n"
-            + "\n".join(error_messages)
-        )
+    # Create error message with available information
+    error_msg = (
+        f"Could not resolve variables {list(remaining_vars.keys())}: Missing variables: {list(remaining_vars)}.\n"
+        + "\n".join(error_messages)
+    )
 
     raise MissingDependencyError(error_msg)
 
@@ -820,7 +879,7 @@ def _handle_max_iterations_error(remaining_vars: dict[str, ComputedVariable], ma
     formulas_info = [f"{name}: '{remaining_vars[name].formula}'" for name in remaining_var_names]
 
     raise MissingDependencyError(
-        f"Could not resolve computed variables {remaining_var_names} within {max_iterations} iterations. "
+        f"Could not resolve variables {remaining_var_names} within {max_iterations} iterations. "
         f"This likely indicates circular dependencies between variables:\n" + "\n".join(f"• {info}" for info in formulas_info)
     )
 
@@ -828,7 +887,7 @@ def _handle_max_iterations_error(remaining_vars: dict[str, ComputedVariable], ma
 def resolve_metadata_computed_variable(
     var_name: str,
     computed_var: ComputedVariable,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
 ) -> bool:
     """Resolve computed variables containing metadata functions.
@@ -851,7 +910,7 @@ def resolve_metadata_computed_variable(
 def resolve_non_metadata_computed_variable(
     var_name: str,
     computed_var: ComputedVariable,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
 ) -> bool:
     """Resolve computed variables that don't contain metadata functions.
@@ -889,7 +948,7 @@ def metadata_function_present(formula: str) -> bool:
 def try_resolve_computed_variable(
     var_name: str,
     computed_var: ComputedVariable,
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
 ) -> bool:
     """Try to resolve a single computed variable.
@@ -906,8 +965,6 @@ def try_resolve_computed_variable(
     Returns:
         True if successfully resolved, False otherwise
     """
-    _LOGGER.debug("Resolving computed variable %s with formula: %s", var_name, computed_var.formula)
-
     try:
         if metadata_function_present(computed_var.formula):
             return resolve_metadata_computed_variable(var_name, computed_var, eval_context, parent_config)
@@ -920,9 +977,9 @@ def try_resolve_computed_variable(
 
 
 def resolve_config_variables(
-    eval_context: dict[str, ContextValue],
+    eval_context: HierarchicalContextDict,
     config: FormulaConfig | None,
-    resolver_callback: Callable[[str, Any, dict[str, Any], Any | None], Any | None],
+    resolver_callback: Callable[[str, Any, HierarchicalContextDict, Any | None], Any | None],
     sensor_config: Any = None,
 ) -> None:
     """Resolve config variables using the provided resolver callback.
@@ -937,6 +994,19 @@ def resolve_config_variables(
         resolver_callback: Callback function to resolve individual variables
         sensor_config: Optional sensor configuration for context
     """
+    # BULLETPROOF: Log what type of context we receive at the entry point
+    try:
+        context_len = len(eval_context)
+    except TypeError:
+        # HierarchicalContextDict doesn't support len(), use keys count
+        context_len = len(list(eval_context.keys())) if hasattr(eval_context, "keys") else 0
+
+    _LOGGER.warning(
+        "RESOLVE_CONFIG_VARS_ENTRY: Received context id=%d type=%s with %d items",
+        id(eval_context),
+        type(eval_context).__name__,
+        context_len,
+    )
     if not config or not config.variables:
         return
 
@@ -952,8 +1022,16 @@ def resolve_config_variables(
 
     # Resolve simple variables first (they may be dependencies for computed variables)
     if simple_variables:
+        _LOGGER.debug("RESOLVE_SIMPLE_VARS: Resolving %d simple variables", len(simple_variables))
         _resolve_simple_variables(eval_context, simple_variables, resolver_callback, sensor_config, config)
+        try:
+            context_len = len(eval_context)
+        except TypeError:
+            # HierarchicalContextDict doesn't support len(), use keys count
+            context_len = len(list(eval_context.keys())) if hasattr(eval_context, "keys") else 0
+        _LOGGER.debug("RESOLVE_SIMPLE_VARS: After resolution, context has %d items", context_len)
 
     # Resolve computed variables in dependency order
     if computed_variables:
+        _LOGGER.debug("RESOLVE_COMPUTED_VARS: Resolving %d computed variables", len(computed_variables))
         _resolve_computed_variables(eval_context, computed_variables, config)

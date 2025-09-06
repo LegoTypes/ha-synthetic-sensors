@@ -2,12 +2,16 @@
 
 from collections.abc import Callable
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from homeassistant.core import State
 from homeassistant.helpers.typing import ConfigType
 
+from .context_utils import safe_context_set
 from .type_definitions import ContextValue, EvaluationContext, ReferenceValue
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,9 +19,12 @@ _LOGGER = logging.getLogger(__name__)
 class ReferenceValueManager:
     """Centralized manager for ReferenceValue objects ensuring type safety."""
 
+    # Internal cache for entity deduplication - completely hidden from user context
+    _entity_cache: ClassVar[dict[str, ReferenceValue]] = {}
+
     @staticmethod
     def set_variable_with_reference_value(
-        eval_context: dict[str, ContextValue], var_name: str, var_value: Any, resolved_value: Any
+        eval_context: "HierarchicalContextDict", var_name: str, var_value: Any, resolved_value: Any
     ) -> None:
         """Set a variable in evaluation context using entity-centric ReferenceValue approach.
 
@@ -29,25 +36,30 @@ class ReferenceValueManager:
             var_value: The original variable value (entity ID or reference)
             resolved_value: The resolved state value
         """
-        # Entity-centric ReferenceValue registry: one ReferenceValue per unique entity_id
-        entity_registry_key = "_entity_reference_registry"
-        if entity_registry_key not in eval_context:
-            eval_context[entity_registry_key] = {}
-        entity_registry: dict[str, ReferenceValue] = eval_context[entity_registry_key]  # type: ignore
+        # Debug: Check what type of context we received
+        _LOGGER.debug(
+            "REF_VALUE_MGR_CONTEXT_TYPE: Received context type %s for variable %s", type(eval_context).__name__, var_name
+        )
 
-        # Determine the canonical entity reference (the final entity_id)
+        # ARCHITECTURE: Use internal cache for entity deduplication (hidden from user context)
         entity_reference = var_value if isinstance(var_value, str) else str(var_value)
 
-        # Check if we already have a ReferenceValue for this entity
-        if entity_reference in entity_registry:
-            # Reuse existing ReferenceValue for this entity
-            existing_ref_value = entity_registry[entity_reference]
-            eval_context[var_name] = existing_ref_value
+        # Check internal cache for existing ReferenceValue
+        if entity_reference in ReferenceValueManager._entity_cache:
+            # Reuse existing ReferenceValue for this entity (deduplication)
+            existing_ref_value = ReferenceValueManager._entity_cache[entity_reference]
+            safe_context_set(eval_context, var_name, existing_ref_value)
+
+            # WFF FIX: Also store varaible name under entity ID for dependency resolution
+            # This ensures that future references to the same entity ID can find the resolved value
+            if isinstance(var_value, str) and var_value != var_name and "." in var_value:
+                safe_context_set(eval_context, var_value, existing_ref_value)
+
             _LOGGER.debug(
                 "ReferenceValueManager: %s reusing existing ReferenceValue for entity %s: value=%s",
                 var_name,
                 entity_reference,
-                existing_ref_value.value,
+                getattr(existing_ref_value, "value", existing_ref_value),
             )
         else:
             # Create new ReferenceValue for this entity
@@ -55,20 +67,51 @@ class ReferenceValueManager:
             if isinstance(resolved_value, ReferenceValue):
                 # If resolved_value is already a ReferenceValue, use it directly
                 ref_value = resolved_value
-                # Update the registry with the existing ReferenceValue
-                entity_registry[entity_reference] = ref_value
-                eval_context[var_name] = ref_value
             else:
                 # Create new ReferenceValue for raw values
                 ref_value = ReferenceValue(reference=entity_reference, value=resolved_value)
-                entity_registry[entity_reference] = ref_value
-                eval_context[var_name] = ref_value
+
+            # Cache internally for future deduplication
+            ReferenceValueManager._entity_cache[entity_reference] = ref_value
+
+            # Set in user context under variable name
+            safe_context_set(eval_context, var_name, ref_value)
+
+            # ARCHITECTURE FIX: Also store under entity ID for dependency resolution
+            # This ensures that dependency checking can find already-resolved entities
+            if isinstance(var_value, str) and var_value != var_name and "." in var_value:
+                safe_context_set(eval_context, var_value, ref_value)
+                _LOGGER.debug(
+                    "ReferenceValueManager: %s also stored under entity ID %s for dependency resolution",
+                    var_name,
+                    var_value,
+                )
+
+            # Debug logging for grace period and False values
             _LOGGER.debug(
                 "ReferenceValueManager: %s created new ReferenceValue for entity %s: value=%s",
                 var_name,
                 entity_reference,
                 resolved_value,
             )
+
+    @staticmethod
+    def clear_cache() -> None:
+        """Clear the internal entity cache. Used for testing and cleanup."""
+        ReferenceValueManager._entity_cache.clear()
+
+    @staticmethod
+    def get_cache_stats() -> dict[str, Any]:
+        """Get statistics about the internal cache. Used for debugging."""
+        return {
+            "cached_entities": len(ReferenceValueManager._entity_cache),
+            "entities": list(ReferenceValueManager._entity_cache.keys()),
+        }
+
+    @staticmethod
+    def is_entity_cached(entity_reference: str) -> bool:
+        """Check if an entity is already cached."""
+        return entity_reference in ReferenceValueManager._entity_cache
 
     @staticmethod
     def convert_to_evaluation_context(context: dict[str, ContextValue]) -> EvaluationContext:

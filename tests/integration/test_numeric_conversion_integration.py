@@ -57,7 +57,14 @@ class TestNumericConversionIntegration:
         print(f"Testing formula: {main_formula.formula}")
         print(f"Expected: power_sensor + 0 where power_sensor = 1.0, so result should be 1.0")
 
-        result = evaluator.evaluate_formula(main_formula)
+        # ARCHITECTURE FIX: Create proper context for evaluator
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+        hierarchical_context = HierarchicalEvaluationContext("numeric_test")
+        context = HierarchicalContextDict(hierarchical_context)
+
+        result = evaluator.evaluate_formula(main_formula, context)
 
         # The numeric string "1.0" should be converted to 1.0 and arithmetic should work
         assert result.get("success") is True, f"Formula evaluation failed: {result}"
@@ -102,7 +109,14 @@ class TestNumericConversionIntegration:
         print(f"Testing formula: {main_formula.formula}")
         print(f"Expected: Direct reference to sensor.circuit_a_power with state '1.0'")
 
-        result = evaluator.evaluate_formula(main_formula)
+        # ARCHITECTURE FIX: Create proper context for evaluator
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+        hierarchical_context = HierarchicalEvaluationContext("direct_reference_test")
+        context = HierarchicalContextDict(hierarchical_context)
+
+        result = evaluator.evaluate_formula(main_formula, context)
 
         print(f"Result: {result}")
 

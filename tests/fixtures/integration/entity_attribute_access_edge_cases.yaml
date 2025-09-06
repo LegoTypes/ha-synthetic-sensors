@@ -124,3 +124,38 @@ sensors:
     metadata:
       unit_of_measurement: "W"
       device_class: "power"
+
+  progressive_attribute_chain:
+    name: "Progressive Attribute Chain"
+    formula: "base_value * 0.25"
+    variables:
+      base_value: "sensor.chain_base_entity"
+    attributes:
+      level1:
+        formula: "base_value"
+        metadata:
+          unit_of_measurement: "level1"
+      level2:
+        formula: "level1 * 2"
+        metadata:
+          unit_of_measurement: "level2"
+      level3:
+        formula: "level2 + 10"
+        metadata:
+          unit_of_measurement: "level3"
+      level4:
+        formula: "level3 * 1.5"
+        metadata:
+          unit_of_measurement: "level4"
+      level5:
+        formula: "level4 + level2"
+        metadata:
+          unit_of_measurement: "level5"
+      final_computation:
+        formula: "level5 + level3 + level1"
+        metadata:
+          unit_of_measurement: "final"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"

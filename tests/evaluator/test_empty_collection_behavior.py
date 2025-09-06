@@ -4,6 +4,14 @@ from unittest.mock import MagicMock
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 def test_empty_collection_sum_returns_zero(mock_hass, mock_entity_registry, mock_states):
@@ -15,8 +23,7 @@ def test_empty_collection_sum_returns_zero(mock_hass, mock_entity_registry, mock
     config = FormulaConfig(id="test_empty_sum", formula='sum("device_class:nonexistent_device_class")')
 
     # Should return 0, not raise an error
-    result = evaluator.evaluate_formula(config)
-
+    result = evaluator.evaluate_formula(config, _create_empty_context())
     assert result["success"] is True
     assert result["value"] == 0
 
@@ -29,8 +36,7 @@ def test_empty_collection_avg_returns_zero(mock_hass, mock_entity_registry, mock
     config = FormulaConfig(id="test_empty_avg", formula='avg("regex:sensor\\.nonexistent_.*")')
 
     # Should return 0, not raise an error
-    result = evaluator.evaluate_formula(config)
-
+    result = evaluator.evaluate_formula(config, _create_empty_context())
     assert result["success"] is True
     assert result["value"] == 0
 
@@ -46,8 +52,7 @@ def test_empty_collection_max_returns_zero(mock_hass, mock_entity_registry, mock
     )
 
     # Should return 0, not raise an error
-    result = evaluator.evaluate_formula(config)
-
+    result = evaluator.evaluate_formula(config, _create_empty_context())
     assert result["success"] is True
     assert result["value"] == 0
 
@@ -63,8 +68,7 @@ def test_empty_collection_min_returns_zero(mock_hass, mock_entity_registry, mock
     )
 
     # Should return 0, not raise an error
-    result = evaluator.evaluate_formula(config)
-
+    result = evaluator.evaluate_formula(config, _create_empty_context())
     assert result["success"] is True
     assert result["value"] == 0
 
@@ -95,7 +99,7 @@ def test_collection_with_zero_sum_returns_zero(mock_hass, mock_entity_registry, 
     config = FormulaConfig(id="test_zero_sum", formula='sum("device_class:power")')
 
     # Should return 0 (legitimate result)
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True
     assert result["value"] == 0.0
@@ -128,7 +132,7 @@ def test_collection_with_non_numeric_entities_returns_zero(mock_hass, mock_entit
     config = FormulaConfig(id="test_non_numeric", formula='sum("device_class:door")')
 
     # Should return 0 because no numeric values found
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True
     assert result["value"] == 0
@@ -142,7 +146,7 @@ def test_count_function_with_empty_collection(mock_hass, mock_entity_registry, m
     config = FormulaConfig(id="test_empty_count", formula='count("device_class:nonexistent")')
 
     # For count(), empty collection should return 0
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True
     assert result["value"] == 0
@@ -159,7 +163,7 @@ def test_collection_in_complex_formula(mock_hass, mock_entity_registry, mock_sta
     )
 
     # Should work and return 10 (0 + 10)
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True
     assert result["value"] == 10
@@ -181,7 +185,7 @@ def test_empty_collections_workaround_example(mock_hass, mock_entity_registry, m
     )
 
     # Should return -1 because count returns 0 (no entities)
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True
     assert result["value"] == -1

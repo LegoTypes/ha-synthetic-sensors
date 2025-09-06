@@ -1,10 +1,14 @@
 """Entity reference resolver for synthetic sensor package."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...constants_entities import is_valid_entity_id
 from ...exceptions import MissingDependencyError
+from ...type_definitions import ContextValue
 from ...utils_resolvers import resolve_via_data_provider_entity, resolve_via_hass_entity
 from .base_resolver import VariableResolver
 
@@ -38,7 +42,7 @@ class EntityReferenceResolver(VariableResolver):
                 return is_valid_entity_id(variable_value, hass)
         return False
 
-    def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
+    def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:
         """Resolve an entity reference."""
 
         if not isinstance(variable_value, str):
@@ -55,32 +59,36 @@ class EntityReferenceResolver(VariableResolver):
         data_provider_result = resolve_via_data_provider_entity(self._dependency_handler, variable_value, variable_value)
         if data_provider_result is not None:
             _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Data provider resolved '%s' to %s", variable_value, data_provider_result)
-            return data_provider_result
+            return data_provider_result  # type: ignore[no-any-return]
         _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Data provider could not resolve '%s'", variable_value)
 
         # Try HASS state lookup
         hass_result = resolve_via_hass_entity(self._dependency_handler, variable_value, variable_value)
         if hass_result is not None:
-            return hass_result
+            return hass_result  # type: ignore[no-any-return]
 
         # Try direct resolution
         direct_result = self._resolve_via_direct_lookup(variable_value)
         if direct_result is not None:
-            return direct_result
+            return direct_result  # type: ignore[no-any-return]
 
         # Entity cannot be resolved - this is a missing dependency (fatal error)
         # Missing entities should raise MissingDependencyError, not be converted to STATE_NONE
         _LOGGER.debug("Entity reference resolver: could not resolve '%s', raising MissingDependencyError", variable_value)
         raise MissingDependencyError(f"Entity '{variable_value}' not found")
 
-    def _check_context_resolution(self, variable_value: str, context: dict[str, Any]) -> Any | None:
+    def _check_context_resolution(self, variable_value: str, context: "HierarchicalContextDict") -> ContextValue:
         """Check if the entity is already resolved in the context."""
         if variable_value in context:
             context_value = context[variable_value]
-            # Only return the context value if it's already resolved (not a raw entity ID)
-            if context_value != variable_value:
+            # If there's a ReferenceValue in context, return it (it's already resolved)
+            from ...type_definitions import ReferenceValue
+
+            if isinstance(context_value, ReferenceValue):
                 return context_value
-            # If the context value is the same as variable_value (raw entity ID), continue to resolve it
+            # For other context values (callable, dict, None), return them as-is
+            if context_value is not None:
+                return context_value
         return None
 
     def _resolve_via_direct_lookup(self, variable_value: str) -> Any | None:

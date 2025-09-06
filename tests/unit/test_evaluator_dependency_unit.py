@@ -7,6 +7,8 @@ import pytest
 
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.evaluator_dependency import EvaluatorDependency
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
 
 
 @pytest.fixture
@@ -117,7 +119,11 @@ class TestEvaluatorDependency:
 
             # The formula is "sensor.test_sensor_a + sensor.test_sensor_b" with no variables
             # This should extract both entity references directly
-            deps = dependency.extract_formula_dependencies(formula_config)
+            # Create proper hierarchical context according to architecture
+            hierarchical_context = HierarchicalEvaluationContext("test_context")
+            context = HierarchicalContextDict(hierarchical_context)
+
+            deps = dependency.extract_formula_dependencies(formula_config, context, sensor_config)
 
             # Should extract both direct entity references
             assert len(deps) == 2
@@ -143,8 +149,11 @@ class TestEvaluatorDependency:
 
             # The formula is "sensor.base_power_meter + sum('device_class:energy')"
             # This should extract the direct entity reference
-            context = {}
-            deps, collection_patterns = dependency.extract_and_prepare_dependencies(formula_config, context)
+            # Create proper hierarchical context according to architecture
+            hierarchical_context = HierarchicalEvaluationContext("test_context")
+            context = HierarchicalContextDict(hierarchical_context)
+
+            deps, collection_patterns = dependency.extract_and_prepare_dependencies(formula_config, context, sensor_config)
 
             # Should extract the direct entity reference
             assert len(deps) >= 1  # At least the direct entity reference
@@ -164,7 +173,11 @@ class TestEvaluatorDependency:
         mock_states.register_state("sensor.test_sensor_b", "200")
 
         deps = {"sensor.test_sensor_a", "sensor.test_sensor_b"}
-        missing, unavailable, unknown = dependency.check_dependencies(deps)
+        # Create proper hierarchical context according to architecture
+        hierarchical_context = HierarchicalEvaluationContext("test_context")
+        context = HierarchicalContextDict(hierarchical_context)
+
+        missing, unavailable, unknown = dependency.check_dependencies(deps, context)
 
         # Verify the method returns the expected structure
         assert isinstance(missing, set)
@@ -185,7 +198,11 @@ class TestEvaluatorDependency:
         mock_states.register_state("sensor.test_sensor_a", "100")
 
         deps = {"sensor.test_sensor_a", "sensor.missing_sensor"}
-        missing, unavailable, unknown = dependency.check_dependencies(deps)
+        # Create proper hierarchical context according to architecture
+        hierarchical_context = HierarchicalEvaluationContext("test_context")
+        context = HierarchicalContextDict(hierarchical_context)
+
+        missing, unavailable, unknown = dependency.check_dependencies(deps, context)
 
         # Verify the method returns the expected structure
         assert isinstance(missing, set)

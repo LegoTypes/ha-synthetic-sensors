@@ -7,14 +7,28 @@ This module handles sensor set creation, deletion, and metadata management
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any, cast
+
+from homeassistant.helpers import entity_registry as er
 
 from .config_manager import ConfigManager
 from .config_models import ComputedVariable, Config, FormulaConfig
 from .config_types import AttributeValue, GlobalSettingsDict
 from .cross_sensor_reference_reassignment import BulkYamlReassignment
 from .exceptions import SyntheticSensorsError
+from .regex_helper import (
+    create_sensor_attribute_no_entity_prefix_pattern,
+    create_sensor_expression_pattern,
+    create_sensor_key_no_entity_prefix_pattern,
+    find_all_match_objects,
+    find_entity_attribute_matches,
+    replace_entity_with_state,
+    search_entity_attribute_in_text,
+    search_entity_in_text,
+    search_pattern,
+    substitute_pattern,
+)
+from .storage_manager import SensorSetMetadata
 
 if TYPE_CHECKING:
     from .storage_manager import SensorSetMetadata, StorageManager
@@ -111,7 +125,6 @@ class SensorSetOpsHandler:
         Returns:
             SensorSetMetadata if found, None otherwise
         """
-        from .storage_manager import SensorSetMetadata  # pylint: disable=import-outside-toplevel
 
         data = self.storage_manager.data
 
@@ -140,8 +153,6 @@ class SensorSetOpsHandler:
         Returns:
             List of sensor set metadata
         """
-        from .storage_manager import SensorSetMetadata  # pylint: disable=import-outside-toplevel
-
         data = self.storage_manager.data
         sensor_sets = []
 
@@ -329,6 +340,7 @@ class SensorSetOpsHandler:
             dependencies=formula_config.dependencies.copy(),  # Dependencies handled separately
             variables=updated_variables,
             alternate_state_handler=formula_config.alternate_state_handler,  # Preserve alternate state handler
+            allow_unresolved_states=formula_config.allow_unresolved_states,  # Preserve allow_unresolved_states flag
         )
 
     def _build_self_reference_patterns(self, sensor_key: str, entity_id: str | None) -> set[str]:
@@ -359,6 +371,7 @@ class SensorSetOpsHandler:
                     formula=updated_formula,
                     dependencies=var_value.dependencies.copy(),
                     alternate_state_handler=var_value.alternate_state_handler,
+                    allow_unresolved_states=var_value.allow_unresolved_states,
                 )
                 updated_variables[var_name] = updated_computed_var
             else:
@@ -428,14 +441,12 @@ class SensorSetOpsHandler:
         # Check for entity ID patterns (more specific, so check first)
         for entity_id in entity_ids:
             # Pattern 1: sensor.entity_id (exact match)
-            pattern1 = r"\b" + re.escape(entity_id) + r"\b"
-            if re.search(pattern1, text):
+            if search_entity_in_text(text, entity_id):
                 _LOGGER.debug("Found entity ID exact match for '%s' in text '%s'", entity_id, text)
                 return True
 
             # Pattern 2: sensor.entity_id.attribute (with attribute access)
-            pattern2 = r"\b" + re.escape(entity_id) + r"\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*"
-            if re.search(pattern2, text):
+            if search_entity_attribute_in_text(text, entity_id):
                 _LOGGER.debug("Found entity ID attribute access for '%s' in text '%s'", entity_id, text)
                 return True
 
@@ -452,15 +463,14 @@ class SensorSetOpsHandler:
                 return True
 
             # Pattern 4: sensor_key.attribute (with attribute access)
-            pattern4 = r"\b" + re.escape(sensor_key) + r"\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*"
-            if re.search(pattern4, text):
+            if search_entity_attribute_in_text(text, sensor_key):
                 _LOGGER.debug("Found sensor key attribute access for '%s' in text '%s'", sensor_key, text)
                 return True
 
             # Pattern 5: sensor_key in mathematical/logical expressions
             # Look for the sensor key surrounded by operators, parentheses, or function calls
-            expression_pattern = r"(?:^|[+\-*/()=<>!&|,\s])\s*" + re.escape(sensor_key) + r"\s*(?:[+\-*/()=<>!&|,\s]|$)"
-            if re.search(expression_pattern, text):
+            expression_pattern = create_sensor_expression_pattern(sensor_key)
+            if search_pattern(text, expression_pattern):
                 _LOGGER.debug("Found sensor key in expression for '%s' in text '%s'", sensor_key, text)
                 return True
 
@@ -539,14 +549,12 @@ class SensorSetOpsHandler:
         # Replace entity ID patterns first (more specific)
         for entity_id in entity_ids:
             # Pattern 1: sensor.entity_id (exact match)
-            pattern1 = r"\b" + re.escape(entity_id) + r"\b"
-            if re.search(pattern1, updated_text):
-                updated_text = re.sub(pattern1, "state", updated_text)
+            updated_text, was_replaced = replace_entity_with_state(updated_text, entity_id)
+            if was_replaced:
                 replacements_made[entity_id] = "state"
 
             # Pattern 2: sensor.entity_id.attribute (with attribute access)
-            pattern2 = r"\b" + re.escape(entity_id) + r"(\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)"
-            matches = re.finditer(pattern2, updated_text)
+            matches = find_entity_attribute_matches(updated_text, entity_id)
             for match in matches:
                 full_match = match.group(0)
                 attribute_part = match.group(1)  # The .attribute part
@@ -558,14 +566,14 @@ class SensorSetOpsHandler:
         for sensor_key in sensor_keys:
             # Pattern 3: sensor_key (exact match, not part of entity ID)
             # Use negative lookbehind to avoid matching sensor_key that's part of sensor.sensor_key
-            pattern3 = r"(?<!sensor\.)\b" + re.escape(sensor_key) + r"\b(?!\.[a-zA-Z_])"
-            if re.search(pattern3, updated_text):
-                updated_text = re.sub(pattern3, "state", updated_text)
+            pattern3 = create_sensor_key_no_entity_prefix_pattern(sensor_key)
+            if search_pattern(updated_text, pattern3):
+                updated_text = substitute_pattern(updated_text, pattern3, "state")
                 replacements_made[sensor_key] = "state"
 
             # Pattern 4: sensor_key.attribute (with attribute access, not part of entity ID)
-            pattern4 = r"(?<!sensor\.)\b" + re.escape(sensor_key) + r"(\.[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)"
-            matches = re.finditer(pattern4, updated_text)
+            pattern4 = create_sensor_attribute_no_entity_prefix_pattern(sensor_key)
+            matches = find_all_match_objects(updated_text, pattern4)
             for match in matches:
                 full_match = match.group(0)
                 attribute_part = match.group(1)  # The .attribute part
@@ -595,7 +603,6 @@ class SensorSetOpsHandler:
         # Create callback to collect entity IDs by registering with HA
         async def collect_entity_ids_callback(config: Config) -> dict[str, str]:
             """Register sensors with HA entity registry and collect assigned entity IDs."""
-            from homeassistant.helpers import entity_registry as er  # pylint: disable=import-outside-toplevel
 
             entity_mappings = {}
             entity_registry = er.async_get(self.storage_manager.hass)

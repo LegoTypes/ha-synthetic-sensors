@@ -7,73 +7,14 @@ for proper parsing instead of fragile regex patterns.
 
 import ast
 from enum import Enum
-import re
 
 from ..constants_boolean_states import get_core_false_states, get_core_true_states
-from ..shared_constants import BUILTIN_TYPES, METADATA_FUNCTIONS
+from ..constants_formula import FORMULA_RESERVED_WORDS
+from ..shared_constants import METADATA_FUNCTIONS
 
-# Standard Python keywords and built-in functions that should be excluded
-PYTHON_KEYWORDS = {
-    "and",
-    "or",
-    "not",
-    "if",
-    "else",
-    "elif",
-    "True",
-    "False",
-    "None",
-    "def",
-    "class",
-    "import",
-    "from",
-    "return",
-    "yield",
-    "lambda",
-    "with",
-    "as",
-    "try",
-    "except",
-    "finally",
-    "raise",
-    "assert",
-    "global",
-    "nonlocal",
-    "del",
-    "pass",
-    "break",
-    "continue",
-    "for",
-    "while",
-    "in",
-    "is",
-}
-
-BUILTIN_FUNCTIONS = {
-    "abs",
-    "round",
-    "max",
-    "min",
-    "sum",
-    "len",
-    # Core built-in types (imported from shared_constants)
-    *BUILTIN_TYPES,
-    "range",
-    "enumerate",
-    "zip",
-    "map",
-    "filter",
-    "any",
-    "all",
-    "sorted",
-    "reversed",
-    "avg",
-    "count",
-    "std",
-    "var",
-}
-
-MATHEMATICAL_FUNCTIONS = {"sin", "cos", "tan", "sqrt", "log", "exp", "pow", "ceil", "floor", "pi", "e"}
+# Use centralized constants instead of hardcoded lists
+# Additional built-in functions not in the main constants
+ADDITIONAL_BUILTIN_FUNCTIONS = {"range", "enumerate", "zip", "map", "filter", "any", "all", "sorted", "reversed", "pi", "e"}
 
 
 class ExtractionContext(Enum):
@@ -130,7 +71,8 @@ class FormulaVariableExtractor:
 
     def _get_exclusions_for_context(self, context: ExtractionContext) -> set[str]:
         """Get exclusions based on context."""
-        exclusions = PYTHON_KEYWORDS | BUILTIN_FUNCTIONS | MATHEMATICAL_FUNCTIONS
+        # Use centralized formula reserved words instead of separate lists
+        exclusions = set(FORMULA_RESERVED_WORDS | ADDITIONAL_BUILTIN_FUNCTIONS)
 
         # Add metadata functions from shared constants
         exclusions.update(METADATA_FUNCTIONS)
@@ -181,9 +123,11 @@ class FormulaVariableExtractor:
 
     def _fallback_regex_extraction(self, formula: str) -> set[str]:
         """Fallback regex-based extraction for cases where AST parsing fails."""
-        # Extract identifiers using regex
-        identifier_pattern = re.compile(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b")
-        identifiers = set(identifier_pattern.findall(formula))
+        # Use centralized identifier pattern from regex helper
+        from ..regex_helper import create_identifier_pattern, find_all_matches
+
+        identifier_pattern = create_identifier_pattern()
+        identifiers = set(find_all_matches(formula, identifier_pattern))
 
         # Apply the same exclusions as AST-based extraction
         exclusions = self._get_exclusions_for_context(ExtractionContext.DEPENDENCY_PARSING)

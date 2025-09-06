@@ -438,6 +438,7 @@ class ConfigManager:
             variables=variables,
             metadata=sensor_data.get("metadata", {}),
             alternate_state_handler=formula_alternate_state_handler,
+            allow_unresolved_states=bool(sensor_data.get("allow_unresolved_states", False)),
         )
 
     def _parse_attribute_formula(
@@ -470,6 +471,7 @@ class ConfigManager:
                 attributes={},
                 variables={},
                 metadata={},
+                allow_unresolved_states=False,  # Literal values don't need this
             )
 
         # Handle formula objects (existing behavior)
@@ -507,6 +509,7 @@ class ConfigManager:
             variables=formula_variables,
             metadata=attr_config.get("metadata", {}),
             alternate_state_handler=attr_alternate_state_handler,
+            allow_unresolved_states=bool(attr_config.get("allow_unresolved_states", False)),
         )
 
     async def async_reload_config(self) -> Config:

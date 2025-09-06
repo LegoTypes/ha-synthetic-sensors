@@ -126,8 +126,8 @@ def _discover_domain_characteristics(domain: str) -> set[str]:
         # Try to get domain constant from HA
         ha_domain = _get_ha_domain_constant(domain)
 
-        # Check if we got a mock object (happens in tests)
-        actual_domain = domain if hasattr(ha_domain, "_mock_name") or str(type(ha_domain)).find("Mock") != -1 else ha_domain
+        # Normalize domain constant to a string value when indirection exists
+        actual_domain = domain if not isinstance(ha_domain, str) else ha_domain
 
         # Analyze domain characteristics by examining HA component structure
         try:
@@ -169,8 +169,9 @@ def _discover_domain_characteristics(domain: str) -> set[str]:
             # This is better than using hardcoded lists - we just don't know
             pass
 
-    except Exception as e:
-        _LOGGER.debug("Failed to discover characteristics for domain %s: %s", domain, e)
+    except Exception:
+        # Debug logging removed to reduce verbosity
+        pass
 
     return characteristics
 

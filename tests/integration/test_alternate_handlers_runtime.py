@@ -5,12 +5,347 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
+import uuid
 
 import pytest
 
 from ha_synthetic_sensors import StorageManager, async_setup_synthetic_sensors
 
 
+# FAILING TESTS - MOVED TO TOP FOR PRIORITY DEBUGGING
+
+
+@pytest.mark.run(order=1)
+@pytest.mark.asyncio
+async def test_alternate_handlers_with_none_backing_entities(
+    mock_hass,
+    mock_entity_registry,
+    mock_states,
+    mock_config_entry,
+    mock_async_add_entities,
+    mock_device_registry,
+):
+    """Test alternate handlers when backing entities have None values (integration offline scenario)."""
+
+    # Backing entity that will be set to None (simulating integration offline)
+    # Use a completely different name to avoid collision with the synthetic sensor
+    mock_entity_registry.register_entity("sensor.test_backing", "sensor.test_backing", "sensor")
+    mock_states.register_state("sensor.test_backing", None, {})  # This is the key - None value
+
+    yaml_path = Path(__file__).parent.parent / "fixtures" / "integration" / "offline_scenario.yaml"
+    with open(yaml_path, "r") as f:
+        yaml_content = f.read()
+
+    with (
+        patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+        patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+        patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+    ):
+        mock_store = AsyncMock()
+        mock_store.async_load.return_value = None
+        MockStore.return_value = mock_store
+        MockDeviceRegistry.return_value = mock_device_registry
+
+        storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+        storage_manager._store = mock_store
+        await storage_manager.async_load()
+
+        sensor_set_id = "offline_scenario"
+        await storage_manager.async_create_sensor_set(
+            sensor_set_id=sensor_set_id,
+            device_identifier="test_offline_scenario",
+            name="Offline Scenario Test",
+        )
+
+        result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+        assert result["sensors_imported"] == 1
+
+        sensor_manager = await async_setup_synthetic_sensors(
+            hass=mock_hass,
+            config_entry=mock_config_entry,
+            async_add_entities=mock_async_add_entities,
+            storage_manager=storage_manager,
+        )
+
+        # Collect created entities and set hass
+        all_entities = []
+        for call in mock_async_add_entities.call_args_list:
+            entities_list = call.args[0] if call.args else []
+            all_entities.extend(entities_list)
+        mock_platform = Mock()
+        for entity in all_entities:
+            entity.hass = mock_hass
+            entity.platform = mock_platform
+
+        # Set last_changed to recent time to make within_grace True
+        for entity in all_entities:
+            if getattr(entity, "unique_id", "") == "offline_sensor":
+                mock_state = type(
+                    "MockState",
+                    (),
+                    {
+                        "state": None,  # Simulate offline backing entity
+                        "attributes": {},
+                    },
+                )()
+                mock_state.entity_id = entity.entity_id
+                mock_state.object_id = entity.entity_id.split(".")[-1]
+                mock_state.domain = entity.entity_id.split(".")[0]
+                mock_state.last_changed = datetime.now(timezone.utc) - timedelta(minutes=1)  # Recent, within grace
+                mock_state.last_updated = datetime.now(timezone.utc)
+                mock_states[entity.entity_id] = mock_state
+
+        # This should not raise an exception - the alternate handler should work
+        await sensor_manager.async_update_sensors()
+
+        entity_lookup = {entity.unique_id: entity for entity in all_entities}
+
+        # The sensor should have a value from the alternate handler, not be unavailable
+        offline_entity = entity_lookup.get("offline_sensor")
+        assert offline_entity is not None
+
+        # The sensor should be available because the alternate handler should have worked
+        # When state=None, it should now trigger the NONE alternate handler (after the fix)
+        # The NONE handler formula "3 + energy_grace_period_minutes" should return 3 + 5 = 8
+        assert offline_entity.available is True  # Sensor should be available
+        assert offline_entity.native_value == 8  # Should have the NONE handler fallback value
+
+        # The alternate handler successfully provided a fallback value instead of failing
+        # This demonstrates that the fix allows alternate handlers to work when backing entities are None/unknown
+
+        await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+
+@pytest.mark.run(order=2)
+@pytest.mark.asyncio
+async def test_alternate_handlers_with_unavailable_backing_entities(
+    mock_hass,
+    mock_entity_registry,
+    mock_states,
+    mock_config_entry,
+    mock_async_add_entities,
+    mock_device_registry,
+):
+    """Test alternate handlers when backing entities are unavailable (not None)."""
+
+    # Backing entity that will be set to "unavailable" (different from None)
+    mock_entity_registry.register_entity("sensor.unavailable_backing", "sensor.unavailable_backing", "sensor")
+    mock_states.register_state("sensor.unavailable_backing", "unavailable", {})  # Explicitly unavailable
+
+    yaml_path = Path(__file__).parent.parent / "fixtures" / "integration" / "unavailable_scenario.yaml"
+    with open(yaml_path, "r") as f:
+        yaml_content = f.read()
+
+    with (
+        patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+        patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+        patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+    ):
+        mock_store = AsyncMock()
+        mock_store.async_load.return_value = None
+        MockStore.return_value = mock_store
+        MockDeviceRegistry.return_value = mock_device_registry
+
+        storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+        storage_manager._store = mock_store
+        await storage_manager.async_load()
+
+        sensor_set_id = "unavailable_scenario"
+        await storage_manager.async_create_sensor_set(
+            sensor_set_id=sensor_set_id,
+            device_identifier="test_unavailable_scenario",
+            name="Unavailable Scenario Test",
+        )
+
+        result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+        assert result["sensors_imported"] == 1
+
+        sensor_manager = await async_setup_synthetic_sensors(
+            hass=mock_hass,
+            config_entry=mock_config_entry,
+            async_add_entities=mock_async_add_entities,
+            storage_manager=storage_manager,
+        )
+
+        # Collect created entities and set hass
+        all_entities = []
+        for call in mock_async_add_entities.call_args_list:
+            entities_list = call.args[0] if call.args else []
+            all_entities.extend(entities_list)
+        mock_platform = Mock()
+        for entity in all_entities:
+            entity.hass = mock_hass
+            entity.platform = mock_platform
+
+        # Set last_changed to recent time to make within_grace True
+        for entity in all_entities:
+            if getattr(entity, "unique_id", "") == "test_unavailable_sensor":
+                mock_state = type(
+                    "MockState",
+                    (),
+                    {
+                        "state": "unavailable",  # Explicitly unavailable
+                        "attributes": {},
+                    },
+                )()
+                mock_state.entity_id = entity.entity_id
+                mock_state.object_id = entity.entity_id.split(".")[-1]
+                mock_state.domain = entity.entity_id.split(".")[0]
+                mock_state.last_changed = datetime.now(timezone.utc) - timedelta(minutes=1)
+                mock_state.last_updated = datetime.now(timezone.utc)
+                mock_states[entity.entity_id] = mock_state
+
+        # This should not raise an exception - the alternate handler should work
+        await sensor_manager.async_update_sensors()
+
+        entity_lookup = {entity.unique_id: entity for entity in all_entities}
+
+        # The sensor should have a value from the alternate handler, not be unavailable
+        unavailable_entity = entity_lookup.get("test_unavailable_sensor")
+        assert unavailable_entity is not None
+
+        # The sensor should be available because the alternate handler should have worked
+        assert unavailable_entity.available is True  # Sensor should be available
+        assert unavailable_entity.native_value is not None  # Should have a fallback value
+
+        # The alternate handler successfully provided a fallback value instead of failing
+        # This demonstrates that the fix works for both "unknown" and "unavailable" states
+
+        await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+
+@pytest.mark.run(order=3)
+@pytest.mark.asyncio
+async def test_allow_unresolved_states_behavior(
+    mock_hass,
+    mock_entity_registry,
+    mock_states,
+    mock_config_entry,
+    mock_async_add_entities,
+    mock_device_registry,
+):
+    """Test allow_unresolved_states: true behavior allowing formulas to test for unavailable states."""
+
+    # Add backing entity for the allow_unresolved_states test
+    # NOTE: YAML uses entity_id "sensor.allow_unresolved_backing_test__alternate_handlers_runtime" to avoid collisions
+    # Create a unique backing entity id including a short uuid to avoid collisions with any other test runs
+    backing_entity_id = f"sensor.allow_unresolved_backing_test__allow_unresolved_states_{uuid.uuid4().hex[:8]}"
+
+    # Ensure any previous test registration is removed so the registry doesn't auto-suffix
+    try:
+        mock_entity_registry.remove_entity(backing_entity_id)
+    except Exception:
+        pass
+    if backing_entity_id in mock_states:
+        del mock_states[backing_entity_id]
+
+    mock_entity_registry.register_entity(
+        backing_entity_id,
+        backing_entity_id,
+        "sensor",
+    )
+    mock_states.register_state(backing_entity_id, "unavailable", {})
+
+    yaml_path = Path(__file__).parent.parent / "fixtures" / "integration" / "allow_unresolved_states.yaml"
+    with open(yaml_path, "r") as f:
+        yaml_content = f.read()
+
+        # Map YAML sensor unique id to runtime backing entity via sensor_to_backing_mapping per integration guide
+        sensor_to_backing_mapping_local = {"test_allow_unresolved_sensor": backing_entity_id}
+
+        # Create data provider callback to return backing entity state
+        def create_data_provider_callback(backing_data: dict[str, any]):
+            def data_provider(entity_id: str):
+                return {"value": backing_data.get(entity_id), "exists": entity_id in backing_data}
+
+            return data_provider
+
+        backing_data = {backing_entity_id: "unavailable"}
+        data_provider = create_data_provider_callback(backing_data)
+
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+            patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
+            patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
+        ):
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+            MockDeviceRegistry.return_value = mock_device_registry
+
+            storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
+
+            sensor_set_id = "allow_unresolved_states"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id,
+                device_identifier="test_allow_unresolved_states",
+                name="Allow Unresolved States Test",
+            )
+
+            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            assert result["sensors_imported"] == 1
+
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                data_provider_callback=data_provider,
+                sensor_to_backing_mapping=sensor_to_backing_mapping_local,
+            )
+
+            # Collect created entities and set hass
+            all_entities = []
+            for call in mock_async_add_entities.call_args_list:
+                entities_list = call.args[0] if call.args else []
+                all_entities.extend(entities_list)
+            for entity in all_entities:
+                entity.hass = mock_hass
+
+            # Set last_changed to recent time to make within_grace True
+            for entity in all_entities:
+                if getattr(entity, "unique_id", "") == "test_allow_unresolved_sensor":
+                    mock_state = type(
+                        "MockState",
+                        (),
+                        {
+                            "state": "unavailable",  # Explicitly unavailable
+                            "attributes": {},
+                        },
+                    )()
+                    mock_state.entity_id = entity.entity_id
+                    mock_state.object_id = entity.entity_id.split(".")[-1]
+                    mock_state.domain = entity.entity_id.split(".")[0]
+                    mock_state.last_changed = datetime.now(timezone.utc) - timedelta(minutes=1)
+                    mock_state.last_updated = datetime.now(timezone.utc)
+                    mock_states[entity.entity_id] = mock_state
+
+            # This should not raise an exception - the allow_unresolved_states should allow the formula to evaluate
+            await sensor_manager.async_update_sensors()
+
+            entity_lookup = {entity.unique_id: entity for entity in all_entities}
+
+            # The sensor should have a value from the alternate handler, not be unavailable
+            allow_unresolved_entity = entity_lookup.get("test_allow_unresolved_sensor")
+            assert allow_unresolved_entity is not None
+
+            # The sensor should be available because the allow_unresolved_states allowed the formula to evaluate
+            # and the alternate handler provided a fallback value
+            assert allow_unresolved_entity.available is True  # Sensor should be available
+            assert allow_unresolved_entity.native_value is not None  # Should have a fallback value
+
+            # This demonstrates that allow_unresolved_states: true allows the formula to proceed into evaluation
+            # where it can test for the sensor being in 'unavailable' state and handle it appropriately
+
+            await storage_manager.async_delete_sensor_set(sensor_set_id)
+
+
+@pytest.mark.run(order=4)
 @pytest.mark.asyncio
 async def test_alternate_handlers_and_guard_runtime(
     mock_hass,
@@ -66,6 +401,10 @@ async def test_alternate_handlers_and_guard_runtime(
         # Missing entity used to trigger alternates: represent as UNAVAILABLE so context isn't raw None
         mock_entity_registry.register_entity("sensor.nonexistent_value", "sensor.nonexistent_value", "sensor")
         mock_states.register_state("sensor.nonexistent_value", "unavailable", {})
+        
+        # Missing value entity used by literal_alternate_sensor and object_alternate_sensor
+        mock_entity_registry.register_entity("sensor.missing_value", "sensor.missing_value", "sensor")
+        mock_states.register_state("sensor.missing_value", "unavailable", {})
 
         # Add missing dependencies referenced in the YAML variables
         mock_entity_registry.register_entity("sensor.multiplier_value", "sensor.multiplier_value", "sensor")
@@ -73,6 +412,12 @@ async def test_alternate_handlers_and_guard_runtime(
 
         mock_entity_registry.register_entity("sensor.offset_value", "sensor.offset_value", "sensor")
         mock_states.register_state("sensor.offset_value", "unavailable", {})  # Make unavailable to trigger alternates
+
+        # Register the backing entity that mixed_handlers_sensor references via entity_id
+        mock_entity_registry.register_entity("sensor.mixed_backing", "sensor.mixed_backing", "sensor")
+        mock_states.register_state(
+            "sensor.mixed_backing", "unavailable", {}
+        )  # Set to unavailable to trigger UNAVAILABLE alternate handler
 
         # Register entities used by new literal tests
         # Entity that should be None to trigger NONE handler
@@ -126,6 +471,7 @@ async def test_alternate_handlers_and_guard_runtime(
             backing_data = {
                 "sensor.comprehensive_backing": 100.0,
                 "sensor.mixed_backing": 200.0,
+                "sensor.attr_backing": 100.0,  # Add backing data for attr_backing
                 "sensor.fallback_backing": 300.0,
                 "sensor.priority_backing": 400.0,
                 "sensor.string_backing": "test_value",
@@ -143,19 +489,29 @@ async def test_alternate_handlers_and_guard_runtime(
 
             # Create sensor-to-backing mapping for sensors that use 'state' token
             sensor_to_backing_mapping = {
+                "guard_metadata_sensor": "sensor.guard_backing",
+                "literal_alternate_sensor": "sensor.missing_value",
+                "literal_none_sensor": "sensor.none_value",
+                "literal_fallback_sensor": "sensor.fallback_trigger",
+                "object_alternate_sensor": "sensor.missing_value",
                 "comprehensive_literal_sensor": "sensor.comprehensive_backing",
                 "comprehensive_object_sensor": "sensor.comprehensive_backing",
-                "mixed_literal_sensor": "sensor.mixed_backing",
-                "mixed_object_sensor": "sensor.mixed_backing",
-                "fallback_when_no_specific_handler": "sensor.fallback_backing",
-                "final_fallback_priority_order": "sensor.priority_backing",
-                "string_alternate_sensor": "sensor.string_backing",
-                "boolean_alternate_sensor": "sensor.boolean_backing",
-                "energy_alternate_sensor": "sensor.energy_backing",
+                "mixed_handlers_sensor": "sensor.mixed_backing",
+                "computed_main_fallback_sensor": "sensor.missing_for_cv",
+                "attribute_variable_fallback_sensor": "sensor.attr_backing",
+                "fallback_only_sensor": "sensor.fallback_backing",
+                "fallback_object_sensor": "sensor.fallback_backing",
+                "priority_test_sensor": "sensor.priority_backing",
+                "string_handlers_sensor": "sensor.string_backing",
+                "boolean_handlers_sensor": "sensor.boolean_backing",
+                "energy_none_sensor": "sensor.energy_backing",
             }
 
             def change_notifier_callback(changed_entity_ids: set[str]) -> None:
                 pass  # Enable selective updates
+
+            # Use the per-file mapping; any test-specific local mappings are applied by their own tests
+            combined_sensor_to_backing = dict(sensor_to_backing_mapping)
 
             sensor_manager = await async_setup_synthetic_sensors(
                 hass=mock_hass,
@@ -164,7 +520,7 @@ async def test_alternate_handlers_and_guard_runtime(
                 storage_manager=storage_manager,
                 data_provider_callback=data_provider,
                 change_notifier=change_notifier_callback,
-                sensor_to_backing_mapping=sensor_to_backing_mapping,
+                sensor_to_backing_mapping=combined_sensor_to_backing,
             )
 
             # Collect created entities and set hass
@@ -290,298 +646,3 @@ async def test_alternate_handlers_and_guard_runtime(
         mock_entity_registry._entities.update(original_entities)
         mock_states.clear()
         mock_states.update(original_states)
-
-
-@pytest.mark.asyncio
-async def test_alternate_handlers_with_none_backing_entities(
-    mock_hass,
-    mock_entity_registry,
-    mock_states,
-    mock_config_entry,
-    mock_async_add_entities,
-    mock_device_registry,
-):
-    """Test alternate handlers when backing entities have None values (integration offline scenario)."""
-
-    # Backing entity that will be set to None (simulating integration offline)
-    mock_entity_registry.register_entity("sensor.offline_backing", "sensor.offline_backing", "sensor")
-    mock_states.register_state("sensor.offline_backing", None, {})  # This is the key - None value
-
-    yaml_path = Path(__file__).parent.parent / "fixtures" / "integration" / "offline_scenario.yaml"
-    with open(yaml_path, "r") as f:
-        yaml_content = f.read()
-
-    with (
-        patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
-        patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
-        patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
-        patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
-    ):
-        mock_store = AsyncMock()
-        mock_store.async_load.return_value = None
-        MockStore.return_value = mock_store
-        MockDeviceRegistry.return_value = mock_device_registry
-
-        storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
-        storage_manager._store = mock_store
-        await storage_manager.async_load()
-
-        sensor_set_id = "offline_scenario"
-        await storage_manager.async_create_sensor_set(
-            sensor_set_id=sensor_set_id,
-            device_identifier="test_offline_scenario",
-            name="Offline Scenario Test",
-        )
-
-        result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-        assert result["sensors_imported"] == 1
-
-        sensor_manager = await async_setup_synthetic_sensors(
-            hass=mock_hass,
-            config_entry=mock_config_entry,
-            async_add_entities=mock_async_add_entities,
-            storage_manager=storage_manager,
-        )
-
-        # Collect created entities and set hass
-        all_entities = []
-        for call in mock_async_add_entities.call_args_list:
-            entities_list = call.args[0] if call.args else []
-            all_entities.extend(entities_list)
-        mock_platform = Mock()
-        for entity in all_entities:
-            entity.hass = mock_hass
-            entity.platform = mock_platform
-
-        # Set last_changed to recent time to make within_grace True
-        for entity in all_entities:
-            if getattr(entity, "unique_id", "") == "offline_sensor":
-                mock_state = type(
-                    "MockState",
-                    (),
-                    {
-                        "state": None,  # Simulate offline backing entity
-                        "attributes": {},
-                    },
-                )()
-                mock_state.entity_id = entity.entity_id
-                mock_state.object_id = entity.entity_id.split(".")[-1]
-                mock_state.domain = entity.entity_id.split(".")[0]
-                mock_state.last_changed = datetime.now(timezone.utc) - timedelta(minutes=1)  # Recent, within grace
-                mock_state.last_updated = datetime.now(timezone.utc)
-                mock_states[entity.entity_id] = mock_state
-
-        # This should not raise an exception - the alternate handler should work
-        await sensor_manager.async_update_sensors()
-
-        entity_lookup = {entity.unique_id: entity for entity in all_entities}
-
-        # The sensor should have a value from the alternate handler, not be unavailable
-        offline_entity = entity_lookup.get("offline_sensor")
-        assert offline_entity is not None
-
-        # The sensor should be available because the alternate handler should have worked
-        # When state=None (converted to "unknown") and within_grace=True,
-        # the formula "state if within_grace else 'unknown'" should return a fallback value
-        assert offline_entity.available is True  # Sensor should be available
-        assert offline_entity.native_value is not None  # Should have a fallback value
-
-        # The alternate handler successfully provided a fallback value instead of failing
-        # This demonstrates that the fix allows alternate handlers to work when backing entities are None/unknown
-
-        await storage_manager.async_delete_sensor_set(sensor_set_id)
-
-
-@pytest.mark.asyncio
-async def test_alternate_handlers_with_unavailable_backing_entities(
-    mock_hass,
-    mock_entity_registry,
-    mock_states,
-    mock_config_entry,
-    mock_async_add_entities,
-    mock_device_registry,
-):
-    """Test alternate handlers when backing entities are unavailable (not None)."""
-
-    # Backing entity that will be set to "unavailable" (different from None)
-    mock_entity_registry.register_entity("sensor.unavailable_backing", "sensor.unavailable_backing", "sensor")
-    mock_states.register_state("sensor.unavailable_backing", "unavailable", {})  # Explicitly unavailable
-
-    yaml_path = Path(__file__).parent.parent / "fixtures" / "integration" / "unavailable_scenario.yaml"
-    with open(yaml_path, "r") as f:
-        yaml_content = f.read()
-
-    with (
-        patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
-        patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
-        patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
-        patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
-    ):
-        mock_store = AsyncMock()
-        mock_store.async_load.return_value = None
-        MockStore.return_value = mock_store
-        MockDeviceRegistry.return_value = mock_device_registry
-
-        storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
-        storage_manager._store = mock_store
-        await storage_manager.async_load()
-
-        sensor_set_id = "unavailable_scenario"
-        await storage_manager.async_create_sensor_set(
-            sensor_set_id=sensor_set_id,
-            device_identifier="test_unavailable_scenario",
-            name="Unavailable Scenario Test",
-        )
-
-        result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-        assert result["sensors_imported"] == 1
-
-        sensor_manager = await async_setup_synthetic_sensors(
-            hass=mock_hass,
-            config_entry=mock_config_entry,
-            async_add_entities=mock_async_add_entities,
-            storage_manager=storage_manager,
-        )
-
-        # Collect created entities and set hass
-        all_entities = []
-        for call in mock_async_add_entities.call_args_list:
-            entities_list = call.args[0] if call.args else []
-            all_entities.extend(entities_list)
-        mock_platform = Mock()
-        for entity in all_entities:
-            entity.hass = mock_hass
-            entity.platform = mock_platform
-
-        # Set last_changed to recent time to make within_grace True
-        for entity in all_entities:
-            if getattr(entity, "unique_id", "") == "unavailable_sensor":
-                mock_state = type(
-                    "MockState",
-                    (),
-                    {
-                        "state": "unavailable",  # Explicitly unavailable
-                        "attributes": {},
-                    },
-                )()
-                mock_state.entity_id = entity.entity_id
-                mock_state.object_id = entity.entity_id.split(".")[-1]
-                mock_state.domain = entity.entity_id.split(".")[0]
-                mock_state.last_changed = datetime.now(timezone.utc) - timedelta(minutes=1)
-                mock_state.last_updated = datetime.now(timezone.utc)
-                mock_states[entity.entity_id] = mock_state
-
-        # This should not raise an exception - the alternate handler should work
-        await sensor_manager.async_update_sensors()
-
-        entity_lookup = {entity.unique_id: entity for entity in all_entities}
-
-        # The sensor should have a value from the alternate handler, not be unavailable
-        unavailable_entity = entity_lookup.get("unavailable_sensor")
-        assert unavailable_entity is not None
-
-        # The sensor should be available because the alternate handler should have worked
-        assert unavailable_entity.available is True  # Sensor should be available
-        assert unavailable_entity.native_value is not None  # Should have a fallback value
-
-        # The alternate handler successfully provided a fallback value instead of failing
-        # This demonstrates that the fix works for both "unknown" and "unavailable" states
-
-        await storage_manager.async_delete_sensor_set(sensor_set_id)
-
-
-@pytest.mark.asyncio
-async def test_allow_unresolved_states_behavior(
-    mock_hass,
-    mock_entity_registry,
-    mock_states,
-    mock_config_entry,
-    mock_async_add_entities,
-    mock_device_registry,
-):
-    """Test allow_unresolved_states: true behavior allowing formulas to test for unavailable states."""
-
-    # Add backing entity for the allow_unresolved_states test
-    mock_entity_registry.register_entity("sensor.allow_unresolved_backing", "sensor.allow_unresolved_backing", "sensor")
-    mock_states.register_state("sensor.allow_unresolved_backing", "unavailable", {})
-
-    yaml_path = Path(__file__).parent.parent / "fixtures" / "integration" / "allow_unresolved_states.yaml"
-    with open(yaml_path, "r") as f:
-        yaml_content = f.read()
-
-    with (
-        patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
-        patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
-        patch("ha_synthetic_sensors.collection_resolver.er.async_get", return_value=mock_entity_registry),
-        patch("ha_synthetic_sensors.constants_entities.er.async_get", return_value=mock_entity_registry),
-    ):
-        mock_store = AsyncMock()
-        mock_store.async_load.return_value = None
-        MockStore.return_value = mock_store
-        MockDeviceRegistry.return_value = mock_device_registry
-
-        storage_manager = StorageManager(mock_hass, "test_storage", enable_entity_listener=False)
-        storage_manager._store = mock_store
-        await storage_manager.async_load()
-
-        sensor_set_id = "allow_unresolved_states"
-        await storage_manager.async_create_sensor_set(
-            sensor_set_id=sensor_set_id,
-            device_identifier="test_allow_unresolved_states",
-            name="Allow Unresolved States Test",
-        )
-
-        result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-        assert result["sensors_imported"] == 1
-
-        sensor_manager = await async_setup_synthetic_sensors(
-            hass=mock_hass,
-            config_entry=mock_config_entry,
-            async_add_entities=mock_async_add_entities,
-            storage_manager=storage_manager,
-        )
-
-        # Collect created entities and set hass
-        all_entities = []
-        for call in mock_async_add_entities.call_args_list:
-            entities_list = call.args[0] if call.args else []
-            all_entities.extend(entities_list)
-        for entity in all_entities:
-            entity.hass = mock_hass
-
-        # Set last_changed to recent time to make within_grace True
-        for entity in all_entities:
-            if getattr(entity, "unique_id", "") == "allow_unresolved_sensor":
-                mock_state = type(
-                    "MockState",
-                    (),
-                    {
-                        "state": "unavailable",  # Explicitly unavailable
-                        "attributes": {},
-                    },
-                )()
-                mock_state.entity_id = entity.entity_id
-                mock_state.object_id = entity.entity_id.split(".")[-1]
-                mock_state.domain = entity.entity_id.split(".")[0]
-                mock_state.last_changed = datetime.now(timezone.utc) - timedelta(minutes=1)
-                mock_state.last_updated = datetime.now(timezone.utc)
-                mock_states[entity.entity_id] = mock_state
-
-        # This should not raise an exception - the allow_unresolved_states should allow the formula to evaluate
-        await sensor_manager.async_update_sensors()
-
-        entity_lookup = {entity.unique_id: entity for entity in all_entities}
-
-        # The sensor should have a value from the alternate handler, not be unavailable
-        allow_unresolved_entity = entity_lookup.get("allow_unresolved_sensor")
-        assert allow_unresolved_entity is not None
-
-        # The sensor should be available because the allow_unresolved_states allowed the formula to evaluate
-        # and the alternate handler provided a fallback value
-        assert allow_unresolved_entity.available is True  # Sensor should be available
-        assert allow_unresolved_entity.native_value is not None  # Should have a fallback value
-
-        # This demonstrates that allow_unresolved_states: true allows the formula to proceed into evaluation
-        # where it can test for the sensor being in 'unavailable' state and handle it appropriately
-
-        await storage_manager.async_delete_sensor_set(sensor_set_id)

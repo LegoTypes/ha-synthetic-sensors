@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-import re
 from typing import Any, TypedDict
 
 from .exceptions import DataValidationError
@@ -65,18 +64,28 @@ class ConditionParser:
         # STEP 1: Detect and reject invalid cases first
 
         # Check for operators without values (including compound operators like >=, <=, ==, !=)
-        if re.match(r"\s*(<=|>=|==|!=|<|>|[=&|%*/+-])\s*$", condition):
+        from .regex_helper import is_operator_only
+
+        if is_operator_only(condition):
             raise DataValidationError(f"Invalid state condition: '{condition}' is just an operator without a value")
 
-        if re.match(r"\s*[=]{1}[^=]", condition):  # Single = (assignment, not comparison)
+        from .regex_helper import has_assignment_operator
+
+        if has_assignment_operator(condition):  # Single = (assignment, not comparison)
             raise DataValidationError(f"Invalid state condition: '{condition}'. Use '==' for comparison, not '='")
 
-        if re.search(r"[&|%*/+]", condition):  # Non-comparison operators anywhere (excluding - for dates/negative numbers)
+        from .regex_helper import has_non_comparison_operators
+
+        if has_non_comparison_operators(
+            condition
+        ):  # Non-comparison operators anywhere (excluding - for dates/negative numbers)
             raise DataValidationError(
                 f"Invalid state condition: '{condition}'. Expected comparison operators: ==, !=, <, <=, >, >="
             )
 
-        if re.search(r">{2,}|<{2,}", condition):  # Multiple > or < (like >>, <<)
+        from .regex_helper import has_multiple_comparison_operators
+
+        if has_multiple_comparison_operators(condition):  # Multiple > or < (like >>, <<)
             raise DataValidationError(
                 f"Invalid state condition: '{condition}'. Expected comparison operators: ==, !=, <, <=, >, >="
             )
@@ -84,17 +93,21 @@ class ConditionParser:
         # STEP 2: Parse valid cases
 
         # Handle simple negation: !value (but not != operator)
-        negation_match = re.match(r"\s*!(?!=)\s*(.+)", condition)  # Negative lookahead: ! not followed by =
-        if negation_match:
-            value_str = negation_match.group(1).strip()
+        from .regex_helper import extract_negation_condition
+
+        negated_condition = extract_negation_condition(condition)
+        if negated_condition:
+            value_str = negated_condition.strip()
             if not value_str:
                 raise DataValidationError(f"Invalid state condition: '{condition}'. Negation '!' requires a value")
             return ParsedCondition(operator="!=", value=ConditionParser._clean_value_string(value_str))
 
         # Handle explicit comparison operators: >=, ==, !=, etc.
-        operator_match = re.match(r"\s*(<=|>=|==|!=|<|>)\s+(.+)", condition)  # Note: \s+ requires space
-        if operator_match:
-            op, value_str = operator_match.groups()
+        from .regex_helper import extract_comparison_condition
+
+        comparison_result = extract_comparison_condition(condition)
+        if comparison_result:
+            op, value_str = comparison_result
             value_str = value_str.strip()
 
             # Validate operator is recognized
@@ -122,8 +135,11 @@ class ConditionParser:
 
         # Pattern: attribute_name operator value
         # Examples: friendly_name == "Living Room", battery_level > 50
-        pattern = r"^([a-zA-Z_][a-zA-Z0-9_]*)\s*(<=|>=|==|!=|<|>)\s*(.+)$"
-        match = re.match(pattern, condition)
+        # Use centralized condition parsing pattern from regex helper
+        from .regex_helper import create_condition_parsing_pattern, match_pattern
+
+        pattern = create_condition_parsing_pattern()
+        match = match_pattern(condition, pattern)
 
         if not match:
             return None

@@ -50,6 +50,11 @@ FORMULA_RESERVED_WORDS: frozenset[str] = frozenset(
         "len",
         "abs",
         "round",
+        "floor",
+        "ceil",
+        # Statistical functions
+        "std",
+        "var",
         # Mathematical functions
         "sin",
         "cos",
@@ -142,6 +147,43 @@ DEPENDENCY_ERROR_TYPES: frozenset[str] = frozenset(
         "CircularDependencyError",  # Circular dependency detected
     }
 )
+
+# Mathematical and logical operators used in formulas
+ARITHMETIC_OPERATORS: frozenset[str] = frozenset(
+    {
+        "+",  # Addition
+        "-",  # Subtraction
+        "*",  # Multiplication
+        "/",  # Division
+        "(",  # Left parenthesis
+        ")",  # Right parenthesis
+    }
+)
+
+COMPARISON_OPERATORS: frozenset[str] = frozenset(
+    {
+        "<",  # Less than
+        ">",  # Greater than
+        "<=",  # Less than or equal
+        ">=",  # Greater than or equal
+        "==",  # Equal
+        "!=",  # Not equal
+        "=",  # Assignment (used in some contexts)
+    }
+)
+
+LOGICAL_OPERATORS: frozenset[str] = frozenset(
+    {
+        " and ",  # Logical AND (with spaces for word boundary matching)
+        " or ",  # Logical OR (with spaces for word boundary matching)
+        " not ",  # Logical NOT (with spaces for word boundary matching)
+    }
+)
+
+# Combined operator sets for different use cases
+ALL_OPERATORS: frozenset[str] = ARITHMETIC_OPERATORS | COMPARISON_OPERATORS | LOGICAL_OPERATORS
+FORMULA_OPERATORS: frozenset[str] = ARITHMETIC_OPERATORS | COMPARISON_OPERATORS | LOGICAL_OPERATORS
+MATH_OPERATORS: frozenset[str] = ARITHMETIC_OPERATORS  # For mathematical expression detection
 
 
 def is_reserved_word(word: str) -> bool:

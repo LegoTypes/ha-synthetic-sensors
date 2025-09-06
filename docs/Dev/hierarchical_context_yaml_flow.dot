@@ -1,0 +1,98 @@
+digraph HierarchicalContextYAMLFlow {
+    // Graph settings for flow diagram style
+    rankdir=TB;
+    node [shape=box, style=filled, fontname="Arial", fontsize=10, margin="0.2"];
+    edge [fontname="Arial", fontsize=9, fontcolor="#666666"];
+
+    // Color scheme for dark background
+    graph [bgcolor="#2b2b2b", fontcolor="#ffffff"];
+    node [color="#4a4a4a", fillcolor="#3c3c3c", fontcolor="#ffffff"];
+    edge [color="#888888"];
+
+    // Title
+    title [label="Hierarchical Context Flow Through YAML Evaluation Pipeline",
+           shape=plaintext, fontsize=16, fontcolor="#ffffff",
+           pos="0,8!"];
+
+    // YAML Evaluation Phases
+    subgraph cluster_yaml_flow {
+        label="YAML Evaluation Pipeline";
+        style=filled;
+        color="#4a4a4a";
+        fillcolor="#2d2d2d";
+
+        yaml_start [label="YAML Configuration Loaded", fillcolor="#6b6b6b"];
+        global_phase [label="Global Variables Phase", fillcolor="#6b6b6b"];
+        sensor_phase [label="Sensor Variables Phase", fillcolor="#6b6b6b"];
+        main_phase [label="Main Formula Evaluation", fillcolor="#6b6b6b"];
+        attribute_phase [label="Attribute Evaluation", fillcolor="#6b6b6b"];
+        alternate_phase [label="Alternate State Evaluation", fillcolor="#6b6b6b"];
+        yaml_end [label="Evaluation Complete", fillcolor="#4a9c4a"];
+    }
+
+    // Hierarchical Context Layers
+    subgraph cluster_context_layers {
+        label="Hierarchical Context Layers";
+        style=filled;
+        color="#4a4a4a";
+        fillcolor="#2d2d2d";
+
+        layer0 [label="Layer 0: Global Variables\n{global_constant: ReferenceValue(...)}", fillcolor="#5d5d5d"];
+        layer1 [label="Layer 1: Sensor Config Vars\n{power_entity: ReferenceValue(...)}", fillcolor="#5d5d5d"];
+        layer2 [label="Layer 2: Formula Variables\n{temp_sensor: ReferenceValue(...)}", fillcolor="#5d5d5d"];
+        layer3 [label="Layer 3: Runtime Context\n{state: ReferenceValue(...)}", fillcolor="#5d5d5d"];
+        layer4 [label="Layer 4: Attribute Context\n{attr_override: ReferenceValue(...)}", fillcolor="#5d5d5d"];
+        layer5 [label="Layer 5: Alternate State\n{alt_state: ReferenceValue(...)}", fillcolor="#5d5d5d"];
+    }
+
+    // Context Growth Tracking
+    subgraph cluster_growth {
+        label="Context Growth & Inheritance";
+        style=filled;
+        color="#4a4a4a";
+        fillcolor="#2d2d2d";
+
+        growth0 [label="Base Context Created", fillcolor="#4a9c4a"];
+        growth1 [label="Global Layer Added", fillcolor="#4a9c4a"];
+        growth2 [label="Sensor Layer Added", fillcolor="#4a9c4a"];
+        growth3 [label="Formula Layer Added", fillcolor="#4a9c4a"];
+        growth4 [label="Attribute Layer Added", fillcolor="#4a9c4a"];
+        growth5 [label="Alternate State Layer Added", fillcolor="#4a9c4a"];
+    }
+
+    // YAML Flow Connections
+    yaml_start -> global_phase;
+    global_phase -> sensor_phase;
+    sensor_phase -> main_phase;
+    main_phase -> attribute_phase;
+    attribute_phase -> alternate_phase;
+    alternate_phase -> yaml_end;
+
+    // Context Layer Inheritance
+    layer0 -> layer1 [label="inherits"];
+    layer1 -> layer2 [label="inherits"];
+    layer2 -> layer3 [label="inherits"];
+    layer3 -> layer4 [label="inherits"];
+    layer4 -> layer5 [label="inherits"];
+
+    // Context Growth Connections
+    growth0 -> growth1;
+    growth1 -> growth2;
+    growth2 -> growth3;
+    growth3 -> growth4;
+    growth4 -> growth5;
+
+    // Connect YAML phases to context layers
+    global_phase -> layer0 [style=dashed, color="#ffeb3b"];
+    sensor_phase -> layer1 [style=dashed, color="#ffeb3b"];
+    main_phase -> layer2 [style=dashed, color="#ffeb3b"];
+    attribute_phase -> layer4 [style=dashed, color="#ffeb3b"];
+    alternate_phase -> layer5 [style=dashed, color="#ffeb3b"];
+
+    // Connect context layers to growth tracking
+    layer0 -> growth1 [style=dashed, color="#ffeb3b"];
+    layer1 -> growth2 [style=dashed, color="#ffeb3b"];
+    layer2 -> growth3 [style=dashed, color="#ffeb3b"];
+    layer4 -> growth4 [style=dashed, color="#ffeb3b"];
+    layer5 -> growth5 [style=dashed, color="#ffeb3b"];
+}

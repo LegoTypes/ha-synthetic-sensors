@@ -57,7 +57,7 @@ class AlternateFormulaObject(TypedDict, total=False):
     """Object-form alternate handler with formula and optional variables."""
 
     formula: str
-    variables: dict[str, str | int | float | bool]
+    variables: dict[str, str | int | float | ComputedVariable]
 
 
 AlternateValue = str | int | float | bool | AlternateFormulaObject

@@ -25,7 +25,7 @@ class CompiledFormula:
         """
         # Store the original formula - let users control boolean vs string comparisons explicitly
         self.formula = formula
-        _LOGGER.debug("Formula compilation: '%s' (unquoted names for boolean, quoted strings for comparison)", formula)
+        # Debug logging removed to reduce verbosity
 
         # Get boolean state mappings for SimpleEval
         boolean_names = BooleanStates.get_all_boolean_names()
@@ -106,12 +106,12 @@ class FormulaCompilationCache:
 
         if cache_key in self._cache:
             self._hits += 1
-            _LOGGER.debug("Formula compilation cache hit for: %s", formula[:50])
+            # Debug logging removed to reduce verbosity
             return self._cache[cache_key]
 
         # Cache miss - compile the formula
         self._misses += 1
-        _LOGGER.debug("Formula compilation cache miss for: %s", formula[:50])
+        # Debug logging removed to reduce verbosity
 
         # Check cache size limit
         if len(self._cache) >= self._max_entries:
@@ -142,12 +142,12 @@ class FormulaCompilationCache:
         # Find formula with lowest hit count (simple LRU approximation)
         oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k].hit_count)
         del self._cache[oldest_key]
-        _LOGGER.debug("Evicted compiled formula from cache")
+        # Debug logging removed to reduce verbosity
 
     def clear(self) -> None:
         """Clear all cached compiled formulas."""
         self._cache.clear()
-        _LOGGER.debug("Cleared formula compilation cache")
+        # Debug logging removed to reduce verbosity
 
     def clear_formula(self, formula: str) -> None:
         """Clear a specific compiled formula from cache.
@@ -158,7 +158,7 @@ class FormulaCompilationCache:
         cache_key = self._generate_cache_key(formula)
         if cache_key in self._cache:
             del self._cache[cache_key]
-            _LOGGER.debug("Cleared compiled formula from cache: %s", formula[:50])
+            # Debug logging removed to reduce verbosity
 
     def get_statistics(self) -> dict[str, Any]:
         """Get cache statistics.

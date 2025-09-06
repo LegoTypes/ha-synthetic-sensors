@@ -41,6 +41,7 @@ types-aiofiles = "^24.1.0.20250606"
 homeassistant-stubs = "*"
 types-pytz = "^2025.2.0.20250516"
 pytz = "^2025.2"
+pytest-ordering = "^0.6"
 
 [tool.poetry.group.test.dependencies]
 # homeassistant is now in runtime dependencies, so no need here

@@ -31,9 +31,9 @@ def test_extract_formula_dependencies_state_handling_main_vs_attribute() -> None
 
 def test_handle_dependency_issues_unavailable_and_unknown() -> None:
     phase = DependencyManagementPhase()
-    # Unavailable takes precedence, but returns STATE_UNKNOWN for consistency
+    # Unavailable and unknown dependencies should flow through to Phase 3 (return None)
     res_unavail = phase.handle_dependency_issues(set(), {"sensor.a"}, set(), "f")
-    assert isinstance(res_unavail, dict) and res_unavail.get("state") == "unknown"
-    # Unknown only
+    assert res_unavail is None  # Should flow through to Phase 3 for alternate state handling
+    # Unknown only should also flow through to Phase 3
     res_unknown = phase.handle_dependency_issues(set(), set(), {"sensor.b"}, "f")
-    assert isinstance(res_unknown, dict) and res_unknown.get("state") == "unknown"
+    assert res_unknown is None  # Should flow through to Phase 3 for alternate state handling

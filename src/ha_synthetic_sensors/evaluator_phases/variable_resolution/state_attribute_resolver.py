@@ -2,7 +2,10 @@
 
 from contextlib import suppress
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...config_models import SensorConfig
 from ...data_validation import validate_entity_state_value
@@ -28,7 +31,7 @@ class StateAttributeResolver(VariableResolver):
             return variable_value.startswith("state.")
         return False
 
-    def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, ContextValue]) -> Any | None:
+    def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:
         """Resolve a state attribute reference."""
         if not isinstance(variable_value, str) or not variable_value.startswith("state."):
             return None
@@ -37,7 +40,7 @@ class StateAttributeResolver(VariableResolver):
         attribute_path = variable_value.split(".", 1)[1]
 
         # Get sensor_config from context
-        sensor_config_value = context.get("sensor_config")
+        sensor_config_value = context.get("_sensor_config")
         if not isinstance(sensor_config_value, SensorConfig):
             _LOGGER.debug("State attribute resolver: no valid sensor_config in context for '%s'", variable_value)
             return None

@@ -1,12 +1,16 @@
 """Self-reference resolver for handling entity ID self-references."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...constants_evaluation_results import RESULT_KEY_VALUE
 from ...data_validation import validate_data_provider_result
 from ...exceptions import DataValidationError, FormulaEvaluationError
 from ...shared_constants import extract_entity_key_from_domain, is_entity_from_domain
+from ...type_definitions import ContextValue
 from ...utils_resolvers import _convert_hass_state_value
 from .base_resolver import VariableResolver
 
@@ -48,7 +52,7 @@ class SelfReferenceResolver(VariableResolver):
         sensor_key = extract_entity_key_from_domain(variable_value, "sensor")
         return sensor_key is not None and sensor_key in self._sensor_to_backing_mapping
 
-    def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
+    def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:
         """Resolve an entity ID self-reference to either backing entity value or sensor calculated result."""
         if not isinstance(variable_value, str):
             return None
@@ -94,7 +98,7 @@ class SelfReferenceResolver(VariableResolver):
                     _LOGGER.debug(
                         "Self-reference resolver: found sensor value in registry: %s = %s", sensor_key, registry_value
                     )
-                    return registry_value
+                    return registry_value  # type: ignore[no-any-return]
 
             raise FormulaEvaluationError(
                 f"Self-reference resolver: in attribute context but state value is invalid: {state_value}"
@@ -103,7 +107,7 @@ class SelfReferenceResolver(VariableResolver):
         # Default: resolve to backing entity value (main formula context)
         _LOGGER.debug("Self-reference resolver: detected main formula context, resolving to backing entity")
         backing_entity_id = self._sensor_to_backing_mapping[sensor_key]
-        return self._resolve_backing_entity_value(backing_entity_id, variable_value)
+        return self._resolve_backing_entity_value(backing_entity_id, variable_value)  # type: ignore[no-any-return]
 
     def _is_attribute_indicator(self, key: str) -> bool:
         """Check if a context key is an attribute indicator."""

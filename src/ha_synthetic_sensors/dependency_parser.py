@@ -14,21 +14,15 @@ from dataclasses import dataclass, field
 import keyword
 import logging
 import re
-from re import Pattern
 from typing import TYPE_CHECKING, ClassVar
 
 from homeassistant.core import HomeAssistant
 
+from .constants_formula import ARITHMETIC_OPERATORS
 from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
 from .math_functions import MathFunctions
-from .shared_constants import (
-    BOOLEAN_LITERALS,
-    BUILTIN_TYPES,
-    DATETIME_FUNCTIONS,
-    METADATA_FUNCTIONS,
-    PYTHON_KEYWORDS,
-    get_ha_domains,
-)
+from .regex_helper import create_entity_pattern_for_domains, regex_helper
+from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, METADATA_FUNCTIONS, PYTHON_KEYWORDS, get_ha_domains
 
 if TYPE_CHECKING:
     from .config_models import ComputedVariable
@@ -59,17 +53,11 @@ class ParsedDependencies:
 class DependencyParser:
     """Enhanced parser for extracting dependencies from synthetic sensor formulas."""
 
-    # Pattern for aggregation functions with query syntax and optional exclusions
-    AGGREGATION_PATTERN = re.compile(
-        r"\b(sum|avg|count|min|max|std|var)\s*\(\s*"
-        r"(?:"
-        r'(?P<query_quoted>["\'])(?P<query_content_quoted>[^"\']+)(?P=query_quoted)'  # Quoted main query
-        r'(?:\s*,\s*(?P<exclusions>(?:!\s*["\'][^"\']+["\'](?:\s*,\s*)?)+))?|'  # Optional exclusions with !
-        r"(?P<query_content_unquoted>[^),]+)"  # Unquoted main query
-        r"(?:\s*,\s*(?P<exclusions_unquoted>(?:!\s*[^,)]+(?:\s*,\s*)?)+))?"  # Optional exclusions for unquoted
-        r")\s*\)",
-        re.IGNORECASE,
-    )
+    # Use centralized aggregation pattern from regex helper
+    @property
+    def AGGREGATION_PATTERN(self) -> re.Pattern[str]:
+        """Get the aggregation pattern from centralized regex helper."""
+        return regex_helper.create_aggregation_pattern_with_exclusions()
 
     # Pattern for direct entity references (sensor.entity_name format)
     # Lazy-loaded to avoid import-time issues with HA constants
@@ -85,95 +73,64 @@ class DependencyParser:
                 # These are expected when HA is not fully initialized
                 pass
 
-        # Fallback to basic domains when hass is not available or fails
-        return "sensor|binary_sensor|switch|light|climate|input_number|input_text|span|device_tracker|cover"
+        # No fallback - domains should come from HA lazy loading or proper test setup
+        # Return empty string to disable entity pattern matching when domains aren't available
+        return ""
 
     @property
     def ENTITY_PATTERN(self) -> re.Pattern[str]:
         """Get the compiled entity pattern."""
-        return re.compile(
-            rf"\b((?:{self._entity_domains_pattern})\.[a-zA-Z0-9_.]+)",
-            re.IGNORECASE,
-        )
+        domains_pattern = self._entity_domains_pattern
+        if not domains_pattern:
+            # Return a pattern that matches nothing when no domains are available
+            from .regex_helper import get_no_match_pattern
+
+            return get_no_match_pattern()
+        return create_entity_pattern_for_domains(domains_pattern.split("|"))
 
     # Pattern for dot notation attribute access - more specific to avoid conflicts with entity_ids
     @property
     def DOT_NOTATION_PATTERN(self) -> re.Pattern[str]:
         """Get the compiled dot notation pattern."""
-        return re.compile(
-            rf"\b(?!(?:{self._entity_domains_pattern})\.)([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.(attributes\.)?([a-zA-Z0-9_]+)\b"
-        )
+        return regex_helper.create_dot_notation_pattern_with_domain_exclusion(self._entity_domains_pattern)
 
     # Pattern for variable references (simple identifiers that aren't keywords)
     @staticmethod
     def _build_variable_pattern() -> re.Pattern[str]:
         """Build the variable pattern excluding keywords and built-in functions."""
-        excluded_keywords = [
-            "if",
-            "else",
-            "and",
-            "or",
-            "not",
-            "in",
-            "is",
-            "sum",
-            "avg",
-            "count",
-            "min",
-            "max",
-            "std",
-            "var",
-            "abs",
-            "round",
-            "floor",
-            "ceil",
-            "sqrt",
-            "sin",
-            "cos",
-            "tan",
-            "log",
-            "exp",
-            "pow",
-            "state",
-        ]
-        # Add datetime functions from shared constants
-        excluded_keywords.extend(DATETIME_FUNCTIONS)
-        # Add metadata functions from shared constants
-        excluded_keywords.extend(METADATA_FUNCTIONS)
-        excluded_pattern = "|".join(excluded_keywords)
-        return re.compile(rf"\b(?!(?:{excluded_pattern})\b)[a-zA-Z_][a-zA-Z0-9_]*\b")
+        # Use centralized constants instead of hardcoded lists
+        from .constants_formula import FORMULA_RESERVED_WORDS
+
+        # All reserved words are now centralized in constants
+        excluded_keywords = list(FORMULA_RESERVED_WORDS)
+
+        # Use centralized pattern builder
+        return regex_helper.build_variable_exclusion_pattern(excluded_keywords)
 
     VARIABLE_PATTERN = _build_variable_pattern()
 
-    # Query type patterns
-    QUERY_PATTERNS: ClassVar[dict[str, re.Pattern[str]]] = {
-        "regex": re.compile(r"^regex:\s*(.+)$"),
-        "label": re.compile(r"^label:\s*(.+)$"),
-        "device_class": re.compile(r"^device_class:\s*(.+)$"),
-        "area": re.compile(r"^area:\s*(.+)$"),
-        "attribute": re.compile(r"^attribute:\s*(.+)$"),
-        "state": re.compile(r"^state:\s*(.+)$"),
-    }
+    # Query type patterns - use centralized method from regex helper
+    from .regex_helper import create_query_type_patterns
+
+    QUERY_PATTERNS: ClassVar[dict[str, re.Pattern[str]]] = create_query_type_patterns()
 
     def __init__(self, hass: HomeAssistant | None = None) -> None:
         """Initialize the parser with compiled regex patterns."""
         self.hass = hass
 
-        # Compile patterns once for better performance
-        self._entity_patterns: list[Pattern[str]] = [
-            re.compile(r'entity\(["\']([^"\']+)["\']\)'),  # entity("sensor.name")
-            re.compile(r'state\(["\']([^"\']+)["\']\)'),  # state("sensor.name")
-            re.compile(r'states\[["\']([^"\']+)["\']\]'),  # states["sensor.name"]
-        ]
+        # Use domain-focused methods from regex helper - no patterns in implementation
+        from .regex_helper import (
+            get_direct_entity_pattern,
+            get_entity_function_patterns,
+            get_states_dot_notation_pattern,
+            get_variable_references_pattern,
+        )
 
-        # Pattern for states.domain.entity format
-        self._states_pattern = re.compile(r"states\.([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)")
-
-        # Pattern for direct entity ID references (domain.entity_name)
-        self.direct_entity_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_.]*)\b")
-
-        # Pattern for variable names (after entity IDs are extracted)
-        self._variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
+        # Get compiled patterns from centralized regex helper
+        self._entity_patterns: list[re.Pattern[str]] = get_entity_function_patterns()
+        self._states_pattern = get_states_dot_notation_pattern()
+        self.direct_entity_pattern = get_direct_entity_pattern()
+        self._variable_pattern = get_variable_references_pattern()
 
         # Cache excluded terms to avoid repeated lookups
         self._excluded_terms = self._build_excluded_terms()
@@ -191,19 +148,16 @@ class DependencyParser:
         # Examples: "tabs[16]", "tabs [22]", "tabs [30:32]", "device_name", "custom_value"
 
         # If it contains brackets, check if it's a literal expression
-        if "[" in formula and "]" in formula:
-            # Check if it contains arithmetic operators that would make it a formula
-            arithmetic_operators = ["+", "-", "*", "/", "(", ")"]
-            if not any(op in formula for op in arithmetic_operators):
-                # This is a literal expression with brackets (e.g., "tabs[16]", "tabs [22]")
-                return True
+        if "[" in formula and "]" in formula and not any(op in formula for op in ARITHMETIC_OPERATORS):
+            # This is a literal expression with brackets (e.g., "tabs[16]", "tabs [22]")
+            return True
 
         # If it's a simple identifier with no operators, it's a variable
         if formula.strip().replace("_", "").replace("-", "").isalnum():
             return False
 
         # If it contains arithmetic operators (but not brackets), it's a formula that should extract variables
-        if any(op in formula for op in ["+", "-", "*", "/", "(", ")"]):
+        if any(op in formula for op in ARITHMETIC_OPERATORS):
             return False
 
         # If it contains brackets but no arithmetic, it's a literal
@@ -221,14 +175,13 @@ class DependencyParser:
         dependencies = set()
 
         # Extract entity references from function calls
-        for pattern in self._entity_patterns:
-            dependencies.update(pattern.findall(formula))
+        dependencies.update(regex_helper.extract_entity_function_references(formula))
 
         # Extract states.domain.entity references
-        dependencies.update(self._states_pattern.findall(formula))
+        dependencies.update(regex_helper.extract_states_dot_notation_entities(formula))
 
         # Extract direct entity ID references (domain.entity_name)
-        dependencies.update(self.direct_entity_pattern.findall(formula))
+        dependencies.update(regex_helper.extract_direct_entity_references(formula))
 
         # Extract variable names (exclude keywords, functions, and entity IDs)
         all_entity_ids = self.extract_entity_references(formula)
@@ -243,8 +196,107 @@ class DependencyParser:
         if self._is_literal_expression(formula):
             return dependencies
 
-        variable_matches = self._variable_pattern.findall(formula)
+        # ARCHITECTURE FIX: Use centralized regex helper for string literal extraction
+        # Extract variables while excluding string literals (both in metadata and general usage)
+        string_ranges = regex_helper.find_string_literals(formula)
+
+        # Python keywords to exclude
+        python_keywords = {
+            "and",
+            "or",
+            "not",
+            "in",
+            "is",
+            "if",
+            "else",
+            "elif",
+            "for",
+            "while",
+            "def",
+            "class",
+            "return",
+            "yield",
+            "try",
+            "except",
+            "finally",
+            "with",
+            "as",
+            "import",
+            "from",
+            "global",
+            "nonlocal",
+            "lambda",
+            "True",
+            "False",
+            "None",
+            "pass",
+            "break",
+            "continue",
+            "del",
+            "assert",
+            "raise",
+        }
+
+        variable_matches = regex_helper.extract_variables_from_formula(formula, context="dependency_parsing")
         for var in variable_matches:
+            # Skip if this variable is inside a string literal
+            # Find all positions where this variable appears in the formula
+            var_positions = []
+            start_pos = 0
+            while True:
+                pos = formula.find(var, start_pos)
+                if pos == -1:
+                    break
+                # Check if this is a whole word match (not part of another identifier)
+                if (pos == 0 or (not formula[pos - 1].isalnum() and formula[pos - 1] != "_")) and (
+                    pos + len(var) >= len(formula) or (not formula[pos + len(var)].isalnum() and formula[pos + len(var)] != "_")
+                ):
+                    var_positions.append(pos)
+                start_pos = pos + 1
+
+            # Check if any occurrence of this variable is inside a string literal
+            # BUT exclude collection pattern strings (like 'device_class:power' in sum('device_class:power'))
+            is_in_string = False
+            for var_pos in var_positions:
+                for string_range in string_ranges:
+                    if string_range.start <= var_pos < string_range.end:
+                        # Check if this string is part of a collection function call
+                        # Look for aggregation functions like sum(), count(), etc. around this position
+                        is_collection_pattern = False
+                        for func_match in regex_helper.extract_aggregation_function_matches(formula):
+                            func_start = func_match.start()
+                            func_end = func_match.end()
+                            # If the string is inside an aggregation function, it's a collection pattern
+                            if func_start < string_range.start and string_range.end < func_end:
+                                is_collection_pattern = True
+                                break
+
+                        if not is_collection_pattern:
+                            is_in_string = True
+                            break
+                    if is_in_string:
+                        break
+
+            # Skip Python keywords
+            is_keyword = var in python_keywords
+
+            # Skip numeric literals (integers and floats)
+            is_numeric = False
+            try:
+                float(var)
+                is_numeric = True
+            except ValueError:
+                pass
+
+            # Skip entity IDs (format: domain.entity_name)
+            is_entity_id = (
+                "." in var
+                and len(var.split(".")) == 2
+                and all(part.replace("_", "").replace("-", "").isalnum() for part in var.split("."))
+            )
+
+            if is_in_string or is_keyword or is_numeric or is_entity_id:
+                continue
             if (
                 var not in self._excluded_terms
                 and not keyword.iskeyword(var)
@@ -265,22 +317,29 @@ class DependencyParser:
         Returns:
             Set of entity IDs referenced in the formula
         """
+        # Use domain-focused extraction methods from regex helper
+        from .regex_helper import (
+            extract_direct_entity_references,
+            extract_entity_function_references,
+            extract_states_dot_notation_entities,
+        )
+
+        # Check if it's a known domain - domains must be available
+        ha_domains = get_ha_domains(self.hass)
+        if ha_domains is None:
+            raise RuntimeError("Home Assistant domains are not available - entity registry may not be initialized")
+        known_domains = set(ha_domains) | {"input_text", "input_select", "input_datetime"}
+
         entities = set()
 
-        # Extract from entity() and state() functions
-        for pattern in self._entity_patterns:
-            entities.update(pattern.findall(formula))
+        # Extract from entity() and state() functions - these are always valid
+        entities.update(extract_entity_function_references(formula))
 
-        # Extract from states.domain.entity format
-        entities.update(self._states_pattern.findall(formula))
+        # Extract states.domain.entity references - these are always valid
+        entities.update(extract_states_dot_notation_entities(formula))
 
-        # Extract direct entity ID references (domain.entity_name)
-        # But exclude dot notation patterns that are likely variables
-        potential_entities = self.direct_entity_pattern.findall(formula)
-
-        # Check if it's a known domain
-        known_domains = get_ha_domains(self.hass) | {"input_text", "input_select", "input_datetime"}
-
+        # Extract direct entity ID references and validate domains
+        potential_entities = extract_direct_entity_references(formula)
         for entity_id in potential_entities:
             # Only add if it starts with a known domain
             domain = entity_id.split(".")[0] if "." in entity_id else ""
@@ -316,11 +375,10 @@ class DependencyParser:
         # This handles formulas like sum("device_class:device_type") or avg("area:target_area", "device_class:device_type")
 
         # Find aggregation functions and extract all quoted strings within them
-        aggregation_func_pattern = re.compile(r"\b(sum|avg|count|min|max|std|var)\s*\(([^)]+)\)", re.IGNORECASE)
-        for func_match in aggregation_func_pattern.finditer(formula):
+        for func_match in regex_helper.extract_aggregation_function_matches(formula):
             func_args = func_match.group(2)
             # Extract all quoted strings from the function arguments
-            quoted_strings = re.findall(r'["\'](.*?)["\']', func_args)
+            quoted_strings = regex_helper.extract_quoted_strings(func_args)
 
             for quoted_content in quoted_strings:
                 # Check if this is a collection pattern that might contain variables
@@ -332,13 +390,13 @@ class DependencyParser:
                         # Add both the query type and any variables in the pattern value
                         variables.add(query_type)
                         # Extract variables from pattern value (handles device_type in device_class:device_type)
-                        pattern_variables = self._variable_pattern.findall(pattern_value)
+                        pattern_variables = regex_helper.extract_variables_from_pattern_value(pattern_value)
                         variables.update(pattern_variables)
                         break
 
         # Extract variables from dot notation first to identify attribute parts to exclude
         dot_notation_attributes = set()
-        dot_matches = self.DOT_NOTATION_PATTERN.findall(formula)
+        dot_matches = regex_helper.extract_dot_notation_matches(formula)
         for match in dot_matches:
             entity_part = match[0]  # The part before the dot (e.g., "battery_class")
             attribute_part = match[2]  # The part after the dot (e.g., "battery_level")
@@ -469,6 +527,9 @@ class DependencyParser:
         # Add all mathematical function names
         excluded.update(MathFunctions.get_function_names())
 
+        # Add metadata functions
+        excluded.update(METADATA_FUNCTIONS)
+
         return excluded
 
     def extract_static_dependencies(self, formula: str, variables: dict[str, str | int | float | ComputedVariable]) -> set[str]:
@@ -493,16 +554,25 @@ class DependencyParser:
                 # Note: ComputedVariable dependencies are resolved during parsing
                 dependencies.update(getattr(value, "dependencies", set()))
 
-        # Extract direct entity references (sensor.something, etc.)
-        entity_matches = self.ENTITY_PATTERN.findall(formula)
-        dependencies.update(entity_matches)
+        # Extract dependencies from formula using our fixed method
+        formula_dependencies = self.extract_dependencies(formula)
 
-        # Also use the direct entity pattern for full entity IDs
-        full_entity_matches = self.direct_entity_pattern.findall(formula)
-        dependencies.update(full_entity_matches)
+        # For each dependency found in the formula, check if it's a variable name
+        # If so, resolve it to its entity ID; otherwise keep it as is
+        for dep in formula_dependencies:
+            if dep in variables:
+                # This is a variable name, resolve to its entity ID
+                var_value = variables[dep]
+                if isinstance(var_value, str):
+                    dependencies.add(var_value)
+                elif hasattr(var_value, "dependencies"):
+                    dependencies.update(getattr(var_value, "dependencies", set()))
+            else:
+                # This is already an entity ID or other dependency
+                dependencies.add(dep)
 
         # Extract dot notation references and convert to entity_ids
-        dot_matches = self.DOT_NOTATION_PATTERN.findall(formula)
+        dot_matches = regex_helper.extract_dot_notation_matches(formula)
         for match in dot_matches:
             entity_part = match[0]
 
@@ -527,14 +597,15 @@ class DependencyParser:
         queries = []
 
         # Find all aggregation function calls
-        for match in self.AGGREGATION_PATTERN.finditer(formula):
+        for match in regex_helper.extract_aggregation_function_matches_with_exclusions(formula):
             function_name = match.group(1).lower()
 
             # Get the query content (either quoted or unquoted)
-            query_content = match.group("query_content_quoted") or match.group("query_content_unquoted")
+            # Fix: Use get() method to safely access named groups that may not exist
+            query_content = match.groupdict().get("query_content_quoted") or match.groupdict().get("query_content_unquoted")
 
             # Get exclusions (either quoted or unquoted)
-            exclusions_raw = match.group("exclusions") or match.group("exclusions_unquoted")
+            exclusions_raw = match.groupdict().get("exclusions") or match.groupdict().get("exclusions_unquoted")
             exclusions = self._parse_exclusions(exclusions_raw) if exclusions_raw else []
 
             if query_content:
@@ -619,20 +690,13 @@ class DependencyParser:
         Returns:
             Tuple of (clean_pattern, exclusions_list)
         """
-        # Look for space followed by ! to identify start of exclusions
-        # Handle both parenthesized and non-parenthesized exclusions
-        exclusion_match = re.search(r"\s+!\s*(\([^)]+\)|.+)$", pattern)
-        if not exclusion_match:
-            # No inline exclusions found
+        # ARCHITECTURE FIX: Use centralized regex helper for exclusion parsing
+        main_pattern, exclusions_list = regex_helper.find_exclusions_in_pattern(pattern)
+        if not exclusions_list:
             return pattern, []
 
-        # Split the pattern into main part and exclusions part
-        main_pattern = pattern[: exclusion_match.start()].strip()
-        exclusions_part = exclusion_match.group(1).strip()
-
-        # Handle parentheses - remove them if present
-        if exclusions_part.startswith("(") and exclusions_part.endswith(")"):
-            exclusions_part = exclusions_part[1:-1].strip()
+        # Convert list back to the format expected by the rest of the method
+        exclusions_part = " ".join(f"!{exc}" for exc in exclusions_list)
 
         # Parse the exclusions part - it can be like "state:unavailable|unknown|off"
         exclusions = []
@@ -671,8 +735,8 @@ class DependencyParser:
         if not exclusions_raw:
             return exclusions
 
-        # Pattern to match individual exclusions: !'pattern' or !pattern
-        exclusion_pattern = re.compile(r"!\s*(?:[\"']([^\"']+)[\"']|([^,)]+))")
+        # Use centralized exclusion pattern from regex helper
+        exclusion_pattern = regex_helper.create_exclusion_pattern()
 
         for match in exclusion_pattern.finditer(exclusions_raw):
             # Get either quoted or unquoted exclusion
@@ -695,7 +759,7 @@ class DependencyParser:
         used_variables = set()
 
         # Find all potential variable references
-        var_matches = self.VARIABLE_PATTERN.findall(formula)
+        var_matches = regex_helper.extract_variables_from_formula(formula, context="variable_references")
 
         for var_name in var_matches:
             if var_name in variables:
@@ -725,9 +789,9 @@ class DependencyParser:
         """Extract dot notation references for special handling."""
         refs = set()
 
-        for match in self.DOT_NOTATION_PATTERN.finditer(formula):
-            entity_part = match.group(1)
-            attribute_part = match.group(3)
+        for match in regex_helper.extract_dot_notation_matches(formula):
+            entity_part = match[0]
+            attribute_part = match[2]
             full_ref = f"{entity_part}.{attribute_part}"
             refs.add(full_ref)
 

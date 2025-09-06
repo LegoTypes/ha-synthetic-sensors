@@ -1,0 +1,51 @@
+digraph VariableResolutionFlow {
+    // Graph settings for flow diagram style
+    rankdir=TB;
+    node [shape=box, style=filled, fontname="Arial", fontsize=11, margin="0.3"];
+    edge [fontname="Arial", fontsize=10, fontcolor="#666666"];
+
+    // Color scheme for dark background
+    graph [bgcolor="#2b2b2b", fontcolor="#ffffff"];
+    node [color="#4a4a4a", fillcolor="#3c3c3c", fontcolor="#ffffff"];
+    edge [color="#888888"];
+
+    // Title
+    title [label="Internal Cache vs Hierarchical Context Flow",
+           shape=plaintext, fontsize=16, fontcolor="#ffffff",
+           pos="0,5!"];
+
+    // Flow nodes
+    A [label="Variable Resolution Request", fillcolor="#6b6b6b"];
+    B [label="Entity Already Cached?", shape=diamond, fillcolor="#6b6b6b"];
+    C [label="Reuse Cached ReferenceValue", fillcolor="#4a9c4a"];
+    D [label="Create New ReferenceValue", fillcolor="#9c4a4a"];
+    E [label="Store in Internal Cache", fillcolor="#9c4a4a"];
+    F [label="Store in Hierarchical Context Layer", fillcolor="#4a9c4a"];
+    G [label="Variable Available in Context", fillcolor="#4a9c4a"];
+
+    // Flow edges
+    A -> B;
+    B -> C [label="Yes"];
+    B -> D [label="No"];
+    D -> E;
+    C -> F;
+    E -> F;
+    F -> G;
+
+    // Add explanation boxes
+    subgraph cluster_explanation {
+        label="How Internal Cache and Hierarchical Context Work Together";
+        style=filled;
+        color="#4a4a4a";
+        fillcolor="#2d2d2d";
+
+        explanation1 [label="Internal Cache: Entity deduplication across all layers\nEnsures same entity = same ReferenceValue object",
+                     fillcolor="#5d5d5d", shape=note];
+        explanation2 [label="Hierarchical Context: Variable scoping and inheritance\nManages layers: global → sensor → attribute",
+                     fillcolor="#5d5d5d", shape=note];
+    }
+
+    // Connect explanation to relevant parts
+    explanation1 -> E [style=dashed, color="#888888"];
+    explanation2 -> F [style=dashed, color="#888888"];
+}

@@ -10,12 +10,14 @@ global_settings:
     attribution: "Enhanced alternate handlers runtime test"
 
 sensors:
+  # Used by: tests/integration/test_alternate_handlers_runtime.py::test_alternate_handlers_and_guard_runtime
   # Guard + metadata-only computed variable.
   # Expected outcome: `within_grace` evaluates to True because the test sets
   # `sensor.guard_backing.last_changed` to ~1 minute ago while `grace_minutes` = 15.
   # Therefore the UNAVAILABLE alternate for the main formula should NOT be used
   # and the main formula should return the backing entity value. An unrelated
   # `unused_var` set to `unknown` must NOT affect this result.
+  # test_sensor_unique_id: guard_metadata_sensor — backing_entity: sensor.guard_backing
   guard_metadata_sensor:
     name: "Guard Metadata Sensor"
     formula: "sensor.guard_backing"
@@ -42,6 +44,7 @@ sensors:
   # "unavailable" in the test setup, so the UNAVAILABLE literal should be used.
   # We use distinct literals so the test can assert which handler was applied:
   #   UNAVAILABLE -> 11, NONE -> 12, FALLBACK -> 13
+  # test_sensor_unique_id: literal_alternate_sensor — variable missing_value -> sensor.nonexistent_value
   literal_alternate_sensor:
     name: "Literal Alternate Sensor"
     formula: "missing_value + 1"
@@ -58,6 +61,7 @@ sensors:
   # Runtime note: a backing entity with Python None is treated as an unknown/unavailable
   # condition by the evaluator in this integration flow. In practice the UNKNOWN handler
   # will be selected. All handlers are defined so the runtime's choice can be observed.
+  # test_sensor_unique_id: literal_none_sensor — variable state_var -> sensor.none_value
   literal_none_sensor:
     name: "Literal None Alternate Sensor"
     formula: "state_var"
@@ -75,6 +79,7 @@ sensors:
   # Literal FALLBACK-only handler test
   # Runtime note: this sensor references `sensor.fallback_trigger` which is set to
   # "unavailable" in the test setup, therefore the UNAVAILABLE handler will be selected.
+  # test_sensor_unique_id: literal_fallback_sensor — variable missing_for_fallback -> sensor.fallback_trigger
   literal_fallback_sensor:
     name: "Literal Fallback Sensor"
     formula: "missing_for_fallback + 1"
@@ -93,6 +98,7 @@ sensors:
   # Test assertion: when `missing_value` (sensor.nonexistent_value) is unavailable,
   # the UNAVAILABLE object-form handler should evaluate and return `backup + 1` -> 5 + 1 = 6.
   # Expected outcome: sensor value 6 (from UNAVAILABLE handler) and sensor remains available.
+  # test_sensor_unique_id: object_alternate_sensor — variable missing_value -> sensor.nonexistent_value
   object_alternate_sensor:
     name: "Object Alternate Sensor"
     formula: "missing_value * 2"
@@ -120,9 +126,9 @@ sensors:
   # literal handlers for UNAVAILABLE/UNKNOWN/NONE/FALLBACK; the UNAVAILABLE handler (0)
   # should be used in this scenario and therefore the resulting value should be 0.
   # Expected outcome: sensor value 0 (from UNAVAILABLE literal) and sensor remains available.
+  # test_sensor_unique_id: comprehensive_literal_sensor — backing_entity (via mapping): sensor.comprehensive_backing; variable multiplier -> sensor.multiplier_value
   comprehensive_literal_sensor:
     name: "Comprehensive Literal Sensor"
-    entity_id: "sensor.comprehensive_backing"
     formula: "state * multiplier"
     alternate_states:
       UNAVAILABLE: 0
@@ -140,9 +146,9 @@ sensors:
   # but the `multiplier` variable (`sensor.multiplier_value`) is unavailable, the
   # sensor's UNAVAILABLE object-form handler should run: `default_power * 0.5` -> 200 * 0.5 = 100.
   # Expected outcome: sensor value 100 (from UNAVAILABLE handler) and sensor remains available.
+  # test_sensor_unique_id: comprehensive_object_sensor — backing_entity (via mapping): sensor.comprehensive_backing; variable multiplier -> sensor.multiplier_value
   comprehensive_object_sensor:
     name: "Comprehensive Object Sensor"
-    entity_id: "sensor.comprehensive_backing"
     formula: "state * multiplier"
     alternate_states:
       UNAVAILABLE:
@@ -169,9 +175,9 @@ sensors:
       device_class: "power"
 
   # Mixed literal and object handlers
+  # test_sensor_unique_id: mixed_handlers_sensor — backing_entity (via mapping): sensor.mixed_backing; variable offset -> sensor.offset_value
   mixed_handlers_sensor:
     name: "Mixed Handlers Sensor"
-    entity_id: "sensor.mixed_backing"
     formula: "state + offset"
     alternate_states:
       UNAVAILABLE: 42  # Literal
@@ -196,6 +202,7 @@ sensors:
   # the computed variable `computed_adj` should run its UNAVAILABLE handler
   # which computes `backup_calc + 5` (50 + 5 = 55). The main formula
   # `computed_adj + 1` should therefore evaluate to 56.
+  # test_sensor_unique_id: computed_main_fallback_sensor — variable primary -> sensor.missing_for_cv
   computed_main_fallback_sensor:
     name: "Computed Main Fallback Sensor"
     formula: "primary * 2 + 1"
@@ -212,9 +219,9 @@ sensors:
   # Expected: `sensor.missing_attr_var` is unavailable in the test, so
   # the attribute `attr_value`'s UNAVAILABLE handler will run the formula
   # `alt_base + alt_offset` (7 + 2 = 9). The main sensor remains available.
+  # test_sensor_unique_id: attribute_variable_fallback_sensor — backing_entity: sensor.attr_backing; variable attr_var -> sensor.missing_attr_var
   attribute_variable_fallback_sensor:
     name: "Attribute Variable Fallback Sensor"
-    entity_id: "sensor.attr_backing"
     formula: "state"
     variables:
       attr_var: "sensor.missing_attr_var"
@@ -231,9 +238,9 @@ sensors:
       unit_of_measurement: "W"
 
   # FALLBACK-only sensor (no specific handlers)
+  # test_sensor_unique_id: fallback_only_sensor — backing_entity (via mapping): sensor.fallback_backing
   fallback_only_sensor:
     name: "Fallback Only Sensor"
-    entity_id: "sensor.fallback_backing"
     formula: "backing_state * 2"
     alternate_states:
       FALLBACK: 777  # Literal fallback
@@ -244,9 +251,9 @@ sensors:
       device_class: "power"
 
   # FALLBACK-only sensor with object form
+  # test_sensor_unique_id: fallback_object_sensor — backing_entity (via mapping): sensor.fallback_backing
   fallback_object_sensor:
     name: "Fallback Object Sensor"
-    entity_id: "sensor.fallback_backing"
     formula: "backing_state * 2"
     alternate_states:
       FALLBACK:
@@ -261,9 +268,9 @@ sensors:
       device_class: "power"
 
   # Priority test sensor (specific handlers should override FALLBACK)
+  # test_sensor_unique_id: priority_test_sensor — backing_entity (via mapping): sensor.priority_backing
   priority_test_sensor:
     name: "Priority Test Sensor"
-    entity_id: "sensor.priority_backing"
     formula: "backing_state + 10"
     alternate_states:
       UNAVAILABLE: 100  # Should be used for unavailable
@@ -277,9 +284,9 @@ sensors:
       device_class: "power"
 
   # String value handlers
+  # test_sensor_unique_id: string_handlers_sensor — backing_entity (via mapping): sensor.string_backing
   string_handlers_sensor:
     name: "String Handlers Sensor"
-    entity_id: "sensor.string_backing"
     formula: "str(backing_state) + '_processed'"
     alternate_states:
       UNAVAILABLE: "unavailable_string"
@@ -293,9 +300,9 @@ sensors:
       device_class: "timestamp"
 
   # Boolean value handlers
+  # test_sensor_unique_id: boolean_handlers_sensor — backing_entity (via mapping): sensor.boolean_backing
   boolean_handlers_sensor:
     name: "Boolean Handlers Sensor"
-    entity_id: "sensor.boolean_backing"
     formula: "backing_state > 0"
     alternate_states:
       UNAVAILABLE: true
@@ -309,9 +316,9 @@ sensors:
       device_class: "timestamp"
 
   # Energy sensor with NONE preservation
+  # test_sensor_unique_id: energy_none_sensor — backing_entity (via mapping): sensor.energy_backing
   energy_none_sensor:
     name: "Energy None Sensor"
-    entity_id: "sensor.energy_backing"
     formula: "backing_state"
     alternate_states:
       UNAVAILABLE: 0

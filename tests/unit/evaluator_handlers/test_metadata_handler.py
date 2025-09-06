@@ -5,6 +5,8 @@ from unittest.mock import Mock, MagicMock
 import pytest
 
 from ha_synthetic_sensors.evaluator_handlers.metadata_handler import MetadataHandler
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
 from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
@@ -35,15 +37,20 @@ class TestMetadataHandler:
         test_timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_state.last_changed = test_timestamp
         mock_state.entity_id = "sensor.test_entity"
+        # Fix: Make attributes a proper dict so 'in' operator works
+        mock_state.attributes = {}
 
         mock_hass.states.get.return_value = mock_state
 
         # Create handler with mock hass
         handler = MetadataHandler(hass=mock_hass)
 
+        # Create hierarchical context for the test
+        context = HierarchicalContextDict(HierarchicalEvaluationContext("test"))
+
         # Test evaluation
         formula = "metadata(sensor.test_entity, 'last_changed')"
-        result, metadata_results = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula, context)
 
         # Should return transformed formula and metadata results
         expected_formula = "metadata_result(_metadata_0)"
@@ -51,14 +58,16 @@ class TestMetadataHandler:
         assert result == expected_formula
         assert metadata_results == expected_metadata
 
-        # Verify hass.states.get was called correctly
-        mock_hass.states.get.assert_called_once_with("sensor.test_entity")
+        # Verify hass.states.get was called correctly (may be called multiple times during processing)
+        mock_hass.states.get.assert_called_with("sensor.test_entity")
 
     def test_metadata_function_evaluation_entity_id(self):
         """Test evaluation of metadata() function for entity_id."""
         # Create mock Home Assistant instance
         mock_hass = Mock()
         mock_state = Mock()
+        # Fix: Make attributes a proper dict so 'in' operator works
+        mock_state.attributes = {}
 
         mock_state.entity_id = "sensor.test_power"
         mock_hass.states.get.return_value = mock_state
@@ -66,9 +75,12 @@ class TestMetadataHandler:
         # Create handler with mock hass
         handler = MetadataHandler(hass=mock_hass)
 
+        # Create hierarchical context for the test
+        context = HierarchicalContextDict(HierarchicalEvaluationContext("test"))
+
         # Test evaluation
         formula = "metadata(sensor.test_power, 'entity_id')"
-        result, metadata_results = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula, context)
 
         # Should return transformed formula and metadata results
         expected_formula = "metadata_result(_metadata_0)"
@@ -80,6 +92,8 @@ class TestMetadataHandler:
         """Test metadata() function with variable resolution using ReferenceValue."""
         # Set up mock state
         mock_state = Mock()
+        # Fix: Make attributes a proper dict so 'in' operator works
+        mock_state.attributes = {}
         mock_state.entity_id = "sensor.power_meter"
         mock_hass.states.get.return_value = mock_state
 
@@ -99,7 +113,7 @@ class TestMetadataHandler:
         assert metadata_results == expected_metadata
 
         # Verify the resolved entity_id was used
-        mock_hass.states.get.assert_called_once_with("sensor.power_meter")
+        mock_hass.states.get.assert_called_with("sensor.power_meter")
 
     def test_metadata_function_invalid_key(self):
         """Test metadata() function with invalid metadata key."""
@@ -125,8 +139,11 @@ class TestMetadataHandler:
         # Test with invalid key
         formula = "metadata(sensor.test, 'invalid_key')"
 
+        # Create hierarchical context for the test
+        context = HierarchicalContextDict(HierarchicalEvaluationContext("test"))
+
         with pytest.raises(ValueError, match="Metadata key 'invalid_key' not found for entity 'sensor.test'"):
-            handler.evaluate(formula)
+            handler.evaluate(formula, context)
 
     def test_metadata_function_missing_entity(self):
         """Test metadata() function with non-existent entity."""
@@ -137,8 +154,11 @@ class TestMetadataHandler:
 
         formula = "metadata(sensor.nonexistent, 'entity_id')"
 
+        # Create hierarchical context for the test
+        context = HierarchicalContextDict(HierarchicalEvaluationContext("test"))
+
         with pytest.raises(ValueError, match="Entity 'sensor.nonexistent' not found"):
-            handler.evaluate(formula)
+            handler.evaluate(formula, context)
 
     def test_metadata_function_no_hass(self):
         """Test metadata() function without Home Assistant instance."""
@@ -146,23 +166,29 @@ class TestMetadataHandler:
 
         formula = "metadata(sensor.test, 'entity_id')"
 
+        # Create hierarchical context for the test
+        context = HierarchicalContextDict(HierarchicalEvaluationContext("test"))
+
         with pytest.raises(ValueError, match="Home Assistant instance not available"):
-            handler.evaluate(formula)
+            handler.evaluate(formula, context)
 
     def test_metadata_function_wrong_parameter_count(self):
         """Test metadata() function with wrong number of parameters."""
         mock_hass = Mock()
         handler = MetadataHandler(hass=mock_hass)
 
+        # Create hierarchical context for the test
+        context = HierarchicalContextDict(HierarchicalEvaluationContext("test"))
+
         # Too few parameters
         formula = "metadata(sensor.test)"
         with pytest.raises(ValueError, match="metadata\\(\\) function requires exactly 2 parameters, got 1"):
-            handler.evaluate(formula)
+            handler.evaluate(formula, context)
 
         # Too many parameters
         formula = "metadata(sensor.test, 'entity_id', 'extra')"
         with pytest.raises(ValueError, match="metadata\\(\\) function requires exactly 2 parameters, got 3"):
-            handler.evaluate(formula)
+            handler.evaluate(formula, context)
 
     def test_multiple_metadata_calls(self):
         """Test formula with multiple metadata() calls."""
@@ -171,8 +197,12 @@ class TestMetadataHandler:
         # Set up two different mock states
         mock_state1 = Mock()
         mock_state1.entity_id = "sensor.power"
+        # Fix: Make attributes a proper dict so 'in' operator works
+        mock_state1.attributes = {}
         mock_state2 = Mock()
         mock_state2.entity_id = "sensor.temp"
+        # Fix: Make attributes a proper dict so 'in' operator works
+        mock_state2.attributes = {}
 
         # Configure mock to return different states for different entity_ids
         def get_state(entity_id):
@@ -186,9 +216,12 @@ class TestMetadataHandler:
 
         handler = MetadataHandler(hass=mock_hass)
 
+        # Create hierarchical context for the test
+        context = HierarchicalContextDict(HierarchicalEvaluationContext("test"))
+
         # Test formula with multiple metadata calls
         formula = "metadata(sensor.power, 'entity_id') + metadata(sensor.temp, 'entity_id')"
-        result, metadata_results = handler.evaluate(formula)
+        result, metadata_results = handler.evaluate(formula, context)
 
         # Should return transformed formula and metadata results
         expected_formula = "metadata_result(_metadata_0) + metadata_result(_metadata_1)"

@@ -5,6 +5,14 @@ from unittest.mock import MagicMock
 
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_empty_hierarchical_context() -> HierarchicalContextDict:
+    """Create an empty HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 class TestCrossSensorReferences:
@@ -75,7 +83,9 @@ sensors:
         # Test base sensor first
         base_sensor = next(s for s in config.sensors if s.unique_id == "base_sensor")
         base_formula = base_sensor.formulas[0]
-        base_result = evaluator.evaluate_formula_with_sensor_config(base_formula, None, base_sensor)
+        base_result = evaluator.evaluate_formula_with_sensor_config(
+            base_formula, _create_empty_hierarchical_context(), base_sensor
+        )
         assert base_result["success"] is True
         assert base_result["value"] == 1000.0  # state * 1.0 = 1000 * 1.0 = 1000
 
@@ -129,7 +139,9 @@ sensors:
         # Test base sensor first
         base_sensor = next(s for s in config.sensors if s.unique_id == "base_sensor")
         base_formula = base_sensor.formulas[0]
-        base_result = evaluator.evaluate_formula_with_sensor_config(base_formula, None, base_sensor)
+        base_result = evaluator.evaluate_formula_with_sensor_config(
+            base_formula, _create_empty_hierarchical_context(), base_sensor
+        )
         assert base_result["success"] is True
         assert base_result["value"] == 1000.0
 

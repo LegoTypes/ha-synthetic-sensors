@@ -105,12 +105,8 @@ class EvaluatorErrorHandler:
         should_skip = error_count >= self._circuit_breaker_config.max_fatal_errors
 
         if should_skip:
-            _LOGGER.debug(
-                "Formula '%s': Skipping evaluation due to circuit breaker (errors: %d/%d)",
-                formula_name,
-                error_count,
-                self._circuit_breaker_config.max_fatal_errors,
-            )
+            # Debug logging removed to reduce verbosity
+            pass
 
         return should_skip
 
@@ -124,13 +120,7 @@ class EvaluatorErrorHandler:
         new_count = current_count + 1
         self._error_count[formula_name] = new_count
 
-        _LOGGER.debug(
-            "Formula '%s': Error count: %d/%d (threshold: %d)",
-            formula_name,
-            new_count,
-            self._circuit_breaker_config.max_fatal_errors,
-            self._circuit_breaker_config.max_fatal_errors,
-        )
+        # Debug logging removed to reduce verbosity
 
         if new_count >= self._circuit_breaker_config.max_fatal_errors:
             _LOGGER.warning(
@@ -149,13 +139,7 @@ class EvaluatorErrorHandler:
         new_count = current_count + 1
         self._transitory_error_count[formula_name] = new_count
 
-        _LOGGER.debug(
-            "Formula '%s': Transitory error count: %d/%d (threshold: %d)",
-            formula_name,
-            new_count,
-            self._retry_config.max_attempts,
-            self._retry_config.max_attempts,
-        )
+        # Debug logging removed to reduce verbosity
 
         # Log warning if approaching retry limit but don't trigger circuit breaker
         if new_count >= self._retry_config.max_attempts:

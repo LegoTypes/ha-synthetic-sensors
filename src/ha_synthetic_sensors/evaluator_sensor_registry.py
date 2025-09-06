@@ -24,7 +24,7 @@ class EvaluatorSensorRegistry:
             entity_id: Home Assistant entity ID for the sensor
             initial_value: Initial value for the sensor
         """
-        _LOGGER.debug("Registering sensor: %s -> %s with initial value: %s", sensor_name, entity_id, initial_value)
+        # Debug logging removed to reduce verbosity
         self._sensors[sensor_name] = initial_value
         self._sensor_entity_mapping[sensor_name] = entity_id
 
@@ -41,7 +41,7 @@ class EvaluatorSensorRegistry:
         if sensor_name not in self._sensors:
             raise KeyError(f"Sensor '{sensor_name}' is not registered")
 
-        _LOGGER.debug("Updating sensor %s from %s to %s", sensor_name, self._sensors[sensor_name], value)
+        # Debug logging removed to reduce verbosity
         self._sensors[sensor_name] = value
 
     def get_sensor_value(self, sensor_name: str) -> float | str | bool | None:
@@ -61,7 +61,7 @@ class EvaluatorSensorRegistry:
         Args:
             sensor_name: Name of the sensor to unregister
         """
-        _LOGGER.debug("Unregistering sensor: %s", sensor_name)
+        # Debug logging removed to reduce verbosity
         self._sensors.pop(sensor_name, None)
         self._sensor_entity_mapping.pop(sensor_name, None)
 

@@ -10,6 +10,20 @@ from ha_synthetic_sensors.evaluator_handlers.metadata_handler import (
     ERROR_METADATA_HASS_NOT_AVAILABLE,
 )
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_hierarchical_context(initial_vars: dict[str, ReferenceValue] = None) -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    context_dict = HierarchicalContextDict(hierarchical_context)
+
+    if initial_vars:
+        for key, value in initial_vars.items():
+            hierarchical_context.set(key, value)
+
+    return context_dict
 
 
 class _StateObj:
@@ -55,7 +69,7 @@ def test_metadata_preprocessing_resolves_entity_id_via_phase(monkeypatch: pytest
     phase.set_dependency_handler(
         SimpleNamespace(hass=hass, data_provider_callback=None, should_use_data_provider=lambda _e: False)
     )
-    ctx: dict[str, ReferenceValue] = {"_hass": ReferenceValue(reference="_hass", value=hass)}
+    ctx = _create_hierarchical_context({"_hass": ReferenceValue(reference="_hass", value=hass)})
     formula = "metadata(sensor.kitchen, 'entity_id') + 1"
 
     result = phase.resolve_all_references_with_ha_detection(formula, _sensor_config(), ctx)
@@ -79,7 +93,7 @@ def test_metadata_preprocessing_without_hass_raises(monkeypatch: pytest.MonkeyPa
     phase.set_dependency_handler(
         SimpleNamespace(hass=dummy_hass, data_provider_callback=None, should_use_data_provider=lambda _e: False)
     )
-    ctx: dict[str, ReferenceValue] = {}
+    ctx = _create_hierarchical_context()
     formula = "metadata(sensor.kitchen, 'entity_id')"
 
     # Variable resolution phase should resolve entity references but preserve metadata functions
@@ -104,7 +118,7 @@ def test_detects_ha_state_quoted_unavailable_for_early_return(monkeypatch: pytes
     phase.set_dependency_handler(
         SimpleNamespace(hass=dummy_hass, data_provider_callback=None, should_use_data_provider=lambda _e: False)
     )
-    ctx: dict[str, ReferenceValue] = {}
+    ctx = _create_hierarchical_context()
     result = phase.resolve_all_references_with_ha_detection('"unavailable"', None, ctx)
 
     assert result.has_ha_state is True

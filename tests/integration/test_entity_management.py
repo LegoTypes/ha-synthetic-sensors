@@ -329,33 +329,6 @@ class TestEntityManagement:
         # Verify both sensors were added
         assert sensor_manager.create_sensors.call_count == 2
 
-    def test_entity_factory_patterns(self, mock_hass, mock_entity_registry, mock_states, mock_name_resolver):
-        """Test entity factory patterns for creating different sensor types."""
-        # Test EntityFactory pattern (if implemented)
-        try:
-            from ha_synthetic_sensors.entity_factory import EntityFactory
-
-            factory = EntityFactory(mock_hass, mock_name_resolver)
-
-            # Test creating different sensor types
-            basic_config = {
-                "name": "Basic Sensor",
-                "formulas": [{"name": "basic", "formula": "value"}],
-            }
-
-            sensor_entity = factory.create_sensor_entity(basic_config)
-            unique_id = factory.generate_unique_id("test_sensor")
-            entity_description = factory.create_entity_description(basic_config)
-
-            # Verify factory methods work
-            assert sensor_entity is not None
-            assert unique_id is not None
-            assert entity_description is not None
-
-        except ImportError:
-            # EntityFactory not implemented yet - skip test
-            pytest.skip("EntityFactory not implemented yet")
-
     def test_sensor_manager_initialization(
         self, mock_hass, mock_entity_registry, mock_states, mock_name_resolver, mock_add_entities_callback
     ):

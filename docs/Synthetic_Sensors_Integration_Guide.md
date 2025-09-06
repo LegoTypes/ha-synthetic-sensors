@@ -227,35 +227,25 @@ async def async_setup_synthetic_sensors_with_entities(
 ) -> SensorManager
 ```
 
-### Complete Integration Setup
+### Integration Setup Pattern
+
+For integrations that need to create their own StorageManager and manage the complete setup flow:
 
 ```python
-async def async_setup_synthetic_integration(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-    integration_domain: str,
-    sensor_configs: list[SensorConfig],
-    sensor_to_backing_mapping: dict[str, str] | None = None,   # Synthetic Sensor Key -> Backing entity_id
-    data_provider_callback: DataProviderCallback | None = None,
-    change_notifier: DataProviderChangeNotifier | None = None,  # NEW
-    sensor_set_name: str | None = None,
-) -> tuple[StorageManager, SensorManager]
-```
+# Create your own StorageManager
+storage_manager = StorageManager(hass, f"{DOMAIN}_synthetic", integration_domain=DOMAIN)
+await storage_manager.async_load()
 
-### Auto-Backing Entity Setup
-
-```python
-async def async_setup_synthetic_integration_with_auto_backing(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-    integration_domain: str,
-    sensor_configs: list[SensorConfig],
-    data_provider_callback: DataProviderCallback | None = None,
-    change_notifier: DataProviderChangeNotifier | None = None,  # NEW
-    sensor_set_name: str | None = None,
-) -> tuple[StorageManager, SensorManager]
+# Use the simplified interface with your storage manager
+sensor_manager = await async_setup_synthetic_sensors_with_entities(
+    hass=hass,
+    config_entry=config_entry,
+    async_add_entities=async_add_entities,
+    storage_manager=storage_manager,
+    data_provider_callback=data_provider,
+    change_notifier=change_notifier,
+    sensor_to_backing_mapping=sensor_to_backing_mapping,
+)
 ```
 
 ## Input Validation
@@ -1196,10 +1186,6 @@ def create_data_provider_callback(
     def data_provider_callback(entity_id: str) -> DataProviderResult:
         """Provide live data from virtual backing entities."""
         try:
-            # Use the passed synthetic coordinator directly - no lookup needed
-            if main_coordinator is None:
-                _LOGGER.debug("Using synthetic coordinator for data access when coordinator=None for entity_id: %s", entity_id)
-
             # Get value from virtual backing entity
             value = synthetic_coordinator.get_backing_value(entity_id)
             exists = value is not None

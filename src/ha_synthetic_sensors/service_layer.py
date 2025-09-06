@@ -325,29 +325,14 @@ class ServiceLayer:
             # Get the sensor entity directly from HA registry if needed
             # or use the sensor manager to find and update the sensor
 
-            # This is a placeholder - the actual implementation would depend on
-            # whether we're updating config or just triggering a sensor update
-
-            # For now, log the request
-            for key, value in call.data.items():
-                if key != "entity_id":
-                    _LOGGER.debug("  %s: %s", key, value)
+            # This service forces immediate sensor re-evaluation for testing/debugging
+            # It does not modify configuration - use YAML editing or async_modify for config changes
 
             # Find the sensor by entity_id and trigger an update
             sensor = self._sensor_manager.get_sensor_by_entity_id(entity_id)
             if sensor:
                 # Force a sensor update/re-evaluation
                 await sensor.async_update_sensor()
-                _LOGGER.debug("Triggered update for sensor: %s", entity_id)
-
-                # Log any additional parameters that were requested
-                for key, value in call.data.items():
-                    if key != "entity_id":
-                        _LOGGER.debug(
-                            "  Parameter %s: %s (logging only - formula updates require config changes)",
-                            key,
-                            value,
-                        )
             else:
                 _LOGGER.error("Sensor not found for entity_id: %s", entity_id)
 
@@ -370,11 +355,6 @@ class ServiceLayer:
                 # Clear evaluator cache
                 self._evaluator.clear_cache()
 
-                _LOGGER.debug(
-                    "Successfully added variable: %s -> %s",
-                    variable_config["name"],
-                    variable_config["entity_id"],
-                )
             else:
                 _LOGGER.error("Failed to add variable: %s", variable_config["name"])
 
@@ -397,7 +377,6 @@ class ServiceLayer:
                 # Clear evaluator cache
                 self._evaluator.clear_cache()
 
-                _LOGGER.debug("Successfully removed variable: %s", name)
             else:
                 _LOGGER.error("Failed to remove variable: %s", name)
 
@@ -539,8 +518,7 @@ class ServiceLayer:
                 "Configuration validation errors: %s",
                 [error["message"] for error in validation_result["errors"]],
             )
-        else:
-            _LOGGER.debug("Configuration validation passed")
+        # Validation passed
 
         if validation_result["warnings"]:
             _LOGGER.warning(
@@ -607,7 +585,7 @@ class ServiceLayer:
                         "formula": formula_str,
                         "dependencies": dependencies,
                     }
-                    _LOGGER.debug("Retrieved sensor info for entity_id: %s", entity_id)
+
                 else:
                     info = {"error": f"Sensor not found: {entity_id}"}
                     _LOGGER.warning("Sensor not found for entity_id: %s", entity_id)
@@ -646,8 +624,6 @@ class ServiceLayer:
                 self._hass.data["synthetic_sensors_info"] = {}
 
             self._hass.data["synthetic_sensors_info"]["last_result"] = info
-
-            _LOGGER.debug("Retrieved sensor info for: %s", entity_id or "all sensors")
 
         except Exception as e:
             _LOGGER.error("Failed to get sensor info: %s", e)

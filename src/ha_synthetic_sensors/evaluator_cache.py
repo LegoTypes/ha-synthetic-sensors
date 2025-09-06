@@ -8,7 +8,8 @@ from typing import cast
 from .cache import CacheConfig, FormulaCache
 from .config_models import FormulaConfig
 from .constants_evaluation_results import RESULT_KEY_CACHED, RESULT_KEY_STATE, RESULT_KEY_SUCCESS, RESULT_KEY_VALUE, STATE_OK
-from .type_definitions import CacheStats, ContextValue, EvaluationResult, ReferenceValue
+from .hierarchical_context_dict import HierarchicalContextDict
+from .type_definitions import CacheStats, EvaluationResult, ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class EvaluatorCache:
         self._cache = FormulaCache(cache_config)
 
     def check_cache(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, cache_key_id: str
+        self, config: FormulaConfig, context: HierarchicalContextDict, cache_key_id: str
     ) -> EvaluationResult | None:
         """Check if result is cached and return it if found.
 
@@ -52,9 +53,7 @@ class EvaluatorCache:
             return cast(EvaluationResult, base_fields)
         return None
 
-    def cache_result(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, cache_key_id: str, result: float
-    ) -> None:
+    def cache_result(self, config: FormulaConfig, context: HierarchicalContextDict, cache_key_id: str, result: float) -> None:
         """Cache a formula evaluation result.
 
         Args:
@@ -98,7 +97,7 @@ class EvaluatorCache:
             "cache_ttl_seconds": stats["ttl_seconds"],
         }
 
-    def filter_context_for_cache(self, context: dict[str, ContextValue] | None) -> dict[str, str | float | int | bool] | None:
+    def filter_context_for_cache(self, context: HierarchicalContextDict) -> dict[str, str | float | int | bool] | None:
         """Filter context to only include cacheable values.
 
         Args:
@@ -107,10 +106,12 @@ class EvaluatorCache:
         Returns:
             Filtered context with only cacheable values
         """
-        if not context:
-            return None
+        # Context is now required - no None check needed
 
         filtered = {}
+        if context is None:
+            return filtered
+
         for key, value in context.items():
             # Skip internal keys that start with underscore
             if key.startswith("_"):

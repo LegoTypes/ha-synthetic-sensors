@@ -6,6 +6,24 @@ from unittest.mock import Mock, MagicMock
 from ha_synthetic_sensors.core_formula_evaluator import CoreFormulaEvaluator
 from ha_synthetic_sensors.exceptions import FormulaEvaluationError, AlternateStateDetected
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_hierarchical_context(initial_vars: dict[str, object] = None) -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    context_dict = HierarchicalContextDict(hierarchical_context)
+
+    if initial_vars:
+        for key, value in initial_vars.items():
+            if isinstance(value, ReferenceValue):
+                hierarchical_context.set(key, value)
+            else:
+                # Wrap raw values in ReferenceValue objects
+                hierarchical_context.set(key, ReferenceValue(reference=key, value=value))
+
+    return context_dict
 
 
 class TestCoreFormulaEvaluator:
@@ -28,7 +46,7 @@ class TestCoreFormulaEvaluator:
         self.enhanced_helper.try_enhanced_eval.return_value = (True, "test_result")
 
         # EvaluationContext should contain ReferenceValue objects
-        context = {"test_var": ReferenceValue("test", "value")}
+        context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
 
         # Execute
         result = self.evaluator.evaluate_formula(
@@ -50,7 +68,7 @@ class TestCoreFormulaEvaluator:
         self.enhanced_helper.try_enhanced_eval.return_value = (True, 42.0)
 
         # EvaluationContext should contain ReferenceValue objects
-        context = {"test_var": ReferenceValue("test", "value")}
+        context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
 
         # Execute
         result = self.evaluator.evaluate_formula(resolved_formula="1 + 1", original_formula="1 + 1", handler_context=context)
@@ -66,7 +84,7 @@ class TestCoreFormulaEvaluator:
         self.enhanced_helper.try_enhanced_eval.return_value = (False, test_exception)
 
         # EvaluationContext should contain ReferenceValue objects
-        context = {"test_var": ReferenceValue("test", "value")}
+        context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
 
         # Execute and verify exception
         with pytest.raises(AlternateStateDetected) as exc_info:
@@ -88,7 +106,7 @@ class TestCoreFormulaEvaluator:
         self.enhanced_helper.try_enhanced_eval.return_value = (True, "test_value")
 
         # EvaluationContext should contain ReferenceValue objects
-        context = {"test_var": ReferenceValue("test", "value")}
+        context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
 
         # Execute with metadata formula
         result = self.evaluator.evaluate_formula(
@@ -107,7 +125,9 @@ class TestCoreFormulaEvaluator:
         self.enhanced_helper.try_enhanced_eval.return_value = (True, 42)
 
         # Execute with empty context
-        result = self.evaluator.evaluate_formula(resolved_formula="1 + 1", original_formula="1 + 1", handler_context={})
+        result = self.evaluator.evaluate_formula(
+            resolved_formula="1 + 1", original_formula="1 + 1", handler_context=_create_hierarchical_context()
+        )
 
         # Verify
         assert result == 42

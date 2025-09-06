@@ -123,7 +123,7 @@ class MetadataHandler:
         # Validate metadata property types
         errors.extend(self._validate_metadata_types(metadata))
 
-        _LOGGER.debug("Validated metadata: %s, errors: %s", metadata, errors)
+        # Debug logging removed to reduce verbosity
 
         return errors
 
@@ -267,7 +267,7 @@ class MetadataHandler:
         # This allows for extensibility without code changes
         ha_properties = metadata.copy()
 
-        _LOGGER.debug("Extracted HA sensor properties: %s", ha_properties)
+        # Debug logging removed to reduce verbosity
 
         return ha_properties
 

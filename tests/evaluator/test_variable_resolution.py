@@ -11,6 +11,14 @@ import pytest
 from ha_synthetic_sensors.config_manager import ConfigManager, FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.sensor_manager import DynamicSensor, SensorManagerConfig
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 class TestVariableResolution:
@@ -47,16 +55,18 @@ class TestVariableResolution:
         )
 
         # Test 1: Automatic variable resolution should work now
-        result_auto_resolution = evaluator.evaluate_formula(config)
+        result_auto_resolution = evaluator.evaluate_formula(config, _create_empty_context())
         assert result_auto_resolution["success"] is True
         assert result_auto_resolution["value"] == 1500  # 1000 + 500
 
         # Test 2: With variable context manually built (should also work)
-        context = {}
+        context = _create_empty_context()
         for var_name, entity_id in config.variables.items():
             state = mock_hass.states.get(entity_id)
             if state:
-                context[var_name] = float(state.state)
+                from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+                context._hierarchical_context.set(var_name, ReferenceValue(entity_id, float(state.state)))
 
         result_with_context = evaluator.evaluate_formula(config, context)
         assert result_with_context["success"] is True
@@ -123,10 +133,9 @@ class TestVariableResolution:
         # Create a context with ReferenceValue objects for testing (ReferenceValue architecture)
         from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-        test_context = {
-            "leg1_power": ReferenceValue("sensor.span_panel_circuit_30_power", 1000.0),
-            "leg2_power": ReferenceValue("sensor.span_panel_circuit_32_power", 500.0),
-        }
+        test_context = _create_empty_context()
+        test_context._hierarchical_context.set("leg1_power", ReferenceValue("sensor.span_panel_circuit_30_power", 1000.0))
+        test_context._hierarchical_context.set("leg2_power", ReferenceValue("sensor.span_panel_circuit_32_power", 500.0))
 
         # Test with a simple formula that doesn't trigger entity reference resolution
         simple_config = FormulaConfig(id="test", formula="leg1_power + leg2_power", variables={})
@@ -157,14 +166,14 @@ class TestVariableResolution:
         # Use ReferenceValue objects (ReferenceValue architecture)
         from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-        context = {}
+        context = _create_empty_context()
         for var_name, entity_id in config.variables.items():
             state = mock_hass.states.get(entity_id)
             if state is not None:
-                context[var_name] = ReferenceValue(entity_id, float(state.state))
+                context._hierarchical_context.set(var_name, ReferenceValue(entity_id, float(state.state)))
             else:
                 # For unavailable entities, create ReferenceValue with None value
-                context[var_name] = ReferenceValue(entity_id, None)
+                context._hierarchical_context.set(var_name, ReferenceValue(entity_id, None))
 
         # Should handle None values gracefully
         assert context["available_power"].value == 1000.0
@@ -172,11 +181,11 @@ class TestVariableResolution:
         assert context["unavailable_power"].value is None
         assert context["unavailable_power"].reference == "sensor.unavailable_entity"
 
-        # The evaluator should handle None values appropriately
-        result = evaluator.evaluate_formula(config, context)
-        # This might fail or return a specific error depending on how None is handled
-        # The important thing is that it doesn't crash
-        assert result is not None  # Should return some result, even if it's an error
+        # The evaluator should handle missing dependencies as fatal errors in the current architecture
+        from ha_synthetic_sensors.exceptions import MissingDependencyError
+
+        with pytest.raises(MissingDependencyError, match="Missing dependencies: sensor.unavailable_entity"):
+            evaluator.evaluate_formula(config, context)
 
     def test_multiple_formulas_with_different_variables(self, mock_hass, config_manager, mock_entity_registry, mock_states):
         """Test sensor with multiple formulas that have different variable sets."""
@@ -260,11 +269,11 @@ class TestVariableResolution:
         config = FormulaConfig(id="simple", name="Simple", formula="1000 + 500")
 
         # Should work without any context
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 1500
 
         # Should also work with empty context
-        result2 = evaluator.evaluate_formula(config, {})
+        result2 = evaluator.evaluate_formula(config, _create_empty_context())
         assert result2["success"] is True
         assert result2["value"] == 1500

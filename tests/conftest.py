@@ -270,14 +270,7 @@ class HomeAssistantMockFinder:
 
     def _create_binary_sensor_module_spec(self):
         """Create mock spec for binary_sensor module with real enums."""
-        mock_module = MagicMock()
-
-        def mock_getattr_binary(name):
-            if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
-                raise AttributeError(f"'{mock_module.__class__.__name__}' object has no attribute '{name}'")
-            return MagicMock()
-
-        mock_module.__getattr__ = mock_getattr_binary
+        mock_module = self._create_custom_mock_module()
         mock_module.BinarySensorDeviceClass = REAL_BINARY_SENSOR_DEVICE_CLASS
 
         sys.modules["homeassistant.components.binary_sensor"] = mock_module
@@ -285,14 +278,39 @@ class HomeAssistantMockFinder:
 
     def _create_standard_mock_spec(self, fullname: str):
         """Create a standard mock spec for HA modules."""
-        mock_module = MagicMock()
-        mock_module.__getattr__ = self._create_safe_getattr(mock_module)
+        # Use a custom class instead of MagicMock to avoid __getattr__ issues
+        mock_module = self._create_custom_mock_module()
 
         # Add specific mocks based on module name
         self._configure_module_specifics(mock_module, fullname)
 
         sys.modules[fullname] = mock_module
         return self._create_mock_spec(mock_module)
+
+    def _create_custom_mock_module(self):
+        """Create a custom mock module that supports __getattr__ without MagicMock issues."""
+
+        class CustomMockModule:
+            def __init__(self):
+                self._attrs = {}
+
+            def __getattr__(self, name):
+                # Prevent pytest interference
+                if name in ("pytest_plugins", "pytestmark", "setUpModule", "tearDownModule", "__code__"):
+                    raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+                # Return existing attribute or create new MagicMock
+                if name not in self._attrs:
+                    self._attrs[name] = MagicMock()
+                return self._attrs[name]
+
+            def __setattr__(self, name, value):
+                if name.startswith("_"):
+                    super().__setattr__(name, value)
+                else:
+                    self._attrs[name] = value
+
+        return CustomMockModule()
 
     def _create_safe_getattr(self, mock_module):
         """Create a safe __getattr__ method that prevents pytest interference."""
@@ -759,6 +777,35 @@ def mock_entity_registry():
         def async_get(self, entity_id):
             """Mock the async_get method that HA uses to retrieve entities."""
             return self._entities.get(entity_id)
+
+        def async_get_entity_id(self, domain, integration_domain, unique_id):
+            """Mock the async_get_entity_id method that HA uses to look up entity IDs by unique ID.
+
+            Args:
+                domain: The entity domain (e.g., "sensor", "binary_sensor")
+                integration_domain: The integration that owns the entity
+                unique_id: The unique ID to look up
+
+            Returns:
+                The entity_id if found, None otherwise
+            """
+            # Search through entities to find one matching the criteria
+            for entity_id, entity_data in self._entities.items():
+                # Check if entity matches domain
+                if not entity_id.startswith(f"{domain}."):
+                    continue
+
+                # Check if entity has matching unique_id
+                entity_unique_id = None
+                if hasattr(entity_data, "unique_id"):
+                    entity_unique_id = entity_data.unique_id
+                elif isinstance(entity_data, dict) and "unique_id" in entity_data:
+                    entity_unique_id = entity_data["unique_id"]
+
+                if entity_unique_id == unique_id:
+                    return entity_id
+
+            return None
 
     registry = DynamicMockEntityRegistry()
     return registry
@@ -1301,3 +1348,61 @@ def apply_entity_mappings(request, mock_entity_registry):
 
 # Note: hybrid_test fixtures removed due to missing hybrid_test_base module
 # Tests should use manual setup with mock_hass, mock_entity_registry, and other fixtures
+
+
+@pytest.fixture(autouse=True)
+def clear_global_state():
+    """Clear global state before each test to prevent test isolation issues.
+
+    This fixture automatically clears static/class variables and caches that can cause
+    state pollution between tests, ensuring proper test isolation.
+    """
+    # Clear FormulaEvaluatorService global state
+    try:
+        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
+
+        FormulaEvaluatorService._core_evaluator = None
+        FormulaEvaluatorService._evaluator = None
+    except ImportError:
+        pass  # Module not available in some test contexts
+
+    # Clear computed variable cache
+    try:
+        from ha_synthetic_sensors.utils_config import clear_computed_variable_cache
+
+        clear_computed_variable_cache()
+    except ImportError:
+        pass
+
+    # Clear ReferenceValueManager cache
+    try:
+        from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
+
+        ReferenceValueManager.clear_cache()
+    except ImportError:
+        pass
+
+    yield  # Run the test
+
+    # Clear state after test as well for extra safety
+    try:
+        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
+
+        FormulaEvaluatorService._core_evaluator = None
+        FormulaEvaluatorService._evaluator = None
+    except ImportError:
+        pass
+
+    try:
+        from ha_synthetic_sensors.utils_config import clear_computed_variable_cache
+
+        clear_computed_variable_cache()
+    except ImportError:
+        pass
+
+    try:
+        from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
+
+        ReferenceValueManager.clear_cache()
+    except ImportError:
+        pass

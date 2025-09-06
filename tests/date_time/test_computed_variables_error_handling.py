@@ -7,7 +7,23 @@ from ha_synthetic_sensors.config_models import ComputedVariable, FormulaConfig
 from ha_synthetic_sensors.exceptions import MissingDependencyError
 from ha_synthetic_sensors.utils_config import resolve_config_variables
 from ha_synthetic_sensors.utils_config import _analyze_computed_variable_error
-from ha_synthetic_sensors.type_definitions import ContextValue
+from ha_synthetic_sensors.type_definitions import ContextValue, ReferenceValue
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def create_test_context(test_data: dict[str, any]) -> HierarchicalContextDict:
+    """Create a test context with the given data wrapped in ReferenceValue objects."""
+    eval_context = HierarchicalEvaluationContext("test")
+
+    # Push a layer with the test data wrapped in ReferenceValue objects
+    wrapped_data = {}
+    for key, value in test_data.items():
+        wrapped_data[key] = ReferenceValue(reference=key, value=value)
+
+    eval_context.push_layer("test_data", wrapped_data)
+
+    return HierarchicalContextDict(eval_context)
 
 
 class TestComputedVariableErrorHandling:
@@ -15,7 +31,7 @@ class TestComputedVariableErrorHandling:
 
     def test_missing_dependency_error_analysis(self) -> None:
         """Test error analysis for missing dependencies."""
-        eval_context: dict[str, ContextValue] = {"a": 10}  # b is missing
+        eval_context: HierarchicalContextDict = create_test_context({"a": 10})  # b is missing
         error = NameError("name 'b' is not defined")
 
         analysis = _analyze_computed_variable_error("test_var", "a + b", eval_context, error)
@@ -26,12 +42,13 @@ class TestComputedVariableErrorHandling:
         assert analysis["likely_cause"] == "missing_dependencies"  # Since b is in missing_vars
         assert "b" in analysis["missing_variables"]
         assert "a" in analysis["available_variables"]
-        assert analysis["context_values"]["a"] == 10
+        # The context now contains ReferenceValue objects, so we need to access the .value attribute
+        assert analysis["context_values"]["a"].value == 10
         assert "defined or resolved first" in analysis["suggestion"]
 
     def test_division_by_zero_error_analysis(self) -> None:
         """Test error analysis for division by zero."""
-        eval_context: dict[str, ContextValue] = {"a": 10, "b": 0}
+        eval_context: HierarchicalContextDict = create_test_context({"a": 10, "b": 0})
         error = ZeroDivisionError("division by zero")
 
         analysis = _analyze_computed_variable_error("test_var", "a / b", eval_context, error)
@@ -43,7 +60,7 @@ class TestComputedVariableErrorHandling:
 
     def test_type_mismatch_error_analysis(self) -> None:
         """Test error analysis for type mismatches."""
-        eval_context: dict[str, ContextValue] = {"a": "string", "b": 10}
+        eval_context: HierarchicalContextDict = create_test_context({"a": "string", "b": 10})
         error = TypeError("unsupported operand type(s) for +: 'str' and 'int'")
 
         analysis = _analyze_computed_variable_error("test_var", "a + b", eval_context, error)
@@ -65,7 +82,7 @@ class TestComputedVariableErrorHandling:
 
         config = FormulaConfig(id="test", formula="var1", variables={"var1": cv1, "var2": cv2})
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
 
         def mock_resolver(var_name, var_value, context, sensor_config):
             if isinstance(var_value, (int, float)):
@@ -91,7 +108,7 @@ class TestComputedVariableErrorHandling:
 
         config = FormulaConfig(id="test", formula="result", variables={"result": cv})
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
 
         def mock_resolver(var_name, var_value, context, sensor_config):
             return None  # Always return None to simulate missing dependency
@@ -107,7 +124,7 @@ class TestComputedVariableErrorHandling:
 
     def test_syntax_error_analysis(self) -> None:
         """Test error analysis for syntax errors in formulas."""
-        eval_context: dict[str, ContextValue] = {"a": 10}
+        eval_context: HierarchicalContextDict = create_test_context({"a": 10})
         error = SyntaxError("invalid syntax")
 
         analysis = _analyze_computed_variable_error("test_var", "a + +", eval_context, error)
@@ -118,7 +135,7 @@ class TestComputedVariableErrorHandling:
 
     def test_complex_formula_error_with_context(self) -> None:
         """Test error analysis with complex formula showing context values."""
-        eval_context: dict[str, ContextValue] = {"base_power": 1000, "efficiency": 0.9, "load_factor": 1.2}
+        eval_context: HierarchicalContextDict = create_test_context({"base_power": 1000, "efficiency": 0.9, "load_factor": 1.2})
         error = NameError("name 'missing_var' is not defined")
 
         analysis = _analyze_computed_variable_error(
@@ -128,9 +145,11 @@ class TestComputedVariableErrorHandling:
         assert analysis["variable_name"] == "total_power"
         assert "missing_var" in analysis["missing_variables"]
         assert len(analysis["available_variables"]) == 3
-        assert analysis["context_values"]["base_power"] == 1000
-        assert analysis["context_values"]["efficiency"] == 0.9
-        assert analysis["context_values"]["load_factor"] == 1.2
+        # The context now contains ReferenceValue objects, so we need to access the .value attribute
+        assert analysis["context_values"]["base_power"].value == 1000
+        # The context now contains ReferenceValue objects, so we need to access the .value attribute
+        assert analysis["context_values"]["efficiency"].value == 0.9
+        assert analysis["context_values"]["load_factor"].value == 1.2
 
     def test_multiple_error_aggregation(self) -> None:
         """Test that multiple computed variable errors are properly aggregated."""
@@ -147,7 +166,7 @@ class TestComputedVariableErrorHandling:
             id="test", formula="result", variables={"valid_var": 100, "error1": cv1, "error2": cv2, "success": cv3}
         )
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
 
         def mock_resolver(var_name, var_value, context, sensor_config):
             if isinstance(var_value, (int, float)):

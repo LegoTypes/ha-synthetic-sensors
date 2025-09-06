@@ -11,6 +11,14 @@ from ha_synthetic_sensors.constants_alternate import STATE_NONE
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.exceptions import DataValidationError
 from ha_synthetic_sensors.type_definitions import DataProviderResult, ReferenceValue
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 def test_data_provider_returning_none_causes_fatal_error(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -27,7 +35,7 @@ def test_data_provider_returning_none_causes_fatal_error(mock_hass, mock_entity_
 
     # Should raise DataValidationError for None data provider
     with pytest.raises(DataValidationError, match="Data provider callback returned None"):
-        evaluator.evaluate_formula(config)
+        evaluator.evaluate_formula(config, _create_empty_context())
 
 
 def test_data_provider_returning_none_causes_fatal_error_consistent(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -44,7 +52,7 @@ def test_data_provider_returning_none_causes_fatal_error_consistent(mock_hass, m
 
     # Should raise DataValidationError for None data provider
     with pytest.raises(DataValidationError, match="Data provider callback returned None"):
-        evaluator.evaluate_formula(config)
+        evaluator.evaluate_formula(config, _create_empty_context())
 
 
 def test_data_provider_returning_none_value_handled_gracefully(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -67,7 +75,7 @@ def test_data_provider_returning_none_value_handled_gracefully(mock_hass, mock_e
     config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
     # Should handle None values gracefully by returning a semantic alternate state (no numeric value)
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
     assert result["success"] is True
     # Implementation may return OK with STATE_UNKNOWN; prefer the HA constant instead of raw strings
     assert result.get("state") in ("ok", STATE_UNKNOWN)
@@ -87,7 +95,7 @@ def test_data_provider_returning_unavailable_state_handled_gracefully(mock_hass,
     config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
     # Should handle gracefully with state reflection
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
     # Phase 1 preserves HA-provided state values; expect either STATE_UNAVAILABLE or STATE_UNKNOWN
@@ -104,7 +112,8 @@ def test_context_with_reference_value_objects(mock_hass, mock_entity_registry, m
     config = FormulaConfig(id="test_formula", formula="test_var + 5", variables={})
 
     # Create context with ReferenceValue objects (ReferenceValue architecture)
-    context = {"test_var": ReferenceValue("sensor.test", 10.0)}
+    context = _create_empty_context()
+    context._hierarchical_context.set("test_var", ReferenceValue("sensor.test", 10.0))
 
     result = evaluator.evaluate_formula(config, context)
     assert result["success"] is True
@@ -124,7 +133,8 @@ def test_none_value_in_reference_value_handled_gracefully(mock_hass, mock_entity
     config = FormulaConfig(id="test_formula", formula="test_var", variables={})
 
     # Create context with ReferenceValue containing None value
-    context = {"test_var": ReferenceValue("sensor.test", None)}
+    context = _create_empty_context()
+    context._hierarchical_context.set("test_var", ReferenceValue("sensor.test", None))
 
     result = evaluator.evaluate_formula(config, context)
     # Should handle None values gracefully by returning a semantic alternate state (no numeric value)
@@ -141,7 +151,9 @@ def test_reference_value_extraction_in_formulas(mock_hass, mock_entity_registry,
     config = FormulaConfig(id="test_formula", formula="var1 + var2 * 2", variables={})
 
     # Create context with ReferenceValue objects
-    context = {"var1": ReferenceValue("sensor.var1", 5.0), "var2": ReferenceValue("sensor.var2", 3.0)}
+    context = _create_empty_context()
+    context._hierarchical_context.set("var1", ReferenceValue("sensor.var1", 5.0))
+    context._hierarchical_context.set("var2", ReferenceValue("sensor.var2", 3.0))
 
     result = evaluator.evaluate_formula(config, context)
     assert result["success"] is True

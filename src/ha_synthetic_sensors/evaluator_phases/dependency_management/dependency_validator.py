@@ -1,7 +1,10 @@
 """Dependency validator for validating dependency availability."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from .base_manager import DependencyManager
 
@@ -11,21 +14,22 @@ _LOGGER = logging.getLogger(__name__)
 class DependencyValidator(DependencyManager):
     """Validator for dependency availability."""
 
-    def can_manage(self, manager_type: str, context: dict[str, Any] | None = None) -> bool:
+    def can_manage(self, manager_type: str, context: "HierarchicalContextDict") -> bool:
         """Determine if this manager can handle dependency validation."""
         return manager_type == "validate"
 
     def manage(
-        self, manager_type: str, context: dict[str, Any] | None = None, **kwargs: Any
+        self, manager_type: str, context: "HierarchicalContextDict", **kwargs: Any
     ) -> tuple[set[str], set[str], set[str]]:
         """Validate dependencies and return missing, unavailable, and unknown dependencies."""
-        if manager_type != "validate" or context is None:
+        if manager_type != "validate":
             return set(), set(), set()
 
-        dependencies = context.get("dependencies", set())
-        available_entities = context.get("available_entities", set())
-        registered_integration_entities = context.get("registered_integration_entities", set())
-        hass = context.get("hass")
+        # Get data from kwargs instead of context for dependency management
+        dependencies = kwargs.get("dependencies", set())
+        available_entities = kwargs.get("available_entities", set())
+        registered_integration_entities = kwargs.get("registered_integration_entities", set())
+        hass = kwargs.get("hass")
 
         missing_deps: set[str] = set()
         unavailable_deps: set[str] = set()

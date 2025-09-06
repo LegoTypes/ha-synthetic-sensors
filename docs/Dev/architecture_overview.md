@@ -169,14 +169,28 @@ whether in the main sensor, attributes, or variables use a single formula evalua
   `FormulaConfig.variables` (simple values only) to ensure correct scope visibility without forcing premature evaluation of
   nested computed variables.
 
-### Dependency Extraction Coverage
+### Dependency Tracking Approaches
+
+The system implements two distinct approaches for dependency tracking:
+
+#### Static Dependency Extraction (Configuration Time)
 
 - Dependencies are extracted from:
-  - Main formula strings.
-  - Sensor-level `variables` including recursive extraction from `ComputedVariable.formula` values.
-  - Attribute `formulas` and attribute `variables` (including recursive extraction from `ComputedVariable.formula`).
-- This ensures entity references inside computed variables and attributes are tracked, so missing entities trigger re-evaluation
-  when they become available (fixes "Undefined variable: 'sensor'" caused by untracked dependencies).
+  - Main formula strings
+  - Sensor-level `variables` including recursive extraction from `ComputedVariable.formula` values
+  - Attribute `formulas` and attribute `variables` (including recursive extraction from `ComputedVariable.formula`)
+- Used for: Cross-sensor reference validation and evaluation order determination
+- Scope: Limited to configuration-time analysis
+
+#### Dynamic Dependency Discovery (Runtime)
+
+- **Option C Implementation**: Discovers entity dependencies during actual formula evaluation
+- **Discovery Process**: Evaluator tracks all entity references found during formula evaluation
+- **Dynamic Updates**: State change listeners are updated when new entities are discovered
+- **Self-Correcting**: Automatically adapts to formula changes without requiring reconfiguration
+- **Comprehensive Coverage**: Captures all entity references including those in metadata functions, computed variables, and
+  dynamic contexts
+- Used for: State change event tracking and real-time dependency management
 
 ### Lazy ReferenceValue Lifecycle and Substitution
 
@@ -254,10 +268,6 @@ The following diagrams illustrate the complete evaluation pipeline with all phas
 
 ![Evaluation Pipeline (method-level)](evaluation_pipeline_flow_with_methods.jpeg)
 
-- **Overview diagram**: a high-level conceptual flow retained for orientation and design discussion.
-
-![Evaluator Flow Diagram](evaluator_flow_diagram.jpeg)
-
 _Figure: Multi-phase evaluation pipeline showing the flow from formula input through entity ID resolution, metadata processing,
 value resolution, formula execution, and result processing. The 4-phase approach with lazy ReferenceValue resolution ensures
 metadata functions receive original entity references rather than prematurely resolved values. The method-level diagram above
@@ -304,6 +314,11 @@ Core sensor lifecycle management component:
 - Handles sensor registration with Home Assistant
 - Coordinates sensor updates and state changes
 - Manages sensor metadata and device associations
+- **Dynamic Dependency Discovery**: Implements Option C approach for state change dependency tracking
+  - Discovers entity dependencies during formula evaluation
+  - Updates state change listeners dynamically when new entities are found
+  - Eliminates need for static dependency extraction that was incomplete
+  - Provides self-correcting dependency tracking that adapts to formula changes
 
 #### SensorSet
 
@@ -501,6 +516,11 @@ Central storage management component:
 - Manages sensor set storage operations
 - Provides import/export functionality
 - Coordinates storage updates and validation
+- **Friendly Name Export**: Dynamically looks up current friendly names from Home Assistant entity registry during YAML export
+  - Replaces stored friendly names with current values from HA entity registry
+  - Ensures exported YAML reflects current user customizations
+  - Only attempts lookup for sensors that exist in HA (have entity_id in registry)
+  - Gracefully handles sensors that exist only in storage (unit tests, etc.)
 
 #### StorageSensorOps
 
@@ -526,10 +546,12 @@ Specialized YAML processing component:
 
 Monitors and responds to Home Assistant entity registry changes:
 
-- Detects entity ID renames and updates
-- Coordinates system-wide entity reference updates
-- Handles entity registry event processing
-- Provides entity change resilience
+- **Global String Search/Replace**: Implements simplified entity ID rename handling using global string search and replace
+  across all storage
+- **Atomic Updates**: Sets evaluation barriers to prevent formula evaluation during entity ID updates
+- **Package Reload**: Triggers complete package reload after storage updates to ensure full synchronization
+- **Event Filtering**: Uses EntityIndex to filter relevant entity_registry_updated events and avoid unnecessary processing
+- **Simplified Architecture**: Eliminates complex incremental update logic in favor of robust global replacement
 
 #### EntityChangeHandler
 
@@ -542,12 +564,14 @@ Coordinates system-wide responses to entity changes:
 
 #### EntityIndex
 
-Maintains comprehensive entity reference tracking:
+Maintains focused entity reference tracking for specific use cases:
 
-- Indexes all entity references in sensor configurations
-- Supports efficient entity lookup and dependency analysis
-- Provides entity relationship mapping
-- Handles entity collision detection and resolution
+- **Event Filtering**: Filters entity_registry_updated events to avoid processing irrelevant changes
+- **State Change Tracking**: Provides entity ID lists for efficient state change event filtering
+- **Limited Scope**: Does not track all entity references (e.g., formulas, attributes, metadata) - these are handled by dynamic
+  discovery
+- **Simplified Purpose**: Focused on event filtering rather than comprehensive entity tracking
+- **Dynamic Discovery Integration**: Works with dynamic dependency discovery for state change tracking
 
 ### 8. Cross-Sensor Reference Management
 
@@ -607,49 +631,97 @@ Utility functions for formula processing:
 - Supports formula validation and error detection
 - Manages formula optimization opportunities
 
+### Formula Parsing Architecture: AST vs Regex
+
+The system uses two complementary approaches for formula parsing, each optimized for specific use cases:
+
+#### AST-Based Variable Extraction (`formula_parsing/variable_extractor.py`)
+
+**Purpose**: Primary method for extracting variables and identifiers from formulas using Python's Abstract Syntax Tree.
+
+**Use Cases**:
+
+from .formula_parsing.variable_extractor import extract_variables, ExtractionContext
+
+# Extract variables for dependency parsing (excludes dot notation)
+
+variables = extract_variables("battery_level + temperature", context=ExtractionContext.GENERAL)
+
+```text
+#### Regex-Based Pattern Matching (`regex_helper.py`)
+**Purpose**: Specialized pattern matching for specific formula elements that don't require full AST parsing.
+
+- **Entity ID Detection**: Finding `domain.entity_name` patterns
+- **String Literal Extraction**: Finding quoted strings and their contents
+
+**Key Features**:
+- **Centralized Patterns**: All regex patterns defined in one location
+
+
+- **Method-Wrapped Patterns**: Each pattern wrapped in a clear, testable method
+
+from .regex_helper import regex_helper
+# Extract entity references
+
+entities = regex_helper.extract_direct_entity_references("sensor.power + sensor.temperature")
+# Extract collection patterns
+collection_vars = regex_helper.extract_collection_pattern_variables('sum("device_class:power_type")')
+
+```
+
+- Need to understand formula structure and syntax
+- Require context-aware variable extraction
+- Need to distinguish between variables and function calls
+
+- Need to extract structured data (collection patterns, exclusions)
+- Validating domain-specific patterns
+
+The two approaches work together seamlessly:
+
+- AST for general variable extraction
+- Regex for entity references and collection patterns
+
+2. **Variable Resolution**: Primarily AST-based for comprehensive variable discovery
+
+3. **Metadata Functions**: Regex-based for identifying and extracting metadata calls
+
+#### Architecture Benefits
+
+**Centralization**: All regex patterns are defined in `regex_helper.py`, making them:
+
+- Easy to test in isolation
+- Consistent across the entire system
+- Well-documented with clear method signatures
+
+- AST parsing for complex, structural analysis
+- Regex for fast, pattern-based extraction
+
+**Maintainability**: Clear separation of concerns:
+
+- Regex tests focus on pattern matching and edge cases
+
 ### 10. Collection Processing
 
 #### CollectionResolver
 
-Handles collection-based operations and aggregations:
-
-- Processes collection patterns (device_class, area, label)
 - Manages collection functions (sum, avg, count, min, max)
-- Supports collection filtering and exclusion
-- Provides collection validation and error handling
 
 ### 11. Device Management
-
-#### DeviceAssociation
-
-Manages device associations for sensors:
 
 - Handles device creation and registration
 - Manages device metadata and properties
 - Coordinates device-sensor relationships
-- Provides device-based entity organization
-
-#### EntityFactory
-
-Creates and manages Home Assistant entities:
-
-- Handles entity creation and configuration
+- Provides device-based entity organization Creates and manages Home Assistant entities:
 - Manages entity metadata and properties
 - Supports entity registration and updates
 - Provides entity lifecycle management
 
 ### 12. Integration Layer
 
-#### Integration
-
 Main Home Assistant integration component:
 
 - Handles Home Assistant setup and configuration
-- Manages integration lifecycle and state
-- Provides service interfaces and APIs
 - Coordinates integration updates and maintenance
-
-#### ServiceLayer
 
 Provides service interfaces for external interactions:
 
@@ -658,41 +730,24 @@ Provides service interfaces for external interactions:
 - Provides service documentation and discovery
 - Supports service extensibility and customization
 
-## Component Interactions
-
-### Configuration Flow
-
-1. **ConfigManager** loads YAML configurations
-2. **SchemaValidator** validates configuration structure
 3. **ConfigModels** create typed configuration objects
 4. **SensorManager** creates sensor entities based on configuration
 5. **SensorSet** organizes sensors into manageable groups
 
 ### Evaluation Flow
 
-The evaluation pipeline processes formulas through distinct phases, each with specific responsibilities:
-
 #### Phase 0: Pre-Evaluation (PreEvaluationPhase)
 
 1. **CircularReferenceValidator** detects circular dependencies before any resolution
-2. **ErrorHandler** checks circuit breaker status to skip repeatedly failing formulas
-3. **EvaluatorCache** checks for cached results to avoid re-computation
-4. **StateTokenValidator** validates state token resolution for formulas using 'state'
+2. **StateTokenValidator** validates state token resolution for formulas using 'state'
 
-#### Phase 1: Entity ID Resolution (VariableResolutionPhase)
-
-1. **VariableResolverFactory** creates specialized resolvers for different reference types
-2. **EntityReferenceResolver** resolves entity references to ReferenceValue objects (preserving original references)
-3. **CrossSensorReferenceResolver** resolves references to other synthetic sensors
-4. **StateAttributeResolver** processes entity.attribute patterns
-5. **ConfigVariableResolver** resolves configuration variables
-6. **VariableInheritanceHandler** applies global settings and variable inheritance
-7. **ReferenceValueManager** creates type-safe ReferenceValue objects with lazy value resolution
-
-**Key Feature**: All entity references are converted to ReferenceValue objects that preserve the original reference while
-allowing lazy value extraction during later phases.
-
-#### Phase 2: Entity Reference-Reliant Handler Processing (VariableResolutionPhase)
+3. **VariableResolverFactory** creates specialized resolvers for different reference types
+4. **CrossSensorReferenceResolver** resolves references to other synthetic sensors
+5. **StateAttributeResolver** processes entity.attribute patterns
+6. **ConfigVariableResolver** resolves configuration variables
+7. **VariableInheritanceHandler** applies global settings and variable inheritance
+8. **ReferenceValueManager** creates type-safe ReferenceValue objects with lazy value resolution allowing lazy value extraction
+   during later phases.
 
 Certain handlers are reliant on entity references to carry out work before evaluation. The metadata handler is one such entity
 that needs an entity_id or 'state' token as its first parameter (by convention) to perform work just before evaluation. The
@@ -700,10 +755,8 @@ metadata handler needs an entity_id to query HA about metadata like 'last_change
 resolve to values but we avoid this step to allow these handlers to use that entity reference first.
 
 1. **Metadata Function Detection**: Identifies `metadata()` function calls in formulas
-2. **MetadataHandler Processing**: Processes metadata functions with access to ReferenceValue objects containing original
-   references
-3. **Function Replacement**: Replaces metadata function calls with their resolved results
-4. **Context Preservation**: Maintains ReferenceValue objects in context for subsequent processing
+2. **Function Replacement**: Replaces metadata function calls with their resolved results
+3. **Context Preservation**: Maintains ReferenceValue objects in context for subsequent processing
 
 Entity Reference Handlers, e.g., Metadata functions receive ReferenceValue objects with original entity references (e.g.,
 `sensor.power_meter`), not prematurely resolved values (e.g., `1000.0`), enabling proper metadata lookup.
@@ -712,7 +765,6 @@ Entity Reference Handlers, e.g., Metadata functions receive ReferenceValue objec
 
 - Computed variables whose formulas contain `metadata(...)` are discovered during variable resolution.
 - To preserve the single-entry evaluation model and avoid spreading handler awareness, they are evaluated (when possible) in the
-  same resolver pass that already processes metadata for the current formula.
 - Gate conditions:
   - `_hass` and `current_sensor_entity_id` exist in context, and
   - `hass.states.get(current_sensor_entity_id)` returns a state object.
@@ -848,10 +900,55 @@ The system implements early detection of single value cases and consolidates all
 ### Entity Change Flow
 
 1. **EntityRegistryListener** detects entity changes
+   - Filters events using EntityIndex to process only relevant entity_registry_updated events
+   - Implements global string search/replace for entity ID renames
+   - Sets evaluation barriers to prevent formula evaluation during updates
 2. **EntityChangeHandler** coordinates system updates
-3. **StorageManager** updates persisted configurations
-4. **CrossSensorReferenceManager** updates references
+3. **StorageManager** updates persisted configurations using global replacement
+4. **Package Reload** ensures complete synchronization after storage updates
 5. **FormulaCompilationCache** invalidates affected formulas
+6. **Dynamic Dependency Discovery** automatically adapts to entity changes through runtime discovery
+
+## Recent Architectural Improvements
+
+### Entity ID Rename Handling Simplification
+
+The system has been simplified to use a more robust approach for handling entity ID renames:
+
+- **Global String Search/Replace**: Instead of complex incremental updates, the system now performs global string search and
+  replace across all storage
+- **Atomic Operations**: Evaluation barriers prevent formula evaluation during entity ID updates
+- **Package Reload**: Complete package reload ensures full synchronization after storage updates
+- **Elimination of Complex Logic**: Removed complex EntityIndex-based incremental update methods in favor of simpler, more
+  reliable global replacement
+
+### Dynamic Dependency Discovery
+
+The system now implements dynamic dependency discovery for state change tracking:
+
+- **Runtime Discovery**: Entity dependencies are discovered during actual formula evaluation rather than static analysis
+- **Dynamic Listener Updates**: State change listeners are updated when new entities are discovered during evaluation
+- **Self-Correcting**: Automatically adapts to formula changes without requiring reconfiguration
+- **Comprehensive Coverage**: Captures all entity references including those in metadata functions and computed variables
+- **Elimination of Static Extraction**: Removes the need for incomplete static dependency extraction for state change tracking
+
+### Friendly Name Management Simplification
+
+The system has been simplified to handle friendly names more efficiently:
+
+- **Registry-Based Lookup**: Friendly names are looked up from the Home Assistant entity registry during YAML export
+- **Elimination of Tracking**: Removed FriendlyNameListener and associated tracking logic
+- **Dynamic Export**: Exported YAML reflects current friendly names from HA entity registry
+- **Test Compatibility**: Gracefully handles sensors that exist only in storage (unit tests) vs. those created in HA
+
+### EntityIndex Refinement
+
+The EntityIndex has been refined to focus on specific use cases:
+
+- **Event Filtering**: Primary purpose is filtering entity_registry_updated events
+- **Limited Scope**: No longer attempts to track all entity references comprehensively
+- **Integration with Dynamic Discovery**: Works alongside dynamic dependency discovery for state change tracking
+- **Simplified Architecture**: Reduced complexity and maintenance burden
 
 ## Architectural Considerations
 
@@ -877,7 +974,14 @@ configurations.
 
 ### Resilience
 
-The system gracefully handles entity changes, configuration updates, and error conditions without requiring manual intervention.
+The system gracefully handles entity changes, configuration updates, and error conditions without requiring manual intervention:
+
+- **Simplified Entity ID Rename Handling**: Global string search/replace eliminates complex incremental update logic
+- **Atomic Updates**: Evaluation barriers prevent formula evaluation during entity updates
+- **Package Reload**: Complete reload ensures full synchronization after entity changes
+- **Dynamic Dependency Discovery**: Self-correcting dependency tracking adapts to formula changes automatically
+- **Robust Error Handling**: Two-tier error handling distinguishes between fatal configuration errors and transient runtime
+  issues
 
 ### Maintainability
 

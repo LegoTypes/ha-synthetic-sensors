@@ -1,7 +1,6 @@
 """Type analysis utilities with consistent Protocol usage and improved architecture."""
 
 from datetime import date, datetime, time
-import re
 from typing import Protocol, cast, runtime_checkable
 
 from .alternate_state_type_analyzer import AlternateStateTypeReducer, AlternateStateTypeResolver
@@ -155,7 +154,9 @@ class NumericParser:
             return value
         if isinstance(value, str):
             # Remove common non-numeric suffixes/prefixes
-            cleaned = re.sub(r"[^\d.-]", "", value)
+            from .regex_helper import extract_numeric_parts_advanced
+
+            cleaned = extract_numeric_parts_advanced(value)
             if cleaned:
                 try:
                     if "." in cleaned:
@@ -356,7 +357,9 @@ class VersionParser:
                 clean_version = value.lower().lstrip("v")
 
                 # Extract numeric parts
-                parts = re.findall(r"\d+", clean_version)
+                from .regex_helper import extract_version_numeric_parts
+
+                parts = extract_version_numeric_parts(clean_version)
                 if not parts:
                     return False, ()
 
@@ -406,16 +409,16 @@ class StringCategorizer:
     @staticmethod
     def _is_strict_datetime_string(value: str) -> bool:
         """Check if string is definitely a datetime (strict validation)."""
-        datetime_pattern = (
-            r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[T\s]\d{1,2}:\d{1,2}(?::\d{1,2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$"
-        )
-        return bool(re.match(datetime_pattern, value))
+        from .regex_helper import is_strict_datetime_string
+
+        return is_strict_datetime_string(value)
 
     @staticmethod
     def _is_version_string(value: str) -> bool:
         """Check if string is definitely a version (requires 'v' prefix)."""
-        strict_pattern = r"^v\d+\.\d+\.\d+(?:[-+].+)?$"
-        return bool(re.match(strict_pattern, value))
+        from .regex_helper import is_strict_version_string
+
+        return is_strict_version_string(value)
 
 
 # === Management Classes ===

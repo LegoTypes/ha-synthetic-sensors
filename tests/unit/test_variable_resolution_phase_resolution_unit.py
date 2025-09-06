@@ -5,6 +5,14 @@ from ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resoluti
     VariableResolutionPhase,
 )
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_hierarchical_context() -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 class _Hass:
@@ -39,7 +47,8 @@ def test_state_attribute_resolution_substitutes_values(monkeypatch) -> None:
     sensor_cfg = SensorConfig(unique_id="unit_phase")
 
     formula = "state.attributes.deep.level + state.voltage"
-    result = phase.resolve_all_references_with_ha_detection(formula, sensor_cfg, {})
+    eval_ctx = _create_hierarchical_context()
+    result = phase.resolve_all_references_with_ha_detection(formula, sensor_cfg, eval_ctx)
     # Both attributes should be substituted to numeric literals in the string
     assert "3" in result.resolved_formula
     assert "120" in result.resolved_formula
@@ -62,7 +71,8 @@ def test_entity_reference_resolution_with_tracking(monkeypatch) -> None:
 
     phase._resolver_factory.resolve_variable = fake_resolve  # type: ignore[attr-defined]
 
-    result = phase.resolve_all_references_with_ha_detection("sensor.any + 1", SensorConfig(unique_id="unit_phase"), {})
+    eval_ctx = _create_hierarchical_context()
+    result = phase.resolve_all_references_with_ha_detection("sensor.any + 1", SensorConfig(unique_id="unit_phase"), eval_ctx)
     # Entity should have been substituted to a variable name, not its numeric value
     assert "sensor_any" in result.resolved_formula
     # The entity mapping should contain the variable name as key and original entity as value

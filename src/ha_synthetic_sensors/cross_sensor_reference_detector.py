@@ -14,7 +14,6 @@ Key Features:
 """
 
 import logging
-import re
 from typing import Any
 
 from .config_models import Config, SensorConfig
@@ -86,7 +85,7 @@ class CrossSensorReferenceDetector:
             if references:
                 reference_map[sensor_key] = references
 
-        self._logger.debug("Detected cross-sensor references: %s", {k: list(v) for k, v in reference_map.items()})
+        # Debug logging removed to reduce verbosity
 
         return reference_map
 
@@ -111,7 +110,7 @@ class CrossSensorReferenceDetector:
             if references:
                 reference_map[sensor.unique_id] = references
 
-        self._logger.debug("Detected cross-sensor references in config: %s", {k: list(v) for k, v in reference_map.items()})
+        # Debug logging removed to reduce verbosity
 
         return reference_map
 
@@ -207,8 +206,10 @@ class CrossSensorReferenceDetector:
         Returns:
             Formula with collection function calls replaced by placeholders
         """
-        # Pattern for aggregation functions with all their parameters
-        collection_pattern = re.compile(r"\b(sum|avg|count|min|max|std|var)\s*\([^)]+\)", re.IGNORECASE)
+        # Use centralized collection function detection pattern from regex helper
+        from .regex_helper import create_collection_function_detection_pattern
+
+        collection_pattern = create_collection_function_detection_pattern()
 
         # Replace collection functions with placeholders to avoid parsing their contents
         return collection_pattern.sub("COLLECTION_FUNC", formula)

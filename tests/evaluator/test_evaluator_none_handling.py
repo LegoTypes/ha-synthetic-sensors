@@ -7,6 +7,14 @@ from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.type_definitions import DataProviderResult
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 def test_evaluator_handles_unknown_value_from_data_provider(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -28,7 +36,7 @@ def test_evaluator_handles_unknown_value_from_data_provider(mock_hass, mock_enti
     )  # Simple variable reference
 
     # Should return success result with unknown state (graceful state reflection)
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
     # Phase 1 preserves HA provided state; expect STATE_UNKNOWN and no numeric value
@@ -58,7 +66,7 @@ def test_evaluator_handles_unavailable_entity_reference(mock_hass, mock_entity_r
     )
 
     # Should return success result with unavailable state (graceful state reflection)
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     assert result["success"] is True  # Non-fatal - reflects dependency state
     # Phase 1 now preserves HA-provided state values and sets no numeric value
@@ -85,7 +93,7 @@ def test_evaluator_works_with_valid_values(mock_hass, mock_entity_registry, mock
     # Test simple variable reference with valid value
     config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.valid_power"})
 
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     # Should succeed and return a numeric value (note: data provider integration has value conversion behavior)
     assert result["success"] is True

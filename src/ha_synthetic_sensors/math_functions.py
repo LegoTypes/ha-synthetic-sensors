@@ -9,7 +9,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime, timedelta
 import math
-import re
 from typing import Any
 
 # Type alias for numeric values (excluding complex since it doesn't work with float())
@@ -565,21 +564,26 @@ class MathFunctions:
     def normalize(text: str) -> str:
         """Normalize whitespace in string (multiple spaces/tabs/newlines → single space)."""
         # Replace multiple whitespace characters with single space and strip
-        return re.sub(r"\s+", " ", str(text)).strip()
+        from .regex_helper import clean_whitespace
+
+        return clean_whitespace(text)
 
     @staticmethod
     def clean(text: str) -> str:
         """Remove special characters but keep alphanumeric and spaces."""
         # Keep only alphanumeric characters and spaces
-        return re.sub(r"[^a-zA-Z0-9\s]", "", str(text))
+        from .regex_helper import remove_special_chars
+
+        return remove_special_chars(text)
 
     @staticmethod
     def sanitize(text: str) -> str:
         """Convert string to safe identifier format (spaces → underscores, special chars → underscores)."""
         # Replace spaces, hyphens, and common special chars with underscores
         text = str(text).strip()
-        text = re.sub(r"[\s\-@#!]+", "_", text)  # spaces, hyphens, @, #, ! → underscores
-        text = re.sub(r"[^a-zA-Z0-9_]", "", text)  # remove any remaining special chars
+        from .regex_helper import slugify_text
+
+        text = slugify_text(text)
         return text
 
     @staticmethod

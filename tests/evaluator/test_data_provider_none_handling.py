@@ -8,7 +8,15 @@ from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.exceptions import DataValidationError
 from ha_synthetic_sensors.type_definitions import DataProviderResult
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
 from homeassistant.const import STATE_UNKNOWN
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 def test_data_provider_returns_none(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -23,7 +31,7 @@ def test_data_provider_returns_none(mock_hass, mock_entity_registry, mock_states
     config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
     with pytest.raises(DataValidationError, match="Data provider callback returned None.*fatal implementation error"):
-        evaluator.evaluate_formula(config)
+        evaluator.evaluate_formula(config, _create_empty_context())
 
 
 def test_data_provider_returns_none_value(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -38,7 +46,7 @@ def test_data_provider_returns_none_value(mock_hass, mock_entity_registry, mock_
     config = FormulaConfig(id="test_formula", formula="test_var", variables={"test_var": "sensor.test"})
 
     # Should handle None values gracefully by returning an alternate HA state with no numeric value
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
     assert result["success"] is True
     assert result.get("state") == STATE_UNKNOWN
     assert result.get("value") is None
@@ -59,7 +67,7 @@ def test_evaluator_handles_none_from_data_provider(mock_hass, mock_entity_regist
     config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
 
     # Should handle None values gracefully by returning an alternate HA state with no numeric value
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
     assert result["success"] is True
     assert result.get("state") == STATE_UNKNOWN
     assert result.get("value") is None
@@ -81,7 +89,7 @@ def test_evaluator_handles_callback_returning_none(mock_hass, mock_entity_regist
 
     # Should raise DataValidationError for None callback result (new strict behavior)
     with pytest.raises(DataValidationError, match="Data provider callback returned None.*fatal implementation error"):
-        evaluator.evaluate_formula(config)
+        evaluator.evaluate_formula(config, _create_empty_context())
 
 
 def test_data_provider_with_valid_values(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -100,7 +108,7 @@ def test_data_provider_with_valid_values(mock_hass, mock_entity_registry, mock_s
     # Test simple variable reference with valid value
     config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.valid_power"})
 
-    result = evaluator.evaluate_formula(config)
+    result = evaluator.evaluate_formula(config, _create_empty_context())
 
     # Should succeed and return the value
     assert result["success"] is True

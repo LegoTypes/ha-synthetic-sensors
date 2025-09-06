@@ -1,0 +1,195 @@
+# YAML fixtures for testing alternate_state_eval.py functionality
+# These fixtures test different forms of alternate state handlers
+
+version: "1.0"
+global_settings:
+  device_identifier: "test_device_alternate_state_eval"
+
+sensors:
+  # Test 1: Literal numeric values - should return exact values
+  literal_numeric_test:
+    name: "Literal Numeric Test"
+    formula: "missing_var + 1"  # Will fail, trigger handler
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE: 42  # Integer literal
+      UNKNOWN: 100.5   # Float literal
+      NONE: 0          # Zero literal
+      FALLBACK: 999    # Large integer
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 2: Literal string values - should return exact strings
+  literal_string_test:
+    name: "Literal String Test"
+    formula: "str(missing_var) + 'test'"
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE: "unavailable_string"  # Simple string literal
+      UNKNOWN: "unknown_string"          # Simple string literal
+      NONE: "none_string"                # Simple string literal
+      FALLBACK: "fallback_string"        # Simple string literal
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 3: Quoted string literals - should strip quotes and return inner content
+  quoted_string_test:
+    name: "Quoted String Test"
+    formula: "missing_var * 2"
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE: '"quoted_string"'     # Double quoted
+      UNKNOWN: "'single_quoted'"         # Single quoted
+      NONE: '"mixed_quotes"'             # Mixed quotes
+      FALLBACK: "'fallback_quoted'"      # Quoted fallback
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 4: Formula-like strings - should be evaluated as formulas
+  formula_string_test:
+    name: "Formula String Test"
+    formula: "missing_var + 5"
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "10 + 5"              # Simple formula
+      UNKNOWN:
+        formula: "20 * 3"              # Multiplication formula
+      NONE:
+        formula: "100 / 4"             # Division formula
+      FALLBACK:
+        formula: "2 ** 3"              # Power formula
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 5: Object form with local variables - should evaluate with context
+  object_form_test:
+    name: "Object Form Test"
+    formula: "missing_var + local_var"
+    variables:
+      missing_var: "sensor.missing"
+      local_var: 10  # Define the missing variable
+    alternate_states:
+      UNAVAILABLE:
+        formula: "base_value + offset"
+        variables:
+          base_value: 50
+          offset: 10
+      UNKNOWN:
+        formula: "multiplier * factor"
+        variables:
+          multiplier: 5
+          factor: 7
+      NONE:
+        formula: "total - discount"
+        variables:
+          total: 100
+          discount: 25
+      FALLBACK:
+        formula: "min_value + max_value"
+        variables:
+          min_value: 1
+          max_value: 99
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 6: Mixed literal and formula handlers
+  mixed_handlers_test:
+    name: "Mixed Handlers Test"
+    formula: "missing_var / 2"
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE: 42                    # Literal integer
+      UNKNOWN:                           # Object form
+        formula: "x + y"
+        variables:
+          x: 10
+          y: 20
+      NONE: "none_value"                 # Literal string
+      FALLBACK:                          # Complex formula
+        formula: "(a + b) * c"
+        variables:
+          a: 5
+          b: 15
+          c: 2
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 7: Numeric string conversion - should convert to numbers
+  numeric_string_test:
+    name: "Numeric String Test"
+    formula: "missing_var * 3"
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE: "123"                 # Integer string
+      UNKNOWN: "45.67"                   # Float string
+      NONE: "-42"                        # Negative integer string
+      FALLBACK: "0.001"                  # Small float string
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 8: Boolean literals - should return exact boolean values
+  boolean_literal_test:
+    name: "Boolean Literal Test"
+    formula: "missing_var and True"
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE: true                  # Boolean true
+      UNKNOWN: false                     # Boolean false
+      NONE: true                         # Boolean true
+      FALLBACK: false                    # Boolean false
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 9: Complex nested formulas with variables (simplified to valid formulas)
+  complex_formula_test:
+    name: "Complex Formula Test"
+    formula: "missing_var + complex_calc"
+    variables:
+      missing_var: "sensor.missing"
+      complex_calc: "sensor.other"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "base ** 2 + height ** 2"
+        variables:
+          base: 3
+          height: 4
+      UNKNOWN:
+        formula: "value1 + value2 + value3 + value4"
+        variables:
+          value1: 10
+          value2: 20
+          value3: 30
+          value4: 40
+      NONE:
+        formula: "sum_values"
+        variables:
+          sum_values: 15
+      FALLBACK:
+        formula: "count * average"
+        variables:
+          count: 5
+          average: 3
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 10: Edge cases and error conditions
+  edge_cases_test:
+    name: "Edge Cases Test"
+    formula: "missing_var"
+    variables:
+      missing_var: "sensor.missing"
+    alternate_states:
+      UNAVAILABLE: null                  # None value
+      UNKNOWN: "unknown"                 # String instead of empty
+      NONE: 0                            # Zero
+      FALLBACK: "0"                      # Zero string
+    metadata:
+      unit_of_measurement: "units"

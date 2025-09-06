@@ -10,11 +10,16 @@ All formulas are siblings that use the same evaluation pipeline.
 """
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 from .config_models import FormulaConfig
+
+if TYPE_CHECKING:
+    from .config_models import AlternateStateHandler
 from .core_formula_evaluator import CoreFormulaEvaluator
-from .type_definitions import ContextValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +57,7 @@ class FormulaEvaluatorService:
         cls,
         resolved_formula: str,
         original_formula: str,
-        context: dict[str, ContextValue],
+        context: "HierarchicalContextDict",
         *,
         allow_unresolved_states: bool = False,
     ) -> float | str | bool | None:
@@ -102,11 +107,12 @@ class FormulaEvaluatorService:
     def evaluate_formula_via_pipeline(
         cls,
         formula: str,
-        context: dict[str, ContextValue],
+        context: "HierarchicalContextDict",
         *,
         variables: dict[str, object] | None = None,
         bypass_dependency_management: bool = True,
         allow_unresolved_states: bool = False,
+        alternate_state_handler: "AlternateStateHandler | None" = None,
     ) -> dict[str, object]:
         """
         Evaluate a formula string via the complete evaluation pipeline (Phases 0-4).
@@ -164,21 +170,18 @@ class FormulaEvaluatorService:
         if cls._evaluator is None:
             raise RuntimeError("FormulaEvaluatorService Evaluator not attached")
 
-        # Narrow variables type to expected mapping for FormulaConfig
-        # Use the exact expected type for FormulaConfig.variables
-        safe_variables: dict[str, str | int | float | Any] = {}
-        if variables:
-            for k, v in variables.items():
-                if isinstance(v, (str | int | float)):
-                    safe_variables[k] = v
-
+        # ARCHITECTURAL FIX: Use empty variables to prevent dependency extraction contamination
+        # The pipeline will resolve variables naturally from the context (ReferenceValue objects)
+        # instead of from FormulaConfig.variables which was causing timestamp contamination
+        # ARCHITECTURE FIX: Include alternate_state_handler for computed variables
         temp_config = FormulaConfig(
             id=f"temp_cv_{abs(hash(formula))}",
             name="Computed Variable",
             formula=formula,
-            variables=safe_variables,
+            variables={},  # Empty - let pipeline resolve from context
             attributes={},
             allow_unresolved_states=allow_unresolved_states,
+            alternate_state_handler=alternate_state_handler,
         )
 
         result: dict[str, object] = cls._evaluator.evaluate_formula_with_sensor_config(

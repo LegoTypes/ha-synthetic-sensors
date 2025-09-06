@@ -8,15 +8,17 @@ global_settings:
     attribution: "Unavailable scenario test"
 
 sensors:
-  unavailable_sensor:
-    name: "Unavailable Sensor"
-    entity_id: "sensor.unavailable_backing"
+  test_unavailable_sensor:
+    name: "Unavailable Test Sensor"
+    entity_id: "sensor.test_unavailable_entity"
     formula: "state"
     alternate_states:
       UNAVAILABLE:
         formula: "state if within_grace else 'fallback'"
       UNKNOWN:
         formula: "state if within_grace else 'fallback'"
+      NONE:
+        formula: "'fallback'"
     variables:
       within_grace:
         formula: "minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes"

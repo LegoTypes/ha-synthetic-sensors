@@ -83,6 +83,10 @@ PYTHON_KEYWORDS: frozenset[str] = frozenset(
         "and",
         "or",
         "not",
+        "global",
+        "nonlocal",
+        "lambda",
+        "del",
     }
 )
 

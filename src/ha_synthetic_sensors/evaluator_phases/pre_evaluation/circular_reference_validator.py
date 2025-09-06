@@ -6,7 +6,6 @@ from attempting to resolve entities that can never exist due to circular depende
 """
 
 import logging
-import re
 from typing import TYPE_CHECKING
 
 from ha_synthetic_sensors.config_models import SensorConfig
@@ -23,8 +22,10 @@ class CircularReferenceValidator:
 
     def __init__(self) -> None:
         """Initialize the circular reference validator."""
-        # Pattern to extract variable/attribute references from formulas
-        self._variable_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
+        # Use centralized identifier pattern from regex helper
+        from ...regex_helper import create_identifier_pattern
+
+        self._variable_pattern = create_identifier_pattern()
 
     def validate_formula_config(self, config: "FormulaConfig", sensor_config: SensorConfig | None = None) -> None:
         """Validate a formula configuration for circular references.
@@ -113,8 +114,12 @@ class CircularReferenceValidator:
         Returns:
             True if the formula contains a self-reference
         """
-        # Extract all variable references from the formula
-        variables = self._variable_pattern.findall(formula)
+        # Use the fixed dependency parser to extract variables correctly
+        # This handles string literals properly and won't extract 'domain' from metadata() calls
+        from ...dependency_parser import DependencyParser
+
+        parser = DependencyParser(hass=None)
+        variables = parser.extract_variables(formula)
 
         # Check if the name appears as a standalone variable reference
         # This catches direct references like "device_info" or "my_attribute"
@@ -127,8 +132,10 @@ class CircularReferenceValidator:
             # A direct reference would be just "name" as a standalone variable
 
             # Pattern to match standalone variable references (not part of nested paths)
-            # This matches word boundaries that are not preceded by a dot or followed by a dot
-            standalone_pattern = re.compile(rf"\b{re.escape(name)}\b(?!\s*\.)")
+            # Use centralized standalone reference pattern from regex helper
+            from ...regex_helper import create_standalone_reference_pattern
+
+            standalone_pattern = create_standalone_reference_pattern(name)
 
             # Check if there are any standalone references to this name
             if standalone_pattern.search(formula):
@@ -149,9 +156,12 @@ class CircularReferenceValidator:
         dependencies: dict[str, set[str]] = {}
 
         for attr_name, attr_formula in attributes.items():
-            # Find all attribute references in this formula
+            # Find all attribute references in this formula using fixed dependency parser
             referenced_attrs = set()
-            variables = self._variable_pattern.findall(attr_formula)
+            from ...dependency_parser import DependencyParser
+
+            parser = DependencyParser(hass=None)
+            variables = parser.extract_variables(attr_formula)
 
             for var in variables:
                 if var in attributes:  # This variable is another attribute

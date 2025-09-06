@@ -1,8 +1,10 @@
 """Attribute dependency manager for handling attribute-to-attribute dependencies."""
 
 import logging
-import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
@@ -82,8 +84,8 @@ class AttributeDependencyManager:
         return self._evaluation_order.copy()
 
     def build_evaluation_context(
-        self, sensor_config: SensorConfig, main_sensor_value: Any, evaluator: Any, base_context: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+        self, sensor_config: SensorConfig, main_sensor_value: Any, evaluator: Any, base_context: "HierarchicalContextDict"
+    ) -> "HierarchicalContextDict":
         """
         Build evaluation context by evaluating attributes in dependency order.
 
@@ -99,8 +101,8 @@ class AttributeDependencyManager:
         Returns:
             Complete context with all attribute values calculated
         """
-        # Start with base context
-        context = base_context.copy() if base_context else {}
+        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
+        context = base_context.copy()
         # ARCHITECTURE FIX: Use ReferenceValueManager for state token
         entity_id = sensor_config.entity_id if sensor_config else "state"
         ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
@@ -158,14 +160,15 @@ class AttributeDependencyManager:
         """
         dependencies = set()
 
-        # Pattern to match standalone attribute names (not part of other identifiers)
-        pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b"
+        # ARCHITECTURE FIX: Use centralized DependencyParser instead of flawed regex helper
+        from ...dependency_parser import DependencyParser
 
-        # Reserved words that are not attribute dependencies
+        # Use None for hass since this is attribute-level dependency extraction
+        # The DependencyParser will handle this gracefully
+        parser = DependencyParser(hass=None)
+        identifiers = parser.extract_dependencies(formula)
 
-        for match in re.finditer(pattern, formula):
-            identifier = match.group(1)
-
+        for identifier in identifiers:
             # Skip reserved words
             if identifier in get_reserved_words():
                 continue

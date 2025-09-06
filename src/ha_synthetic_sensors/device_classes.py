@@ -5,7 +5,6 @@ device class enums, making them easier to maintain and update when HA adds new
 device classes.
 """
 
-import re
 from typing import TYPE_CHECKING
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
@@ -79,7 +78,6 @@ def get_domains_from_hass(hass: "HomeAssistant") -> set[str]:
     domains = set()
     try:
         states = hass.states.async_all()
-        # Handle case where async_all() returns a Mock object (in tests)
         if hasattr(states, "__iter__"):
             for state in states:
                 # Ensure state has entity_id attribute (not a Mock)
@@ -87,8 +85,7 @@ def get_domains_from_hass(hass: "HomeAssistant") -> set[str]:
                     domain = state.entity_id.split(".", 1)[0]
                     domains.add(domain)
     except (AttributeError, TypeError):
-        # If we can't get states (mock objects, missing attributes, etc.),
-        # return empty set so fallback validation is used
+        # If states are unavailable or lack expected attributes, return empty set
         pass
 
     return domains
@@ -118,8 +115,7 @@ def is_valid_ha_domain(domain: str, hass: "HomeAssistant | None" = None) -> bool
         if available_domains:
             return domain in available_domains
 
-        # If HA instance has no states (common in testing), fall back to format validation
-        # This prevents rejecting all domains when testing with empty mock instances
+        # If HA instance has no states, fall back to format validation
 
     # Fallback to format validation when no HA instance is available
     # or when HA instance has no states
@@ -127,5 +123,8 @@ def is_valid_ha_domain(domain: str, hass: "HomeAssistant | None" = None) -> bool
     # - Start with a lowercase letter
     # - Contain only lowercase letters, numbers, and underscores
     # - Be between 2-50 characters long
-    pattern = r"^[a-z][a-z0-9_]{1,49}$"
-    return bool(re.match(pattern, domain))
+    # Use centralized domain validation pattern from regex helper
+    from .regex_helper import create_domain_validation_pattern, match_pattern
+
+    pattern = create_domain_validation_pattern()
+    return bool(match_pattern(domain, pattern))

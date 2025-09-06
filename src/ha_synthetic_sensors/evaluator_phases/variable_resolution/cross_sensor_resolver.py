@@ -1,7 +1,10 @@
 """Cross-sensor reference resolver for handling cross-sensor references."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...exceptions import CrossSensorResolutionError, DependencyValidationError, MissingDependencyError
 from ...type_definitions import ContextValue
@@ -28,7 +31,7 @@ class CrossSensorReferenceResolver(VariableResolver):
             return False
         return False
 
-    def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, ContextValue]) -> Any | None:
+    def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:
         """Enhanced cross-sensor reference resolution with dependency tracking."""
         if not isinstance(variable_value, str):
             return None
@@ -51,7 +54,8 @@ class CrossSensorReferenceResolver(VariableResolver):
 
         if sensor_value is not None:
             _LOGGER.debug("Cross-sensor resolver: resolved '%s' to value '%s'", variable_value, sensor_value)
-            return sensor_value
+            # Cast to ContextValue since sensor registry returns Any but we know it's a valid context value
+            return sensor_value  # type: ignore[no-any-return]
 
         # Enhanced error handling for missing sensor values
         if self._sensor_registry_phase.is_sensor_registered(variable_value):

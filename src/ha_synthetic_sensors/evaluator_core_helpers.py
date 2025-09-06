@@ -8,7 +8,10 @@ complexity for linting.
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 from .evaluation_common import (
     check_dependency_management_conditions,
@@ -22,7 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def process_early_result(
-    evaluator: Any, resolution_result: Any, config: Any, eval_context: dict[str, Any], sensor_config: Any
+    evaluator: Any, resolution_result: Any, config: Any, eval_context: HierarchicalContextDict, sensor_config: Any
 ) -> EvaluationResult:
     """Process an early result detected during variable resolution.
 
@@ -34,6 +37,7 @@ def process_early_result(
         eval_context=eval_context,
         sensor_config=sensor_config,
         core_evaluator=evaluator.execution_engine.core_evaluator,
+        alternate_state_processor_instance=evaluator._alternate_state_processor,
         resolve_all_references_in_formula=evaluator.resolve_all_references_in_formula,
         pre_eval=True,
     )

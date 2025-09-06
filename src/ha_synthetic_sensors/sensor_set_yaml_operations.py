@@ -205,7 +205,7 @@ class SensorSetYamlOperationsMixin:
             device_identifier=device_identifier,
         )
 
-        _LOGGER.debug("Imported YAML to sensor set: %s", self.sensor_set_id)
+        # Debug logging removed to reduce verbosity
 
     async def async_export_yaml(self) -> str:
         """

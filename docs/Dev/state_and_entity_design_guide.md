@@ -18,6 +18,225 @@ and provides handlers with access to both entity references and resolved values.
 `metadata()` function that require knowledge of the actual Home Assistant entity ID. For detailed implementation information,
 see the [ReferenceValue Architecture Implementation Guide](reference_value_architecture.md).
 
+## Current Architectural Approaches
+
+The synthetic sensor package implements several key architectural approaches for handling entity changes, dependency tracking,
+and system management:
+
+### Entity ID Rename Handling Simplification
+
+The system uses a **global string search/replace approach** for handling entity ID renames, providing atomic updates and
+complete synchronization:
+
+#### Global String Replacement
+
+- **Simple Approach**: Uses global string search/replace across all storage instead of complex incremental updates
+- **Comprehensive Coverage**: Finds and replaces entity ID strings anywhere they appear (formulas, variables, attributes,
+  metadata)
+- **Atomic Operations**: Ensures complete synchronization before resuming evaluations
+
+#### Atomic Update Process
+
+1. **Evaluation Barrier**: Pauses all formula evaluations using `pause_evaluations()`
+2. **Global Replacement**: Performs string search/replace across all sensor set configurations
+3. **Storage Update**: Updates storage with new entity ID references
+4. **Package Reload**: Triggers complete package reload via `reload_all_managers_from_storage()`
+5. **Evaluation Resume**: Resumes evaluations with `resume_evaluations()`
+
+#### Implementation Details
+
+```python
+# EntityRegistryListener._async_process_entity_id_change()
+async def _async_process_entity_id_change(self, old_entity_id: str, new_entity_id: str):
+    # 1) Pause evaluations globally
+    self.entity_change_handler.pause_evaluations()
+
+    # 2) Simple approach: find and replace the entity ID string across all storage
+    await self._update_storage_entity_ids(old_entity_id, new_entity_id)
+
+    # 3) Reload all registered sensor managers from storage
+    await self.entity_change_handler.reload_all_managers_from_storage(self.storage_manager)
+
+    # 4) Clear evaluator caches and notify callbacks
+    self.entity_change_handler.handle_entity_id_change(old_entity_id, new_entity_id)
+
+    # 5) Resume evaluations
+    self.entity_change_handler.resume_evaluations()
+```
+
+#### Benefits
+
+- **Simplicity**: Eliminates complex incremental update logic
+- **Reliability**: Ensures complete synchronization through package reload
+- **Comprehensive**: Handles entity IDs anywhere they appear in storage
+- **Atomic**: No partial updates or inconsistent states
+
+### Dynamic Dependency Discovery (Option C)
+
+The system implements **dynamic dependency discovery** for state change tracking, providing comprehensive and self-correcting
+dependency management:
+
+#### Runtime Discovery
+
+- **Dynamic Detection**: Entities are discovered during formula evaluation, not through static analysis
+- **Comprehensive Coverage**: Captures ALL entity references including those in formulas, attributes, and metadata
+- **Self-Correcting**: Automatically adapts when new entities are discovered or formulas change
+
+#### Implementation Mechanism
+
+```python
+# VariableResolutionPhase tracks discovered entities during evaluation
+class VariableResolutionPhase:
+    def __init__(self):
+        self._last_discovered_entities: set[str] = set()
+
+    def get_last_discovered_entities(self) -> set[str]:
+        return self._last_discovered_entities.copy()
+
+    def _resolve_entity_references_with_tracking(self, formula, eval_context, sensor_config):
+        # Track all discovered entities during resolution
+        self._last_discovered_entities.update(entity_mappings_from_entities.keys())
+```
+
+#### Dynamic Listener Updates
+
+```python
+# SensorManager updates state change listeners based on discovered entities
+async def _update_dependencies_from_evaluation(self) -> None:
+    """Update dependency tracking based on entities discovered during evaluation.
+
+    This implements dynamic dependency discovery - the evaluator finds ALL entity
+    references during evaluation, and we update our state change listeners accordingly.
+    """
+    discovered = self._evaluator.get_last_discovered_entities()
+
+    # Update state change listeners for discovered entities
+    for entity_id in discovered:
+        if entity_id not in self._dependencies:
+            # Add new entity to state change tracking
+            self._dependencies.add(entity_id)
+            # Register state change listener
+            self._track_state_change(entity_id)
+```
+
+#### Benefits
+
+- **Complete Coverage**: Discovers entities that static analysis might miss
+- **Adaptive**: Automatically adjusts to formula changes
+- **Efficient**: Only tracks entities that are actually used
+- **Reliable**: Self-correcting nature ensures accuracy
+
+### Friendly Name Management Simplification
+
+The system uses **registry-based friendly name lookup** instead of tracking friendly name changes:
+
+#### Registry-Based Approach
+
+- **Dynamic Lookup**: Friendly names are looked up from HA entity registry during YAML export
+- **No Tracking**: Eliminates `FriendlyNameListener` and associated tracking overhead
+- **Current Values**: Exported YAML reflects current friendly names from HA registry
+
+#### Implementation
+
+```python
+# StorageYamlHandler looks up friendly names from registry
+def _get_friendly_name_from_registry(self, entity_id: str) -> str | None:
+    """Get friendly name from HA entity registry."""
+    try:
+        state = self.storage_manager.hass.states.get(entity_id)
+        if state and "friendly_name" in state.attributes:
+            return str(state.attributes["friendly_name"])
+    except Exception:
+        pass
+    return None
+
+def _get_entity_id_for_sensor(self, unique_id: str) -> str | None:
+    """Get entity ID from unique ID for registry lookup."""
+    domain = self.storage_manager.integration_domain
+    entity_registry = er.async_get(self.storage_manager.hass)
+    return entity_registry.async_get_entity_id("sensor", domain, unique_id)
+```
+
+#### Benefits
+
+- **Simplified Architecture**: No tracking overhead or complex listener management
+- **Current Values**: Always reflects current HA registry state
+- **Reliable**: Uses HA's authoritative source for friendly names
+- **Efficient**: Only looks up names when needed for export
+
+### EntityIndex Refinement
+
+The EntityIndex has been refined to focus on specific use cases rather than comprehensive tracking:
+
+#### Focused Purpose
+
+- **Event Filtering**: Used to filter relevant `entity_registry_updated` events
+- **Limited Scope**: Does not track all entity references (incomplete by design)
+- **Integration**: Works alongside dynamic dependency discovery
+
+#### Current Implementation
+
+```python
+class EntityIndex:
+    """
+    Index of entity IDs used by synthetic sensors for efficient change tracking.
+
+    NOTE: This index is used for filtering entity_registry_updated events and
+    friendly name change detection. It does NOT track all entity references -
+    only those in specific locations.
+
+    For dependency tracking (state change events), we use dynamic discovery
+    during formula evaluation which captures ALL entity references including
+    those in formulas, attributes, and metadata.
+    """
+
+    def add_sensor_entities(self, sensor_config: SensorConfig) -> None:
+        """Add entity IDs from specific locations only."""
+        # Tracks:
+        # - Sensor entity_id fields
+        # - Formula variable values that are entity IDs
+        # - Global variable values that are entity IDs
+        # - Entity IDs directly in formula strings (via DependencyParser)
+
+        # Does NOT track:
+        # - Entity IDs in attribute formulas
+        # - Entity IDs in metadata() function calls
+        # - Dynamic aggregation patterns
+        # - Collection functions that resolve at runtime
+```
+
+#### Benefits
+
+- **Simplified**: Reduced complexity and maintenance burden
+- **Focused**: Clear purpose for event filtering
+- **Efficient**: Only tracks entities needed for event filtering
+- **Integrated**: Works with dynamic discovery for comprehensive coverage
+
+### Integration of Approaches
+
+These approaches work together to provide comprehensive entity management:
+
+#### Entity ID Renames
+
+1. **Event Detection**: EntityRegistryListener detects entity ID changes
+2. **String Replacement**: Global search/replace updates all references
+3. **Package Reload**: Complete reload ensures synchronization
+4. **Dynamic Discovery**: New entity references are discovered during evaluation
+
+#### State Change Tracking
+
+1. **Dynamic Discovery**: Entities discovered during formula evaluation
+2. **Listener Updates**: State change listeners updated dynamically
+3. **Event Filtering**: EntityIndex filters relevant events
+4. **Self-Correction**: System adapts to formula changes automatically
+
+#### Friendly Name Management
+
+1. **Registry Lookup**: Friendly names retrieved from HA registry
+2. **Export Integration**: YAML export reflects current registry state
+3. **No Tracking**: Eliminates complex listener management
+4. **Reliable**: Uses authoritative HA registry source
+
 ## Synthetic Sensor Definitions
 
 - YAML provides the synthetic sensor definition with a main sensor formula at a minimum.
@@ -101,11 +320,48 @@ The following state values are recognized and handled consistently throughout th
     attribute formulas, but their meaning is context-dependent (main formula = backing entity or previous value; attribute =
     main sensor's calculated value).
 
-## Enhanced Dependency Reporting
+## Enhanced Dependency Reporting and Dynamic Discovery
 
-The synthetic sensor package provides enhanced dependency reporting to improve debugging and monitoring capabilities. When
-dependencies are unavailable or contain HA state values, the system reports detailed information including both variable names
-and entity IDs.
+The synthetic sensor package provides enhanced dependency reporting and implements dynamic dependency discovery for
+comprehensive entity tracking. When dependencies are unavailable or contain HA state values, the system reports detailed
+information including both variable names and entity IDs.
+
+### Dynamic Dependency Discovery
+
+The system uses **dynamic dependency discovery** to track entity references during formula evaluation:
+
+#### Runtime Discovery Process
+
+1. **Formula Evaluation**: Entities are discovered during variable resolution phase
+2. **Dynamic Tracking**: `VariableResolutionPhase` tracks all discovered entities
+3. **Listener Updates**: State change listeners are updated based on discovered entities
+4. **Self-Correction**: System automatically adapts to formula changes
+
+#### Implementation
+
+```python
+# VariableResolutionPhase tracks entities during evaluation
+class VariableResolutionPhase:
+    def __init__(self):
+        self._last_discovered_entities: set[str] = set()
+
+    def get_last_discovered_entities(self) -> set[str]:
+        return self._last_discovered_entities.copy()
+
+    def _resolve_entity_references_with_tracking(self, formula, eval_context, sensor_config):
+        # Track all discovered entities during resolution
+        self._last_discovered_entities.update(entity_mappings_from_entities.keys())
+
+# SensorManager updates dependencies dynamically
+async def _update_dependencies_from_evaluation(self) -> None:
+    """Update dependency tracking based on entities discovered during evaluation."""
+    discovered = self._evaluator.get_last_discovered_entities()
+
+    for entity_id in discovered:
+        if entity_id not in self._dependencies:
+            self._dependencies.add(entity_id)
+            self._track_state_change(entity_id)
+```
 
 ### Dependency Reporting Format
 
@@ -168,18 +424,22 @@ sensors:
 
 ### Implementation Details
 
+- **Dynamic Discovery**: Entities discovered during formula evaluation, not static analysis
 - **Entity Mapping Tracking**: Variable resolution tracks mappings between variable names and entity IDs
 - **Config Variable Resolution**: Variables defined in sensor configuration are resolved and tracked
 - **Cross-Sensor References**: Cross-sensor references maintain their entity ID mappings
 - **Duplicate Prevention**: The system prevents duplicate dependency entries
 - **Context Preservation**: Both variable names and entity IDs are preserved for debugging context
+- **Self-Correcting**: System automatically adapts when formulas change or new entities are discovered
 
 ### Benefits
 
-1. **Enhanced Debugging**: Developers can see both the variable name used in formulas and the actual entity ID
-2. **Integration Support**: Integrations can use entity IDs for direct entity management
-3. **Monitoring**: System administrators can correlate variable names with actual Home Assistant entities
-4. **Error Context**: Clear indication of which specific entities are causing formula evaluation issues
+1. **Complete Coverage**: Discovers entities that static analysis might miss
+2. **Enhanced Debugging**: Developers can see both the variable name used in formulas and the actual entity ID
+3. **Integration Support**: Integrations can use entity IDs for direct entity management
+4. **Monitoring**: System administrators can correlate variable names with actual Home Assistant entities
+5. **Error Context**: Clear indication of which specific entities are causing formula evaluation issues
+6. **Adaptive**: Automatically adjusts to formula changes and new entity references
 
 ## Main Sensor Formula References
 
@@ -532,6 +792,54 @@ The following scenarios should be tested to ensure proper behavior:
 4. **Self-reference detection**: Prevents attributes referencing themselves
 5. **Linear attribute chains**: Allows valid attribute-to-attribute references
 
+## EntityIndex and Event Filtering
+
+The EntityIndex has been refined to focus on specific use cases rather than comprehensive tracking:
+
+### Focused Purpose
+
+- **Event Filtering**: Used to filter relevant `entity_registry_updated` events
+- **Limited Scope**: Does not track all entity references (incomplete by design)
+- **Integration**: Works alongside dynamic dependency discovery
+
+### Current Implementation
+
+```python
+class EntityIndex:
+    """
+    Index of entity IDs used by synthetic sensors for efficient change tracking.
+
+    NOTE: This index is used for filtering entity_registry_updated events and
+    friendly name change detection. It does NOT track all entity references -
+    only those in specific locations.
+
+    For dependency tracking (state change events), we use dynamic discovery
+    during formula evaluation which captures ALL entity references including
+    those in formulas, attributes, and metadata.
+    """
+
+    def add_sensor_entities(self, sensor_config: SensorConfig) -> None:
+        """Add entity IDs from specific locations only."""
+        # Tracks:
+        # - Sensor entity_id fields
+        # - Formula variable values that are entity IDs
+        # - Global variable values that are entity IDs
+        # - Entity IDs directly in formula strings (via DependencyParser)
+
+        # Does NOT track:
+        # - Entity IDs in attribute formulas
+        # - Entity IDs in metadata() function calls
+        # - Dynamic aggregation patterns
+        # - Collection functions that resolve at runtime
+```
+
+### Benefits
+
+- **Simplified**: Reduced complexity and maintenance burden
+- **Focused**: Clear purpose for event filtering
+- **Efficient**: Only tracks entities needed for event filtering
+- **Integrated**: Works with dynamic discovery for comprehensive coverage
+
 ## Variable Injection Rules
 
 ### Explicit Variable Definition
@@ -548,6 +856,55 @@ placed.
 **Critical Implementation Insight**: Cross-sensor variable resolution correctly updates variables to use HA-assigned entity IDs
 rather than original sensor keys. This ensures that cross-sensor references remain valid after entity registration, even when
 collision resolution occurs and entities receive different entity IDs than originally specified.
+
+### Entity ID Change Handling
+
+The system uses a **global string search/replace approach** for handling entity ID changes:
+
+#### Global String Replacement
+
+- **Simple Approach**: Uses global string search/replace across all storage instead of complex incremental updates
+- **Comprehensive Coverage**: Finds and replaces entity ID strings anywhere they appear (formulas, variables, attributes,
+  metadata)
+- **Atomic Operations**: Ensures complete synchronization before resuming evaluations
+
+#### Implementation
+
+```python
+# EntityRegistryListener handles entity ID changes
+async def _async_process_entity_id_change(self, old_entity_id: str, new_entity_id: str):
+    # 1) Pause evaluations globally
+    self.entity_change_handler.pause_evaluations()
+
+    # 2) Simple approach: find and replace the entity ID string across all storage
+    await self._update_storage_entity_ids(old_entity_id, new_entity_id)
+
+    # 3) Reload all registered sensor managers from storage
+    await self.entity_change_handler.reload_all_managers_from_storage(self.storage_manager)
+
+    # 4) Resume evaluations
+    self.entity_change_handler.resume_evaluations()
+
+def _replace_entity_in_config(self, old_entity_id: str, new_entity_id: str, config: Any) -> Any:
+    """Recursively replace an entity ID string in a configuration object."""
+    if isinstance(config, str):
+        return config.replace(old_entity_id, new_entity_id)
+    if isinstance(config, dict):
+        return {key: self._replace_entity_in_config(old_entity_id, new_entity_id, value)
+                for key, value in config.items()}
+    if isinstance(config, list):
+        return [self._replace_entity_in_config(old_entity_id, new_entity_id, item)
+                for item in config]
+    # Handle dataclass instances and other types...
+    return config
+```
+
+#### Benefits
+
+- **Simplicity**: Eliminates complex incremental update logic
+- **Reliability**: Ensures complete synchronization through package reload
+- **Comprehensive**: Handles entity IDs anywhere they appear in storage
+- **Atomic**: No partial updates or inconsistent states
 
 #### Self-Reference in Attributes: State Token vs Entity ID
 
@@ -612,6 +969,44 @@ sensors:
 **Design Decision**: YAML exports include HA-assigned entity_ids for ALL sensors, including those that didn't originally specify
 an entity_id. This ensures that exported YAML reflects the current system state and enables reliable sensor referencing for
 subsequent CRUD operations.
+
+### Friendly Name Management
+
+The system uses **registry-based friendly name lookup** instead of tracking friendly name changes:
+
+#### Registry-Based Approach
+
+- **Dynamic Lookup**: Friendly names are looked up from HA entity registry during YAML export
+- **No Tracking**: Eliminates `FriendlyNameListener` and associated tracking overhead
+- **Current Values**: Exported YAML reflects current friendly names from HA registry
+
+#### Implementation
+
+```python
+# StorageYamlHandler looks up friendly names from registry
+def _get_friendly_name_from_registry(self, entity_id: str) -> str | None:
+    """Get friendly name from HA entity registry."""
+    try:
+        state = self.storage_manager.hass.states.get(entity_id)
+        if state and "friendly_name" in state.attributes:
+            return str(state.attributes["friendly_name"])
+    except Exception:
+        pass
+    return None
+
+def _get_entity_id_for_sensor(self, unique_id: str) -> str | None:
+    """Get entity ID from unique ID for registry lookup."""
+    domain = self.storage_manager.integration_domain
+    entity_registry = er.async_get(self.storage_manager.hass)
+    return entity_registry.async_get_entity_id("sensor", domain, unique_id)
+```
+
+#### Benefits
+
+- **Simplified Architecture**: No tracking overhead or complex listener management
+- **Current Values**: Always reflects current HA registry state
+- **Reliable**: Uses HA's authoritative source for friendly names
+- **Efficient**: Only looks up names when needed for export
 
 ### Example: YAML Export Format After HA Registration
 

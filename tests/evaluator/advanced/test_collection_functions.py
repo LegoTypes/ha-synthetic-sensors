@@ -7,6 +7,8 @@ import pytest
 from ha_synthetic_sensors.collection_resolver import CollectionResolver
 from ha_synthetic_sensors.dependency_parser import DependencyParser, DynamicQuery
 from ha_synthetic_sensors.evaluator import Evaluator
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
 from ha_synthetic_sensors.math_functions import MathFunctions
 
 
@@ -423,7 +425,9 @@ class TestFormulaPreprocessing:
         evaluator = Evaluator(mock_hass)
 
         formula = "temp + humidity"
-        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+        hierarchical_context = HierarchicalEvaluationContext("test_context")
+        eval_context = HierarchicalContextDict(hierarchical_context)
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula, eval_context)
 
         assert result == formula
 
@@ -431,7 +435,9 @@ class TestFormulaPreprocessing:
         """Test collection resolver with no queries."""
         evaluator = Evaluator(mock_hass)
         formula = "sum('device_class:power')"
-        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+        hierarchical_context = HierarchicalEvaluationContext("test_context")
+        eval_context = HierarchicalContextDict(hierarchical_context)
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula, eval_context)
         # Since we have entities with device_class:power in our registry,
         # it should return the sum of their values (not 0)
         assert result != "0" and result != "0.0"
@@ -450,7 +456,9 @@ class TestFormulaPreprocessing:
         evaluator._collection_resolver.get_entity_values = MagicMock(return_value=[100.0, 200.0])
 
         formula = "sum('device_class:power')"
-        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+        hierarchical_context = HierarchicalEvaluationContext("test_context")
+        eval_context = HierarchicalContextDict(hierarchical_context)
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula, eval_context)
 
         # Should replace with calculated sum
         assert result == "300.0"
@@ -464,7 +472,9 @@ class TestFormulaPreprocessing:
         evaluator._collection_resolver.parse_query = MagicMock(return_value=MagicMock())
 
         formula = "count('device_class:power')"
-        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+        hierarchical_context = HierarchicalEvaluationContext("test_context")
+        eval_context = HierarchicalContextDict(hierarchical_context)
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula, eval_context)
 
         # Should replace with default value
         assert result == "0"
@@ -478,7 +488,9 @@ class TestFormulaPreprocessing:
         evaluator._collection_resolver.parse_query = MagicMock(return_value=MagicMock())
 
         formula = "avg('device_class:power')"
-        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula)
+        hierarchical_context = HierarchicalEvaluationContext("test_context")
+        eval_context = HierarchicalContextDict(hierarchical_context)
+        result = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(formula, eval_context)
 
         # Should replace with default value
         assert result == "0"

@@ -9,6 +9,8 @@ from ha_synthetic_sensors.evaluator_handlers import HandlerFactory
 from ha_synthetic_sensors.evaluator_handlers.metadata_handler import MetadataHandler
 from ha_synthetic_sensors.enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
 
 
 class TestMetadataASTCaching:
@@ -34,7 +36,9 @@ class TestMetadataASTCaching:
         metadata_handler = MetadataHandler(hass=mock_hass)
         self.handler_factory.register_handler("metadata", metadata_handler)
 
-        context = {"test_var": ReferenceValue("test", "value")}
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+        context._hierarchical_context.set("test_var", ReferenceValue("test", "value"))
 
         # First evaluation - should create AST cache
         result1 = self.evaluator.evaluate_formula(
@@ -80,7 +84,9 @@ class TestMetadataASTCaching:
         metadata_handler = MetadataHandler(hass=mock_hass)
         self.handler_factory.register_handler("metadata", metadata_handler)
 
-        context = {"test_var": ReferenceValue("test", "value")}
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+        context._hierarchical_context.set("test_var", ReferenceValue("test", "value"))
 
         # First evaluation - should create AST cache
         result1 = self.evaluator.evaluate_formula(
@@ -113,7 +119,9 @@ class TestMetadataASTCaching:
         metadata_handler = MetadataHandler(hass=mock_hass)
         self.handler_factory.register_handler("metadata", metadata_handler)
 
-        context = {"power_var": ReferenceValue("power_var", "sensor.power_meter")}
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+        context._hierarchical_context.set("power_var", ReferenceValue("power_var", "sensor.power_meter"))
 
         # First evaluation - should create AST cache
         result1 = self.evaluator.evaluate_formula(

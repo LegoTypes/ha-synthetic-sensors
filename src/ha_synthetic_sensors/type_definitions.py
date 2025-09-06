@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, NotRequired, TypedDict
+
+# Forward declaration for HierarchicalContextDict to avoid circular imports
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 # Import Home Assistant types to stay aligned with their type system
 from homeassistant.core import State
 from homeassistant.helpers.typing import ConfigType, StateType
+
+if TYPE_CHECKING:
+    pass
 
 
 # Universal reference/value pair class
@@ -78,6 +83,10 @@ class ReferenceValue:
         )
 
 
+# Forward declaration for HierarchicalContextDict
+if TYPE_CHECKING:
+    pass
+
 # Type-safe evaluation context for handlers - STRICT: Only ReferenceValue objects for variables
 EvaluationContext = dict[str, ReferenceValue | Callable[..., Any] | State | ConfigType | StateType | None]
 
@@ -87,9 +96,9 @@ EvaluationContext = dict[str, ReferenceValue | Callable[..., Any] | State | Conf
 # - Callables: math functions that can be called in formulas
 # - State objects: HA State objects for attribute access (entity_id_state)
 # - Config/attribute data: uses HA's ConfigType (dict[str, Any])
-# - Basic types: ONLY during resolution phases, NOT for handlers
 # - None: for unavailable/missing values
-ContextValue = ReferenceValue | Callable[..., Any] | State | ConfigType | StateType | None
+# NOTE: StateType (str|int|float|None) should NOT be in ContextValue - these must be wrapped in ReferenceValue
+ContextValue = ReferenceValue | Callable[..., Any] | ConfigType | None
 
 # Type alias for formula evaluation results
 FormulaResult = float | int | str | bool | None

@@ -13,7 +13,6 @@ The CLEAN SLATE routing architecture:
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -29,7 +28,8 @@ from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_handlers import HandlerFactory
 from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import AlternateStateDetected, MissingDependencyError
-from .type_definitions import ContextValue, ReferenceValue
+from .hierarchical_context_dict import HierarchicalContextDict
+from .type_definitions import ReferenceValue
 
 # Type for alternate state values
 AlternateStateValue = str | None
@@ -113,7 +113,7 @@ class CoreFormulaEvaluator:
         self,
         resolved_formula: str,
         original_formula: str,
-        handler_context: dict[str, ContextValue],
+        handler_context: HierarchicalContextDict,
     ) -> float | str | bool | None:
         """Evaluate a formula using the routing architecture.
 
@@ -127,7 +127,7 @@ class CoreFormulaEvaluator:
         Args:
             resolved_formula: Formula with variables resolved (used for Enhanced SimpleEval)
             original_formula: Original formula (used for metadata handler)
-            handler_context: Context containing ReferenceValue objects
+            handler_context: Hierarchical context containing ReferenceValue objects
 
         Returns:
             Evaluation result
@@ -149,16 +149,33 @@ class CoreFormulaEvaluator:
             if "metadata(" in original_formula.lower():
                 handler = self._handler_factory.get_handler("metadata")
                 if handler and handler.can_handle(original_formula):
+                    _LOGGER.debug("METADATA_HANDLER_PROCESSING: Processing formula with metadata handler")
                     # Use the helper method to ensure consistent transformation for AST caching
                     processed, metadata_results = handler.evaluate(original_formula, handler_context)
                     # Metadata functions return their final values directly
                     # This is a formula that needs further evaluation (may contain alternate states)
                     resolved_formula = str(processed)
 
-                    # Add metadata results to handler context for SimpleEval
+                    # Debug: Check if metadata results contain the expected values
                     if metadata_results:
-                        handler_context.update(metadata_results)
+                        for key, value in metadata_results.items():
+                            _LOGGER.debug("METADATA_RESULT_DETAIL: %s = %s (type: %s)", key, value, type(value).__name__)
+                    else:
+                        _LOGGER.debug("METADATA_RESULT_EMPTY: No metadata results returned")
 
+                    # Add metadata results to handler context for SimpleEval
+                    # Wrap metadata results in ReferenceValue objects to comply with HierarchicalContextDict
+                    if metadata_results:
+                        for key, value in metadata_results.items():
+                            # Store metadata results in evaluation context for SimpleEval lookup
+                            # Use the key itself as the reference since these are internal metadata keys
+                            # Use the hierarchical context's unified setter method
+                            handler_context._hierarchical_context.set(key, ReferenceValue(reference=key, value=value))
+                            _LOGGER.debug("METADATA_CONTEXT_ADDED: Successfully stored metadata result: %s = %s", key, value)
+                else:
+                    _LOGGER.debug("METADATA_HANDLER_UNAVAILABLE: No metadata handler available or can't handle formula")
+
+            _LOGGER.debug("About to proceed to Enhanced SimpleEval with formula: %s", resolved_formula)
             # Enhanced SimpleEval with AST Caching (default path for all formulas)
             #
             # How SimpleEval AST Caching Works:
@@ -196,7 +213,15 @@ class CoreFormulaEvaluator:
                 # Check 3: Is the final formula result an alternate state?
                 alternate_state = self._get_alternate_state(final_result)
                 if alternate_state is not False:
-                    raise AlternateStateDetected(f"Formula result '{final_result}' is alternate state", alternate_state)
+                    raise AlternateStateDetected(
+                        f"Formula result '{final_result}' is alternate state",
+                        final_result,
+                        str(alternate_state) if alternate_state is not True else None,
+                    )
+
+                # Debug logging for boolean False results
+                if final_result is False and "is not None and" in resolved_formula:
+                    _LOGGER.debug("CORE_EVAL_RETURNING_FALSE: Returning boolean False for formula")
 
                 return final_result
 
@@ -206,10 +231,10 @@ class CoreFormulaEvaluator:
                 eval_error = result
                 error_msg = str(eval_error)
 
-                raise AlternateStateDetected(error_msg, STATE_NONE)
+                raise AlternateStateDetected(error_msg, STATE_NONE, "none")
 
             # No exception details available
-            raise AlternateStateDetected("Formula evaluation failed: unable to process expression", STATE_NONE)
+            raise AlternateStateDetected("Formula evaluation failed: unable to process expression", STATE_NONE, "none")
 
         # Definitive Alternate State Detected (actual instance of one of the alternate states as the formula result)
         except AlternateStateDetected as e:
@@ -219,15 +244,15 @@ class CoreFormulaEvaluator:
         except Exception as err:
             # Any evaluation failure results in AlternateStateDetected with STATE_NONE
             _LOGGER.debug("General formula evaluation failure: %s", str(err))
-            raise AlternateStateDetected(f"Formula evaluation failed: {err}", STATE_NONE) from err
+            raise AlternateStateDetected(f"Formula evaluation failed: {err}", STATE_NONE, "none") from err
 
     def _extract_values_for_enhanced_evaluation(
-        self, context: dict[str, ContextValue], referenced_formula: str
+        self, context: HierarchicalContextDict, referenced_formula: str
     ) -> dict[str, Any]:
         """Extract raw values from ReferenceValue objects for enhanced SimpleEval evaluation.
 
         Args:
-            context: Handler context containing ReferenceValue objects
+            context: Hierarchical context containing ReferenceValue objects
             referenced_formula: The formula that references these variables
 
         Returns:
@@ -237,56 +262,77 @@ class CoreFormulaEvaluator:
 
         # Precompute referenced variable tokens from the referenced_formula so we only
         # early-detect alternate states for variables actually used by the formula.
-        # Handle both simple variable names and entity IDs with dots
-        referenced_tokens = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)?)\b", referenced_formula))
-        _LOGGER.debug("Referenced tokens from formula '%s': %s", referenced_formula, referenced_tokens)
+        # Use centralized referenced tokens pattern from regex helper
+        from .regex_helper import create_referenced_tokens_pattern, find_all_matches
 
-        for key, value in context.items():
-            if isinstance(value, ReferenceValue):
-                # Extract and preprocess raw value using priority analyzer.
-                raw_value = value.value
-                _LOGGER.debug("Processing key '%s' with raw_value '%s'", key, raw_value)
+        pattern = create_referenced_tokens_pattern()
+        referenced_tokens = set(find_all_matches(referenced_formula, pattern))
+        _LOGGER.debug("CORE_EVAL_REFERENCED_TOKENS: Formula '%s' -> tokens: %s", referenced_formula, referenced_tokens)
 
-                # Check for truly missing dependencies (None references)
-                if value.reference is None:
-                    _LOGGER.debug(
-                        "Found missing dependency '%s' with None reference, raising MissingDependencyError from _extract_values_for_enhanced_evaluation",
-                        key,
-                    )
-                    raise MissingDependencyError(f"Missing dependency for variable '{key}'")
+        # Only process variables that are actually referenced in the formula
+        for key in referenced_tokens:
+            if key in context:
+                value = context[key]
+                if isinstance(value, ReferenceValue):
+                    # Extract and preprocess raw value using priority analyzer.
+                    raw_value = value.value
+                    _LOGGER.debug("Processing key '%s' with raw_value '%s'", key, raw_value)
 
-                # Early detection of alternate states (unless allow_unresolved_states is True).
-                # Only apply early detection to variables actually referenced in the formula.
-                if not getattr(self, "_allow_unresolved_states", False) and str(key) in referenced_tokens:
-                    # If the value comes from a ReferenceValue (i.e., backing entity or resolver)
-                    # and its inner value is None, treat this as an HA UNKNOWN state rather than
-                    # the YAML/literal STATE_NONE sentinel. This preserves the semantic that
-                    # missing backing entity values are transient (UNKNOWN) and should hit the
-                    # UNKNOWN handler if configured.
-                    # Preserve semantics: a ReferenceValue wrapper with an inner Python None
-                    # represents a resolved backing entity with no value (STATE_NONE). Use
-                    # the standard alternate-state detection to map that to STATE_NONE so
-                    # the NONE or FALLBACK handlers run. Only literal STATE_UNKNOWN strings
-                    # should map to STATE_UNKNOWN.
-                    alternate_state = self._get_alternate_state(raw_value)
-                    if alternate_state is not False:
+                    # Check for truly missing dependencies (None references)
+                    if value.reference is None:
                         _LOGGER.debug(
-                            "Early detection: Variable '%s' contains alternate state '%s', raising AlternateStateDetected",
+                            "Found missing dependency '%s' with None reference, raising MissingDependencyError from _extract_values_for_enhanced_evaluation",
                             key,
-                            alternate_state,
                         )
-                        raise AlternateStateDetected(
-                            f"Variable '{key}' contains alternate state '{alternate_state}'",
-                            alternate_state,
+                        raise MissingDependencyError(f"Missing dependency for variable '{key}'")
+
+                    # Early detection of alternate states (unless allow_unresolved_states is True).
+                    if not getattr(self, "_allow_unresolved_states", False):
+                        # If the value comes from a ReferenceValue (i.e., backing entity or resolver)
+                        # and its inner value is None, treat this as an HA UNKNOWN state rather than
+                        # the YAML/literal STATE_NONE sentinel. This preserves the semantic that
+                        # missing backing entity values are transient (UNKNOWN) and should hit the
+                        # UNKNOWN handler if configured.
+                        # Preserve semantics: a ReferenceValue wrapper with an inner Python None
+                        # represents a resolved backing entity with no value (STATE_NONE). Use
+                        # the standard alternate-state detection to map that to STATE_NONE so
+                        # the NONE or FALLBACK handlers run. Only literal STATE_UNKNOWN strings
+                        # should map to STATE_UNKNOWN.
+                        _LOGGER.debug(
+                            "CORE_EVAL_ALTERNATE_CHECK: Checking variable '%s' with raw_value '%s' (type: %s)",
+                            key,
+                            raw_value,
+                            type(raw_value),
                         )
+                        alternate_state = self._get_alternate_state(raw_value)
+                        _LOGGER.debug("CORE_EVAL_ALTERNATE_RESULT: Variable '%s' alternate_state = %s", key, alternate_state)
+                        if alternate_state is not False:
+                            _LOGGER.warning(
+                                "CORE_EVAL_ALTERNATE_RAISE: Variable '%s' contains alternate state '%s', raising AlternateStateDetected",
+                                key,
+                                alternate_state,
+                            )
+                            raise AlternateStateDetected(
+                                f"Variable '{key}' contains alternate state '{alternate_state}'",
+                                alternate_state,
+                                str(alternate_state) if alternate_state is not True else None,
+                            )
 
-                # Preprocess the value using priority analyzer (boolean-first, then numeric)
-                processed_value = EvaluatorHelpers.process_evaluation_result(raw_value)
-                enhanced_context[key] = processed_value
+                    # Preprocess the value using priority analyzer (boolean-first, then numeric)
+                    processed_value = EvaluatorHelpers.process_evaluation_result(raw_value)
+                    enhanced_context[key] = processed_value
 
-                _LOGGER.debug("Enhanced context: %s = %s (from %s)", key, processed_value, raw_value)
-            else:
-                # Keep other context items as-is (functions, etc.)
+                    _LOGGER.debug("Enhanced context: %s = %s (from %s)", key, processed_value, raw_value)
+                else:
+                    # Non-ReferenceValue items - add directly to enhanced context
+                    enhanced_context[key] = value
+
+        # Also add any remaining context items that aren't ReferenceValues but are referenced in the formula (functions, etc.)
+        for key, value in context.items():
+            if key not in enhanced_context and not isinstance(value, ReferenceValue) and key in referenced_tokens:
+                _LOGGER.debug(
+                    "Adding referenced non-ReferenceValue context item: %s = %s (type: %s)", key, value, type(value).__name__
+                )
                 enhanced_context[key] = value
 
         return enhanced_context

@@ -12,7 +12,7 @@ from ...constants_evaluation_results import (
     STATE_UNKNOWN,
 )
 from ...exceptions import MissingDependencyError
-from ...type_definitions import ContextValue
+from ...hierarchical_context_dict import HierarchicalContextDict
 from .manager_factory import DependencyManagerFactory
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,9 +31,10 @@ class DependencyManagementPhase:
     - Handle missing, unavailable, and unknown dependencies
     """
 
-    def __init__(self) -> None:
+    def __init__(self, hass: Any = None) -> None:
         """Initialize the dependency management phase."""
-        self._manager_factory = DependencyManagerFactory()
+        self._hass = hass
+        self._manager_factory = DependencyManagerFactory(hass)
         self._dependency_handler = None
         self._sensor_to_backing_mapping: dict[str, str] = {}
         self._sensor_registry_phase = None
@@ -60,7 +61,7 @@ class DependencyManagementPhase:
                     break
 
     def extract_and_prepare_dependencies(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None = None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None = None
     ) -> tuple[set[str], set[str]]:
         """Extract dependencies and prepare them for evaluation."""
         # Extract dependencies with state token resolution
@@ -79,21 +80,20 @@ class DependencyManagementPhase:
         if missing_deps:
             return self._handle_missing_dependencies(missing_deps, formula_name)
 
-        # Handle non-fatal dependencies with state reflection
-        # Priority: unavailable > unknown (unavailable is worse)
+        # Let unavailable and unknown dependencies flow through to Phase 3
+        # where alternate states can be detected and handled properly
         if unavailable_deps or unknown_deps:
-            all_problematic_deps = list(unavailable_deps) + list(unknown_deps)
+            _LOGGER.debug(
+                "DEPENDENCY_FLOW_THROUGH: Unavailable deps: %s, Unknown deps: %s - flowing to Phase 3",
+                unavailable_deps,
+                unknown_deps,
+            )
+            return None
 
-            if unavailable_deps:
-                # If any dependencies are unavailable, reflect unavailable state
-                return self._create_unavailable_result(all_problematic_deps)
-
-            # Only unknown dependencies
-            return self._create_unknown_result(all_problematic_deps)
-
+        # No dependency issues
         return None
 
-    def validate_evaluation_context(self, eval_context: dict[str, ContextValue], formula_name: str) -> Any | None:
+    def validate_evaluation_context(self, eval_context: HierarchicalContextDict, formula_name: str) -> Any | None:
         """Validate that evaluation context has all required variables."""
         try:
             # Allow None values to pass through to formula evaluation where alternate handlers can handle them
@@ -109,9 +109,10 @@ class DependencyManagementPhase:
             return self._create_error_result(f"Context validation error: {err}", "unavailable")
 
     def _extract_formula_dependencies(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None = None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None = None
     ) -> set[str]:
         """Extract dependencies from formula config, handling entity references in collection patterns and state tokens."""
+
         # Use the manager factory to extract dependencies
         dependencies_result = self._manager_factory.manage_dependency(
             "extract", config=config, context=context, sensor_config=sensor_config
@@ -141,14 +142,14 @@ class DependencyManagementPhase:
                 # Look up the backing entity ID using the sensor key
                 backing_entity_id = self._get_backing_entity_id(sensor_config.unique_id)
 
+                # Always keep 'state' as a dependency - the state resolver will handle all resolution logic
+                dependencies.add("state")
                 if backing_entity_id:
-                    # This sensor has a backing entity - replace state token with backing entity
-                    dependencies.add(backing_entity_id)
-                    _LOGGER.debug("Dependency management: Replaced 'state' with backing entity '%s'", backing_entity_id)
+                    _LOGGER.debug(
+                        "Dependency management: Kept 'state' as dependency, state resolver will handle backing entity '%s'",
+                        backing_entity_id,
+                    )
                 else:
-                    # No backing entity mapping - this is a self-reference/recursive calculation
-                    # Keep state as a dependency - it will be resolved from context (previous value)
-                    dependencies.add("state")
                     _LOGGER.debug("Dependency management: Kept 'state' as dependency for self-reference (no backing entity)")
             else:
                 # Attribute formula: state token will be provided by context, so remove it from dependencies
@@ -159,7 +160,7 @@ class DependencyManagementPhase:
         return dependencies
 
     def _extract_collection_pattern_entities(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None = None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None = None
     ) -> set[str]:
         """Extract collection pattern entities from the formula."""
         # Use the manager factory to extract collection pattern entities
@@ -174,6 +175,7 @@ class DependencyManagementPhase:
 
     def _handle_missing_dependencies(self, missing_deps: set[str], formula_name: str) -> Any:
         """Handle missing dependencies (fatal error)."""
+
         error_msg = f"Missing dependencies: {', '.join(sorted(missing_deps))}"
         raise MissingDependencyError(f"Formula '{formula_name}': {error_msg}")
 
@@ -213,12 +215,19 @@ class DependencyManagementPhase:
             _LOGGER.warning("Cannot analyze cross-sensor dependencies: sensor registry phase not available")
             return {}
 
-        context = {
-            "sensors": sensors,
-            "sensor_registry": self._sensor_registry_phase.get_sensor_registry(),
-        }
+        # Create a minimal hierarchical context for dependency management
+        # The actual data is passed via kwargs to respect the architecture
+        from ...evaluation_context import HierarchicalEvaluationContext
+        from ...hierarchical_context_dict import HierarchicalContextDict
 
-        result = self._manager_factory.manage_dependency("cross_sensor_analysis", context)
+        temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
+
+        result = self._manager_factory.manage_dependency(
+            "cross_sensor_analysis",
+            temp_context,
+            sensors=sensors,
+            sensor_registry=self._sensor_registry_phase.get_sensor_registry(),
+        )
 
         if result is None or not isinstance(result, dict):
             return {}
@@ -234,12 +243,19 @@ class DependencyManagementPhase:
         Returns:
             List of sensor names in evaluation order
         """
-        context = {
-            "sensor_dependencies": sensor_dependencies,
-            "sensor_registry": self._sensor_registry_phase.get_sensor_registry() if self._sensor_registry_phase else {},
-        }
+        # Create a minimal hierarchical context for dependency management
+        # The actual data is passed via kwargs to respect the architecture
+        from ...evaluation_context import HierarchicalEvaluationContext
+        from ...hierarchical_context_dict import HierarchicalContextDict
 
-        result = self._manager_factory.manage_dependency("evaluation_order", context)
+        temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
+
+        result = self._manager_factory.manage_dependency(
+            "evaluation_order",
+            temp_context,
+            sensor_dependencies=sensor_dependencies,
+            sensor_registry=self._sensor_registry_phase.get_sensor_registry() if self._sensor_registry_phase else {},
+        )
 
         if result is None or not isinstance(result, list):
             return []
@@ -255,12 +271,19 @@ class DependencyManagementPhase:
             Returns:
             List of sensor names involved in circular references
         """
-        context = {
-            "sensor_dependencies": sensor_dependencies,
-            "sensor_registry": self._sensor_registry_phase.get_sensor_registry() if self._sensor_registry_phase else {},
-        }
+        # Create a minimal hierarchical context for dependency management
+        # The actual data is passed via kwargs to respect the architecture
+        from ...evaluation_context import HierarchicalEvaluationContext
+        from ...hierarchical_context_dict import HierarchicalContextDict
 
-        result = self._manager_factory.manage_dependency("cross_sensor_circular_detection", context)
+        temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
+
+        result = self._manager_factory.manage_dependency(
+            "cross_sensor_circular_detection",
+            temp_context,
+            sensor_dependencies=sensor_dependencies,
+            sensor_registry=self._sensor_registry_phase.get_sensor_registry() if self._sensor_registry_phase else {},
+        )
 
         if result is None or not isinstance(result, list):
             return []
@@ -276,12 +299,19 @@ class DependencyManagementPhase:
         Returns:
             Validation result with status and any issues found
         """
-        context = {
-            "sensor_dependencies": sensor_dependencies,
-            "sensor_registry": self._sensor_registry_phase.get_sensor_registry() if self._sensor_registry_phase else {},
-        }
+        # Create a minimal hierarchical context for dependency management
+        # The actual data is passed via kwargs to respect the architecture
+        from ...evaluation_context import HierarchicalEvaluationContext
+        from ...hierarchical_context_dict import HierarchicalContextDict
 
-        result = self._manager_factory.manage_dependency("validate_cross_sensor_deps", context)
+        temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
+
+        result = self._manager_factory.manage_dependency(
+            "validate_cross_sensor_deps",
+            temp_context,
+            sensor_dependencies=sensor_dependencies,
+            sensor_registry=self._sensor_registry_phase.get_sensor_registry() if self._sensor_registry_phase else {},
+        )
 
         if result is None or not isinstance(result, dict):
             return {"valid": False, "issues": ["Validation failed"], "evaluation_order": [], "circular_references": []}

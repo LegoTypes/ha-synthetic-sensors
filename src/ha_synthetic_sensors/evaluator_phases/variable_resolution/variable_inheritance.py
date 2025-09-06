@@ -1,12 +1,14 @@
 """Variable inheritance functionality for attribute formulas."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
 
 from ha_synthetic_sensors.config_models import ComputedVariable, FormulaConfig, SensorConfig
 from ha_synthetic_sensors.exceptions import DataValidationError
 from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
-from ha_synthetic_sensors.type_definitions import ContextValue
 
 from .resolution_helpers import ResolutionHelpers
 
@@ -77,7 +79,7 @@ class VariableInheritanceHandler:
         self,
         var_name: str,
         var_value: str | int | float | ComputedVariable,
-        eval_context: dict[str, ContextValue],
+        eval_context: "HierarchicalContextDict",
         formula_config: FormulaConfig,
         variables_needing_entity_ids: set[str],
         resolver_factory: Any,
@@ -112,7 +114,7 @@ class VariableInheritanceHandler:
         self,
         var_name: str,
         var_value: Any,
-        eval_context: dict[str, ContextValue],
+        eval_context: "HierarchicalContextDict",
         formula_config: FormulaConfig,
         resolver_factory: Any,
     ) -> None:

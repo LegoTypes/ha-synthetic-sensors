@@ -118,16 +118,23 @@ class TestDateTimeHandler:
         mock_registry.can_handle_function.side_effect = lambda func: func in ["now", "today"]
         mock_registry.evaluate_function.side_effect = lambda func: {"now": "2025-07-31T12:00:00Z", "today": "2025-07-31"}[func]
 
+        # Create a mock context (empty dict is fine for this test)
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Test single datetime function
-        result = handler.evaluate("now()")
+        result = handler.evaluate("now()", context)
         assert result == '"2025-07-31T12:00:00Z"'
 
         # Test datetime function in expression
-        result = handler.evaluate("value = now()")
+        result = handler.evaluate("value = now()", context)
         assert result == 'value = "2025-07-31T12:00:00Z"'
 
         # Test multiple datetime functions
-        result = handler.evaluate("now() > today()")
+        result = handler.evaluate("now() > today()", context)
         assert result == '"2025-07-31T12:00:00Z" > "2025-07-31"'
 
     def test_evaluate_with_mixed_functions(self, handler_with_mock_registry, mock_registry):
@@ -138,8 +145,15 @@ class TestDateTimeHandler:
         mock_registry.can_handle_function.side_effect = lambda func: func == "now"
         mock_registry.evaluate_function.side_effect = lambda func: "2025-07-31T12:00:00Z" if func == "now" else None
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Should replace only datetime functions
-        result = handler.evaluate("now() + other_func()")
+        result = handler.evaluate("now() + other_func()", context)
         assert result == '"2025-07-31T12:00:00Z" + other_func()'
 
     def test_evaluate_no_datetime_functions(self, handler_with_mock_registry, mock_registry):
@@ -149,9 +163,16 @@ class TestDateTimeHandler:
         # Mock registry to not recognize any functions as datetime functions
         mock_registry.can_handle_function.return_value = False
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Should return formula unchanged
         original_formula = "other_func() + 1"
-        result = handler.evaluate(original_formula)
+        result = handler.evaluate(original_formula, context)
         assert result == original_formula
 
     def test_evaluate_with_context_parameter(self, handler_with_mock_registry, mock_registry):
@@ -173,11 +194,18 @@ class TestDateTimeHandler:
         mock_registry.can_handle_function.side_effect = lambda func: func == "now"
         mock_registry.evaluate_function.return_value = "2025-07-31T12:00:00Z"
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Should handle functions with spaces
-        result = handler.evaluate("now( )")
+        result = handler.evaluate("now( )", context)
         assert result == '"2025-07-31T12:00:00Z"'
 
-        result = handler.evaluate("now(  )")
+        result = handler.evaluate("now(  )", context)
         assert result == '"2025-07-31T12:00:00Z"'
 
     def test_get_supported_functions(self, handler_with_mock_registry, mock_registry):
@@ -226,9 +254,16 @@ class TestDateTimeHandler:
         mock_registry.can_handle_function.return_value = True
         mock_registry.evaluate_function.side_effect = ValueError("Test error")
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Should propagate the error
         with pytest.raises(ValueError, match="Test error"):
-            handler.evaluate("now()")
+            handler.evaluate("now()", context)
 
     def test_real_datetime_functions_integration(self):
         """Test with real datetime function registry (integration-style test)."""
@@ -244,8 +279,15 @@ class TestDateTimeHandler:
         # Should not handle non-existent functions
         assert handler.can_handle("non_existent_func()") is False
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Should be able to evaluate real functions (results will be actual datetime strings)
-        result = handler.evaluate("today()")
+        result = handler.evaluate("today()", context)
         assert result.startswith('"')
         assert result.endswith('"')
         assert len(result) > 12  # Should contain an actual date string
@@ -262,17 +304,31 @@ class TestDateTimeHandler:
         """Test edge case with empty formula."""
         handler = handler_with_mock_registry
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Should handle empty string gracefully
         assert handler.can_handle("") is False
-        assert handler.evaluate("") == ""
+        assert handler.evaluate("", context) == ""
 
     def test_edge_case_whitespace_formula(self, handler_with_mock_registry, mock_registry):
         """Test edge case with whitespace-only formula."""
         handler = handler_with_mock_registry
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Should handle whitespace gracefully
         assert handler.can_handle("   ") is False
-        assert handler.evaluate("   ") == "   "
+        assert handler.evaluate("   ", context) == "   "
 
     def test_complex_formula_with_multiple_datetime_functions(self, handler_with_mock_registry, mock_registry):
         """Test complex formula with multiple datetime function calls."""
@@ -286,8 +342,15 @@ class TestDateTimeHandler:
             "yesterday": "2025-07-30",
         }[func]
 
+        # Create a mock context
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+        from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+        hierarchical_context = HierarchicalEvaluationContext("test")
+        context = HierarchicalContextDict(hierarchical_context)
+
         # Complex formula with multiple datetime functions
         formula = "if now() > yesterday() and today() != yesterday() then 1 else 0"
-        result = handler.evaluate(formula)
+        result = handler.evaluate(formula, context)
         expected = 'if "2025-07-31T12:00:00Z" > "2025-07-30" and "2025-07-31" != "2025-07-30" then 1 else 0'
         assert result == expected

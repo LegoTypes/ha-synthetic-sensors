@@ -1,0 +1,35 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_recursive_updates"
+
+sensors:
+  recursive_test_sensor:
+    entity_id: "sensor.recursive_test_sensor"
+    name: "Test Recursive Entity Updates"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+    formula: "state('sensor.main_meter_consumed_energy') + state('sensor.main_meter_produced_energy')"
+    alternate_states:
+      FALLBACK:
+        formula: "metadata('sensor.main_meter_consumed_energy', 'last_valid_state')"
+    variables:
+      nested_var:
+        formula: "state('sensor.main_meter_consumed_energy')"
+        alternate_states:
+          FALLBACK:
+            formula: "metadata('sensor.main_meter_consumed_energy', 'last_valid_state')"
+      panel_status:
+        formula: "binary_sensor.panel_status"
+      panel_offline_minutes:
+        formula: "minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), utc_now()) if not panel_status else 0"
+        alternate_states:
+          FALLBACK: false
+    attributes:
+      nested_attr:
+        formula: "state('sensor.main_meter_consumed_energy')"
+        alternate_states:
+          FALLBACK:
+            formula: "metadata('sensor.main_meter_consumed_energy', 'last_valid_state')"

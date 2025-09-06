@@ -20,7 +20,7 @@ def test_simple_state_attribute_resolution_via_provider() -> None:
         return {"exists": True, "attributes": {"voltage": 240}}
 
     r = StateAttributeResolver(sensor_to_backing_mapping=mapping, data_provider_callback=provider)
-    context = {"sensor_config": sensor_cfg}
+    context = {"_sensor_config": sensor_cfg}
     result = r.resolve("state", "state.voltage", context)
     # Resolvers return raw values, ReferenceValue objects are created by VariableResolutionPhase
     assert result == 240
@@ -34,7 +34,7 @@ def test_nested_state_attribute_resolution_via_provider() -> None:
         return {"exists": True, "attributes": {"device_info": {"manufacturer": "Acme"}}}
 
     r = StateAttributeResolver(sensor_to_backing_mapping=mapping, data_provider_callback=provider)
-    context = {"sensor_config": sensor_cfg}
+    context = {"_sensor_config": sensor_cfg}
     result = r.resolve("state", "state.device_info.manufacturer", context)
     # Resolvers return raw values, ReferenceValue objects are created by VariableResolutionPhase
     assert result == "Acme"

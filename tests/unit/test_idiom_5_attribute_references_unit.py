@@ -6,6 +6,9 @@ from homeassistant.exceptions import ConfigEntryError
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.sensor_manager import SensorManager, SensorManagerConfig
 from ha_synthetic_sensors.exceptions import CircularDependencyError
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 
 class TestIdiom5AttributeReferences:
@@ -45,9 +48,37 @@ class TestIdiom5AttributeReferences:
             return file.read()
 
     def test_linear_attribute_chain(self, mock_hass, mock_entity_registry, mock_states, config_manager, linear_chain_yaml):
-        """Test attributes reference each other in linear sequence."""
+        """Test attributes reference each other in linear sequence using proper dependency management."""
         config = config_manager.load_from_yaml(linear_chain_yaml)
         sensor = config.sensors[0]
+
+        # Test that the dependency manager can analyze the attribute dependencies correctly
+        from ha_synthetic_sensors.evaluator_phases.dependency_management.generic_dependency_manager import (
+            GenericDependencyManager,
+        )
+
+        dependency_manager = GenericDependencyManager()
+
+        # Analyze dependencies - this should determine the correct evaluation order
+        dependency_graph = dependency_manager.analyze_all_dependencies(sensor)
+
+        # Verify that dependencies were detected correctly
+        assert len(dependency_graph) > 1  # Should have main + attributes
+
+        # Get evaluation order - this should handle the dependency chain automatically
+        evaluation_order = dependency_manager.get_evaluation_order(sensor)
+
+        # Verify that the evaluation order respects dependencies
+        assert len(evaluation_order) == 6  # main + 5 attributes
+
+        # Find positions in evaluation order
+        main_pos = next(i for i, node_id in enumerate(evaluation_order) if "main" in node_id)
+        hourly_pos = next(i for i, node_id in enumerate(evaluation_order) if "hourly_cost" in node_id)
+        daily_pos = next(i for i, node_id in enumerate(evaluation_order) if "daily_cost" in node_id)
+
+        # Verify dependency order: main should come before hourly_cost, hourly_cost before daily_cost
+        assert main_pos < hourly_pos, "Main formula should be evaluated before hourly_cost"
+        assert hourly_pos < daily_pos, "hourly_cost should be evaluated before daily_cost"
 
         # Create sensor manager with data provider
         def mock_data_provider(entity_id: str):
@@ -70,20 +101,35 @@ class TestIdiom5AttributeReferences:
         sensor_to_backing_mapping = {"energy_analyzer": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
 
-        # Test main formula evaluation first
-        evaluator = sensor_manager._evaluator
-        main_formula = sensor.formulas[0]
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
-        assert main_result["success"] is True
-        assert main_result["value"] == 250.0  # state * 0.25 = 1000 * 0.25 = 250
+        # Test the dependency manager's build_evaluation_context method
+        # This should handle the complete attribute evaluation pipeline automatically
+        # According to architecture: "NO NEW CONTEXT CREATION" - inherit existing context
 
-        # Test attribute formulas with context from main result
-        context = {"state": main_result["value"]}
+        # Create base context following the architecture
+        base_context = HierarchicalEvaluationContext("test")
+        context_dict = HierarchicalContextDict(base_context)
 
-        for i in range(1, len(sensor.formulas)):
-            attribute_formula = sensor.formulas[i]
-            attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
-            assert attr_result["success"] is True
+        # Let the dependency manager handle the complete evaluation
+        # This follows the architecture: context inheritance and accumulation
+        complete_context = dependency_manager.build_evaluation_context(sensor, sensor_manager._evaluator, context_dict)
+
+        # Verify that all attributes were calculated correctly
+        # The dependency manager should have handled the evaluation order automatically
+        expected_values = {
+            "hourly_cost": 250.0,  # state = 250
+            "daily_cost": 6000.0,  # hourly_cost * 24 = 250 * 24 = 6000
+            "weekly_cost": 42000.0,  # daily_cost * 7 = 6000 * 7 = 42000
+            "monthly_cost": 168000.0,  # weekly_cost * 4 = 42000 * 4 = 168000
+            "annual_cost": 2016000.0,  # monthly_cost * 12 = 168000 * 12 = 2016000
+        }
+
+        # Check that the dependency manager calculated all values correctly
+        for attr_name, expected_value in expected_values.items():
+            assert attr_name in complete_context, f"Attribute {attr_name} should be in context"
+            actual_ref_value = complete_context[attr_name]
+            assert hasattr(actual_ref_value, "value"), f"Attribute {attr_name} should be a ReferenceValue"
+            actual_value = actual_ref_value.value
+            assert actual_value == expected_value, f"Attribute {attr_name}: expected {expected_value}, got {actual_value}"
 
     def test_multiple_attribute_dependencies(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, multiple_deps_yaml
@@ -124,15 +170,20 @@ class TestIdiom5AttributeReferences:
         # Skip the others that use attribute-to-attribute references
         if len(sensor.formulas) > 1:
             attribute_formula = sensor.formulas[1]  # hourly_cost: formula: state
-            context = {"state": main_result["value"]}
+            # Create proper hierarchical context according to architecture
+            hierarchical_context = HierarchicalEvaluationContext("test_sensor")
+            hierarchical_context.set("state", ReferenceValue("main_result", main_result["value"]))
+            context = HierarchicalContextDict(hierarchical_context)
 
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
             assert attr_result["value"] == 250.0  # state = 250
 
-            # Add the result to context for subsequent attributes
+            # Add the result to context for subsequent attributes using proper hierarchical context
             if hasattr(attribute_formula, "attribute_name"):
-                context[attribute_formula.attribute_name] = attr_result["value"]
+                hierarchical_context.set(
+                    attribute_formula.attribute_name, ReferenceValue(attribute_formula.attribute_name, attr_result["value"])
+                )
 
     def test_circular_reference_detection(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, circular_reference_yaml
@@ -198,7 +249,10 @@ class TestIdiom5AttributeReferences:
         # Skip the others that use attribute-to-attribute references
         if len(sensor.formulas) > 1:
             attribute_formula = sensor.formulas[1]  # power_kw: formula: state / 1000
-            context = {"state": main_result["value"]}
+            # Create proper hierarchical context according to architecture
+            hierarchical_context = HierarchicalEvaluationContext("test_sensor")
+            hierarchical_context.set("state", ReferenceValue("main_result", main_result["value"]))
+            context = HierarchicalContextDict(hierarchical_context)
 
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
@@ -207,12 +261,44 @@ class TestIdiom5AttributeReferences:
     def test_valid_linear_dependency_chain(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, linear_chain_yaml
     ):
-        """Test valid linear dependency chain works correctly."""
+        """Test valid linear dependency chain works correctly using proper hierarchical context architecture."""
         config = config_manager.load_from_yaml(linear_chain_yaml)
 
         # Find the energy_analyzer sensor (first sensor in the YAML)
         sensor = next(s for s in config.sensors if s.unique_id == "energy_analyzer")
         assert sensor is not None
+
+        # Test that the dependency manager can analyze the attribute dependencies correctly
+        from ha_synthetic_sensors.evaluator_phases.dependency_management.generic_dependency_manager import (
+            GenericDependencyManager,
+        )
+
+        dependency_manager = GenericDependencyManager()
+
+        # Analyze dependencies - this should determine the correct evaluation order
+        dependency_graph = dependency_manager.analyze_all_dependencies(sensor)
+
+        # Verify that dependencies were detected correctly
+        assert len(dependency_graph) > 1  # Should have main + attributes
+
+        # Get evaluation order - this should handle the dependency chain automatically
+        evaluation_order = dependency_manager.get_evaluation_order(sensor)
+
+        # Verify that the evaluation order respects dependencies
+        # The order should be: main -> hourly_cost -> daily_cost -> weekly_cost -> monthly_cost -> annual_cost
+        assert len(evaluation_order) == 6  # main + 5 attributes
+
+        # Find positions in evaluation order
+        main_pos = next(i for i, node_id in enumerate(evaluation_order) if "main" in node_id)
+        hourly_pos = next(i for i, node_id in enumerate(evaluation_order) if "hourly_cost" in node_id)
+        daily_pos = next(i for i, node_id in enumerate(evaluation_order) if "daily_cost" in node_id)
+
+        # Verify dependency order: main should come before hourly_cost, hourly_cost before daily_cost
+        assert main_pos < hourly_pos, "Main formula should be evaluated before hourly_cost"
+        assert hourly_pos < daily_pos, "hourly_cost should be evaluated before daily_cost"
+
+        # Test that the system can handle the complete evaluation automatically
+        # This is the proper way to test - let the system handle dependency ordering
 
         # Create sensor manager with data provider
         def mock_data_provider(entity_id: str):
@@ -235,17 +321,32 @@ class TestIdiom5AttributeReferences:
         sensor_to_backing_mapping = {"energy_analyzer": "sensor.span_panel_instantaneous_power"}
         sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
 
-        # Test main formula evaluation first
-        evaluator = sensor_manager._evaluator
-        main_formula = sensor.formulas[0]
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
-        assert main_result["success"] is True
-        assert main_result["value"] == 250.0  # state * 0.25 = 1000 * 0.25 = 250
+        # Test the dependency manager's build_evaluation_context method
+        # This should handle the complete attribute evaluation pipeline automatically
+        # According to architecture: "NO NEW CONTEXT CREATION" - inherit existing context
 
-        # Test attribute formulas with context from main result
-        context = {"state": main_result["value"]}
+        # Create base context following the architecture
+        base_context = HierarchicalEvaluationContext("test")
+        context_dict = HierarchicalContextDict(base_context)
 
-        for i in range(1, len(sensor.formulas)):
-            attribute_formula = sensor.formulas[i]
-            attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
-            assert attr_result["success"] is True
+        # Let the dependency manager handle the complete evaluation
+        # This follows the architecture: context inheritance and accumulation
+        complete_context = dependency_manager.build_evaluation_context(sensor, sensor_manager._evaluator, context_dict)
+
+        # Verify that all attributes were calculated correctly
+        # The dependency manager should have handled the evaluation order automatically
+        expected_values = {
+            "hourly_cost": 250.0,  # state = 250
+            "daily_cost": 6000.0,  # hourly_cost * 24 = 250 * 24 = 6000
+            "weekly_cost": 42000.0,  # daily_cost * 7 = 6000 * 7 = 42000
+            "monthly_cost": 168000.0,  # weekly_cost * 4 = 42000 * 4 = 168000
+            "annual_cost": 2016000.0,  # monthly_cost * 12 = 168000 * 12 = 2016000
+        }
+
+        # Check that the dependency manager calculated all values correctly
+        for attr_name, expected_value in expected_values.items():
+            assert attr_name in complete_context, f"Attribute {attr_name} should be in context"
+            actual_ref_value = complete_context[attr_name]
+            assert hasattr(actual_ref_value, "value"), f"Attribute {attr_name} should be a ReferenceValue"
+            actual_value = actual_ref_value.value
+            assert actual_value == expected_value, f"Attribute {attr_name}: expected {expected_value}, got {actual_value}"

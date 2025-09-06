@@ -1,0 +1,16 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_global_vars"
+  variables:
+    global_power: "sensor.global_power"
+
+sensors:
+  power_multiplier:
+    name: "Power Multiplier Sensor"
+    formula: "global_power * 2.0"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+

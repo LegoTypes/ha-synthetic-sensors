@@ -22,11 +22,11 @@ class TestHybridDataAccess:
     def integration_data(self):
         """Mock integration data store."""
         return {
-            "span.meter_001": 1250.0,
-            "span.efficiency_input": 850.0,
-            "span.efficiency_baseline": 1000.0,
-            "span.local_sensor": 500.0,
-            "span.internal_temp": 35.2,
+            "sensor.span_meter_001": 1250.0,
+            "sensor.span_efficiency_input": 850.0,
+            "sensor.span_efficiency_baseline": 1000.0,
+            "sensor.span_local_sensor": 500.0,
+            "sensor.span_internal_temp": 35.2,
         }
 
     @pytest.fixture
@@ -164,26 +164,38 @@ class TestHybridDataAccess:
         self, evaluator_with_registration, hybrid_config, name_resolver, mock_hass, mock_entity_registry, mock_states
     ):
         """Test complex sensor with mixed data sources in attributes."""
-        # Get the comprehensive_analysis sensor config
-        sensor_config = None
-        for sensor in hybrid_config.sensors:
-            if sensor.unique_id == "comprehensive_analysis":
-                sensor_config = sensor
-                break
+        from unittest.mock import patch
 
-        assert sensor_config is not None
-        assert len(sensor_config.formulas) > 0
-        formula_config = sensor_config.formulas[0]  # Get the main formula
+        # CRITICAL: Patch dependency parser's entity registry access to use the same mock
+        # This ensures entity domain recognition works properly in tests
+        with (
+            patch("ha_synthetic_sensors.dependency_parser.get_ha_domains") as mock_get_domains,
+            patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_entity_registry),
+        ):
+            # Mock the domain function to return proper HA domains
+            mock_get_domains.return_value = ["sensor", "binary_sensor", "switch", "light", "climate"]
 
-        # Evaluate main formula
-        main_result = evaluator_with_registration.evaluate_formula(formula_config, {})
-        assert main_result["success"] is True
-        # 500.0 (integration) + 450 (HA) = 950.0
-        assert main_result["value"] == 950.0
+            # Get the comprehensive_analysis sensor config
+            sensor_config = None
+            for sensor in hybrid_config.sensors:
+                if sensor.unique_id == "comprehensive_analysis":
+                    sensor_config = sensor
+                    break
 
-        # Test simple attribute without complex context
-        # Just verify that direct entity references work in attributes
-        assert len(sensor_config.formulas) >= 1
+            assert sensor_config is not None
+            assert len(sensor_config.formulas) > 0
+            formula_config = sensor_config.formulas[0]  # Get the main formula
+
+            # Evaluate main formula (should work - uses variables, not state token)
+            main_result = evaluator_with_registration.evaluate_formula(formula_config, {})
+            assert main_result["success"] is True
+            # 500.0 (integration) + 450 (HA) = 950.0
+            assert main_result["value"] == 950.0
+
+            # Note: This test currently only validates the main formula
+            # The attribute formulas that use 'state' token would require backing entity mapping
+            # which is not configured in this test setup
+            assert len(sensor_config.formulas) >= 1
 
     def test_integration_registration_priority(self, mock_hass, integration_data, mock_entity_registry, mock_states):
         """Test that integration registration takes priority over HA states."""
@@ -207,7 +219,9 @@ class TestHybridDataAccess:
         # Add the same entity to HA with a different value
         mock_hass.states.get.return_value = Mock(state="999", attributes={})
 
-        formula_config = FormulaConfig(id="test_formula", formula="test_entity", variables={"test_entity": "span.meter_001"})
+        formula_config = FormulaConfig(
+            id="test_formula", formula="test_entity", variables={"test_entity": "sensor.span_meter_001"}
+        )
 
         result = evaluator.evaluate_formula(formula_config, {})
 
@@ -222,11 +236,11 @@ class TestHybridDataAccess:
         evaluator = Evaluator(hass=mock_hass)
 
         # Register only specific entity
-        evaluator.update_integration_entities({"sensor.meter_001"})
+        evaluator.update_integration_entities({"sensor.span_meter_001"})
 
         # Create callback that returns unavailable for the registered entity
         def failing_data_provider(entity_id: str) -> DataProviderResult:
-            if entity_id == "sensor.meter_001":
+            if entity_id == "sensor.span_meter_001":
                 return {"value": "unavailable", "exists": True}  # Integration claimed entity but it's unavailable
             if entity_id in integration_data:
                 return {"value": integration_data[entity_id], "exists": True}
@@ -235,7 +249,7 @@ class TestHybridDataAccess:
         evaluator.data_provider_callback = failing_data_provider
 
         formula_config = FormulaConfig(
-            id="test_formula_error", formula="test_entity", variables={"test_entity": "sensor.meter_001"}
+            id="test_formula_error", formula="test_entity", variables={"test_entity": "sensor.span_meter_001"}
         )
 
         result = evaluator.evaluate_formula(formula_config, {})
@@ -243,7 +257,7 @@ class TestHybridDataAccess:
         # Should handle the error gracefully - integration claimed entity but it's unavailable
         # Phase 1 preserves HA states; expect preserved HA state and no numeric value
         assert result["success"] is True  # Not a fatal error
-        # Expect the preserved HA state to be STATE_UNAVAILABLE for claimed-but-unavailable integration entity
+        # When integration returns "unavailable", it should remain as STATE_UNAVAILABLE
         assert result.get("state") == STATE_UNAVAILABLE
         assert result.get("value") is None
 
@@ -308,7 +322,7 @@ class TestHybridDataAccess:
         evaluator = Evaluator(hass=mock_hass)
 
         # Only register subset of integration entities
-        registered_entities = {"span.meter_001", "span.local_sensor"}
+        registered_entities = {"sensor.span_meter_001", "sensor.span_local_sensor"}
         evaluator.update_integration_entities(registered_entities)
 
         # Create data provider callback
@@ -321,21 +335,23 @@ class TestHybridDataAccess:
 
         # Mock HA for entities not in integration registration
         def mock_get_state(entity_id):
-            if entity_id == "span.efficiency_input":
+            if entity_id == "sensor.span_efficiency_input":
                 return Mock(state="999", attributes={})  # Different value than integration
             return None
 
         mock_hass.states.get.side_effect = mock_get_state
 
         # Test entity in registration - should use integration data
-        formula_config1 = FormulaConfig(id="test_formula_4", formula="test_var", variables={"test_var": "span.meter_001"})
+        formula_config1 = FormulaConfig(
+            id="test_formula_4", formula="test_var", variables={"test_var": "sensor.span_meter_001"}
+        )
         result1 = evaluator.evaluate_formula(formula_config1, {})
         assert result1["success"] is True
         assert result1["value"] == 1250.0  # Integration value
 
         # Test entity not in registration - should use HA
         formula_config2 = FormulaConfig(
-            id="test_formula_5", formula="test_var", variables={"test_var": "span.efficiency_input"}
+            id="test_formula_5", formula="test_var", variables={"test_var": "sensor.span_efficiency_input"}
         )
         result2 = evaluator.evaluate_formula(formula_config2, {})
         assert result2["success"] is True
@@ -346,7 +362,7 @@ class TestHybridDataAccess:
 
         # Create evaluator and register initial entities
         evaluator = Evaluator(hass=mock_hass)
-        initial_entities = {"span.meter_001"}
+        initial_entities = {"sensor.span_meter_001"}
         evaluator.update_integration_entities(initial_entities)
 
         # Verify initial registration
@@ -354,9 +370,9 @@ class TestHybridDataAccess:
 
         # Update registration with more entities
         updated_entities = {
-            "span.meter_001",
-            "span.local_sensor",
-            "span.efficiency_input",
+            "sensor.span_meter_001",
+            "sensor.span_local_sensor",
+            "sensor.span_efficiency_input",
         }
         evaluator.update_integration_entities(updated_entities)
 
@@ -385,12 +401,12 @@ class TestHybridDataAccess:
         assert sensor_manager.get_registered_entities() == set()
 
         # Test registration
-        entities = {"span.meter_001", "span.local_sensor"}
+        entities = {"sensor.span_meter_001", "sensor.span_local_sensor"}
         sensor_manager.register_data_provider_entities(entities)
         assert sensor_manager.get_registered_entities() == entities
 
         # Test update
-        updated_entities = {"span.meter_001", "span.efficiency_input"}
+        updated_entities = {"sensor.span_meter_001", "sensor.span_efficiency_input"}
         sensor_manager.update_data_provider_entities(updated_entities)
         assert sensor_manager.get_registered_entities() == updated_entities
 

@@ -20,8 +20,8 @@ class TestLoggingUtilities:
             # Should get the package logger first
             mock_get_logger.assert_any_call("ha_synthetic_sensors")
 
-            # Should set level to DEBUG (default)
-            mock_logger.setLevel.assert_called_with(logging.DEBUG)
+            # Should set level to INFO (default)
+            mock_logger.setLevel.assert_called_with(logging.INFO)
 
             # Should set propagate to True
             assert mock_logger.propagate is True
@@ -57,7 +57,6 @@ class TestLoggingUtilities:
                 "ha_synthetic_sensors.name_resolver",
                 "ha_synthetic_sensors.dependency_parser",
                 "ha_synthetic_sensors.integration",
-                "ha_synthetic_sensors.entity_factory",
             ]
 
             for logger_name in expected_calls:
@@ -124,15 +123,12 @@ class TestLoggingUtilities:
 
             ha_synthetic_sensors.test_logging()
 
-            # Should call getLogger for various modules
+            # Should call getLogger for main package only (debug logging removed)
             mock_get_logger.assert_any_call("ha_synthetic_sensors")
-            mock_get_logger.assert_any_call("ha_synthetic_sensors.evaluator")
-            mock_get_logger.assert_any_call("ha_synthetic_sensors.service_layer")
-            mock_get_logger.assert_any_call("ha_synthetic_sensors.config_manager")
 
             # Should log test messages
             mock_logger.info.assert_called_with("TEST: Main package logger")
-            mock_logger.debug.assert_called()
+            # Debug logging removed to reduce verbosity
 
     def test_version_attribute(self):
         """Test that __version__ is defined and matches package metadata."""
@@ -161,8 +157,6 @@ class TestLoggingUtilities:
             "StorageManager",
             # Utility classes
             "DeviceAssociationHelper",
-            "EntityDescription",
-            "EntityFactory",
             # Integration helpers
             "SyntheticSensorsIntegration",
             "async_create_sensor_manager",

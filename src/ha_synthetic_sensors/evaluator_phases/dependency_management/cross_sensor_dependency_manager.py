@@ -1,8 +1,10 @@
 """Cross-sensor dependency manager for handling cross-sensor dependencies."""
 
 import logging
-import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...config_models import SensorConfig
 from ...constants_metadata import METADATA_PROPERTY_DEVICE_CLASS
@@ -26,7 +28,7 @@ class CrossSensorDependencyManager(DependencyManager):
         """Initialize the cross-sensor dependency manager."""
         self._sensor_registry_phase = None
 
-    def can_manage(self, manager_type: str, context: dict[str, Any] | None = None) -> bool:
+    def can_manage(self, manager_type: str, context: "HierarchicalContextDict") -> bool:
         """Determine if this manager can handle cross-sensor dependency management."""
         return manager_type in {
             "cross_sensor_analysis",
@@ -35,22 +37,20 @@ class CrossSensorDependencyManager(DependencyManager):
             "validate_cross_sensor_deps",
         }
 
-    def manage(self, manager_type: str, context: dict[str, Any] | None = None, **kwargs: Any) -> Any:
+    def manage(self, manager_type: str, context: "HierarchicalContextDict", **kwargs: Any) -> Any:
         """Manage cross-sensor dependencies based on the manager type."""
-        if context is None:
-            context = {}
-
+        # Get data from kwargs instead of context for dependency management
         if manager_type == "cross_sensor_analysis":
-            return self._analyze_cross_sensor_dependencies(context.get("sensors", []), context.get("sensor_registry", {}))
+            return self._analyze_cross_sensor_dependencies(kwargs.get("sensors", []), kwargs.get("sensor_registry", {}))
         if manager_type == "evaluation_order":
-            return self._get_evaluation_order(context.get("sensor_dependencies", {}), context.get("sensor_registry", {}))
+            return self._get_evaluation_order(kwargs.get("sensor_dependencies", {}), kwargs.get("sensor_registry", {}))
         if manager_type == "cross_sensor_circular_detection":
             return self._detect_cross_sensor_circular_references(
-                context.get("sensor_dependencies", {}), context.get("sensor_registry", {})
+                kwargs.get("sensor_dependencies", {}), kwargs.get("sensor_registry", {})
             )
         if manager_type == "validate_cross_sensor_deps":
             return self._validate_cross_sensor_dependencies(
-                context.get("sensor_dependencies", {}), context.get("sensor_registry", {})
+                kwargs.get("sensor_dependencies", {}), kwargs.get("sensor_registry", {})
             )
 
         return None
@@ -221,8 +221,11 @@ class CrossSensorDependencyManager(DependencyManager):
 
         # For now, we'll do a basic check that the sensor name is not part of a larger word
         # Look for the sensor name as a whole word or variable
-        pattern = r"\b" + re.escape(sensor_name) + r"\b"
-        return bool(re.search(pattern, formula))
+        # Use centralized sensor name search pattern from regex helper
+        from ...regex_helper import create_sensor_name_search_pattern, search_pattern
+
+        pattern = create_sensor_name_search_pattern(sensor_name)
+        return search_pattern(formula, pattern)
 
     def _get_evaluation_order(self, sensor_dependencies: dict[str, set[str]], sensor_registry: dict[str, Any]) -> list[str]:
         """Return sensors in dependency order using topological sort.

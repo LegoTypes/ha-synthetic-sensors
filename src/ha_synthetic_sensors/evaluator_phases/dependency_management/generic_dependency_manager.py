@@ -2,14 +2,17 @@
 
 from enum import Enum
 import logging
-import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_entities import COMMON_ENTITY_DOMAINS
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
 from ...reference_value_manager import ReferenceValueManager
+from ...regex_helper import extract_entity_references_from_metadata
 from ...shared_constants import get_reserved_words
 from ...type_definitions import ReferenceValue
 
@@ -136,8 +139,8 @@ class GenericDependencyManager:
         return self._evaluation_order.copy()
 
     def build_evaluation_context(
-        self, sensor_config: SensorConfig, evaluator: Any, base_context: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+        self, sensor_config: SensorConfig, evaluator: Any, base_context: "HierarchicalContextDict"
+    ) -> "HierarchicalContextDict":
         """
         Build evaluation context by evaluating formulas in dependency order.
 
@@ -152,8 +155,8 @@ class GenericDependencyManager:
         Returns:
             Complete context with all formula values calculated
         """
-        # Start with base context
-        context = base_context.copy() if base_context else {}
+        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
+        context = base_context.copy()
 
         # Get evaluation order
         evaluation_order = self.get_evaluation_order(sensor_config)
@@ -219,7 +222,7 @@ class GenericDependencyManager:
         return context
 
     def _evaluate_formula_directly(
-        self, formula: FormulaConfig, context: dict[str, Any], evaluator: Any, sensor_config: SensorConfig
+        self, formula: FormulaConfig, context: "HierarchicalContextDict", evaluator: Any, sensor_config: SensorConfig
     ) -> Any:
         """
         Evaluate a formula directly using the evaluator's fallback method.
@@ -294,14 +297,15 @@ class GenericDependencyManager:
         """
         dependencies = set()
 
-        # Pattern to match all identifiers
-        pattern = r"\b([a-zA-Z_][a-zA-Z0-9_.]*)\b"
+        # ARCHITECTURE FIX: Use centralized DependencyParser instead of flawed regex helper
+        from ...dependency_parser import DependencyParser
 
-        # Reserved words that are not dependencies
+        # Get hass instance from sensor registry if available
+        hass = getattr(self._sensor_registry_phase, "hass", None) if hasattr(self, "_sensor_registry_phase") else None
+        parser = DependencyParser(hass)
+        identifiers = parser.extract_dependencies(formula)
 
-        for match in re.finditer(pattern, formula):
-            identifier = match.group(1)
-
+        for identifier in identifiers:
             # Skip reserved words
             if identifier in get_reserved_words():
                 continue
@@ -314,6 +318,11 @@ class GenericDependencyManager:
         # Extract collection function dependencies
         collection_deps = self._extract_collection_dependencies(formula)
         dependencies.update(collection_deps)
+
+        # Extract entity dependencies from metadata function calls
+        metadata_entities = extract_entity_references_from_metadata(formula)
+        for entity_id in metadata_entities:
+            dependencies.add((entity_id, DependencyType.ENTITY))
 
         return dependencies
 
@@ -339,7 +348,10 @@ class GenericDependencyManager:
 
         # Cross-sensor references (would need additional context to determine)
         # For now, treat simple identifiers as potential attributes or variables
-        if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", identifier):
+        # ARCHITECTURE FIX: Use centralized regex helper for validation
+        from ...regex_helper import regex_helper
+
+        if regex_helper.is_valid_identifier(identifier):
             # Could be attribute, variable, or cross-sensor - context dependent
             # Default to attribute for now (this could be enhanced with more context)
             return DependencyType.ATTRIBUTE
@@ -351,9 +363,12 @@ class GenericDependencyManager:
         dependencies = set()
 
         # Pattern for collection functions: function_name("pattern")
-        collection_pattern = r'\b(sum|avg|max|min|count)\s*\(\s*["\']([^"\']+)["\']\s*\)'
+        # Use centralized collection function extraction pattern from regex helper
+        from ...regex_helper import create_collection_function_extraction_pattern, find_all_match_objects
 
-        for match in re.finditer(collection_pattern, formula):
+        collection_pattern = create_collection_function_extraction_pattern()
+
+        for match in find_all_match_objects(formula, collection_pattern):
             func_name = match.group(1)
             pattern = match.group(2)
             # Collection functions are their own dependency type

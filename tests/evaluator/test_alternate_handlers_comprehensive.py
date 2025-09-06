@@ -13,6 +13,14 @@ import pytest
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.config_models import AlternateStateHandler
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 def _dp_for(values: dict[str, tuple[object, bool]]):
@@ -48,7 +56,7 @@ class TestAlternateHandlerForms:
             variables={"missing_var": "sensor.missing"},  # Entity reference
             alternate_state_handler=AlternateStateHandler(unavailable=42, unknown=100, none=0, fallback=999),
         )
-        result = ev.evaluate_formula(cfg_int)
+        result = ev.evaluate_formula(cfg_int, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 42  # unavailable handler triggered
 
@@ -59,7 +67,7 @@ class TestAlternateHandlerForms:
             variables={"missing_var": "sensor.missing"},
             alternate_state_handler=AlternateStateHandler(unavailable=3.14, unknown=2.71, none=0.0, fallback=99.9),
         )
-        result = ev.evaluate_formula(cfg_float)
+        result = ev.evaluate_formula(cfg_float, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 3.14
 
@@ -86,7 +94,7 @@ class TestAlternateHandlerForms:
                 fallback="fallback_string",  # Simple string literal
             ),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == "unknown_string"  # unknown handler triggered
 
@@ -108,7 +116,7 @@ class TestAlternateHandlerForms:
             variables={"missing_var": "sensor.missing"},
             alternate_state_handler=AlternateStateHandler(unavailable=True, unknown=False, none=True, fallback=False),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
         assert result["value"] is True  # unavailable handler triggered
 
@@ -138,7 +146,19 @@ class TestAlternateHandlerForms:
                 fallback={"formula": "fallback_calc + extra", "variables": {"fallback_calc": 500, "extra": 99}},
             ),
         )
-        result = ev.evaluate_formula(cfg)
+
+        # Create a proper sensor configuration for the test
+        from ha_synthetic_sensors.config_models import SensorConfig
+
+        sensor_config = SensorConfig(
+            unique_id="test_sensor",
+            name="Test Sensor",
+            entity_id="sensor.test_sensor",
+            device_identifier="test_device",
+            formulas=[cfg],
+        )
+
+        result = ev.evaluate_formula_with_sensor_config(cfg, _create_empty_context(), sensor_config)
         assert result["success"] is True
         assert result["value"] == 25  # (10 * 2) + 5 = 25
 
@@ -157,8 +177,8 @@ class TestAlternateHandlerForms:
 
         cfg = FormulaConfig(
             id="none_test",
-            formula="state",  # Will resolve to None, trigger none handler
-            variables={"state": "sensor.none_entity"},
+            formula="entity_state",  # Use valid variable name instead of reserved 'state' token
+            variables={"entity_state": "sensor.none_entity"},
             alternate_state_handler=AlternateStateHandler(
                 unavailable=0,
                 unknown=-1,
@@ -166,9 +186,9 @@ class TestAlternateHandlerForms:
                 fallback=999,
             ),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
-        assert result["value"] is None  # none handler preserves None
+        assert result["value"] is None  # none handler preserves None when entity_state is None
 
 
 class TestFallbackPrioritySystem:
@@ -195,7 +215,7 @@ class TestFallbackPrioritySystem:
                 fallback=999,  # Should NOT be used
             ),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 100  # Specific handler used, not fallback
 
@@ -221,7 +241,7 @@ class TestFallbackPrioritySystem:
                 fallback=777,  # Should be used
             ),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 777  # Fallback used
 
@@ -248,7 +268,7 @@ class TestFallbackPrioritySystem:
                 fallback=999,  # Should catch unavailable state
             ),
         )
-        result = ev.evaluate_formula(cfg_fallback_catches_all)
+        result = ev.evaluate_formula(cfg_fallback_catches_all, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 999  # FALLBACK handler used for unavailable state
 
@@ -262,7 +282,7 @@ class TestFallbackPrioritySystem:
                 unknown=555
             ),
         )
-        result = ev.evaluate_formula(cfg_no_handlers)
+        result = ev.evaluate_formula(cfg_no_handlers, _create_empty_context())
         assert result["success"] is True
         assert result["value"] is None  # No handler for unavailable state, returns None
 
@@ -276,7 +296,7 @@ class TestFallbackPrioritySystem:
                 fallback=777,  # Should NOT be used
             ),
         )
-        result = ev.evaluate_formula(cfg_specific_over_fallback)
+        result = ev.evaluate_formula(cfg_specific_over_fallback, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 333  # Specific handler used, not fallback
 
@@ -322,7 +342,7 @@ class TestStateNoneYamlConstant:
                 none=None  # STATE_NONE equivalent - preserve None for energy sensors
             ),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
         assert result["value"] is None  # None preserved, no ValueError
 
@@ -356,7 +376,7 @@ class TestMixedHandlerScenarios:
                 fallback="fallback_string",  # Literal string
             ),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 30  # unknown object handler: 10 * 3
 
@@ -383,7 +403,7 @@ class TestMixedHandlerScenarios:
                 fallback=400,  # Should NOT be used
             ),
         )
-        result = ev.evaluate_formula(cfg)
+        result = ev.evaluate_formula(cfg, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 100  # Specific unavailable handler used
 

@@ -72,7 +72,10 @@ class CollectionResolver:
     def entity_reference_pattern(self) -> re.Pattern[str]:
         """Get the compiled entity reference pattern."""
         if self._entity_reference_pattern is None:
-            self._entity_reference_pattern = re.compile(rf"\b(?:{self._entity_domains_pattern})\.[a-zA-Z0-9_.]+\b")
+            # Use centralized entity reference pattern from regex helper
+            from .regex_helper import create_entity_reference_pattern_from_domains
+
+            self._entity_reference_pattern = create_entity_reference_pattern_from_domains(self._entity_domains_pattern)
         return self._entity_reference_pattern
 
     def invalidate_domain_cache(self) -> None:
@@ -145,15 +148,12 @@ class CollectionResolver:
             # Direct entity ID reference
             return {exclusion_pattern}
 
+        # Use centralized query type patterns from regex helper
+        from .regex_helper import create_query_type_patterns
+
         # Check if it's a query pattern (type:value)
-        for query_type, pattern_regex in {
-            "device_class": re.compile(r"^device_class:\s*(.+)$"),
-            "area": re.compile(r"^area:\s*(.+)$"),
-            "label": re.compile(r"^label:\s*(.+)$"),
-            "attribute": re.compile(r"^attribute:\s*(.+)$"),
-            "state": re.compile(r"^state:\s*(.+)$"),
-            "regex": re.compile(r"^regex:\s*(.+)$"),
-        }.items():
+        query_patterns = create_query_type_patterns()
+        for query_type, pattern_regex in query_patterns.items():
             match = pattern_regex.match(exclusion_pattern)
             if match:
                 resolved_pattern = self._resolve_entity_references_in_pattern(match.group(1).strip())
@@ -235,12 +235,15 @@ class CollectionResolver:
         regex_patterns = [regex_pattern.strip() for regex_pattern in pattern.split("|")]
         matching_entities = []
 
+        # Use centralized case-insensitive pattern creation from regex helper
+        from .regex_helper import search_case_insensitive
+
         for regex_pattern in regex_patterns:
             try:
-                regex = re.compile(regex_pattern, re.IGNORECASE)
-
                 for entity_id in self._entity_registry.entities:
-                    if regex.search(entity_id) and entity_id not in matching_entities:  # Avoid duplicates
+                    if (
+                        search_case_insensitive(entity_id, regex_pattern) and entity_id not in matching_entities
+                    ):  # Avoid duplicates
                         matching_entities.append(entity_id)
 
             except re.error as e:

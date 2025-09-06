@@ -542,10 +542,38 @@ class SensorSet(SensorSetYamlOperationsMixin):
         Raises:
             SyntheticSensorsError: If validation fails or conflicts occur
         """
+        self._log_modification_debug(modification)
         self._ensure_exists()
 
-        # Collect all changes for bulk processing
-        changes_summary = {
+        changes_summary = self._initialize_changes_summary()
+        current_sensors = {s.unique_id: s for s in self.list_sensors()}
+
+        # Validate and prepare for modifications
+        self._bulk_ops.validate_modification(modification, current_sensors)
+        self._prepare_entity_index_for_modification(modification, current_sensors)
+
+        # Apply modifications
+        await self._apply_global_settings(modification, current_sensors, changes_summary)
+        entity_id_changes_to_apply = await self._apply_entity_id_changes(modification, current_sensors, changes_summary)
+        await self._apply_sensor_operations(modification, changes_summary)
+
+        # Finalize entity ID changes
+        if entity_id_changes_to_apply:
+            await self._enforce_entity_id_invariant_before_registry(entity_id_changes_to_apply)
+            await self._apply_entity_registry_changes(entity_id_changes_to_apply)
+
+        return changes_summary
+
+    def _log_modification_debug(self, modification: SensorSetModification) -> None:
+        """Log debug information about the modification."""
+        if modification.entity_id_changes:
+            _LOGGER.warning("DEBUG: async_modify called with entity_id_changes: %s", modification.entity_id_changes)
+        else:
+            _LOGGER.warning("DEBUG: async_modify called with NO entity_id_changes")
+
+    def _initialize_changes_summary(self) -> dict[str, Any]:
+        """Initialize the changes summary dictionary."""
+        return {
             "sensors_added": 0,
             "sensors_removed": 0,
             "sensors_updated": 0,
@@ -553,14 +581,10 @@ class SensorSet(SensorSetYamlOperationsMixin):
             "global_settings_updated": False,
         }
 
-        # Get current sensors for validation and processing
-        current_sensors = {s.unique_id: s for s in self.list_sensors()}
-
-        # 1. Validate the modification request
-        self._bulk_ops.validate_modification(modification, current_sensors)
-
-        # 2. CRITICAL: Rebuild entity index to reflect FINAL state (for event storm protection)
-        # This must happen BEFORE any storage or registry changes
+    def _prepare_entity_index_for_modification(
+        self, modification: SensorSetModification, current_sensors: dict[str, SensorConfig]
+    ) -> None:
+        """Prepare entity index for modification."""
         final_sensors = self._bulk_ops.build_final_sensor_list(modification, current_sensors)
         if modification.entity_id_changes:
             final_sensors = self._bulk_ops.apply_entity_id_changes_to_sensors(modification.entity_id_changes, final_sensors)
@@ -570,42 +594,48 @@ class SensorSet(SensorSetYamlOperationsMixin):
         self._entity_index_handler.rebuild_entity_index_for_modification(final_sensors, final_global_settings)
         _LOGGER.debug("Pre-updated entity index for storm protection in sensor set %s", self.sensor_set_id)
 
-        # 3. Update global settings if specified (BEFORE entity ID changes to avoid conflicts)
+    async def _apply_global_settings(
+        self, modification: SensorSetModification, current_sensors: dict[str, SensorConfig], changes_summary: dict[str, Any]
+    ) -> None:
+        """Apply global settings changes."""
         if modification.global_settings is not None:
-            # Cast to GlobalSettingsDict since it's compatible with the expected structure
             typed_global_settings: GlobalSettingsDict = modification.global_settings  # type: ignore[assignment]
             await self._global_settings.async_set_global_settings(typed_global_settings, list(current_sensors.values()))
             changes_summary["global_settings_updated"] = True
 
-        # 4. Apply entity ID changes (but don't update HA registry yet - collect changes)
+    async def _apply_entity_id_changes(
+        self, modification: SensorSetModification, current_sensors: dict[str, SensorConfig], changes_summary: dict[str, Any]
+    ) -> dict[str, str]:
+        """Apply entity ID changes and return the changes to apply."""
         entity_id_changes_to_apply = {}
         if modification.entity_id_changes:
             entity_id_changes_to_apply = modification.entity_id_changes.copy()
-            # Apply changes to storage but defer HA registry updates
             await self._apply_entity_id_changes_deferred(entity_id_changes_to_apply, current_sensors)
             changes_summary["entity_ids_changed"] = len(entity_id_changes_to_apply)
+        return entity_id_changes_to_apply
 
-        # 5. Remove sensors (use direct storage operations)
+    async def _apply_sensor_operations(self, modification: SensorSetModification, changes_summary: dict[str, Any]) -> None:
+        """Apply sensor add, remove, and update operations."""
         if modification.remove_sensors:
             for unique_id in modification.remove_sensors:
                 await self._remove_sensor_direct(unique_id)
                 changes_summary["sensors_removed"] += 1
 
-        # 6. Update existing sensors (use direct storage operations)
         if modification.update_sensors:
             for sensor_config in modification.update_sensors:
                 await self._update_sensor_direct(sensor_config)
                 changes_summary["sensors_updated"] += 1
 
-        # 7. Add new sensors (use direct storage operations)
         if modification.add_sensors:
             for sensor_config in modification.add_sensors:
                 await self._add_sensor_direct(sensor_config)
                 changes_summary["sensors_added"] += 1
 
-        # 8. Apply entity ID changes to HA registry in one batch (EntityIndex already reflects new state)
-        if entity_id_changes_to_apply:
-            await self._apply_entity_registry_changes(entity_id_changes_to_apply)
+        # 9. Reload sensors if entity IDs were changed to pick up new configurations
+        if changes_summary["entity_ids_changed"] > 0:
+            _LOGGER.warning("DEBUG: Reloading sensors after entity ID changes to update in-memory configurations")
+            await self._reload_sensors_from_storage()
+            _LOGGER.warning("DEBUG: Sensor reload completed")
 
         _LOGGER.debug(
             "Modified sensor set %s: %d added, %d removed, %d updated, %d entity IDs changed",
@@ -616,7 +646,156 @@ class SensorSet(SensorSetYamlOperationsMixin):
             changes_summary["entity_ids_changed"],
         )
 
-        return changes_summary
+    async def _enforce_entity_id_invariant_before_registry(self, entity_id_changes: dict[str, str]) -> None:
+        """Ensure no old entity IDs remain in any parser-confirmed references before registry updates.
+
+        Strategy:
+        - Scan all sensor configs; for every string, use DependencyParser to extract explicit entity refs.
+        - If any old IDs from the mapping are still referenced, attempt a parser-confirmed rewrite on the
+          serialized config and persist; then re-scan.
+        - If, after the rewrite, any old IDs remain, fail fast with details.
+        """
+        # Use centralized entity replacement from regex helper
+        from .dependency_parser import DependencyParser  # pylint: disable=import-outside-toplevel
+        from .regex_helper import safe_entity_replacement
+
+        parser = DependencyParser(getattr(self.storage_manager, "hass", None))
+
+        def _extract_refs(s: str) -> set[str]:
+            try:
+                return parser.extract_entity_references(s)
+            except Exception:
+                return set()
+
+        def _replace_parser_confirmed(s: str) -> str:
+            if not isinstance(s, str) or not s:
+                return s
+            refs = _extract_refs(s)
+            new_s = s
+            for old_id, new_id in sorted(entity_id_changes.items(), key=lambda x: len(x[0]), reverse=True):
+                if old_id in refs:
+                    new_s = safe_entity_replacement(new_s, old_id, new_id)
+            return new_s
+
+        def _scan_and_fix(serialized: dict[str, Any]) -> tuple[dict[str, Any], dict[str, list[str]]]:
+            violations: dict[str, list[str]] = {}
+
+            def _walk(obj: Any, path: list[str]) -> Any:
+                if isinstance(obj, str):
+                    refs = _extract_refs(obj)
+                    bad = [old for old in entity_id_changes if old in refs]
+                    if bad:
+                        violations.setdefault("/".join(path), []).extend(bad)
+                        return _replace_parser_confirmed(obj)
+                    return obj
+                if isinstance(obj, list):
+                    return [_walk(v, [*path, str(i)]) for i, v in enumerate(obj)]
+                if isinstance(obj, dict):
+                    return {k: _walk(v, [*path, k]) for k, v in obj.items()}
+                return obj
+
+            fixed = _walk(serialized, [])
+            # mypy-safe cast
+            return fixed if isinstance(fixed, dict) else serialized, violations
+
+        def _find_remaining(serialized: dict[str, Any]) -> dict[str, list[str]]:
+            remaining: dict[str, list[str]] = {}
+
+            def _walk(obj: Any, path: list[str]) -> None:
+                if isinstance(obj, str):
+                    refs = _extract_refs(obj)
+                    bad = [old for old in entity_id_changes if old in refs]
+                    if bad:
+                        remaining.setdefault("/".join(path), []).extend(bad)
+                    return
+                if isinstance(obj, list):
+                    for i, v in enumerate(obj):
+                        _walk(v, [*path, str(i)])
+                    return
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        _walk(v, [*path, k])
+                    return
+
+            _walk(serialized, [])
+            return remaining
+
+        # First pass: scan and fix, persist if needed
+        sensors = self.list_sensors()
+        any_persisted = False
+        for sensor in sensors:
+            serialized = self.storage_manager.serialize_sensor_config(sensor)
+            fixed, violations = _scan_and_fix(serialized)
+            if violations:
+                # Persist fixes
+                deserialized = self.storage_manager.deserialize_sensor_config(fixed)
+                await self._update_sensor_direct(deserialized)
+                any_persisted = True
+
+        # If anything was persisted, refresh our view
+        if any_persisted:
+            sensors = self.list_sensors()
+
+        # Second pass: strict re-scan and fail fast on any remaining
+        remaining_all: list[str] = []
+        for sensor in sensors:
+            serialized = self.storage_manager.serialize_sensor_config(sensor)
+            remaining = _find_remaining(serialized)
+            if remaining:
+                for loc, olds in remaining.items():
+                    remaining_all.append(f"{sensor.unique_id}:{loc} -> {olds}")
+
+        if remaining_all:
+            raise SyntheticSensorsError(
+                "Invariant failed: old entity IDs still referenced after rewrite:\n" + "\n".join(remaining_all)
+            )
+
+    async def _reload_sensors_from_storage(self) -> None:
+        """Reload all sensors from storage to pick up configuration changes."""
+        try:
+            _LOGGER.warning("DEBUG: Starting sensor reload from storage")
+            # Get fresh sensor configurations from storage
+            await self.storage_manager.async_load()
+            storage_data = self.storage_manager.data
+            if not storage_data or "sensors" not in storage_data:
+                _LOGGER.warning("No sensors found in storage during reload")
+                return
+
+            # Check if sensor set exists
+            if "sensor_sets" not in storage_data or self.sensor_set_id not in storage_data["sensor_sets"]:
+                _LOGGER.warning("Sensor set %s not found in storage during reload", self.sensor_set_id)
+                return
+
+            # Find sensors belonging to this sensor set
+            sensor_set_sensors = {
+                unique_id: sensor_data
+                for unique_id, sensor_data in storage_data["sensors"].items()
+                if sensor_data.get("sensor_set_id") == self.sensor_set_id
+            }
+
+            _LOGGER.warning("DEBUG: Found %d sensors for sensor set %s", len(sensor_set_sensors), self.sensor_set_id)
+
+            # Convert storage format back to SensorConfig objects
+            fresh_sensors = {}
+            for unique_id, stored_sensor in sensor_set_sensors.items():
+                try:
+                    sensor_config = self.storage_manager.deserialize_sensor_config(stored_sensor["config_data"])
+                    fresh_sensors[unique_id] = sensor_config
+                    if unique_id == "span_nj-2316-005k6_feed_through_consumed_energy":
+                        _LOGGER.warning(
+                            "DEBUG: Reloaded feed_through_consumed_energy with panel_status formula: %s",
+                            getattr(sensor_config.formulas[0].variables.get("panel_status"), "formula", "NOT FOUND"),
+                        )
+                except Exception as e:
+                    _LOGGER.error("Failed to parse sensor config for %s during reload: %s", unique_id, e)
+                    continue
+
+            # Log the reload
+            _LOGGER.warning("DEBUG: Successfully reloaded %d sensors from storage", len(fresh_sensors))
+
+        except Exception as e:
+            _LOGGER.error("Failed to reload sensors from storage: %s", e)
+            raise
 
     def _build_final_sensor_list(
         self, modification: SensorSetModification, current_sensors: dict[str, SensorConfig]
@@ -678,6 +857,40 @@ class SensorSet(SensorSetYamlOperationsMixin):
             entity_id_changes: Map of old_entity_id -> new_entity_id
             current_sensors: Current sensors to update
         """
+
+        # Helper functions for deep entity replacement
+        def _replace_in_string(s: str, entity_changes: dict[str, str]) -> str:
+            if not isinstance(s, str) or not s:
+                return s
+            new_s = s
+            # Extract explicit entity references and replace only those
+            try:
+                local_parser = DependencyParser(getattr(self.storage_manager, "hass", None))
+                refs = local_parser.extract_entity_references(s)
+            except Exception:
+                refs = set()
+            for old_id, new_id in sorted(entity_changes.items(), key=lambda x: len(x[0]), reverse=True):
+                if refs:
+                    if old_id in refs:
+                        new_s = safe_entity_replacement(new_s, old_id, new_id)
+                else:
+                    # Use centralized safe entity replacement
+                    new_s = safe_entity_replacement(new_s, old_id, new_id)
+            return new_s
+
+        def _deep_replace(obj: Any, entity_changes: dict[str, str]) -> Any:
+            if isinstance(obj, str):
+                return _replace_in_string(obj, entity_changes)
+            if isinstance(obj, list):
+                return [_deep_replace(v, entity_changes) for v in obj]
+            if isinstance(obj, dict):
+                return {k: _deep_replace(v, entity_changes) for k, v in obj.items()}
+            return obj
+
+        # Import required modules
+        from .dependency_parser import DependencyParser  # pylint: disable=import-outside-toplevel
+        from .regex_helper import safe_entity_replacement
+
         # Update our storage (sensor configs) only
         for sensor_config in current_sensors.values():
             updated = False
@@ -691,25 +904,27 @@ class SensorSet(SensorSetYamlOperationsMixin):
 
             # Update formula variables (including ComputedVariable objects)
             for formula in sensor_config.formulas:
-                if formula.variables:
-                    old_variables = formula.variables.copy()
-                    update_formula_variables_for_entity_changes(formula, entity_id_changes)
-
-                    # Check if any variables were actually updated
-                    for var_name, var_value in formula.variables.items():
-                        old_value = old_variables.get(var_name)
-                        if old_value != var_value:
-                            updated = True
-                            _LOGGER.debug(
-                                "Updated sensor %s formula %s variable %s: %s -> %s",
-                                sensor_config.unique_id,
-                                formula.id,
-                                var_name,
-                                old_value,
-                                var_value,
-                            )
+                # Update all formula components (variables, main formula, attributes, alternate states)
+                if update_formula_variables_for_entity_changes(formula, entity_id_changes):
+                    updated = True
+                    _LOGGER.debug(
+                        "Updated sensor %s formula %s with entity ID changes",
+                        sensor_config.unique_id,
+                        formula.id,
+                    )
 
             # Save updated sensor directly to storage (bypass entity index updates)
+            # Final catch-all: deep replace any remaining entity ids in serialized config
+            try:
+                if entity_id_changes:
+                    serialized_before = self.storage_manager.serialize_sensor_config(sensor_config)
+                    serialized_after = _deep_replace(serialized_before, entity_id_changes)
+                    if serialized_after != serialized_before:
+                        sensor_config = self.storage_manager.deserialize_sensor_config(serialized_after)
+                        updated = True
+            except Exception as _err:  # pragma: no cover - defensive catch-all
+                _LOGGER.debug("Deep replace post-pass skipped due to error: %s", _err)
+
             if updated:
                 await self._update_sensor_direct(sensor_config)
 
@@ -756,8 +971,22 @@ class SensorSet(SensorSetYamlOperationsMixin):
         try:
             entity_registry = er.async_get(self.storage_manager.hass)
 
+            # Get list of our synthetic sensor entity IDs (post-change) to avoid updating external entities
+            # Note: storage was already updated to new IDs. During registry updates, consider a mapping entry ours
+            # if either the old or the new entity_id belongs to our sensors.
+            our_sensor_entity_ids = {sensor.entity_id for sensor in self.list_sensors() if sensor.entity_id}
             for old_entity_id, new_entity_id in entity_id_changes.items():
                 try:
+                    # Only update entities that belong to our synthetic sensors
+                    # After storage update, our list contains NEW ids. Treat mapping as ours if either side matches.
+                    if (old_entity_id not in our_sensor_entity_ids) and (new_entity_id not in our_sensor_entity_ids):
+                        _LOGGER.debug(
+                            "Entity %s -> %s not owned by synthetic sensors (neither side matches), skipping registry update",
+                            old_entity_id,
+                            new_entity_id,
+                        )
+                        continue
+
                     # Check if entity exists in HA registry
                     entity_entry = entity_registry.async_get(old_entity_id)
                     if entity_entry:

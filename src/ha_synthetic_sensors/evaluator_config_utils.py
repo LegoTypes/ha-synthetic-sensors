@@ -36,12 +36,12 @@ class EvaluatorConfigUtils:
     def update_circuit_breaker_config(self, config: CircuitBreakerConfig) -> None:
         """Update circuit breaker configuration."""
         self._circuit_breaker_config = config
-        _LOGGER.debug("Updated circuit breaker config: threshold=%d", config.max_fatal_errors)
+        # Debug logging removed to reduce verbosity
 
     def update_retry_config(self, config: RetryConfig) -> None:
         """Update retry configuration."""
         self._retry_config = config
-        _LOGGER.debug("Updated retry config: max_attempts=%d, backoff=%f", config.max_attempts, config.backoff_seconds)
+        # Debug logging removed to reduce verbosity
 
     def get_cache_stats(self, cache_handler: EvaluatorCache, error_handler: EvaluatorErrorHandler) -> CacheStats:
         """Get cache statistics."""

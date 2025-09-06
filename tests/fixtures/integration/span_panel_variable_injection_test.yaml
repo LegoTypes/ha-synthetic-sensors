@@ -1,0 +1,60 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_span_panel_variable_injection"
+  variables:
+    energy_grace_period_minutes: 15
+
+sensors:
+  air_conditioner_produced_energy:
+    entity_id: sensor.air_conditioner_energy_produced
+    name: Air Conditioner Produced Energy
+    metadata:
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      suggested_display_precision: 2
+      friendly_name: Air Conditioner Produced Energy
+    formula: state
+    alternate_states:
+      FALLBACK:
+        formula: last_valid_state if is_within_grace_period else 'unknown'
+    variables:
+      last_valid_state:
+        formula: metadata(state, 'last_valid_state')
+        alternate_states:
+          FALLBACK: unknown
+      last_valid_changed:
+        formula: metadata(state, 'last_valid_changed')
+        alternate_states:
+          FALLBACK: unknown
+      panel_status:
+        formula: binary_sensor.panel_status
+      panel_offline_minutes:
+        formula: minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), utc_now()) if not panel_status else 0
+        alternate_states:
+          FALLBACK: 0
+      is_within_grace_period:
+        formula: last_valid_state is not None and last_valid_state != 'unknown' and last_valid_changed != 'unknown' and not panel_status and panel_offline_minutes < energy_grace_period_minutes
+        alternate_states:
+          FALLBACK: false
+    attributes:
+      tabs: "tabs [15:17]"
+      voltage: 240
+      energy_grace_period_minutes_is: energy_grace_period_minutes
+      grace_period_remaining:
+        formula: round(max(0, energy_grace_period_minutes - panel_offline_minutes), 1) if is_within_grace_period else 0
+        alternate_states:
+          FALLBACK: N/A
+      energy_reporting_status:
+        formula: "'Live' if state != 'unknown' else ('Off-Line, reporting previous value' if grace_period_remaining > 0 else 'unknown')"
+        alternate_states:
+          FALLBACK: false
+      panel_offline_minutes_is: panel_offline_minutes
+      is_within_grace_is: is_within_grace_period
+      debug_panel_status: panel_status
+      debug_panel_status_entity: binary_sensor.panel_status
+      debug_conditional_result:
+        formula: 0 if panel_status else minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), utc_now())
+        alternate_states:
+          FALLBACK: unknown

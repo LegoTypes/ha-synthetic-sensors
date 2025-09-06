@@ -11,6 +11,14 @@ from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.evaluator_config import CircuitBreakerConfig
 from ha_synthetic_sensors.exceptions import NonNumericStateError
 from ha_synthetic_sensors.exceptions import MissingDependencyError
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 class TestNonNumericStateHandling:
@@ -30,7 +38,7 @@ class TestNonNumericStateHandling:
         config = FormulaConfig(id="test_boolean_conversion", name="test", formula="switch.test + 1")
 
         # New behavior: "on" boolean state is converted to 1.0, so 1.0 + 1 = 2.0
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         # Boolean states should now work correctly in mathematical operations
         assert result["success"] is True
         assert result.get("state") == "ok"  # Successful evaluation
@@ -81,15 +89,14 @@ class TestNonNumericStateHandling:
 
         # Provide evaluation context containing the ReferenceValue and registry entry
         # Provide both dotted and underscored keys so resolver's context checks succeed
-        context = {
-            "sensor.circuit_a_power": ref,
-            "sensor_circuit_a_power": ref,
-            "_entity_reference_registry": {"sensor.circuit_a_power": ref},
-        }
+        context = _create_empty_context()
+        context._hierarchical_context.set("sensor.circuit_a_power", ref)
+        context._hierarchical_context.set("sensor_circuit_a_power", ref)
+        context._hierarchical_context.set("_entity_reference_registry", {"sensor.circuit_a_power": ref})
         # Also pre-populate any dotted tokens the resolution pipeline may probe for
         # when earlier phases have already registered ReferenceValue objects.
-        context["sensor.state"] = ReferenceValue(reference="sensor.state", value=1.0)
-        context["state"] = ReferenceValue(reference="state", value=1.0)
+        context._hierarchical_context.set("sensor.state", ReferenceValue(reference="sensor.state", value=1.0))
+        context._hierarchical_context.set("state", ReferenceValue(reference="state", value=1.0))
 
         evaluator = Evaluator(mock_hass)
 
@@ -116,10 +123,12 @@ class TestNonNumericStateHandling:
         from ha_synthetic_sensors.type_definitions import ReferenceValue
 
         ref = ReferenceValue(reference="sensor.temperature", value="unavailable")
-        eval_context = {"sensor.temperature": ref, "_entity_reference_registry": {"sensor.temperature": ref}}
+        eval_context = _create_empty_context()
+        eval_context._hierarchical_context.set("sensor.temperature", ref)
+        eval_context._hierarchical_context.set("_entity_reference_registry", {"sensor.temperature": ref})
         # Some pipeline stages may probe for `sensor.state` (e.g., when resolving 'state' tokens);
         # ensure it's present in context to avoid resolver lookups in unit tests.
-        eval_context["sensor.state"] = ReferenceValue(reference="sensor.temperature", value="unavailable")
+        eval_context._hierarchical_context.set("sensor.state", ref)
 
         evaluator = Evaluator(mock_hass)
 
@@ -178,7 +187,7 @@ class TestNonNumericStateHandling:
         config = FormulaConfig(id="mixed_test", name="mixed", formula="sensor.circuit_a_power + sensor.circuit_b_power")
 
         # Should reflect unavailable state as unavailable due to unavailable dependency
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True  # Non-fatal - reflects dependency state
         # Current system returns STATE_UNAVAILABLE when dependencies are unavailable
         assert result.get("state") == STATE_UNAVAILABLE
@@ -207,7 +216,7 @@ class TestNonNumericStateHandling:
 
         # Should continue trying even after many attempts (reflects dependency state)
         for _i in range(10):
-            result = evaluator.evaluate_formula(config)
+            result = evaluator.evaluate_formula(config, _create_empty_context())
             assert result["success"] is True  # Non-fatal - reflects dependency state
             assert result.get("state") == STATE_UNAVAILABLE  # Reflects unavailable dependency as unavailable
 
@@ -244,7 +253,7 @@ class TestNonNumericStateHandling:
 
         # Missing entities should be treated as fatal errors
         with pytest.raises(MissingDependencyError) as exc_info:
-            evaluator.evaluate_formula(missing_config)
+            evaluator.evaluate_formula(missing_config, _create_empty_context())
         assert "sensor.missing_entity" in str(exc_info.value)
 
         # Test non-numeric entity (should be transitory)
@@ -252,7 +261,7 @@ class TestNonNumericStateHandling:
 
         # Should continue evaluating even after many attempts (reflects dependency state)
         for _i in range(10):
-            result = evaluator.evaluate_formula(non_numeric_config)
+            result = evaluator.evaluate_formula(non_numeric_config, _create_empty_context())
             assert result["success"] is True  # Non-fatal - reflects dependency state
             assert result.get("state") == STATE_UNAVAILABLE  # Reflects unavailable dependency as unavailable
 
@@ -278,7 +287,7 @@ class TestNonNumericStateHandling:
         config = FormulaConfig(id="startup_race_test", name="startup_race", formula=f"{entity_id} + 10")
 
         # None state should reflect as unknown (non-fatal, can recover when entity comes online)
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True  # Non-fatal - reflects dependency state
         assert result.get("state") == STATE_UNKNOWN  # Reflects unknown dependency
         # The system may not track unavailable_dependencies in the same way anymore
@@ -316,7 +325,7 @@ class TestNonNumericStateHandling:
         )
 
         # Should handle the None states gracefully and return unknown
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True
         assert result.get("state") == "unknown"  # None states are treated as unknown
         # The system may not track unavailable_dependencies in the same way anymore
@@ -359,7 +368,7 @@ class TestNonNumericStateHandling:
         )
 
         # Should handle mixed states and return unknown due to unknown entity
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True
         assert result.get("state") == "unknown"  # Reflects worst dependency state
 
@@ -405,7 +414,7 @@ class TestNonNumericStateHandling:
         )
 
         # Entities with None values should be treated as non-fatal and result in unknown state
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True  # Non-fatal - reflects dependency state
         assert result.get("state") == STATE_UNKNOWN  # Reflects None values as unknown
 
@@ -438,18 +447,28 @@ class TestNonNumericStateHandling:
         # Instead of relying on HA lookup, pre-populate evaluation context with ReferenceValue objects
         from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-        eval_context = {
-            "sensor.circuit_a_power": ReferenceValue(reference="sensor.circuit_a_power", value="unavailable"),
-            "sensor.circuit_b_power": ReferenceValue(reference="sensor.circuit_b_power", value="unknown"),
-            "sensor.kitchen_temperature": ReferenceValue(reference="sensor.kitchen_temperature", value=42.5),
-            "_entity_reference_registry": {
+        eval_context = _create_empty_context()
+        eval_context._hierarchical_context.set(
+            "sensor.circuit_a_power", ReferenceValue(reference="sensor.circuit_a_power", value="unavailable")
+        )
+        eval_context._hierarchical_context.set(
+            "sensor.circuit_b_power", ReferenceValue(reference="sensor.circuit_b_power", value="unknown")
+        )
+        eval_context._hierarchical_context.set(
+            "sensor.kitchen_temperature", ReferenceValue(reference="sensor.kitchen_temperature", value=42.5)
+        )
+        eval_context._hierarchical_context.set(
+            "_entity_reference_registry",
+            {
                 "sensor.circuit_a_power": ReferenceValue(reference="sensor.circuit_a_power", value="unavailable"),
                 "sensor.circuit_b_power": ReferenceValue(reference="sensor.circuit_b_power", value="unknown"),
                 "sensor.kitchen_temperature": ReferenceValue(reference="sensor.kitchen_temperature", value=42.5),
             },
-        }
+        )
         # Provide sensor.state context token to prevent entity resolver from attempting to lookup 'sensor.state'
-        eval_context["sensor.state"] = ReferenceValue(reference="sensor.circuit_a_power", value="unavailable")
+        eval_context._hierarchical_context.set(
+            "sensor.state", ReferenceValue(reference="sensor.circuit_a_power", value="unavailable")
+        )
 
         # Test formula with unavailable entity
         unavailable_config = FormulaConfig(
@@ -546,7 +565,7 @@ class TestNonNumericStateHandling:
             },
         )
 
-        result = evaluator.evaluate_formula(startup_config)
+        result = evaluator.evaluate_formula(startup_config, _create_empty_context())
         assert result["success"] is True
         assert (
             result.get("state") == STATE_UNKNOWN

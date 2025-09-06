@@ -7,19 +7,21 @@ import re
 from typing import Any
 
 from ..evaluator_handlers.base_handler import FormulaHandler
-from ..type_definitions import ContextValue
+from ..hierarchical_context_dict import HierarchicalContextDict
 from .function_registry import get_datetime_function_registry
 
 
 class DateTimeHandler(FormulaHandler):
     """Handler for datetime functions in the formula evaluation system."""
 
-    def __init__(self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None) -> None:
+    def __init__(self, expression_evaluator: Callable[[str, HierarchicalContextDict], Any] | None = None) -> None:
         """Initialize the datetime handler."""
         super().__init__(expression_evaluator)
         self._registry = get_datetime_function_registry()
-        # Pattern to match datetime function calls like now(), today(), etc.
-        self._function_pattern = re.compile(r"\b(\w+)\(\s*\)")
+        # Use centralized datetime function pattern from regex helper
+        from ..regex_helper import create_datetime_function_pattern
+
+        self._function_pattern = create_datetime_function_pattern()
 
     def can_handle(self, formula: str) -> bool:
         """Determine if this handler can process the given formula.
@@ -36,7 +38,7 @@ class DateTimeHandler(FormulaHandler):
         # Check if any of the function calls are datetime functions
         return any(self._registry.can_handle_function(func_name) for func_name in function_calls)
 
-    def evaluate(self, formula: str, context: dict[str, ContextValue] | None = None) -> Any:
+    def evaluate(self, formula: str, context: HierarchicalContextDict) -> Any:
         """Evaluate the formula with datetime function calls.
 
         This handler processes datetime function calls within formulas by replacing them

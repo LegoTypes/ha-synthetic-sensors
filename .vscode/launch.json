@@ -2,12 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "delayed entity availability",
+      "name": "test minimal boolean false issue",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
       "args": [
-        "tests/integration/test_delayed_entity_availability.py::test_delayed_entity_availability_with_dependency_tracking",
+        "/Users/bflood/projects/HA/ha-synthetic-sensors/test_minimal_boolean_issue.py::TestBooleanFalseIssue::test_boolean_false_becomes_none",
         "-v",
         "-s"
       ],
@@ -27,6 +27,132 @@
         "tests/integration/test_string_operations.py::TestStringOperationsIntegration::test_basic_string_concatenation",
         "-v",
         "-s"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Alternate Handler None Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/evaluator/test_alternate_handlers_comprehensive.py::TestAlternateHandlerForms::test_none_value_handlers",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Fallback Handler Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/evaluator/test_alternate_handlers_comprehensive.py::TestFallbackPrioritySystem::test_fallback_when_no_specific_handler",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Guard Scoping Metadata Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/evaluator/test_alternate_handlers_and_guard_unit.py::test_guard_scoping_with_metadata_only_cv",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Object Form Handlers Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/evaluator/test_alternate_handlers_comprehensive.py::TestAlternateHandlerForms::test_object_form_handlers",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Alternate Handlers Unresolved States Behavior Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_alternate_handlers_runtime.py::test_allow_unresolved_states_behavior",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Alternate Handlers and Guard Runtime Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_alternate_handlers_runtime.py::test_guard_metadata_sensor_only",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Panel Variable Injection Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_span_panel_variable_injection.py::TestSpanPanelVariableInjection::test_variable_injection_panel_offline",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
       ],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",

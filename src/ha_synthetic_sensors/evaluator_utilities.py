@@ -10,7 +10,7 @@ from homeassistant.helpers.typing import StateType
 
 from .config_models import FormulaConfig
 from .constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
-from .type_definitions import ContextValue
+from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,11 +66,11 @@ class EvaluatorUtilities:
             dependency_handler,
             self._sensor_to_backing_mapping,
         )
-        _LOGGER.debug("Updated sensor-to-backing mapping: %d mappings", len(sensor_to_backing_mapping))
+        # Debug logging removed to reduce verbosity
 
     def evaluate_expression_callback(
-        self, expression: str, context: dict[str, ContextValue] | None, evaluate_formula_func: Any
-    ) -> ContextValue:
+        self, expression: str, context: HierarchicalContextDict, evaluate_formula_func: Any
+    ) -> StateType:
         """
         Expression evaluator callback for handlers that need to delegate complex expressions.
 

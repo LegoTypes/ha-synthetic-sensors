@@ -3,6 +3,9 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
+
 from ...exceptions import MissingDependencyError
 from ...type_definitions import ContextValue, ReferenceValue
 from .base_resolver import VariableResolver
@@ -37,7 +40,7 @@ class ConfigVariableResolver(VariableResolver):
         # This resolver handles cases that aren't handled by other specialized resolvers
         return True
 
-    def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, ContextValue]) -> Any | None:
+    def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:
         """Resolve a config variable."""
         # Check if the variable is already resolved in the context first
         if variable_name in context:

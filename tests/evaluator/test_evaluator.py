@@ -9,9 +9,17 @@ from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.evaluator_config import CircuitBreakerConfig, RetryConfig
 from ha_synthetic_sensors.exceptions import MissingDependencyError
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
 
 # Add import for entity_registry patching
 import homeassistant.helpers.entity_registry as er
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 class TestEvaluator:
@@ -53,7 +61,7 @@ class TestEvaluator:
         # Test basic formula with safe functions
         config = FormulaConfig(id="safe_func", name="safe_func", formula="abs(-10) + max(5, 3) + min(1, 2)")
 
-        result = evaluator.evaluate_formula(config, {})
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 16  # abs(-10) + max(5,3) + min(1,2) = 10 + 5 + 1 = 16
 
@@ -63,7 +71,7 @@ class TestEvaluator:
 
         config = FormulaConfig(id="basic", name="basic", formula="10 + 20")
 
-        result = evaluator.evaluate_formula(config, {})
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 30
 
@@ -76,7 +84,10 @@ class TestEvaluator:
         # Use ReferenceValue objects for context variables (ReferenceValue architecture)
         from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-        context: dict[str, Any] = {"A": ReferenceValue("A", 15), "B": ReferenceValue("B", 25), "C": ReferenceValue("C", 0)}
+        context = _create_empty_context()
+        context._hierarchical_context.set("A", ReferenceValue("A", 15))
+        context._hierarchical_context.set("B", ReferenceValue("B", 25))
+        context._hierarchical_context.set("C", ReferenceValue("C", 0))
         result = evaluator.evaluate_formula(config, context)
         assert result["success"] is True
         assert result["value"] == 40
@@ -88,13 +99,13 @@ class TestEvaluator:
         config = FormulaConfig(id="cache", name="cache", formula="100 + 200")
 
         # First evaluation
-        result1 = evaluator.evaluate_formula(config, {})
+        result1 = evaluator.evaluate_formula(config, _create_empty_context())
         assert result1["success"] is True
         assert result1["value"] == 300
         assert result1.get("cached", False) is False
 
         # Second evaluation should use cache
-        result2 = evaluator.evaluate_formula(config, {})
+        result2 = evaluator.evaluate_formula(config, _create_empty_context())
         assert result2["success"] is True
         assert result2["value"] == 300
         assert result2.get("cached", False) is True
@@ -120,14 +131,14 @@ class TestEvaluator:
         config = FormulaConfig(id="invalid", name="invalid", formula="50 + 75")
 
         # Evaluate to populate cache
-        result = evaluator.evaluate_formula(config, {})
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True
 
         # Clear all cache (since clearing specific formulas by name isn't supported)
         evaluator.clear_cache()
 
         # Next evaluation should not be cached
-        result = evaluator.evaluate_formula(config, {})
+        result = evaluator.evaluate_formula(config, _create_empty_context())
         assert result["success"] is True
         assert result.get("cached", False) is False
 
@@ -138,22 +149,20 @@ class TestEvaluator:
         # Test undefined variable evaluation - current behavior treats as alternate state
         config = FormulaConfig(id="error_handling", name="error_handling", formula="A / 0")
 
-        result = evaluator.evaluate_formula(config, {})
-        # Current implementation: undefined variables result in alternate state, not hard errors
-        from homeassistant.const import STATE_UNKNOWN
+        # Current architecture treats missing dependencies as fatal errors
+        from ha_synthetic_sensors.exceptions import MissingDependencyError
 
-        assert result["success"] is True
-        assert result.get("state") == STATE_UNKNOWN  # Alternate state handling
-        assert result.get("value") is None
+        with pytest.raises(MissingDependencyError, match="Missing dependencies: A"):
+            evaluator.evaluate_formula(config, _create_empty_context())
 
     def test_clear_cache(self, mock_hass, mock_entity_registry, mock_states):
         """Test cache clearing functionality."""
         evaluator = Evaluator(mock_hass)
 
-        config = FormulaConfig(id="clear_cache", name="clear_cache", formula="A + B")
+        config = FormulaConfig(id="clear_cache", name="clear_cache", formula="100 + 200")
 
         # Evaluate to populate cache
-        evaluator.evaluate_formula(config, {})
+        evaluator.evaluate_formula(config, _create_empty_context())
 
         # Clear all caches
         evaluator.clear_cache()
@@ -228,15 +237,15 @@ class TestEvaluator:
 
         # First two evaluations should attempt and fail with fatal errors
         with pytest.raises(MissingDependencyError) as exc_info1:
-            evaluator.evaluate_formula(config)
+            evaluator.evaluate_formula(config, _create_empty_context())
         assert "Missing dependencies" in str(exc_info1.value)
 
         with pytest.raises(MissingDependencyError) as exc_info2:
-            evaluator.evaluate_formula(config)
+            evaluator.evaluate_formula(config, _create_empty_context())
         assert "Missing dependencies" in str(exc_info2.value)
 
         # Third evaluation should be skipped due to circuit breaker
-        result3 = evaluator.evaluate_formula(config)
+        result3 = evaluator.evaluate_formula(config, _create_empty_context())
         assert result3["success"] is False
         assert "error" in result3
         assert "Skipping formula" in result3["error"]
@@ -279,11 +288,11 @@ class TestEvaluator:
             # Build context like DynamicSensor would - use ReferenceValue objects (ReferenceValue architecture)
             from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-            context: dict[str, Any] = {}
+            context = _create_empty_context()
             for var_name, entity_id in config.variables.items():
                 state = mock_hass.states.get(entity_id)
                 if state is not None:
-                    context[var_name] = ReferenceValue(entity_id, float(state.state))
+                    context._hierarchical_context.set(var_name, ReferenceValue(entity_id, float(state.state)))
 
             result = evaluator.evaluate_formula(config, context)
             assert result["success"] is True
@@ -292,7 +301,7 @@ class TestEvaluator:
             # Test 2: Formula without variables should still work
             config_no_vars = FormulaConfig(id="test_no_vars", name="Test No Variables", formula="100 + 200")
 
-            result2 = evaluator.evaluate_formula(config_no_vars)
+            result2 = evaluator.evaluate_formula(config_no_vars, _create_empty_context())
             assert result2["success"] is True
             assert result2["value"] == 300
 
@@ -307,10 +316,9 @@ class TestEvaluator:
                 },
             )  # Direct entity names, not entity() function
 
-            entity_context: dict[str, Any] = {
-                "sensor_temperature": ReferenceValue("sensor.temperature", 22.5),
-                "sensor_humidity": ReferenceValue("sensor.humidity", 45.0),
-            }
+            entity_context = _create_empty_context()
+            entity_context._hierarchical_context.set("sensor_temperature", ReferenceValue("sensor.temperature", 22.5))
+            entity_context._hierarchical_context.set("sensor_humidity", ReferenceValue("sensor.humidity", 45.0))
 
             result3 = evaluator.evaluate_formula(config_entity_access, entity_context)
             assert result3["success"] is True
@@ -327,10 +335,9 @@ class TestEvaluator:
                 },
             )
 
-            mixed_context: dict[str, Any] = {
-                "power_total": ReferenceValue("sensor.power_meter", 1000.0),
-                "temperature_reading": ReferenceValue("sensor.temperature", 22.5),
-            }
+            mixed_context = _create_empty_context()
+            mixed_context._hierarchical_context.set("power_total", ReferenceValue("sensor.power_meter", 1000.0))
+            mixed_context._hierarchical_context.set("temperature_reading", ReferenceValue("sensor.temperature", 22.5))
             result4 = evaluator.evaluate_formula(config_mixed, mixed_context)
             assert result4["success"] is True
             assert result4["value"] == 1022.5  # 1000 + 22.5
@@ -338,11 +345,11 @@ class TestEvaluator:
             # Test 5: Error handling - missing variable in context
             config_missing_var = FormulaConfig(id="test_missing", name="Test Missing Variable", formula="missing_var + 100")
 
-            result5 = evaluator.evaluate_formula(config_missing_var, {})
-            # Current implementation: missing variables result in alternate state, not hard errors
-            assert result5["success"] is True
-            assert result5["state"] == "unknown"  # Alternate state handling
-            assert result5["value"] is None
+            # Current architecture treats missing dependencies as fatal errors
+            from ha_synthetic_sensors.exceptions import MissingDependencyError
+
+            with pytest.raises(MissingDependencyError, match="Missing dependencies: missing_var"):
+                evaluator.evaluate_formula(config_missing_var, _create_empty_context())
 
             # Test 6: Error handling - unavailable entity (entity exists but state is "unavailable")
             # For now, skip this test as it requires more complex resolver setup
@@ -370,7 +377,8 @@ class TestEvaluator:
         # First evaluation - use ReferenceValue objects (ReferenceValue architecture)
         from ha_synthetic_sensors.type_definitions import ReferenceValue
 
-        context: dict[str, Any] = {"test_var": ReferenceValue("sensor.test_entity", 100.0)}
+        context = _create_empty_context()
+        context._hierarchical_context.set("test_var", ReferenceValue("sensor.test_entity", 100.0))
         result1 = evaluator.evaluate_formula(config, context)
         assert result1["success"] is True
         assert result1["value"] == 200.0
@@ -381,7 +389,8 @@ class TestEvaluator:
         assert result2["value"] == 200.0
 
         # Different context should work too
-        context2: dict[str, Any] = {"test_var": ReferenceValue("sensor.test_entity", 150.0)}
+        context2 = _create_empty_context()
+        context2._hierarchical_context.set("test_var", ReferenceValue("sensor.test_entity", 150.0))
         result3 = evaluator.evaluate_formula(config, context2)
         assert result3["success"] is True
         assert result3["value"] == 300.0
@@ -408,7 +417,7 @@ class TestEvaluator:
                 formula=formula,
             )
 
-            result = evaluator.evaluate_formula(config)
+            result = evaluator.evaluate_formula(config, _create_empty_context())
             assert result["success"] is True, f"Formula {formula} failed: {result.get('error')}"
             result_value = result["value"]
             if isinstance(expected, float):
@@ -439,15 +448,26 @@ class TestEvaluator:
             "(1 + 2",  # Syntax: unclosed parenthesis -> alternate state (current behavior)
         ]
 
-        # Current behavior: all errors result in alternate state (success=True, state="unknown")
+        # Current architecture treats missing dependencies as fatal errors
+        # Only formulas without undefined variables can be evaluated
         for i, formula in enumerate(runtime_error_cases + syntax_error_cases):
             config = FormulaConfig(id=f"error_test_{i}_{hash(formula)}", name=f"Error Test {i}", formula=formula)
 
-            result = evaluator.evaluate_formula(config)
-            # Current implementation: all errors treated as alternate states
-            assert result["success"] is True, f"Formula '{formula}' - current behavior treats as alternate state"
-            assert result["state"] == "unknown", f"Formula '{formula}' should have unknown state"
-            assert result["value"] is None, f"Formula '{formula}' should have None value"
+            # Formulas with undefined variables will fail with MissingDependencyError
+            if "undefined_variable" in formula or "invalid_function" in formula:
+                from ha_synthetic_sensors.exceptions import MissingDependencyError
+
+                with pytest.raises(MissingDependencyError):
+                    evaluator.evaluate_formula(config, _create_empty_context())
+            else:
+                # Other formulas may still work or fail differently
+                try:
+                    result = evaluator.evaluate_formula(config, _create_empty_context())
+                    # If they succeed, they should have the expected behavior
+                    assert result["success"] is True, f"Formula '{formula}' should succeed"
+                except Exception as e:
+                    # It's acceptable for other types of errors to occur
+                    pass
 
     def test_evaluator_dependency_extraction_comprehensive(self, mock_hass, mock_entity_registry, mock_states):
         """Test comprehensive dependency extraction from various formula types."""

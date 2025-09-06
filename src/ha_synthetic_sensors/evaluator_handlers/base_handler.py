@@ -4,14 +4,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from ..type_definitions import ContextValue
+from ..hierarchical_context_dict import HierarchicalContextDict
 
 
 class FormulaHandler(ABC):
     """Base interface for formula handlers in the compiler-like evaluation system."""
 
     def __init__(
-        self, expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None, **kwargs: Any
+        self, expression_evaluator: Callable[[str, HierarchicalContextDict], Any] | None = None, **kwargs: Any
     ) -> None:
         """Initialize the handler with optional expression evaluator.
 
@@ -26,7 +26,7 @@ class FormulaHandler(ABC):
         """Determine if this handler can process the given formula."""
 
     @abstractmethod
-    def evaluate(self, formula: str, context: dict[str, ContextValue] | None = None) -> Any:
+    def evaluate(self, formula: str, context: HierarchicalContextDict) -> Any:
         """Evaluate the formula and return the result."""
 
     def get_handler_name(self) -> str:

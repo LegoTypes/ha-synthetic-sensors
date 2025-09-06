@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.helpers import entity_registry as er
 import yaml as yaml_lib
 
 from .config_models import FormulaConfig, SensorConfig
@@ -54,7 +55,17 @@ class YamlHandler:
         ]
 
         yaml_structure = self._build_yaml_structure(sensors, global_settings)
-        return yaml_lib.dump(yaml_structure, default_flow_style=False, sort_keys=False)
+        # Clean up any sentinel objects before serialization
+        cleaned_structure = self._clean_for_yaml_serialization(yaml_structure)
+
+        try:
+            return yaml_lib.dump(cleaned_structure, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            # Debug: Find the problematic object
+            _LOGGER.error("YAML serialization failed: %s", e)
+            # Try to convert everything to basic Python types as a fallback
+            basic_structure = self._convert_to_basic_types(cleaned_structure)
+            return yaml_lib.dump(basic_structure, default_flow_style=False, sort_keys=False)
 
     def _build_yaml_structure(self, sensors: list[SensorConfig], global_settings: dict[str, Any]) -> dict[str, Any]:
         """Build the YAML structure from sensors and global settings."""
@@ -74,6 +85,192 @@ class YamlHandler:
             yaml_data["sensors"] = sensors_dict
 
         return yaml_data
+
+    def _clean_for_yaml_serialization(self, obj: Any) -> Any:
+        """Recursively clean an object for YAML serialization, removing sentinel objects."""
+        # Check for sentinel objects first
+        if self._is_sentinel_object(obj):
+            return None
+
+        # Additional sentinel checks for objects that might slip through
+        if hasattr(obj, "__class__") and "sentinel" in str(obj.__class__).lower():
+            return None
+
+        if str(obj) == "sentinel.DEFAULT" or "sentinel" in str(type(obj)):
+            return None
+
+        # Handle different object types
+        result = obj
+        if self._is_dict_view_object(obj):
+            result = [self._clean_for_yaml_serialization(item) for item in obj]
+        if hasattr(obj, "__dataclass_fields__"):
+            result = self._clean_dataclass_object(obj)
+        if isinstance(obj, dict):
+            result = self._clean_dict_object(obj)
+        if isinstance(obj, list | tuple):
+            result = self._clean_list_object(obj)
+        return result
+
+    def _is_sentinel_object(self, obj: Any) -> bool:
+        """Check if object is a sentinel object that should be removed."""
+        if hasattr(obj, "__class__"):
+            class_name = obj.__class__.__name__
+            if class_name in ("_MISSING_TYPE", "sentinel"):
+                return True
+            if hasattr(obj, "__module__") and "sentinel" in str(obj.__module__):
+                return True
+
+        return str(obj) == "sentinel.DEFAULT"
+
+    def _is_dict_view_object(self, obj: Any) -> bool:
+        """Check if object is a dict view object."""
+        return hasattr(obj, "__class__") and obj.__class__.__name__ in ("dict_values", "dict_keys", "dict_items")
+
+    def _clean_dataclass_object(self, obj: Any) -> dict[str, Any]:
+        """Clean a dataclass object."""
+        obj_dict = {}
+        for field_name in obj.__dataclass_fields__:
+            field_value = getattr(obj, field_name)
+            cleaned_value = self._clean_for_yaml_serialization(field_value)
+            if not self._is_sentinel_value(cleaned_value):
+                obj_dict[field_name] = cleaned_value
+        return obj_dict
+
+    def _clean_dict_object(self, obj: dict[str, Any]) -> dict[str, Any]:
+        """Clean a dictionary object."""
+        cleaned_dict = {}
+        for k, v in obj.items():
+            cleaned_k = self._clean_for_yaml_serialization(k)
+            cleaned_v = self._clean_for_yaml_serialization(v)
+            if not self._is_sentinel_value(cleaned_k) and not self._is_sentinel_value(cleaned_v):
+                cleaned_dict[cleaned_k] = cleaned_v
+        return cleaned_dict
+
+    def _clean_list_object(self, obj: list[Any] | tuple[Any, ...]) -> list[Any]:
+        """Clean a list or tuple object."""
+        cleaned_list = []
+        for item in obj:
+            cleaned_item = self._clean_for_yaml_serialization(item)
+            if not self._is_sentinel_value(cleaned_item):
+                cleaned_list.append(cleaned_item)
+        return cleaned_list
+
+    def _is_sentinel_value(self, obj: Any) -> bool:
+        """Check if an object is a sentinel value that should be excluded from YAML."""
+        if obj is None:
+            return False  # None is a valid YAML value
+
+        # Check string representation first (most reliable)
+        if self._is_sentinel_string(obj):
+            return True
+
+        # Check class-based sentinel objects
+        if self._is_sentinel_class(obj):
+            return True
+
+        # Check dataclass field defaults
+        return bool(self._is_sentinel_dataclass_field(obj))
+
+    def _is_sentinel_string(self, obj: Any) -> bool:
+        """Check if object string representation indicates sentinel."""
+        obj_str = str(obj)
+        return obj_str == "sentinel.DEFAULT" or "sentinel.DEFAULT" in obj_str
+
+    def _is_sentinel_class(self, obj: Any) -> bool:
+        """Check if object class indicates sentinel."""
+        if not hasattr(obj, "__class__"):
+            return False
+
+        class_name = obj.__class__.__name__
+        if class_name in ("_MISSING_TYPE", "sentinel"):
+            return True
+
+        if "sentinel" in class_name.lower():
+            return True
+
+        return bool(hasattr(obj, "__module__") and obj.__module__ and "sentinel" in str(obj.__module__))
+
+    def _is_sentinel_dataclass_field(self, obj: Any) -> bool:
+        """Check if object is a sentinel dataclass field default."""
+        if not hasattr(obj, "__reduce__"):
+            return False
+
+        if hasattr(obj, "__reduce__"):
+            try:
+                reduce_result = obj.__reduce__()
+                if reduce_result and len(reduce_result) > 0:
+                    func = reduce_result[0]
+                    if hasattr(func, "__name__") and "sentinel" in func.__name__.lower():
+                        return True
+            except (TypeError, RuntimeError):
+                # Some objects have __reduce__ but it fails when called
+                pass
+
+        return False
+
+    def _convert_to_basic_types(self, obj: Any) -> Any:
+        """Convert complex objects to basic Python types for YAML serialization."""
+        # Check for basic types and sentinel values first
+        if obj is None or isinstance(obj, str | int | float | bool):
+            return obj
+
+        if self._is_sentinel_value(obj):
+            return None
+
+        # Handle sentinel objects that might have slipped through
+        if hasattr(obj, "__class__") and "sentinel" in str(obj.__class__).lower():
+            return None
+
+        # Handle any object that looks like a sentinel
+        if str(obj) == "sentinel.DEFAULT" or "sentinel" in str(type(obj)):
+            return None
+
+        # Handle different object types
+        result: Any = self._convert_other_to_basic_types(obj)
+        if isinstance(obj, dict):
+            result = self._convert_dict_to_basic_types(obj)
+        if isinstance(obj, list | tuple):
+            result = self._convert_list_to_basic_types(obj)
+        if hasattr(obj, "__dataclass_fields__"):
+            result = self._convert_dataclass_to_basic_types(obj)
+        return result
+
+    def _convert_dict_to_basic_types(self, obj: dict[str, Any]) -> dict[str, Any]:
+        """Convert dictionary to basic types."""
+        dict_result = {}
+        for k, v in obj.items():
+            converted_k = self._convert_to_basic_types(k)
+            converted_v = self._convert_to_basic_types(v)
+            if not self._is_sentinel_value(converted_k) and not self._is_sentinel_value(converted_v):
+                dict_result[str(converted_k)] = converted_v
+        return dict_result
+
+    def _convert_list_to_basic_types(self, obj: list[Any] | tuple[Any, ...]) -> list[Any]:
+        """Convert list or tuple to basic types."""
+        list_result: list[Any] = []
+        for item in obj:
+            converted_item = self._convert_to_basic_types(item)
+            if not self._is_sentinel_value(converted_item):
+                list_result.append(converted_item)
+        return list_result
+
+    def _convert_dataclass_to_basic_types(self, obj: Any) -> dict[str, Any]:
+        """Convert dataclass object to basic types."""
+        dataclass_result = {}
+        for field_name in obj.__dataclass_fields__:
+            if hasattr(obj, field_name):
+                field_value = getattr(obj, field_name)
+                converted_value = self._convert_to_basic_types(field_value)
+                if not self._is_sentinel_value(converted_value):
+                    dataclass_result[field_name] = converted_value
+        return dataclass_result
+
+    def _convert_other_to_basic_types(self, obj: Any) -> str | None:
+        """Convert other objects to basic types."""
+        try:
+            return str(obj)
+        except Exception:
+            return None
 
     def _build_sensor_dict(self, sensor_config: SensorConfig, global_settings: dict[str, Any]) -> dict[str, Any]:
         """Build sensor dictionary for YAML export."""
@@ -115,7 +312,21 @@ class YamlHandler:
 
         # Add sensor-level metadata if present
         if hasattr(sensor_config, "metadata") and sensor_config.metadata:
-            sensor_dict["metadata"] = sensor_config.metadata
+            # Create a copy of metadata to avoid modifying the original
+            metadata = sensor_config.metadata.copy()
+
+            # If the sensor has been created in HA, look up its current friendly name
+            # from the entity registry instead of using the stored value
+            if sensor_config.unique_id and self.storage_manager.integration_domain:
+                # Try to get the entity ID for this sensor
+                entity_id = self._get_entity_id_for_sensor(sensor_config.unique_id)
+                if entity_id:
+                    # Get the current friendly name from HA
+                    current_friendly_name = self._get_friendly_name_from_registry(entity_id)
+                    if current_friendly_name:
+                        metadata["friendly_name"] = current_friendly_name
+
+            sensor_dict["metadata"] = metadata
         # Note: Formula-level metadata is handled in _add_main_formula_details
 
     def _process_formulas(
@@ -284,7 +495,9 @@ class YamlHandler:
         """Parse simple string literal without operators."""
         try:
             # Check if it contains any mathematical operators
-            if not any(op in formula for op in ["+", "-", "*", "/", "(", ")"]):
+            from .constants_formula import ARITHMETIC_OPERATORS
+
+            if not any(op in formula for op in ARITHMETIC_OPERATORS):
                 return formula
         except (ValueError, AttributeError):
             pass
@@ -340,7 +553,12 @@ class YamlHandler:
         """Convert Python values to YAML representation.
 
         Specifically handles Python None → STATE_NONE for YAML readability.
+        Also filters out dataclass sentinel objects that shouldn't be serialized.
         """
+        # Skip dataclass sentinel objects (MISSING values)
+        if hasattr(value, "__class__") and value.__class__.__name__ == "_MISSING_TYPE":
+            return None
+
         if value is None:
             return STATE_NONE_YAML
         return value
@@ -406,3 +624,43 @@ class YamlHandler:
                 serialized_variables[name] = value
 
         return serialized_variables
+
+    def _get_entity_id_for_sensor(self, unique_id: str) -> str | None:
+        """Get the entity ID for a sensor from its unique ID.
+
+        Args:
+            unique_id: The unique ID of the sensor
+
+        Returns:
+            The entity ID if found, None otherwise
+        """
+        # Use the integration domain from storage manager
+        domain = self.storage_manager.integration_domain
+
+        # Try to find the entity in the registry
+        entity_registry = er.async_get(self.storage_manager.hass)
+        entity = entity_registry.async_get_entity_id("sensor", domain, unique_id)
+
+        return entity
+
+    def _get_friendly_name_from_registry(self, entity_id: str) -> str | None:
+        """Get the current friendly name from the entity registry.
+
+        Args:
+            entity_id: The entity ID to look up
+
+        Returns:
+            The current friendly name if found, None otherwise
+        """
+        entity_registry = er.async_get(self.storage_manager.hass)
+        entity = entity_registry.async_get(entity_id)
+
+        if entity and entity.name:
+            return str(entity.name)
+
+        # Fall back to checking the state
+        state = self.storage_manager.hass.states.get(entity_id)
+        if state and state.attributes.get("friendly_name"):
+            return str(state.attributes["friendly_name"])
+
+        return None

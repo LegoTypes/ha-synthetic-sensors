@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import logging
-import re
 import traceback
 from typing import Any, cast
 
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import STATE_UNKNOWN, HomeAssistant
+from homeassistant.helpers.typing import StateType
 
 from .alternate_state_eval import evaluate_formula_alternate
-from .alternate_state_processor import alternate_state_processor
+from .alternate_state_processor import AlternateStateProcessor
 from .cache import CacheConfig
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
-from .constants_alternate import identify_alternate_state_value
+from .constants_alternate import STATE_NONE_YAML, identify_alternate_state_value
 from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_STATE, RESULT_KEY_UNAVAILABLE_DEPENDENCIES
 from .constants_formula import is_reserved_word
 from .dependency_parser import DependencyParser
@@ -64,15 +64,8 @@ from .exceptions import (
 )
 from .formula_evaluator_service import FormulaEvaluatorService
 from .formula_preprocessor import FormulaPreprocessor
-from .reference_value_manager import ReferenceValueManager
-from .type_definitions import (
-    CacheStats,
-    ContextValue,
-    DataProviderCallback,
-    DependencyValidation,
-    EvaluationResult,
-    ReferenceValue,
-)
+from .hierarchical_context_dict import HierarchicalContextDict
+from .type_definitions import CacheStats, DataProviderCallback, DependencyValidation, EvaluationResult, ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,7 +74,7 @@ class FormulaEvaluator(ABC):
     """Abstract base class for formula evaluators."""
 
     @abstractmethod
-    def evaluate_formula(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> EvaluationResult:
+    def evaluate_formula(self, config: FormulaConfig, context: HierarchicalContextDict) -> EvaluationResult:
         """Evaluate a formula configuration."""
 
     @abstractmethod
@@ -185,7 +178,7 @@ class Evaluator(FormulaEvaluator):
 
         # Initialize phase modules for compiler-like evaluation
         self._variable_resolution_phase = VariableResolutionPhase(self._sensor_to_backing_mapping, data_provider_callback, hass)
-        self._dependency_management_phase = DependencyManagementPhase()
+        self._dependency_management_phase = DependencyManagementPhase(hass)
         self._context_building_phase = ContextBuildingPhase()
         self._pre_evaluation_phase = PreEvaluationPhase()
         self._sensor_registry_phase = SensorRegistryPhase()
@@ -197,11 +190,17 @@ class Evaluator(FormulaEvaluator):
         self._generic_dependency_manager = GenericDependencyManager()
         self._generic_dependency_manager.set_sensor_registry_phase(self._sensor_registry_phase)
 
+        # Initialize alternate state processor with evaluator injection for proper pipeline processing
+        self._alternate_state_processor = AlternateStateProcessor(evaluator=self)
+
         # Support for push-based entity registration (new pattern)
         self._registered_integration_entities: set[str] | None = None
 
         # Store data provider callback for backward compatibility
         self._data_provider_callback = data_provider_callback
+
+        # Store the last accumulated evaluation context
+        self._last_accumulated_context: HierarchicalContextDict | None = None
 
         # Set dependencies for context building phase (after all attributes are initialized)
         self._context_building_phase.set_evaluator_dependencies(
@@ -318,51 +317,82 @@ class Evaluator(FormulaEvaluator):
         """Get the current set of integration entities using the push-based pattern."""
         return self._dependency_handler.get_integration_entities()
 
-    def evaluate_formula(self, config: FormulaConfig, context: dict[str, ContextValue] | None = None) -> EvaluationResult:
+    def evaluate_formula(
+        self, config: FormulaConfig, context: HierarchicalContextDict | dict[str, Any] | None
+    ) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling."""
+        # ARCHITECTURE FIX: Create HierarchicalContextDict if None or dict is passed
+        if context is None:
+            from .evaluation_context import HierarchicalEvaluationContext
+
+            hierarchical_context = HierarchicalEvaluationContext("sensor")
+            context = HierarchicalContextDict(hierarchical_context)
+        elif isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
+            from .evaluation_context import HierarchicalEvaluationContext
+            from .type_definitions import ReferenceValue
+
+            hierarchical_context = HierarchicalEvaluationContext("sensor")
+            hierarchical_dict = HierarchicalContextDict(hierarchical_context)
+            for key, value in context.items():
+                # Ensure all values are wrapped in ReferenceValue objects per architecture
+                if not isinstance(value, ReferenceValue):
+                    value = ReferenceValue(reference=key, value=value)
+                hierarchical_context.set(key, value)
+            context = hierarchical_dict
+
         # Convert raw context values to ReferenceValue objects for API convenience
         normalized_context = self._normalize_context_values(context)
         return self.evaluate_formula_with_sensor_config(config, normalized_context, None)
 
-    def _normalize_context_values(self, context: dict[str, ContextValue] | None) -> dict[str, ContextValue] | None:
+    def _normalize_context_values(self, context: HierarchicalContextDict) -> HierarchicalContextDict:
         """Convert raw context values to ReferenceValue objects for API convenience.
 
         This allows the evaluator API to accept raw Python values while ensuring that
         the internal processing pipeline only deals with ReferenceValue objects.
         """
-        if context is None:
-            return None
-
-        normalized_context: dict[str, ContextValue] = {}
-
-        for key, value in context.items():
-            if isinstance(value, ReferenceValue):
-                # Already a ReferenceValue - use directly
-                normalized_context[key] = value
-            else:
-                # Convert raw value to ReferenceValue for internal consistency
-                ReferenceValueManager.set_variable_with_reference_value(normalized_context, key, key, value)
-
-        return normalized_context
+        # Context should already be hierarchical and properly structured
+        # The HierarchicalContextDict enforces ReferenceValue architecture at assignment time
+        return context
 
     def _perform_pre_evaluation_checks(
         self,
         config: FormulaConfig,
-        context: dict[str, ContextValue] | None,
+        context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
         formula_name: str,
-    ) -> tuple[EvaluationResult | None, dict[str, ContextValue] | None]:
+    ) -> tuple[EvaluationResult | None, HierarchicalContextDict]:
         """Perform all pre-evaluation checks and return error result if any fail."""
-        return self._pre_evaluation_phase.perform_pre_evaluation_checks(config, context, sensor_config, formula_name)
+        return self._pre_evaluation_phase.perform_pre_evaluation_checks(
+            config, context, sensor_config, formula_name, alternate_state_processor_instance=self._alternate_state_processor
+        )
 
     def evaluate_formula_with_sensor_config(
         self,
         config: FormulaConfig,
-        context: dict[str, ContextValue] | None = None,
+        context: HierarchicalContextDict | dict[str, Any] | None,
         sensor_config: SensorConfig | None = None,
         bypass_dependency_management: bool = False,
     ) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling and sensor context."""
+        # ARCHITECTURE FIX: Create HierarchicalContextDict if None or dict is passed
+        if context is None:
+            from .evaluation_context import HierarchicalEvaluationContext
+
+            hierarchical_context = HierarchicalEvaluationContext("sensor")
+            context = HierarchicalContextDict(hierarchical_context)
+        elif isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
+            from .evaluation_context import HierarchicalEvaluationContext
+            from .type_definitions import ReferenceValue
+
+            hierarchical_context = HierarchicalEvaluationContext("sensor")
+            hierarchical_dict = HierarchicalContextDict(hierarchical_context)
+            for key, value in context.items():
+                # Ensure all values are wrapped in ReferenceValue objects per architecture
+                if not isinstance(value, ReferenceValue):
+                    value = ReferenceValue(reference=key, value=value)
+                hierarchical_context.set(key, value)
+            context = hierarchical_dict
+
         formula_name = config.name or config.id
 
         result: EvaluationResult
@@ -378,8 +408,19 @@ class Evaluator(FormulaEvaluator):
         ) as known_err:
             result = self._handle_known_errors(known_err, formula_name)
         except AlternateStateDetected as alt_state_err:
-            # Let AlternateStateDetected propagate to core formula evaluator
-            raise alt_state_err
+            # Process AlternateStateDetected through the alternate state handler (Phase 4)
+            # This follows the pipeline flow where alternate states are handled centrally
+            raw_result = self._alternate_state_processor.process_evaluation_result(
+                alt_state_err.alternate_state_value,  # The alternate state value
+                alt_state_err,  # The exception object
+                context,
+                config,
+                sensor_config,
+                self._execution_engine.core_evaluator,
+                self._resolve_all_references_in_formula,
+            )
+            result = EvaluatorResults.create_success_from_result(raw_result)
+            return result
         except Exception as err_unknown:
             # Log full exception with traceback to aid debugging of integration tests
             _LOGGER.exception("Unhandled exception during evaluation of formula '%s': %s", formula_name, err_unknown)
@@ -387,13 +428,6 @@ class Evaluator(FormulaEvaluator):
             traceback.print_exc()
             result = self._error_handler.handle_evaluation_error(err_unknown, formula_name)
         _LOGGER.debug("evaluate_formula_with_sensor_config result for %s: %s", formula_name, result)
-        # Add extra debug logging for energy sensors with complex FALLBACK logic
-        if sensor_config and "energy" in formula_name.lower():
-            _LOGGER.debug(
-                "Energy sensor evaluation - config: %s, context keys: %s",
-                sensor_config.alternate_states if hasattr(sensor_config, "alternate_states") else "None",
-                list(context.keys()) if context else "None",
-            )
         return result
 
     def _handle_known_errors(self, err: Exception, formula_name: str) -> EvaluationResult:
@@ -410,7 +444,7 @@ class Evaluator(FormulaEvaluator):
     def _evaluate_formula_core(
         self,
         config: FormulaConfig,
-        context: dict[str, ContextValue] | None,
+        context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
         bypass_dependency_management: bool,
         formula_name: str,
@@ -421,9 +455,7 @@ class Evaluator(FormulaEvaluator):
         if check_result is not None:
             return check_result
 
-        # Ensure eval_context is not None (should be guaranteed by the helper method)
-        if eval_context is None:
-            return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
+        # eval_context is now guaranteed to be non-None since context is required
 
         # Perform variable resolution
         resolution_result = self._perform_variable_resolution(config, sensor_config, eval_context)
@@ -444,20 +476,12 @@ class Evaluator(FormulaEvaluator):
         )
 
     def _perform_variable_resolution(
-        self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]
+        self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
     ) -> Any:
         """Perform variable resolution with HA state detection."""
         try:
-            _LOGGER.debug("Variable resolution start: formula=%s, context_keys=%s", config.formula, list(eval_context.keys()))
             resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
                 config.formula, sensor_config, eval_context, config
-            )
-            _LOGGER.debug(
-                "Variable resolution complete: resolved_formula=%s, has_ha_state=%s, ha_state_value=%s, early_result=%s",
-                resolution_result.resolved_formula,
-                getattr(resolution_result, "has_ha_state", None),
-                getattr(resolution_result, "ha_state_value", None),
-                getattr(resolution_result, "early_result", None),
             )
             return resolution_result
         except Exception as e:
@@ -469,22 +493,15 @@ class Evaluator(FormulaEvaluator):
         self,
         resolution_result: Any,
         config: FormulaConfig,
-        eval_context: dict[str, ContextValue],
+        eval_context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
     ) -> EvaluationResult | None:
         """Handle HA state detection results from variable resolution."""
         if not getattr(resolution_result, "has_ha_state", False):
             return None
 
-        _LOGGER.debug(
-            "HA state detected during variable resolution: ha_state_value=%s, early_result=%s",
-            getattr(resolution_result, "ha_state_value", None),
-            getattr(resolution_result, "early_result", None),
-        )
-
         # If an early_result exists, send it to the alternate-state processor
         if getattr(resolution_result, "early_result", None) is not None:
-            _LOGGER.debug("Passing early_result to alternate_state_processor due to HA state detection")
             return self._process_early_result(resolution_result.early_result, config, eval_context, sensor_config)
 
         # No early_result to process: return a HA-state-preserving result
@@ -495,20 +512,20 @@ class Evaluator(FormulaEvaluator):
                 getattr(resolution_result, "unavailable_dependencies", None),
             )
 
-        # If ha_state_value is None, create a default success result
+        # If ha_state_value is None, preserve None for proper alternate state classification
         return EvaluatorResults.create_success_result_with_state(
-            STATE_UNKNOWN,
+            STATE_NONE_YAML,  # Use STATE_NONE_YAML instead of STATE_UNKNOWN to preserve None value
             unavailable_dependencies=getattr(resolution_result, "unavailable_dependencies", None),
         )
 
     def _choose_evaluation_strategy(
         self,
         config: FormulaConfig,
-        context: dict[str, ContextValue] | None,
+        context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
         bypass_dependency_management: bool,
         resolution_result: Any,
-        eval_context: dict[str, ContextValue],
+        eval_context: HierarchicalContextDict,
         formula_name: str,
     ) -> EvaluationResult:
         """Choose between dependency-aware and normal evaluation."""
@@ -525,9 +542,8 @@ class Evaluator(FormulaEvaluator):
                 alternate_state_handler=config.alternate_state_handler,
             )
             # Mypy narrowing: guarded by _should_use_dependency_management, so both are non-None here
-            narrowed_context = cast(dict[str, ContextValue], context)
             narrowed_sensor_config = cast(SensorConfig, sensor_config)
-            return self._evaluate_with_dependency_management(resolved_config, narrowed_context, narrowed_sensor_config)
+            return self._evaluate_with_dependency_management(resolved_config, context, narrowed_sensor_config)
 
         # Evaluate the formula normally
         return self._evaluate_formula_normally(config, eval_context, context, sensor_config, formula_name)
@@ -536,15 +552,14 @@ class Evaluator(FormulaEvaluator):
         self,
         early_result: Any,
         config: FormulaConfig,
-        eval_context: dict[str, ContextValue],
+        eval_context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
     ) -> EvaluationResult:
         """Convert early results to EvaluationResult format with potential alternate state handling."""
-        _LOGGER.debug("Evaluator._process_early_result: Processing early result from Phase 1 or 2.5: %s", early_result)
 
         # Use the alternate state processor to handle the early result
         # This consolidates all alternate state processing in Phase 4
-        # CRITICAL FIX: When alternate state processor returns None (no handler found),
+        # When alternate state processor returns None (no handler found),
         # preserve the None instead of falling back to early_result
         return process_alternate_state_result(
             result=early_result,
@@ -552,6 +567,7 @@ class Evaluator(FormulaEvaluator):
             eval_context=eval_context,
             sensor_config=sensor_config,
             core_evaluator=self._execution_engine.core_evaluator,
+            alternate_state_processor_instance=self._alternate_state_processor,
             resolve_all_references_in_formula=self._resolve_all_references_in_formula,
             pre_eval=True,
         )
@@ -559,7 +575,7 @@ class Evaluator(FormulaEvaluator):
     def _should_use_dependency_management(
         self,
         sensor_config: SensorConfig | None,
-        context: dict[str, ContextValue] | None,
+        context: HierarchicalContextDict,
         bypass_dependency_management: bool,
         config: FormulaConfig,
     ) -> bool:
@@ -573,8 +589,8 @@ class Evaluator(FormulaEvaluator):
     def _evaluate_formula_normally(
         self,
         config: FormulaConfig,
-        eval_context: dict[str, ContextValue],
-        context: dict[str, ContextValue] | None,
+        eval_context: HierarchicalContextDict,
+        context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
         formula_name: str,
     ) -> EvaluationResult:
@@ -589,7 +605,7 @@ class Evaluator(FormulaEvaluator):
         return EvaluatorResults.create_success_from_result(result_value)
 
     def _extract_and_prepare_dependencies(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None = None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None = None
     ) -> tuple[set[str], set[str]]:
         """Extract dependencies and prepare them for evaluation."""
         return self._dependency_management_phase.extract_and_prepare_dependencies(config, context, sensor_config)
@@ -612,7 +628,7 @@ class Evaluator(FormulaEvaluator):
         """Convert dependency management phase result to EvaluationResult."""
         return EvaluatorResults.from_dependency_phase_result(result)
 
-    def _validate_evaluation_context(self, eval_context: dict[str, ContextValue], formula_name: str) -> EvaluationResult | None:
+    def _validate_evaluation_context(self, eval_context: HierarchicalContextDict, formula_name: str) -> EvaluationResult | None:
         """Validate that evaluation context has all required variables."""
         result = self._dependency_management_phase.validate_evaluation_context(eval_context, formula_name)
 
@@ -636,9 +652,12 @@ class Evaluator(FormulaEvaluator):
         """
         # Check if the formula contains potential attribute references
         # Look for simple identifiers that could be attribute names
-        pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b"
+        # Use centralized identifier pattern from regex helper
+        from .regex_helper import create_identifier_pattern
 
-        for match in re.finditer(pattern, config.formula):
+        pattern = create_identifier_pattern()
+
+        for match in pattern.finditer(config.formula):
             identifier = match.group(1)
 
             # Skip reserved words
@@ -657,7 +676,7 @@ class Evaluator(FormulaEvaluator):
         return False
 
     def _evaluate_with_dependency_management(
-        self, config: FormulaConfig, context: dict[str, ContextValue], sensor_config: SensorConfig
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig
     ) -> EvaluationResult:
         """
         Evaluate a formula with automatic dependency management.
@@ -702,13 +721,13 @@ class Evaluator(FormulaEvaluator):
             return self._fallback_to_normal_evaluation(config, context, sensor_config)
 
     def fallback_to_normal_evaluation(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None
     ) -> EvaluationResult:
         """Public method to fallback to normal evaluation if dependency management fails."""
         return self._fallback_to_normal_evaluation(config, context, sensor_config)
 
     def _fallback_to_normal_evaluation(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None
     ) -> EvaluationResult:
         """Fallback to normal evaluation if dependency management fails."""
         formula_name = config.name or config.id
@@ -718,9 +737,7 @@ class Evaluator(FormulaEvaluator):
         if check_result:
             return check_result
 
-        # Ensure eval_context is not None
-        if eval_context is None:
-            return EvaluatorResults.create_error_result("Failed to build evaluation context", state="unknown")
+        # eval_context is now guaranteed to be non-None since context is required
 
         # Evaluate the formula
         result = self._execute_formula_evaluation(config, eval_context, context, config.id, sensor_config)
@@ -729,10 +746,95 @@ class Evaluator(FormulaEvaluator):
         # Normalize all results through shared helper to ensure consistent STATE_OK / STATE_UNKNOWN behavior
         return EvaluatorResults.create_success_from_result(result)
 
+    def _evaluate_alternate_state_handler(
+        self,
+        alternate_state_value: str,
+        config: FormulaConfig,
+        context: HierarchicalContextDict,
+        sensor_config: SensorConfig | None,
+    ) -> Any:
+        """Evaluate alternate state handler using the same pipeline as attributes.
+
+        Alternate state handlers are treated exactly like attributes - they inherit the same context
+        and go through the standard evaluation pipeline with no special handling. They can have
+        their own alternate state handlers, creating recursive evaluation chains.
+
+        The evaluation uses the standard pipeline, but the result value is extracted for compatibility
+        with the main evaluation pipeline's _finalize_result method.
+
+        Args:
+            alternate_state_value: The alternate state that triggered the handler (e.g., 'unavailable')
+            config: Original formula configuration with alternate_state_handler
+            context: Current evaluation context (inherited from main evaluation)
+            sensor_config: Optional sensor configuration
+
+        Returns:
+            Extracted value from evaluation result (for pipeline compatibility)
+        """
+        if not config.alternate_state_handler:
+            return None
+
+        # Get the handler value for this alternate state
+        handler_value = None
+        if alternate_state_value == "unavailable":
+            handler_value = config.alternate_state_handler.unavailable
+        elif alternate_state_value == "unknown":
+            handler_value = config.alternate_state_handler.unknown
+        elif alternate_state_value == "none":
+            handler_value = config.alternate_state_handler.none
+        else:
+            # Try fallback handler
+            handler_value = config.alternate_state_handler.fallback
+
+        _LOGGER.debug("Alternate state handler: state=%s, handler_value=%s", alternate_state_value, handler_value)
+
+        if handler_value is None:
+            _LOGGER.debug("No handler found for alternate state: %s", alternate_state_value)
+            return None
+
+        # Handle literal values (str, int, float, bool)
+        if isinstance(handler_value, str | int | float | bool):
+            # For string literals, check if they look like formulas
+            if isinstance(handler_value, str) and self._looks_like_formula(handler_value):
+                # Treat as formula
+                alternate_config = FormulaConfig(
+                    id=f"{config.id}_alternate_{alternate_state_value}",
+                    formula=handler_value,
+                    variables={},  # No additional variables for simple formula strings
+                )
+            else:
+                # Return literal value directly
+                return handler_value
+        else:
+            # Handle formula objects {formula: str, variables: dict}
+            alternate_config = FormulaConfig(
+                id=f"{config.id}_alternate_{alternate_state_value}",
+                formula=handler_value["formula"],
+                variables=handler_value["variables"],
+            )
+
+        # Evaluate using the standard pipeline - exactly like attributes
+        # The context is inherited and the evaluator handles everything normally
+        result = self.evaluate_formula(alternate_config, context)
+
+        # Extract the value from the evaluation result for compatibility with _finalize_result
+        # This is different from attributes which use the full result, but alternate state handlers
+        # need to return the actual value to be processed by the main evaluation pipeline
+        if isinstance(result, dict) and "value" in result:
+            return result["value"]
+        else:
+            return result
+
+    def _looks_like_formula(self, s: str) -> bool:
+        """Check if a string looks like a formula expression."""
+        from .constants_formula import ALL_OPERATORS
+
+        return any(op in s for op in ALL_OPERATORS)
+
     def _try_formula_alternate_state_handler(
         self,
         config: FormulaConfig,
-        eval_context: dict[str, ContextValue],
+        eval_context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
         error: Exception,
     ) -> bool | str | float | int | None:
@@ -801,7 +903,7 @@ class Evaluator(FormulaEvaluator):
         self,
         candidates: list[Any],
         config: FormulaConfig,
-        eval_context: dict[str, ContextValue],
+        eval_context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
     ) -> bool | str | float | int | None:
         """Execute handler candidates until one succeeds."""
@@ -831,8 +933,8 @@ class Evaluator(FormulaEvaluator):
     def _execute_formula_evaluation(
         self,
         config: FormulaConfig,
-        eval_context: dict[str, ContextValue],
-        context: dict[str, ContextValue] | None,
+        eval_context: HierarchicalContextDict,
+        context: HierarchicalContextDict,
         cache_key_id: str,
         sensor_config: SensorConfig | None = None,
     ) -> float | str | bool | None:
@@ -847,6 +949,7 @@ class Evaluator(FormulaEvaluator):
         RELATIONSHIP: This method delegates the actual formula evaluation to CoreFormulaEvaluator
         via _execute_with_handler -> FormulaEvaluatorService -> CoreFormulaEvaluator.evaluate_formula
         """
+
         # PHASE 1: Variable resolution
         resolution_result, resolved_formula = self._resolve_formula_variables(config, sensor_config, eval_context)
 
@@ -864,47 +967,61 @@ class Evaluator(FormulaEvaluator):
             # Check if evaluation result is an alternate state
             alternate_state = identify_alternate_state_value(result)
             if isinstance(alternate_state, str):
-                raise AlternateStateDetected(f"Evaluation returned alternate state: {result}", alternate_state)
+                raise AlternateStateDetected(f"Evaluation returned alternate state: {result}", result, alternate_state)
 
         except AlternateStateDetected as e:
-            # Handle alternate state detection
+            # Handle alternate state detection using recursive evaluation
+            _LOGGER.debug("AlternateStateDetected for formula %s: %s", config.id, e.alternate_state_value)
             if config.alternate_state_handler:
-                result = alternate_state_processor.process_evaluation_result(
-                    e.alternate_state_value,
-                    None,
-                    handler_context,
-                    config,
-                    sensor_config,
-                    core_evaluator=self._execution_engine.core_evaluator,
-                    resolve_all_references_in_formula=self._resolve_all_references_in_formula,
-                )
+                result = self._evaluate_alternate_state_handler(e.alternate_state_value, config, handler_context, sensor_config)
                 _LOGGER.debug("Formula %s resolved using alternate state handler = %s", config.id, result)
             else:
                 # No alternate state handler configured, return the alternate state value
                 result = e.alternate_state_value
 
         # PHASE 4: Validate and finalize result
-        return self._finalize_result(result, config, context, cache_key_id, sensor_config)
+        final_result = self._finalize_result(result, config, context, cache_key_id, sensor_config)
+
+        # Store the accumulated context for later retrieval
+        # CRITICAL FIX: Store reference to original context, not a copy
+        # This ensures that modifications during variable resolution are preserved
+        if context:
+            self._last_accumulated_context = context  # No .copy() - preserve reference
+            context_uuid = context.get("_context_uuid", None) or "NO_UUID"
+            _LOGGER.info(
+                "CONTEXT_STORED: UUID=%s Stored reference to context with %d items after evaluating %s",
+                context_uuid,
+                len(self._last_accumulated_context),
+                config.id,
+            )
+
+        return final_result
 
     def _resolve_formula_variables(
-        self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]
+        self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
     ) -> tuple[VariableResolutionResult, str]:
         """Resolve formula variables and return resolution result and resolved formula."""
+        # BULLETPROOF: Log context type at evaluator entry
+        _LOGGER.warning(
+            "CONTEXT_FLOW_EVALUATOR: Received context id=%d type=%s in evaluator", id(eval_context), type(eval_context).__name__
+        )
+
         if self._formula_processor is None:
             raise RuntimeError("Formula processor not initialized")
         return self._formula_processor.resolve_formula_variables(config, sensor_config, eval_context)
 
     def _prepare_handler_context(
-        self, eval_context: dict[str, ContextValue], resolution_result: VariableResolutionResult
-    ) -> dict[str, ContextValue]:
+        self, eval_context: HierarchicalContextDict, resolution_result: VariableResolutionResult
+    ) -> HierarchicalContextDict:
         """Prepare context for formula handlers."""
         if self._formula_processor is None:
             raise RuntimeError("Formula processor not initialized")
         return self._formula_processor.prepare_handler_context(eval_context, resolution_result)
 
-    def _extract_values_for_enhanced_evaluation(self, context: dict[str, ContextValue]) -> dict[str, Any]:
+    def _extract_values_for_enhanced_evaluation(self, context: HierarchicalContextDict) -> dict[str, Any]:
         """Extract values from ReferenceValue objects for enhanced SimpleEval evaluation."""
         enhanced_context: dict[str, Any] = {}
+
         for key, value in context.items():
             if isinstance(value, ReferenceValue):
                 raw = value.value
@@ -916,14 +1033,15 @@ class Evaluator(FormulaEvaluator):
                 enhanced_context[key] = alt if isinstance(alt, str) else raw
             else:
                 enhanced_context[key] = value
+
         return enhanced_context
 
     def _execute_with_handler(
         self,
         config: FormulaConfig,
         resolved_formula: str,
-        handler_context: dict[str, ContextValue],
-        eval_context: dict[str, ContextValue],
+        handler_context: HierarchicalContextDict,
+        eval_context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
     ) -> float | str | bool | None:
         """Execute formula using the shared formula evaluation service.
@@ -945,7 +1063,7 @@ class Evaluator(FormulaEvaluator):
         self,
         result: float | str | bool | None,
         config: FormulaConfig,
-        context: dict[str, ContextValue] | None,
+        context: HierarchicalContextDict,
         cache_key_id: str,
         sensor_config: SensorConfig | None,
     ) -> float | str | bool | None:
@@ -966,10 +1084,10 @@ class Evaluator(FormulaEvaluator):
     def _build_evaluation_context(
         self,
         dependencies: set[str],
-        context: dict[str, ContextValue] | None = None,
+        context: HierarchicalContextDict,
         config: FormulaConfig | None = None,
         sensor_config: SensorConfig | None = None,
-    ) -> dict[str, ContextValue]:
+    ) -> HierarchicalContextDict:
         """Build evaluation context from dependencies and configuration."""
         return self._context_building_phase.build_evaluation_context(dependencies, context, config, sensor_config)
 
@@ -977,7 +1095,7 @@ class Evaluator(FormulaEvaluator):
         self,
         formula: str,
         sensor_config: SensorConfig | None,
-        eval_context: dict[str, ContextValue],
+        eval_context: HierarchicalContextDict,
         formula_config: FormulaConfig | None = None,
     ) -> str:
         """Delegate to the Variable Resolution Phase for complete resolution."""
@@ -1000,10 +1118,19 @@ class Evaluator(FormulaEvaluator):
 
     def get_evaluation_context(
         self, formula_config: FormulaConfig, sensor_config: SensorConfig | None = None
-    ) -> dict[str, ContextValue]:
+    ) -> HierarchicalContextDict:
         """Get the evaluation context for a formula configuration."""
-        dependencies, _ = self._extract_and_prepare_dependencies(formula_config, None, sensor_config)
-        return self._build_evaluation_context(dependencies, None, formula_config, sensor_config)
+        # Return the accumulated context from the last evaluation
+        if self._last_accumulated_context:
+            _LOGGER.info("CONTEXT_RETRIEVED: Returning accumulated context with %d items", len(self._last_accumulated_context))
+            return self._last_accumulated_context  # No .copy() - return reference
+
+        # ARCHITECTURE VIOLATION: Should never rebuild context from scratch
+        raise RuntimeError(
+            "EVALUATOR_VIOLATION: get_evaluation_context called without accumulated context!\n"
+            "This violates the 'build context, not start with empty' architecture.\n"
+            "Evaluator should always have accumulated context from previous phases."
+        )
 
     # Delegate cache operations to handler
     def clear_cache(self, formula_name: str | None = None) -> None:
@@ -1013,6 +1140,10 @@ class Evaluator(FormulaEvaluator):
     def start_update_cycle(self) -> None:
         """Start a new evaluation update cycle."""
         self._config_utils.start_update_cycle(self._cache_handler)
+
+    def get_last_discovered_entities(self) -> set[str]:
+        """Get entities discovered during the last evaluation."""
+        return self._variable_resolution_phase.last_discovered_entities
 
     def end_update_cycle(self) -> None:
         """End current evaluation update cycle."""
@@ -1095,7 +1226,7 @@ class Evaluator(FormulaEvaluator):
         """Get all registered sensor names."""
         return self._sensor_registry.get_registered_sensors()
 
-    def _evaluate_expression_callback(self, expression: str, context: dict[str, ContextValue] | None = None) -> ContextValue:
+    def _evaluate_expression_callback(self, expression: str, context: HierarchicalContextDict) -> StateType:
         """
         Expression evaluator callback for handlers that need to delegate complex expressions.
 

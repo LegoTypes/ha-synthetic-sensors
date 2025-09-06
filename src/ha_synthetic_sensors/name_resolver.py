@@ -7,7 +7,6 @@ allowing formulas to reference Home Assistant entities and resolve their values.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
@@ -86,10 +85,9 @@ class NameResolver:
             str: Normalized name suitable for use as a variable in formulas
         """
         # Replace spaces, hyphens, and other special characters with underscores
-        normalized = re.sub(r"[^a-zA-Z0-9_]", "_", name.lower())
+        from .regex_helper import normalize_name_to_identifier
 
-        # Remove multiple consecutive underscores
-        normalized = re.sub(r"_+", "_", normalized)
+        normalized = normalize_name_to_identifier(name)
 
         # Remove leading/trailing underscores
         normalized = normalized.strip("_")
@@ -167,9 +165,10 @@ class NameResolver:
         Returns:
             set: Set of entity IDs found in the formula
         """
-        # Pattern to match entity('entity_id') calls
-        pattern = r'entity\(["\']([^"\']+)["\']\)'
-        matches = re.findall(pattern, formula)
+        # Use centralized entity function extraction from regex helper
+        from .regex_helper import extract_entity_function_calls
+
+        matches = extract_entity_function_calls(formula)
         return set(matches)
 
     def get_formula_dependencies(self, formula: str) -> FormulaDependencies:
@@ -269,9 +268,10 @@ class NameResolver:
             True if valid, False otherwise
         """
         # Variable names must start with a letter or underscore
-        # and contain only letters, numbers, and underscores
-        pattern = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
-        return bool(re.match(pattern, name))
+        # Use centralized variable name validation from regex helper
+        from .regex_helper import is_valid_variable_name
+
+        return is_valid_variable_name(name)
 
     def validate_sensor_config(self, sensor_config: dict[str, Any]) -> dict[str, Any]:
         """
@@ -345,9 +345,10 @@ class NameResolver:
         entity_ids = []
 
         # Check for direct entity references (domain.entity format)
-        # Simple regex to find potential entity IDs
-        pattern = r"\b[a-z_]+\.[a-z0-9_]+\b"
-        matches = re.findall(pattern, formula)
+        # Use centralized potential entity ID extraction from regex helper
+        from .regex_helper import extract_potential_entity_ids
+
+        matches = extract_potential_entity_ids(formula)
 
         for match in matches:
             if self.validate_entity_id(match):

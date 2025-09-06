@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 from .config_models import FormulaConfig, SensorConfig
 from .constants_evaluation_results import (
@@ -23,7 +26,6 @@ from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_error_handler import EvaluatorErrorHandler
 from .evaluator_handlers import HandlerFactory
 from .exceptions import BackingEntityResolutionError
-from .type_definitions import ContextValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,8 +61,8 @@ class FormulaExecutionEngine:
         self,
         config: FormulaConfig,
         resolved_formula: str,
-        handler_context: dict[str, ContextValue],
-        eval_context: dict[str, ContextValue],
+        handler_context: HierarchicalContextDict,
+        eval_context: HierarchicalContextDict,
         sensor_config: SensorConfig | None,
     ) -> float | str | bool | None:
         """Execute formula evaluation with proper handler routing.

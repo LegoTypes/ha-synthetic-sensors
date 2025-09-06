@@ -4,7 +4,7 @@ sensors:
     name: Hybrid Power Analysis
     formula: local_meter_power + grid_power + solar_power
     variables:
-      local_meter_power: span.meter_001
+      local_meter_power: sensor.span_meter_001
       grid_power: sensor.grid_power
       solar_power: sensor.solar_inverter
     metadata:
@@ -15,8 +15,8 @@ sensors:
     name: Internal Efficiency
     formula: internal_sensor_a / internal_sensor_b * 100
     variables:
-      internal_sensor_a: span.efficiency_input
-      internal_sensor_b: span.efficiency_baseline
+      internal_sensor_a: sensor.span_efficiency_input
+      internal_sensor_b: sensor.span_efficiency_baseline
     metadata:
       unit_of_measurement: '%'
       device_class: power_factor
@@ -44,11 +44,11 @@ sensors:
         metadata:
           unit_of_measurement: Wh
       simple_mixed:
-        formula: span.internal_temp + 5
+        formula: sensor.span_internal_temp + 5
         metadata:
           unit_of_measurement: °C
     variables:
-      local_data: span.local_sensor
+      local_data: sensor.span_local_sensor
       external_data: sensor.external_sensor
     metadata:
       unit_of_measurement: W

@@ -13,7 +13,6 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from enum import Enum
 import logging
-import re
 from typing import Any, TypedDict
 
 from homeassistant.exceptions import ConfigEntryError
@@ -80,13 +79,13 @@ class ValidationResult(TypedDict):
 class SchemaValidator:
     """Validates YAML configuration against JSON schema and additional semantic rules."""
 
-    # Common regex patterns used across validation methods
-    VARIABLE_VALUE_PATTERN = (
-        "^([a-z_]+\\.[a-z0-9_.]+|[a-zA-Z_][a-zA-Z0-9_]*|device_class:[a-z0-9_]+|"
-        "area:[a-z0-9_]+|label:[a-z0-9_]+|regex:.+|attribute:.+|(sum|avg|mean|count|min|max|std|var)\\(.+\\)|"
-        "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:Z|[+-]\\d{2}:?\\d{2})?|"
-        "v\\d+(\\.\\d+){0,2}([-+][a-zA-Z0-9\\-.]+)?|\\d+\\.\\d+)$"
-    )
+    # Use centralized pattern from regex helper
+    @property
+    def VARIABLE_VALUE_PATTERN(self) -> str:
+        """Get the variable value pattern from centralized regex helper."""
+        from .regex_helper import get_variable_value_pattern
+
+        return get_variable_value_pattern()
 
     def __init__(self) -> None:
         """Initialize the schema validator."""
@@ -355,6 +354,14 @@ class SchemaValidator:
         config_data: dict[str, Any] | None = None,
     ) -> None:
         """Validate a single sensor configuration."""
+        # Validate sensor key against reserved words
+        self._validate_name_reserved_words(
+            sensor_key,
+            f"sensors.{sensor_key}",
+            errors,
+            "Sensor",
+        )
+
         # Single formula sensor validation
         if "formula" in sensor_config:
             self._validate_sensor_formula(sensor_key, sensor_config, errors, config_data)
@@ -393,6 +400,15 @@ class SchemaValidator:
             sensor_vars=sensor_vars,
         )
 
+        # Validate variable names against reserved words
+        for var_name in variables:
+            self._validate_name_reserved_words(
+                var_name,
+                f"sensors.{sensor_key}.variables.{var_name}",
+                errors,
+                "Variable",
+            )
+
         # Metadata function validation removed - 'state' token is valid for metadata functions
 
     def _validate_sensor_attributes(
@@ -413,6 +429,14 @@ class SchemaValidator:
         self._validate_attribute_dependencies(sensor_key, attributes, errors)
 
         for attr_name, attr_config in attributes.items():
+            # Validate attribute name against reserved words
+            self._validate_name_reserved_words(
+                attr_name,
+                f"sensors.{sensor_key}.attributes.{attr_name}",
+                errors,
+                "Attribute",
+            )
+
             # Disallow engine-reserved attribute names at YAML validation time
             # Use shared constants to detect collisions with engine-reserved attribute names
             if attr_name in (LAST_VALID_STATE_KEY, LAST_VALID_CHANGED_KEY) or attr_name in ENGINE_BASE_RESERVED_ATTRIBUTES:
@@ -446,12 +470,13 @@ class SchemaValidator:
         attr_formula = attr_config.get("formula", "")
 
         # Allow 'state' variable in attribute formulas
-        extended_variables = variables.copy()
-        extended_variables["state"] = "main_sensor_state"
+        # Use variables directly and add state temporarily
+        variables["state"] = "main_sensor_state"
 
         # Include the current attribute's own variables
         attr_own_variables = attr_config.get("variables", {})
-        extended_variables.update(attr_own_variables)
+        variables.update(attr_own_variables)
+        extended_variables = variables
 
         # Skip validation if attr_formula is not a string (schema validation will catch this)
         if not isinstance(attr_formula, str):
@@ -815,15 +840,21 @@ class SchemaValidator:
 
         Supports basic entity IDs (sensor.power_meter) and attribute references (sensor.power_meter.state)
         """
-        return bool(re.match(r"^[a-z_]+\.[a-z0-9_.]+$", value))
+        from .regex_helper import is_valid_entity_id_format
+
+        return is_valid_entity_id_format(value)
 
     def _is_collection_pattern(self, value: str) -> bool:
         """Check if a string is a collection pattern."""
-        return bool(re.match(r"^(device_class|area|label|regex|attribute):", value))
+        from .regex_helper import is_query_pattern
+
+        return is_query_pattern(value)
 
     def _is_collection_function(self, value: str) -> bool:
         """Check if a string is a collection function."""
-        return bool(re.match(r"^(sum|avg|mean|count|min|max|std|var)\(", value))
+        from .regex_helper import is_collection_function
+
+        return is_collection_function(value)
 
     def _is_formula_expression(self, value: str) -> bool:
         """Check if a string is a formula expression.
@@ -833,22 +864,24 @@ class SchemaValidator:
         # Look for mathematical operators like +, -, *, /, ()
         # Allow decimal numbers (dots followed by digits) but exclude entity IDs (dots followed by letters)
         # Exclude collection patterns (containing colons)
-        has_operators = bool(re.search(r"[+\-*/()]", value))
-        is_entity_id = bool(re.search(r"\.[a-zA-Z]", value))  # dot followed by letter indicates entity ID
+        from .regex_helper import has_entity_id_pattern, has_operators
+
+        has_ops = has_operators(value)
+        is_entity_id = has_entity_id_pattern(value)
         has_colon = ":" in value
-        return has_operators and not is_entity_id and not has_colon
+        return has_ops and not is_entity_id and not has_colon
 
     def _is_datetime_literal(self, value: str) -> bool:
         """Check if a string is a datetime literal (full datetime or date-only)."""
-        # Accept full datetime: 2025-01-01T12:00:00Z
-        datetime_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?$"
-        # Accept date-only: 2025-01-01
-        date_pattern = r"^\d{4}-\d{2}-\d{2}$"
-        return bool(re.match(datetime_pattern, value) or re.match(date_pattern, value))
+        from .regex_helper import is_date_format, is_datetime_format
+
+        return is_datetime_format(value) or is_date_format(value)
 
     def _is_version_literal(self, value: str) -> bool:
         """Check if a string is a version literal (requires 'v' prefix)."""
-        return bool(re.match(r"^v\d+(\.\d+){0,2}([-+][a-zA-Z0-9\-.]+)?$", value))
+        from .regex_helper import is_version_format
+
+        return is_version_format(value)
 
     def _validate_formula_tokens(
         self,
@@ -1221,10 +1254,12 @@ class SchemaValidator:
 
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
-        # Define common patterns
+        # Define common patterns using centralized regex helper
+        from .regex_helper import get_icon_pattern, get_variable_name_pattern
+
         id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
-        var_pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
-        icon_pattern = "^mdi:[a-z0-9-]+$"
+        var_pattern = get_variable_name_pattern()
+        icon_pattern = get_icon_pattern()
 
         return {
             "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1236,6 +1271,12 @@ class SchemaValidator:
             "additionalProperties": False,
             "definitions": self._get_v1_schema_definitions(id_pattern, self.VARIABLE_VALUE_PATTERN, var_pattern, icon_pattern),
         }
+
+    def _get_entity_id_pattern(self) -> str:
+        """Get the entity ID pattern from regex helper."""
+        from .regex_helper import get_entity_id_schema_pattern
+
+        return get_entity_id_schema_pattern()
 
     def _get_sensor_definition(self, id_pattern: str) -> dict[str, Any]:
         """Get the sensor definition for the schema."""
@@ -1269,12 +1310,17 @@ class SchemaValidator:
                 "entity_id": {
                     "type": "string",
                     "description": "Optional: Explicit entity ID for the sensor",
-                    "pattern": "^[a-z_]+\\.[a-z0-9_]+$",
+                    "pattern": self._get_entity_id_pattern(),
                 },
                 "formula": {
                     "type": "string",
                     "description": "Mathematical expression to evaluate",
                     "minLength": 1,
+                },
+                "allow_unresolved_states": {
+                    "type": "boolean",
+                    "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                    "default": False,
                 },
                 "alternate_states": {
                     "type": "object",
@@ -1302,6 +1348,11 @@ class SchemaValidator:
                                                 }
                                             },
                                             "additionalProperties": False,
+                                        },
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
                                         },
                                     },
                                     "required": ["formula"],
@@ -1333,6 +1384,11 @@ class SchemaValidator:
                                             },
                                             "additionalProperties": False,
                                         },
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
+                                        },
                                     },
                                     "required": ["formula"],
                                     "additionalProperties": False,
@@ -1363,6 +1419,11 @@ class SchemaValidator:
                                             },
                                             "additionalProperties": False,
                                         },
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
+                                        },
                                     },
                                     "required": ["formula"],
                                     "additionalProperties": False,
@@ -1392,6 +1453,11 @@ class SchemaValidator:
                                                 }
                                             },
                                             "additionalProperties": False,
+                                        },
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
                                         },
                                     },
                                     "required": ["formula"],
@@ -1590,6 +1656,11 @@ class SchemaValidator:
                                             "type": "string",
                                             "description": "Attribute formula",
                                             "minLength": 1,
+                                        },
+                                        "allow_unresolved_states": {
+                                            "type": "boolean",
+                                            "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                                            "default": False,
                                         },
                                         "alternate_states": {
                                             "type": "object",
@@ -2558,6 +2629,11 @@ class SchemaValidator:
                     "type": "string",
                     "description": "Mathematical expression for sensor calculation",
                     "minLength": 1,
+                },
+                "allow_unresolved_states": {
+                    "type": "boolean",
+                    "description": "Allow alternate states to proceed into formula evaluation (default: false)",
+                    "default": False,
                 },
                 # Alternative state handlers grouped under alternate_states
                 "alternate_states": {

@@ -1,0 +1,297 @@
+# Enhanced YAML fixtures for testing alternate_state_eval.py functionality
+# These fixtures test complex scenarios including allow_unresolved_states behavior
+
+version: "1.0"
+global_settings:
+  device_identifier: "test_device_alternate_state_enhanced"
+  variables:
+    global_multiplier: 2.5
+    global_threshold: 100
+
+sensors:
+  # Test 1: allow_unresolved_states behavior - early detection vs formula evaluation
+  allow_unresolved_test:
+    name: "Allow Unresolved States Test"
+    formula: "missing_var * global_multiplier"
+    variables:
+      missing_var:
+        formula: "sensor.missing_entity"
+        allow_unresolved_states: false  # Default behavior - early detection
+        alternate_states:
+          UNAVAILABLE: 50
+          UNKNOWN: 75
+          NONE: 0
+          FALLBACK: 999
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 2: Complex nested formulas with multiple alternate states
+  complex_nested_test:
+    name: "Complex Nested Formulas Test"
+    formula: "sqrt(primary_var**2 + secondary_var**2) + tertiary_var"
+    variables:
+      primary_var: "sensor.primary_missing"
+      secondary_var: "sensor.secondary_missing"
+      tertiary_var: "sensor.tertiary_missing"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "sqrt(base**2 + height**2) + offset"
+        variables:
+          base: 3
+          height: 4
+          offset: 10
+      UNKNOWN:
+        formula: "sum_values / count_values"
+        variables:
+          sum_values: 300
+          count_values: 5
+      NONE:
+        formula: "min_value + max_value"
+        variables:
+          min_value: 1
+          max_value: 99
+      FALLBACK:
+        formula: "global_threshold * global_multiplier"
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 3: Mathematical functions in alternate handlers
+  math_functions_test:
+    name: "Math Functions Test"
+    formula: "missing_sensor + 100"
+    variables:
+      missing_sensor: "sensor.missing_math"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "abs(negative_value) + sqrt(positive_value)"
+        variables:
+          negative_value: -25
+          positive_value: 16
+      UNKNOWN:
+        formula: "round(pi_value * radius**2, 2)"
+        variables:
+          pi_value: 3.14159
+          radius: 5
+      NONE:
+        formula: "max(50, 40, 30, 20, 10) - min(50, 40, 30, 20, 10)"
+      FALLBACK:
+        formula: "pow(base, exponent)"
+        variables:
+          base: 2
+          exponent: 8
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 4: String operations and concatenation
+  string_operations_test:
+    name: "String Operations Test"
+    formula: "str(missing_value) + '_processed'"
+    variables:
+      missing_value: "sensor.missing_string"
+    alternate_states:
+      UNAVAILABLE: '"unavailable_status"'
+      UNKNOWN: '"unknown_status"'
+      NONE: '"none_status"'
+      FALLBACK:
+        formula: "prefix + '_' + suffix"
+        variables:
+          prefix: "fallback"
+          suffix: "value"
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 5: Boolean logic and conditional expressions
+  boolean_logic_test:
+    name: "Boolean Logic Test"
+    formula: "missing_bool and True"
+    variables:
+      missing_bool: "binary_sensor.missing_boolean"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "condition_a and condition_b"
+        variables:
+          condition_a: true
+          condition_b: false
+      UNKNOWN:
+        formula: "value_a > threshold or value_b < limit"
+        variables:
+          value_a: 150
+          threshold: 100
+          value_b: 50
+          limit: 75
+      NONE: false
+      FALLBACK:
+        formula: "not (negative_condition)"
+        variables:
+          negative_condition: false
+    metadata:
+      unit_of_measurement: ""
+
+  # Test 6: Cross-sensor references in alternate handlers
+  cross_sensor_references_test:
+    name: "Cross Sensor References Test"
+    formula: "missing_primary + backup_sensor"
+    variables:
+      missing_primary: "sensor.missing_primary"
+      backup_sensor: "sensor.backup_available"  # This sensor exists
+    alternate_states:
+      UNAVAILABLE:
+        formula: "allow_unresolved_test * 2"  # Reference to another synthetic sensor
+      UNKNOWN:
+        formula: "complex_nested_test + 50"   # Reference to another synthetic sensor
+      NONE:
+        formula: "backup_sensor * 3"          # Reference to existing sensor
+      FALLBACK:
+        formula: "global_threshold + global_multiplier"  # Reference to global variables
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 7: Attribute formulas with alternate states
+  attribute_alternate_test:
+    name: "Attribute Alternate Test"
+    formula: "missing_main + 10"
+    variables:
+      missing_main: "sensor.missing_main"
+    alternate_states:
+      UNAVAILABLE: 100
+      UNKNOWN: 200
+      NONE: 0
+      FALLBACK: 500
+    attributes:
+      efficiency:
+        formula: "state / max_capacity * 100"
+        variables:
+          max_capacity: "sensor.missing_capacity"
+        alternate_states:
+          UNAVAILABLE:
+            formula: "estimated_efficiency"
+            variables:
+              estimated_efficiency: 85.5
+          UNKNOWN: 75.0
+          NONE: 0.0
+          FALLBACK: 50.0
+        metadata:
+          unit_of_measurement: "%"
+      status:
+        formula: "state > threshold"
+        variables:
+          threshold: "input_number.missing_threshold"
+        alternate_states:
+          UNAVAILABLE: '"status_unavailable"'
+          UNKNOWN: '"status_unknown"'
+          NONE: '"status_none"'
+          FALLBACK: '"status_fallback"'
+        metadata:
+          unit_of_measurement: ""
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 8: Computed variables with alternate states
+  computed_variables_test:
+    name: "Computed Variables Test"
+    formula: "final_result"
+    variables:
+      base_missing: "sensor.base_missing"
+      computed_step1:
+        formula: "base_missing * 2"
+        alternate_states:
+          UNAVAILABLE: 20
+          UNKNOWN: 30
+          NONE: 0
+          FALLBACK: 40
+      computed_step2:
+        formula: "computed_step1 + 5"
+        alternate_states:
+          UNAVAILABLE: 30
+          UNKNOWN: 35
+          NONE: 5
+          FALLBACK: 45
+      final_result:
+        formula: "computed_step2 * global_multiplier"
+        alternate_states:
+          UNAVAILABLE: 75
+          UNKNOWN: 87.5
+          NONE: 12.5
+          FALLBACK: 112.5
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 9: Error handling and edge cases
+  error_handling_test:
+    name: "Error Handling Test"
+    formula: "problematic_var / zero_var"
+    variables:
+      problematic_var: "sensor.problematic"
+      zero_var: "sensor.zero_value"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "safe_numerator / safe_denominator"
+        variables:
+          safe_numerator: 100
+          safe_denominator: 4
+      UNKNOWN:
+        formula: "fallback_calculation"
+        variables:
+          fallback_calculation: 42
+      NONE: null
+      FALLBACK:
+        formula: "error_value"
+        variables:
+          error_value: -1
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 10: Mixed literal and formula handlers with complex expressions
+  mixed_complex_test:
+    name: "Mixed Complex Handlers Test"
+    formula: "complex_missing_expr"
+    variables:
+      complex_missing_expr: "sensor.complex_missing"
+    alternate_states:
+      UNAVAILABLE: 42.5                        # Literal float
+      UNKNOWN:                                  # Complex mathematical formula
+        formula: "sin(angle) * radius + cos(angle) * radius"
+        variables:
+          angle: 0.785398  # π/4 radians (45 degrees)
+          radius: 10
+      NONE: '"none_string_value"'               # Quoted string literal
+      FALLBACK:                                 # Complex conditional formula
+        formula: "result_a if condition else result_b"
+        variables:
+          condition: true
+          result_a: 100
+          result_b: 200
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 11: Deeply nested variable references
+  deep_nesting_test:
+    name: "Deep Nesting Test"
+    formula: "level1_missing"
+    variables:
+      level1_missing: "sensor.level1_missing"
+    alternate_states:
+      UNAVAILABLE:
+        formula: "(10 + 5) * 2 * 3"  # Simplified: level3_calc * 2 * level2_multiplier
+      UNKNOWN: 120
+      NONE: 0
+      FALLBACK: 999
+    metadata:
+      unit_of_measurement: "units"
+
+  # Test 12: State constants and special values
+  state_constants_test:
+    name: "State Constants Test"
+    formula: "missing_state_var"
+    variables:
+      missing_state_var: "sensor.missing_state"
+    alternate_states:
+      UNAVAILABLE: "unavailable"               # String that matches HA constant
+      UNKNOWN: "unknown"                       # String that matches HA constant
+      NONE: null                               # YAML null
+      FALLBACK:
+        formula: "state_value"
+        variables:
+          state_value: "on"                    # HA state value
+    metadata:
+      unit_of_measurement: ""

@@ -2,7 +2,10 @@
 
 from collections.abc import Callable
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...exceptions import MissingDependencyError
 from ...type_definitions import DataProviderResult
@@ -119,7 +122,7 @@ class VariableResolverFactory:
                 return resolver
         return None
 
-    def resolve_variable(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
+    def resolve_variable(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> Any | None:
         """Resolve a variable using the appropriate resolver."""
         _LOGGER.debug("RESOLVER_FACTORY: Resolving variable %s with value %s", variable_name, variable_value)
         # Check if any resolver can handle this variable

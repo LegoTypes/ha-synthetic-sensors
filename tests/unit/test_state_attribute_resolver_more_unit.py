@@ -22,7 +22,7 @@ def test_state_attribute_resolver_simple_and_nested_paths() -> None:
     resolver = StateAttributeResolver(mapping, provider)
     sensor_cfg = SensorConfig(unique_id="s1")
 
-    assert resolver.resolve("x", "state.voltage", {"sensor_config": sensor_cfg}) == 240
-    assert resolver.resolve("x", "state.device_info.manufacturer", {"sensor_config": sensor_cfg}) == "ACME"
+    assert resolver.resolve("x", "state.voltage", {"_sensor_config": sensor_cfg}) == 240
+    assert resolver.resolve("x", "state.device_info.manufacturer", {"_sensor_config": sensor_cfg}) == "ACME"
     # attributes path should work via backing attributes
-    assert resolver.resolve("x", "state.attributes.deep.level", {"sensor_config": sensor_cfg}) == 2
+    assert resolver.resolve("x", "state.attributes.deep.level", {"_sensor_config": sensor_cfg}) == 2

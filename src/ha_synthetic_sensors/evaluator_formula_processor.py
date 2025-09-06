@@ -1,15 +1,16 @@
-"""Formula processing and preparation logic for the evaluator."""
+"""Formula processor for synthetic sensor evaluation."""
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from .config_models import FormulaConfig, SensorConfig
 from .evaluator_phases.variable_resolution.resolution_types import VariableResolutionResult
+from .hierarchical_context_dict import HierarchicalContextDict
 from .reference_value_manager import ReferenceValueManager
-from .type_definitions import ContextValue, ReferenceValue
+from .regex_helper import regex_helper
+from .type_definitions import ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,15 +27,18 @@ class FormulaProcessor:
         self._variable_resolution_phase = variable_resolution_phase
 
     def resolve_formula_variables(
-        self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]
+        self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
     ) -> tuple[VariableResolutionResult, str]:
         """Resolve formula variables and return resolution result and resolved formula."""
+        # BULLETPROOF: Log context type at formula processor entry
+        _LOGGER.warning(
+            "CONTEXT_FLOW_PROCESSOR: Received context id=%d type=%s in formula processor",
+            id(eval_context),
+            type(eval_context).__name__,
+        )
         # Check if formula is already resolved (contains only numbers, operators, and functions)
-        needs_resolution_pattern = re.compile(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b")
-        formula_variables = needs_resolution_pattern.findall(config.formula)
-        # Filter out known function names and operators
-        function_names = {"min", "max", "abs", "round", "int", "float", "str", "len", "sum", "any", "all"}
-        variables_needing_resolution = [var for var in formula_variables if var not in function_names]
+        formula_variables = regex_helper.extract_formula_variables_for_resolution(config.formula)
+        variables_needing_resolution = regex_helper.filter_variables_needing_resolution(formula_variables)
 
         if variables_needing_resolution:
             # Formula contains variables that need resolution
@@ -44,7 +48,7 @@ class FormulaProcessor:
             resolved_formula = resolution_result.resolved_formula
         else:
             # Formula is already resolved (only literals and functions)
-            _LOGGER.debug("Formula requires no variable resolution: %s", config.formula)
+            # Debug logging removed to reduce verbosity
             resolution_result = VariableResolutionResult(
                 resolved_formula=config.formula,
                 has_ha_state=False,
@@ -54,8 +58,8 @@ class FormulaProcessor:
         return resolution_result, resolved_formula
 
     def prepare_handler_context(
-        self, eval_context: dict[str, ContextValue], resolution_result: VariableResolutionResult
-    ) -> dict[str, ContextValue]:
+        self, eval_context: HierarchicalContextDict, resolution_result: VariableResolutionResult
+    ) -> HierarchicalContextDict:
         """Prepare context for handlers by ensuring all values are ReferenceValue objects.
 
         This normalizes the context so handlers receive consistent ReferenceValue objects
@@ -68,31 +72,35 @@ class FormulaProcessor:
         Returns:
             Handler context with all variables as ReferenceValue objects
         """
-        handler_context: dict[str, ContextValue] = {}
-
-        # Process all context values
-        for key, value in eval_context.items():
-            if isinstance(value, ReferenceValue):
-                # Already a ReferenceValue - keep as-is
-                handler_context[key] = value
-            else:
+        # Process all context values to ensure they are ReferenceValue objects
+        # Work directly with the HierarchicalContextDict to maintain architecture compliance
+        for key, value in list(eval_context.items()):
+            if not isinstance(value, ReferenceValue) and not key.startswith("_"):
                 # Convert to ReferenceValue for consistency
                 # For non-ReferenceValue items, use the key as the reference
-                ReferenceValueManager.set_variable_with_reference_value(handler_context, key, key, value)
-                ref_value = handler_context[key]
+                ReferenceValueManager.set_variable_with_reference_value(eval_context, key, key, value)
+                ref_value = eval_context[key]
                 if isinstance(ref_value, ReferenceValue):
-                    _LOGGER.debug("Converted %s to ReferenceValue: %s -> %s", key, value, ref_value.value)
+                    # Debug logging removed to reduce verbosity
+                    pass
 
-        return handler_context
+        # Return the original HierarchicalContextDict with all values normalized to ReferenceValue objects
+        return eval_context
 
-    def build_evaluation_context(self, context: dict[str, ContextValue] | None) -> dict[str, ContextValue]:
+    def build_evaluation_context(self, context: HierarchicalContextDict) -> HierarchicalContextDict:
         """Build the evaluation context for formula processing."""
-        if context is None:
-            return {}
-        return dict(context)
+        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
+
+        # BULLETPROOF: Preserve HierarchicalContextDict instead of converting to regular dict
+        _LOGGER.warning(
+            "CONTEXT_CONVERSION_POINT: Received context type %s, preserving instead of converting", type(context).__name__
+        )
+
+        # Return the original context to preserve HierarchicalContextDict
+        return context
 
     def resolve_all_references_in_formula(
-        self, formula: str, sensor_config: SensorConfig | None, eval_context: dict[str, ContextValue]
+        self, formula: str, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
     ) -> str:
         """Resolve all references in a formula string."""
         # This is a simplified version - the full implementation would be in the variable resolution phase
@@ -102,7 +110,7 @@ class FormulaProcessor:
         self,
         result: float | str | bool | None,
         config: FormulaConfig,
-        context: dict[str, ContextValue] | None,
+        context: HierarchicalContextDict,
         cache_key_id: str,
         sensor_config: SensorConfig | None,
     ) -> float | str | bool | None:
@@ -111,5 +119,5 @@ class FormulaProcessor:
         # This ensures that None values (indicating missing/unavailable data) are properly
         # handled throughout the evaluation process without premature conversion to strings.
         # Post-processing logic can be added here if needed
-        _LOGGER.debug("Finalizing result for formula %s: %s", config.formula, result)
+        # Debug logging removed to reduce verbosity
         return result

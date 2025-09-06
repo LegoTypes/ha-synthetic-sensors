@@ -14,6 +14,14 @@ import pytest
 
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.evaluator import Evaluator
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 @pytest.fixture
@@ -48,7 +56,7 @@ class TestNumericLiterals:
         # Test the formula: base_value + offset * multiplier
         # Where base_value = 100 (from entity), offset = 10, multiplier = 1.5
         # Expected: 100 + (10 * 1.5) = 100 + 15 = 115
-        result = evaluator.evaluate_formula(formula_config)
+        result = evaluator.evaluate_formula(formula_config, _create_empty_context())
 
         assert result["success"] is True
         assert result["value"] == 115.0
@@ -66,7 +74,7 @@ class TestNumericLiterals:
 
         # Test the formula: int_val + float_val + negative_val + zero_val
         # Expected: 42 + 3.14159 + (-5) + 0 = 40.14159
-        result = evaluator.evaluate_formula(formula_config)
+        result = evaluator.evaluate_formula(formula_config, _create_empty_context())
 
         assert result["success"] is True
         assert abs(result["value"] - 40.14159) < 0.00001  # Float precision check
@@ -95,7 +103,7 @@ class TestNumericLiterals:
         # Test the formula: (sensor_a + sensor_b) * scale_factor + offset
         # Where sensor_a = 25.0, sensor_b = 60.0, scale_factor = 2.0, offset = 100
         # Expected: (25.0 + 60.0) * 2.0 + 100 = 85.0 * 2.0 + 100 = 170.0 + 100 = 270.0
-        result = evaluator.evaluate_formula(formula_config)
+        result = evaluator.evaluate_formula(formula_config, _create_empty_context())
 
         assert result["success"] is True
         assert result["value"] == 270.0
@@ -118,7 +126,7 @@ class TestNumericLiterals:
 
         # Test the main formula
         main_formula = sensor_config.formulas[0]  # Main formula (base_power)
-        result = evaluator.evaluate_formula(main_formula)
+        result = evaluator.evaluate_formula(main_formula, _create_empty_context())
         assert result["success"] is True
         assert result["value"] == 500.0
 
@@ -128,14 +136,14 @@ class TestNumericLiterals:
         # Find the efficiency_percent attribute formula
         efficiency_formula = next((f for f in attribute_formulas if f.name == "efficiency_percent"), None)
         if efficiency_formula:
-            efficiency_result = evaluator.evaluate_formula(efficiency_formula)
+            efficiency_result = evaluator.evaluate_formula(efficiency_formula, _create_empty_context())
             assert efficiency_result["success"] is True
             assert efficiency_result["value"] == 50.0  # (500 / 1000) * 100 = 50%
 
         # Find the cost_per_hour attribute formula
         cost_formula = next((f for f in attribute_formulas if f.name == "cost_per_hour"), None)
         if cost_formula:
-            cost_result = evaluator.evaluate_formula(cost_formula)
+            cost_result = evaluator.evaluate_formula(cost_formula, _create_empty_context())
             assert cost_result["success"] is True
             assert cost_result["value"] == 0.06  # 500 * 0.12 / 1000 = 0.06
 
@@ -152,7 +160,7 @@ class TestNumericLiterals:
 
         # Test the formula: very_small + very_large + scientific_notation
         # Expected: 0.000001 + 1000000 + 0.000123 = 1000000.000124
-        result = evaluator.evaluate_formula(formula_config)
+        result = evaluator.evaluate_formula(formula_config, _create_empty_context())
 
         assert result["success"] is True
         assert abs(result["value"] - 1000000.000124) < 0.0000001
@@ -177,7 +185,7 @@ class TestNumericLiterals:
         # Test the formula: base_value * enabled_flag + disabled_value * disabled_flag
         # Where base_value = 100, enabled_flag = 1, disabled_value = 42, disabled_flag = 0
         # Expected: 100 * 1 + 42 * 0 = 100 + 0 = 100
-        result = evaluator.evaluate_formula(formula_config)
+        result = evaluator.evaluate_formula(formula_config, _create_empty_context())
 
         assert result["success"] is True
         assert result["value"] == 100.0
@@ -207,7 +215,7 @@ class TestNumericLiterals:
         # Where x_val = 60.0, y_val = 35.0, x_offset = 50.5, y_offset = 25.0, scale = 2.5
         # Distance = sqrt((60.0 - 50.5)^2 + (35.0 - 25.0)^2) = sqrt(9.5^2 + 10^2) = sqrt(90.25 + 100) = sqrt(190.25) ≈ 13.794
         # Expected: 13.794 * 2.5 ≈ 34.485
-        result = evaluator.evaluate_formula(formula_config)
+        result = evaluator.evaluate_formula(formula_config, _create_empty_context())
 
         assert result["success"] is True
         assert abs(result["value"] - 34.485) < 0.01  # Allow for floating point precision
@@ -222,7 +230,7 @@ class TestNumericLiterals:
         config = FormulaConfig(id="test_numeric", formula="a + b + c", variables={"a": 10, "b": 20.5, "c": -5})
 
         # Test evaluation
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
 
         assert result["success"] is True
         assert result["value"] == 25.5
@@ -251,13 +259,11 @@ class TestNumericLiterals:
 
         mock_hass.states.get.side_effect = mock_states_get
 
-        # Missing entities are now treated as non-fatal and result in unknown state
-        result = evaluator.evaluate_formula(config)
-        assert result["success"] is True  # Non-fatal - reflects dependency state
-        # Prefer the HA constant for alternate-state assertions
-        from homeassistant.const import STATE_UNKNOWN
+        # Missing entities are treated as fatal errors in the current architecture
+        from ha_synthetic_sensors.exceptions import MissingDependencyError
 
-        assert result.get("state") == STATE_UNKNOWN  # Reflects missing dependency as unknown
+        with pytest.raises(MissingDependencyError, match="Entity 'sensor.invalid' not found"):
+            evaluator.evaluate_formula(config, _create_empty_context())
 
     def test_zero_and_negative_literals(
         self, mock_hass: HomeAssistant, mock_entity_registry, mock_states, numeric_literals_config_manager
@@ -271,7 +277,7 @@ class TestNumericLiterals:
 
         # Test that zero and negative values work correctly
         formula_config = sensor_config.formulas[0]  # Get the main formula
-        result = evaluator.evaluate_formula(formula_config)
+        result = evaluator.evaluate_formula(formula_config, _create_empty_context())
 
         assert result["success"] is True
         # Verify negative values and zero are handled correctly
@@ -290,7 +296,7 @@ class TestNumericLiterals:
             variables={"large_int": 9999999999, "very_large_float": 1.23456789e10},
         )
 
-        result = evaluator.evaluate_formula(config)
+        result = evaluator.evaluate_formula(config, _create_empty_context())
 
         assert result["success"] is True
         # Check that precision is maintained for large numbers

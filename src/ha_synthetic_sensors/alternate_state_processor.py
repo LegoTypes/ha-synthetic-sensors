@@ -8,10 +8,18 @@ This module implements the two-phase alternate state handler system:
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import STATE_UNKNOWN
+
+from .evaluator_results import EvaluatorResults
+from .exceptions import AlternateStateDetected
+from .type_definitions import ReferenceValue
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
+
 
 from .config_models import AlternateStateHandler, FormulaConfig, SensorConfig
 from .constants_alternate import (
@@ -20,8 +28,7 @@ from .constants_alternate import (
     ALTERNATE_STATE_UNKNOWN,
     identify_alternate_state_value,
 )
-from .formula_evaluator_service import FormulaEvaluatorService
-from .type_definitions import ReferenceValue
+from .constants_formula import ALL_OPERATORS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,13 +36,19 @@ _LOGGER = logging.getLogger(__name__)
 class AlternateStateProcessor:
     """Processes alternate state handlers with pre and post evaluation checks."""
 
-    def __init__(self) -> None:
-        """Initialize the alternate state processor."""
+    def __init__(self, evaluator: Any = None) -> None:
+        """Initialize the alternate state processor.
+
+        Args:
+            evaluator: Optional evaluator instance for proper pipeline processing.
+                      If not provided, will fall back to manual variable processing.
+        """
         self._logger = _LOGGER.getChild(self.__class__.__name__)
+        self._evaluator = evaluator
 
     def check_pre_evaluation_states(
         self,
-        context: dict[str, Any],
+        context: HierarchicalContextDict,
         config: FormulaConfig,
         sensor_config: SensorConfig | None = None,
         core_evaluator: Any | None = None,
@@ -55,56 +68,76 @@ class AlternateStateProcessor:
         Returns:
             Result from alternate state handler if triggered, None otherwise
         """
-        if not config.alternate_state_handler:
+        self._logger.warning("PRE_EVAL_CHECK_ENTRY: Called with formula=%s", config.formula)
+
+        # Check allow_unresolved_states value
+        allow_unresolved = getattr(config, "allow_unresolved_states", False)
+
+        # If allow_unresolved_states is True, skip all alternate state detection
+        # This allows formulas to explicitly test for and handle unavailable states
+        if allow_unresolved:
+            self._logger.debug(
+                "PRE_EVAL_CHECK: allow_unresolved_states=True, skipping alternate state detection for formula '%s'",
+                config.formula,
+            )
             return None
 
-        # Check if we have a simple single-variable case
-        if len(context) != 1:
+        if not config.alternate_state_handler:
+            self._logger.debug("PRE_EVAL_CHECK_ENTRY: No alternate state handler, returning None")
+            return None
+
+        # Check if the formula is a single identifier (like 'state')
+        stripped_formula = config.formula.strip()
+        if not stripped_formula.isidentifier():
+            self._logger.debug("PRE_EVAL_CHECK: Formula '%s' is not a single identifier, skipping", config.formula)
             return False
 
-        # Get the single variable value
-        var_name, var_value = next(iter(context.items()))
+        # Get the resolved value for this identifier from the context
+        resolved_value = context.get(stripped_formula)
+        if resolved_value is None:
+            self._logger.debug("PRE_EVAL_CHECK: Variable '%s' not found in context, skipping", stripped_formula)
+            return False
+
+        var_name = stripped_formula
+        var_value = resolved_value
 
         # Check if it's an alternate state that should trigger handlers
         # Use the shared helper mapping contract: returns a string for detected alternate
         # states or False when no alternate state is detected. Preserve that
         # contract here so callers can distinguish a legitimate None handler
         # result from "no alternate state detected".
-        # If the context contains ReferenceValue wrappers, unwrap to the raw value
         raw_val = var_value.value if isinstance(var_value, ReferenceValue) else var_value
-        alternate_state = identify_alternate_state_value(raw_val)
         self._logger.debug(
-            "Pre-evaluation check: Single variable '%s' = %s (raw_val: %s, type: %s), alternate_state = %s",
+            "PRE_EVAL_CHECK: var_name=%s, var_value=%s (type: %s), raw_val=%s (type: %s)",
             var_name,
             var_value,
+            type(var_value),
             raw_val,
-            type(raw_val).__name__,
-            alternate_state,
+            type(raw_val),
         )
-        # The helper returns False when no alternate state detected
-        if alternate_state is False:
-            return False
+        alternate_state = identify_alternate_state_value(raw_val)
+        self._logger.debug("PRE_EVAL_CHECK: alternate_state=%s", alternate_state)
 
-        self._logger.debug(
-            "Pre-evaluation optimization: Single variable '%s' is %s, triggering alternate handler", var_name, alternate_state
-        )
+        if alternate_state is not False:
+            raise AlternateStateDetected(
+                "Alternate state detected during pre-evaluation",
+                raw_val,
+                str(alternate_state) if alternate_state is not True else None,
+            )
+        else:
+            self._logger.debug(
+                "Pre-evaluation optimization: Single variable '%s' is %s, letting evaluation continue to Phase 3",
+                var_name,
+                alternate_state,
+            )
 
-        # Trigger the appropriate alternate state handler
-        return self._trigger_alternate_handler(
-            cast(str, alternate_state),
-            config.alternate_state_handler,
-            context,
-            config,
-            sensor_config,
-            core_evaluator,
-            resolve_all_references_in_formula,
-        )
+        return True
 
     def process_evaluation_result(
         self,
         result: float | str | bool | None,
         exception: Exception | None,
-        context: dict[str, Any],
+        context: HierarchicalContextDict,
         config: FormulaConfig,
         sensor_config: SensorConfig | None = None,
         core_evaluator: Any | None = None,
@@ -141,18 +174,29 @@ class AlternateStateProcessor:
 
         # Handle exceptions separately in helper
         if exception is not None:
+            # Process all exceptions (including AlternateStateDetected) through the unified handler
             handled, output = self._process_exception(
                 exception, context, config, sensor_config, core_evaluator, resolve_all_references_in_formula
             )
             if handled:
-                return output
+                # Convert raw output to proper EvaluationResult format
+                result_obj = EvaluatorResults.create_success_from_result(output)
+                return result_obj.get("value", output) if isinstance(result_obj, dict) else output
 
         # Handle successful results that are alternate states
+        self._logger.warning("PROCESS_EVAL_RESULT: Checking result=%s (type: %s) for alternate state", result, type(result))
         result_alternate_state = self._identify_alternate_state(result)
+        self._logger.warning("PROCESS_EVAL_RESULT: result_alternate_state=%s", result_alternate_state)
         if result_alternate_state is not False:
             self._logger.debug("Evaluation result is %s, triggering alternate handler", result_alternate_state)
+            # Create AlternateStateDetected exception with the identified state
+            alternate_exception = AlternateStateDetected(
+                message=f"Alternate state detected in evaluation result: {result_alternate_state}",
+                alternate_state_value=result.value if result is not None and hasattr(result, "value") else None,
+                alternate_state_type=cast(str, result_alternate_state),
+            )
             return self._trigger_alternate_handler(
-                cast(str, result_alternate_state),
+                alternate_exception,
                 config.alternate_state_handler,
                 context,
                 config,
@@ -165,7 +209,7 @@ class AlternateStateProcessor:
 
     def _process_none_result(
         self,
-        context: dict[str, Any],
+        context: HierarchicalContextDict,
         config: FormulaConfig,
         sensor_config: SensorConfig | None,
         core_evaluator: Any | None,
@@ -197,8 +241,14 @@ class AlternateStateProcessor:
             if handler is None:
                 self._logger.warning("Alternate state handler missing from config when expected; returning None")
                 return True, None
+            # Create AlternateStateDetected exception for None state
+            none_exception = AlternateStateDetected(
+                message="None value detected in context variables",
+                alternate_state_value=None,
+                alternate_state_type=ALTERNATE_STATE_NONE,
+            )
             return True, self._trigger_alternate_handler(
-                ALTERNATE_STATE_NONE,
+                none_exception,
                 handler,
                 context,
                 config,
@@ -212,8 +262,14 @@ class AlternateStateProcessor:
         if handler is None:
             self._logger.warning("Alternate state handler missing from config when expected; returning None")
             return True, None
+        # Create AlternateStateDetected exception for unavailable state
+        unavailable_exception = AlternateStateDetected(
+            message="Evaluation returned None (missing state guard)",
+            alternate_state_value="unavailable",
+            alternate_state_type=ALTERNATE_STATE_UNAVAILABLE,
+        )
         return True, self._trigger_alternate_handler(
-            ALTERNATE_STATE_UNAVAILABLE,
+            unavailable_exception,
             handler,
             context,
             config,
@@ -225,7 +281,7 @@ class AlternateStateProcessor:
     def _process_exception(
         self,
         exception: Exception,
-        context: dict[str, Any],
+        context: HierarchicalContextDict,
         config: FormulaConfig,
         sensor_config: SensorConfig | None,
         core_evaluator: Any | None,
@@ -235,25 +291,56 @@ class AlternateStateProcessor:
 
         Returns (handled, output).
         """
+        # Handle AlternateStateDetected exceptions directly using their pre-computed type
+        if isinstance(exception, AlternateStateDetected):
+            self._logger.debug(
+                "Processing AlternateStateDetected exception with type: %s, value: %s",
+                exception.alternate_state_type,
+                exception.alternate_state_value,
+            )
+            handler = config.alternate_state_handler
+            if handler is None:
+                self._logger.warning("Alternate state handler missing from config when expected; returning None")
+                return True, None
+            return True, self._trigger_alternate_handler(
+                exception,
+                handler,
+                context,
+                config,
+                sensor_config,
+                core_evaluator,
+                resolve_all_references_in_formula,
+            )
+
+        # For other exceptions, map them to alternate states based on their content
         exception_str = str(exception).lower()
         if STATE_UNAVAILABLE in exception_str:
-            alternate_state = ALTERNATE_STATE_UNAVAILABLE
+            alternate_state_type = ALTERNATE_STATE_UNAVAILABLE
+            alternate_state_value = STATE_UNAVAILABLE
         elif STATE_UNKNOWN in exception_str:
-            alternate_state = ALTERNATE_STATE_UNKNOWN
+            alternate_state_type = ALTERNATE_STATE_UNKNOWN
+            alternate_state_value = STATE_UNKNOWN
         else:
-            alternate_state = ALTERNATE_STATE_NONE
+            alternate_state_type = ALTERNATE_STATE_NONE
+            alternate_state_value = None
 
         self._logger.debug(
             "Evaluation exception occurred: %s, mapping to %s state and triggering alternate handler",
             str(exception),
-            alternate_state,
+            alternate_state_type,
         )
+
+        # Create an AlternateStateDetected exception to maintain consistency
+        alternate_exception = AlternateStateDetected(
+            f"Exception mapped to alternate state: {exception}", alternate_state_value, alternate_state_type
+        )
+
         handler = config.alternate_state_handler
         if handler is None:
             self._logger.warning("Alternate state handler missing from config when expected; returning None")
             return True, None
         return True, self._trigger_alternate_handler(
-            alternate_state,
+            alternate_exception,
             handler,
             context,
             config,
@@ -271,9 +358,9 @@ class AlternateStateProcessor:
 
     def _trigger_alternate_handler(
         self,
-        state_type: str,
+        exception: AlternateStateDetected,
         handler: AlternateStateHandler,
-        context: dict[str, Any],
+        context: HierarchicalContextDict,
         config: FormulaConfig,
         sensor_config: SensorConfig | None = None,
         core_evaluator: Any | None = None,
@@ -282,7 +369,7 @@ class AlternateStateProcessor:
         """Trigger the appropriate alternate state handler.
 
         Args:
-            state_type: The type of alternate state (none, unknown, unavailable)
+            exception: The AlternateStateDetected exception containing state type and value
             handler: The alternate state handler configuration
             context: Evaluation context
             config: Formula configuration
@@ -295,6 +382,7 @@ class AlternateStateProcessor:
         """
         # Determine which handler to use based on priority
         handler_value = None
+        state_type = exception.alternate_state_type
 
         self._logger.debug(
             "Handler selection for state_type='%s': none=%s, unknown=%s, unavailable=%s, fallback=%s",
@@ -306,8 +394,6 @@ class AlternateStateProcessor:
         )
 
         # Try specific handler first
-        # CRITICAL FIX: Check if handler is explicitly set, not just non-None
-        # This allows None as a valid handler value (important for energy sensors)
         handler_found = False
         self._logger.debug("Handler selection: state_type='%s', checking handlers...", state_type)
 
@@ -348,7 +434,7 @@ class AlternateStateProcessor:
     def _evaluate_handler_value(
         self,
         handler_value: Any,
-        context: dict[str, Any],
+        context: HierarchicalContextDict,
         config: FormulaConfig,
         _sensor_config: SensorConfig | None = None,
     ) -> float | str | bool | None:
@@ -364,38 +450,30 @@ class AlternateStateProcessor:
                 result = None
             elif isinstance(handler_value, bool | int | float):
                 result = handler_value
-            elif isinstance(handler_value, str) and not any(
-                op in handler_value for op in ["+", "-", "*", "/", "(", ")", "<", ">", "=", " and ", " or ", " not "]
-            ):
+            elif isinstance(handler_value, str) and not any(op in handler_value for op in ALL_OPERATORS):
                 # Simple string without operators - treat as literal
                 result = handler_value
             elif isinstance(handler_value, dict) and "formula" in handler_value:
-                # Object form: create temporary FormulaConfig and use standard pipeline
-                handler_config = FormulaConfig(
-                    id=f"{config.id}_alt_handler",
-                    formula=handler_value["formula"],
-                    variables=handler_value.get("variables", {}),
-                )
+                # Object form: Use FormulaEvaluatorService directly to avoid recursive pre-evaluation checks
+                # Alternate handlers should not go through the full evaluation pipeline
+                # since they're already handling an alternate state
+                from .formula_evaluator_service import FormulaEvaluatorService
 
-                # Merge contexts: base context + handler-specific variables
-                merged_context = dict(context) if context else {}
-                for key, value in handler_config.variables.items():
-                    merged_context[key] = value
-
-                # Delegate to standard formula evaluation
                 result = FormulaEvaluatorService.evaluate_formula(
-                    handler_config.formula,
-                    handler_config.formula,
-                    merged_context,
-                    allow_unresolved_states=False,
+                    handler_value["formula"],
+                    handler_value["formula"],
+                    context,
+                    allow_unresolved_states=True,
                 )
             else:
                 # String formula or other -> delegate to standard evaluation
+                # Alternate state handlers should be able to evaluate formulas with unavailable states
+                # since their purpose is to provide fallbacks when states are unavailable
                 result = FormulaEvaluatorService.evaluate_formula(
                     str(handler_value),
                     str(handler_value),
                     context,
-                    allow_unresolved_states=False,
+                    allow_unresolved_states=True,
                 )
 
         except Exception as e:

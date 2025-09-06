@@ -7,13 +7,21 @@ These tests validate that the cache properly differentiates between:
 """
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 class TestCacheContextValidation:
@@ -28,19 +36,22 @@ class TestCacheContextValidation:
             id="sensor_1",
             name="Power Sensor A",
             formula="power_reading + 100",
-            variables={"power_reading": "sensor.power_meter_a"},
+            variables={},  # No external variables for this test
         )  # Same formula text  # Different entity
 
         config2 = FormulaConfig(
             id="sensor_2",
             name="Power Sensor B",
             formula="power_reading + 100",
-            variables={"power_reading": "sensor.power_meter_b"},
+            variables={},  # No external variables for this test
         )  # Same formula text  # Different entity
 
         # Evaluate with different contexts (simulating different entity values)
-        context1: dict[str, Any] = {"power_reading": ReferenceValue("sensor.power_meter_a", 200)}  # From sensor.power_meter_a
-        context2: dict[str, Any] = {"power_reading": ReferenceValue("sensor.power_meter_b", 300)}  # From sensor.power_meter_b
+        context1 = _create_empty_context()
+        context1._hierarchical_context.set("power_reading", ReferenceValue("power_reading", 200))
+
+        context2 = _create_empty_context()
+        context2._hierarchical_context.set("power_reading", ReferenceValue("power_reading", 300))
 
         result1 = evaluator.evaluate_formula(config1, context1)
         result2 = evaluator.evaluate_formula(config2, context2)
@@ -60,24 +71,19 @@ class TestCacheContextValidation:
             id="power_sensor",
             name="Power Sensor",
             formula="current_power * efficiency_factor",
-            variables={
-                "current_power": "sensor.power_meter",
-                "efficiency_factor": "input_number.efficiency",
-            },
+            variables={},  # No external variables for this test
         )
 
         # First evaluation
-        context1: dict[str, Any] = {
-            "current_power": ReferenceValue("sensor.power_meter", 1000),
-            "efficiency_factor": ReferenceValue("input_number.efficiency", 0.9),
-        }
+        context1 = _create_empty_context()
+        context1._hierarchical_context.set("current_power", ReferenceValue("current_power", 1000))
+        context1._hierarchical_context.set("efficiency_factor", ReferenceValue("efficiency_factor", 0.9))
         result1 = evaluator.evaluate_formula(config, context1)
 
         # Second evaluation with different values (simulating entity state changes)
-        context2: dict[str, Any] = {
-            "current_power": ReferenceValue("sensor.power_meter", 1500),
-            "efficiency_factor": ReferenceValue("input_number.efficiency", 0.85),
-        }
+        context2 = _create_empty_context()
+        context2._hierarchical_context.set("current_power", ReferenceValue("current_power", 1500))
+        context2._hierarchical_context.set("efficiency_factor", ReferenceValue("efficiency_factor", 0.85))
         result2 = evaluator.evaluate_formula(config, context2)
 
         assert result1["success"] is True
@@ -94,19 +100,18 @@ class TestCacheContextValidation:
 
         # Multiple evaluations with different contexts
         test_cases = [
-            ({"var_a": ReferenceValue("var_a", 10), "var_b": ReferenceValue("var_b", 20)}, 30),
-            ({"var_a": ReferenceValue("var_a", 100), "var_b": ReferenceValue("var_b", 200)}, 300),
-            ({"var_a": ReferenceValue("var_a", 5), "var_b": ReferenceValue("var_b", 15)}, 20),
-            (
-                {"var_a": ReferenceValue("var_a", 10), "var_b": ReferenceValue("var_b", 20)},
-                30,
-            ),  # Repeat first case - should be cached
+            ({"var_a": 10, "var_b": 20}, 30),
+            ({"var_a": 100, "var_b": 200}, 300),
+            ({"var_a": 5, "var_b": 15}, 20),
+            ({"var_a": 10, "var_b": 20}, 30),  # Repeat first case - should be cached
         ]
 
         results = []
-        for i, (context, expected) in enumerate(test_cases):
-            context_typed: dict[str, Any] = context
-            result = evaluator.evaluate_formula(config, context_typed)
+        for i, (context_values, expected) in enumerate(test_cases):
+            context = _create_empty_context()
+            context._hierarchical_context.set("var_a", ReferenceValue("var_a", context_values["var_a"]))
+            context._hierarchical_context.set("var_b", ReferenceValue("var_b", context_values["var_b"]))
+            result = evaluator.evaluate_formula(config, context)
             results.append(result)
 
             assert result["success"] is True, f"Evaluation {i} failed"
@@ -125,13 +130,13 @@ class TestCacheContextValidation:
         config = FormulaConfig(id="math_formula", name="Math Formula", formula="10 + 20")  # No variables
 
         # First evaluation without context
-        result1 = evaluator.evaluate_formula(config)
+        result1 = evaluator.evaluate_formula(config, _create_empty_context())
 
         # Second evaluation with empty context
-        result2 = evaluator.evaluate_formula(config, {})
+        result2 = evaluator.evaluate_formula(config, _create_empty_context())
 
         # Third evaluation without context again
-        result3 = evaluator.evaluate_formula(config)
+        result3 = evaluator.evaluate_formula(config, _create_empty_context())
 
         assert result1["success"] is True
         assert result1["value"] == 30
@@ -163,11 +168,12 @@ class TestCacheContextValidation:
         )  # Equivalent to power_input=100 + 50
 
         # Evaluate first with context
-        context: dict[str, Any] = {"power_input": ReferenceValue("sensor.power_meter", 100)}
+        context = _create_empty_context()
+        context._hierarchical_context.set("power_input", ReferenceValue("sensor.power_meter", 100))
         result1 = evaluator.evaluate_formula(config1, context)
 
         # Evaluate second without context (direct formula)
-        result2 = evaluator.evaluate_formula(config2)
+        result2 = evaluator.evaluate_formula(config2, _create_empty_context())
 
         assert result1["success"] is True
         assert result1["value"] == 150

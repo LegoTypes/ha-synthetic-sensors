@@ -1,10 +1,12 @@
 """Helper functions for variable resolution to avoid code duplication."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
 
 from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
-from ha_synthetic_sensors.type_definitions import ContextValue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ class ResolutionHelpers:
 
     @staticmethod
     def log_and_set_resolved_variable(
-        eval_context: dict[str, ContextValue],
+        eval_context: "HierarchicalContextDict",
         var_name: str,
         var_value: Any,
         resolved_value: Any,

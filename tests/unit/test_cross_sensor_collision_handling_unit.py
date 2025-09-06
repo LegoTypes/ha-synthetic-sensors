@@ -283,26 +283,49 @@ class TestCrossSensorCollisionHandling:
             assert reference_sensor is not None, "collision_test_reference_sensor should exist"
             assert another_reference is not None, "collision_test_another_reference should exist"
 
-            # Test self-reference replacement in collision sensor
-            collision_formula = collision_sensor.formulas[0].formula
-
-            # Check what entity mappings were created
-            sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-
-            # Export YAML to see what the system actually stores
+            # Export YAML to see what the system actually stores after collision handling
             exported_yaml = storage_manager.export_yaml(sensor_set_id=sensor_set_id)
 
-            # Test entity_id reference resolution in first sensor
-            formula1 = reference_sensor.formulas[0].formula
+            # Parse the exported YAML to check the actual stored content
+            import yaml
 
-            # Verify the formula contains updated entity references
-            assert "sensor.circuit_a_power" in formula1, f"Expected entity reference in formula: {formula1}"
+            exported_data = yaml.safe_load(exported_yaml)
+            sensors = exported_data.get("sensors", {})
+
+            # Get the collision sensor to find the actual entity_id assigned after collision
+            collision_sensor = sensors.get("collision_test_duplicate_sensor")
+            assert collision_sensor is not None, "collision_test_duplicate_sensor should exist in exported YAML"
+
+            collision_entity_id = collision_sensor.get("entity_id")
+            assert collision_entity_id is not None, "collision sensor should have entity_id assigned"
+            assert collision_entity_id != "sensor.circuit_a_power", (
+                f"Collision should have been handled, got {collision_entity_id}"
+            )
+            assert collision_entity_id.endswith("_2"), f"Expected collision entity_id to end with _2, got {collision_entity_id}"
+
+            # Test entity_id reference resolution in first sensor
+            reference_sensor = sensors.get("collision_test_reference_sensor")
+            assert reference_sensor is not None, "collision_test_reference_sensor should exist in exported YAML"
+
+            formula1 = reference_sensor.get("formula", "")
+            # Verify the formula contains the updated entity reference (collision entity_id)
+            assert collision_entity_id in formula1, f"Expected {collision_entity_id} in formula: {formula1}"
+            # Check that the original entity_id (without _2) is not present as a standalone reference
+            assert formula1.count("sensor.circuit_a_power") == formula1.count(collision_entity_id), (
+                f"Original entity_id should be replaced, formula: {formula1}"
+            )
 
             # Test entity_id reference resolution in second sensor
-            formula2 = another_reference.formulas[0].formula
+            another_ref_sensor = sensors.get("collision_test_another_reference")
+            assert another_ref_sensor is not None, "collision_test_another_reference should exist in exported YAML"
 
-            # Verify the formula contains updated entity references
-            assert "sensor.circuit_a_power" in formula2, f"Expected entity reference in formula: {formula2}"
+            formula2 = another_ref_sensor.get("formula", "")
+            # Verify the formula contains the updated entity reference (collision entity_id)
+            assert collision_entity_id in formula2, f"Expected {collision_entity_id} in formula: {formula2}"
+            # Check that the original entity_id (without _2) is not present as a standalone reference
+            assert formula2.count("sensor.circuit_a_power") == formula2.count(collision_entity_id), (
+                f"Original entity_id should be replaced, formula: {formula2}"
+            )
 
             # Clean up: remove ALL test entities from the registry
             # We need to clean up by entity_id patterns since collision handling creates numbered variants

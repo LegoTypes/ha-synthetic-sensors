@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
 
     from .config_models import FormulaConfig, SensorConfig
-    from .type_definitions import ContextValue, DataProviderCallback, DependencyValidation
+    from .type_definitions import DataProviderCallback, DependencyValidation
+from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class EvaluatorDependency:
         return self._dependency_parser.extract_dependencies(formula)
 
     def extract_formula_dependencies(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None = None, sensor_config: SensorConfig | None = None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None = None
     ) -> set[str]:
         """Extract dependencies from a formula configuration, handling collection patterns.
 
@@ -137,7 +138,7 @@ class EvaluatorDependency:
         return dependencies
 
     def extract_and_prepare_dependencies(
-        self, config: FormulaConfig, context: dict[str, ContextValue] | None, sensor_config: SensorConfig | None = None
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None = None
     ) -> tuple[set[str], set[str]]:
         """Extract dependencies and identify collection pattern entities.
 
@@ -163,7 +164,7 @@ class EvaluatorDependency:
     def check_dependencies(
         self,
         dependencies: set[str],
-        context: dict[str, ContextValue] | None = None,
+        context: HierarchicalContextDict,
         collection_pattern_entities: set[str] | None = None,
     ) -> tuple[set[str], set[str], set[str]]:
         """Check dependency availability and categorize issues.
@@ -246,7 +247,7 @@ class EvaluatorDependency:
             "unavailable_entities": unavailable_entities,
         }
 
-    def _build_context_dict(self, context: dict[str, ContextValue] | None, config: FormulaConfig) -> dict[str, Any]:
+    def _build_context_dict(self, context: HierarchicalContextDict, config: FormulaConfig) -> dict[str, Any]:
         """Build context dictionary for dependency parsing."""
         context_dict = {}
 

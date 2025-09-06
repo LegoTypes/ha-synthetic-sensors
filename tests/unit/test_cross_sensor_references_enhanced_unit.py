@@ -6,7 +6,25 @@ from typing import Any
 from ha_synthetic_sensors.evaluator_phases.sensor_registry.sensor_registry_phase import SensorRegistryPhase
 from ha_synthetic_sensors.evaluator_phases.variable_resolution.cross_sensor_resolver import CrossSensorReferenceResolver
 from ha_synthetic_sensors.exceptions import CrossSensorResolutionError, DependencyValidationError, MissingDependencyError
-from ha_synthetic_sensors.type_definitions import ContextValue
+from ha_synthetic_sensors.type_definitions import ContextValue, ReferenceValue
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_hierarchical_context(initial_vars: dict[str, object] = None) -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    context_dict = HierarchicalContextDict(hierarchical_context)
+
+    if initial_vars:
+        for key, value in initial_vars.items():
+            if isinstance(value, ReferenceValue):
+                hierarchical_context.set(key, value)
+            else:
+                # Wrap raw values in ReferenceValue objects according to architecture
+                hierarchical_context.set(key, ReferenceValue(reference=key, value=value))
+
+    return context_dict
 
 
 class TestCrossSensorReferencesEnhanced:
@@ -196,6 +214,6 @@ class TestCrossSensorReferencesEnhanced:
         registry.register_sensor("test_sensor", "sensor.test_sensor", 100.0)
 
         # Resolve with context
-        context: dict[str, ContextValue] = {"formula_name": "test_formula"}
+        context: HierarchicalContextDict = _create_hierarchical_context({"formula_name": "test_formula"})
         result = resolver.resolve("test_sensor", "test_sensor", context)
         assert result == 100.0

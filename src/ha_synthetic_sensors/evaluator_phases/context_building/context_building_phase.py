@@ -5,12 +5,14 @@ from typing import Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import DataValidationError, MissingDependencyError
+from ...hierarchical_context_dict import HierarchicalContextDict
 from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_ha_domains
 from ...type_definitions import ContextValue, DataProviderCallback, ReferenceValue
 from ...utils_config import resolve_config_variables
 from ..variable_resolution.resolver_factory import VariableResolverFactory
-from .builder_factory import ContextBuilderFactory
+
+# ARCHITECTURE CLEANUP: Removed unused ContextBuilderFactory and all builder classes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,13 +32,24 @@ class ContextBuildingPhase:
 
     def __init__(self) -> None:
         """Initialize the context building phase."""
-        self._builder_factory = ContextBuilderFactory()
+        # ARCHITECTURE CLEANUP: Removed unused ContextBuilderFactory
         # These will be set during integration
         self._hass: Any = None
         self._data_provider_callback: DataProviderCallback | None = None
         self._dependency_handler: Any = None
         self._sensor_to_backing_mapping: dict[str, str] = {}
         self._global_settings: dict[str, Any] | None = None
+
+    def _safe_context_set(self, context: HierarchicalContextDict, key: str, value: ContextValue) -> None:
+        """Safely set a value in context, using unified setter if available."""
+        if hasattr(context, "_hierarchical_context"):
+            # This is our HierarchicalContextDict - use unified setter
+            context._hierarchical_context.set(key, value)
+            _LOGGER.debug("SAFE_CONTEXT_SET: Used unified setter for %s", key)
+        else:
+            # Regular dict - use direct assignment
+            context[key] = value
+            _LOGGER.debug("SAFE_CONTEXT_SET: Used direct assignment for %s", key)
 
     def set_evaluator_dependencies(
         self,
@@ -66,16 +79,26 @@ class ContextBuildingPhase:
     def build_evaluation_context(
         self,
         dependencies: set[str],
-        context: dict[str, ContextValue] | None = None,
+        context: HierarchicalContextDict,
         config: FormulaConfig | None = None,
         sensor_config: SensorConfig | None = None,
-    ) -> dict[str, ContextValue]:
+    ) -> HierarchicalContextDict:
         """Build the complete evaluation context for formula evaluation."""
-        eval_context: dict[str, ContextValue] = {}
+        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
+        eval_context = context  # Preserve the hierarchical context
+        _LOGGER.warning(
+            "CONTEXT_BUILDING_PRESERVE: Using input context id=%d type=%s with %d items",
+            id(eval_context),
+            type(eval_context).__name__,
+            len(eval_context),
+        )
 
         # Add Home Assistant instance for metadata handler access
         if self._hass is not None:
-            eval_context["_hass"] = self._hass
+            _LOGGER.warning("CONTEXT_BUILDING_HASS: Adding HASS instance to context: %s", type(self._hass).__name__)
+            eval_context._hierarchical_context.set_system_object("_hass", self._hass)
+        else:
+            _LOGGER.warning("CONTEXT_BUILDING_NO_HASS: No HASS instance available in context building phase")
 
         # Add Home Assistant constants to evaluation context (lowest priority)
         self._add_ha_constants_to_context(eval_context)
@@ -97,9 +120,29 @@ class ContextBuildingPhase:
             )
             _LOGGER.debug("Added current sensor entity_id to context: %s", sensor_config.entity_id)
 
+        # CRITICAL FIX: Update state token to backing entity if mapping exists
+        # This ensures state token resolves to backing entity value, not synthetic sensor ID
+        if sensor_config and hasattr(self, "_sensor_to_backing_mapping") and self._sensor_to_backing_mapping:
+            backing_entity_id = self._sensor_to_backing_mapping.get(sensor_config.unique_id)
+            if backing_entity_id and backing_entity_id in eval_context:
+                # Update state to point to the backing entity value
+                backing_entity_value = eval_context[backing_entity_id]
+                if isinstance(backing_entity_value, ReferenceValue):
+                    self._add_entity_to_context(eval_context, "state", backing_entity_value, "backing_entity")
+                    _LOGGER.debug(
+                        "Updated state token to backing entity: %s -> %s", backing_entity_id, backing_entity_value.value
+                    )
+
         # Add global variables BEFORE resolving computed variables
         # This ensures global variables are available when computed variables are evaluated
         self._add_global_variables_to_context(eval_context)
+
+        # CRITICAL FIX: Add sensor_config and formula_config to context BEFORE resolving entity dependencies
+        # This ensures the StateResolver can access them when determining resolution strategy
+        if sensor_config is not None:
+            eval_context._hierarchical_context.set_system_object("_sensor_config", sensor_config)
+        if config is not None:
+            eval_context._hierarchical_context.set_system_object("_formula_config", config)
 
         # Resolve entity dependencies
         self._resolve_entity_dependencies(eval_context, dependencies, resolver_factory)
@@ -111,7 +154,7 @@ class ContextBuildingPhase:
         _LOGGER.debug("Context building phase: built context with %d variables", len(eval_context))
         return eval_context
 
-    def _create_resolver_factory(self, context: dict[str, ContextValue] | None) -> VariableResolverFactory:
+    def _create_resolver_factory(self, context: HierarchicalContextDict) -> VariableResolverFactory:
         """Create modern variable resolver factory for direct resolution."""
 
         resolver_factory = VariableResolverFactory(
@@ -126,42 +169,42 @@ class ContextBuildingPhase:
 
         return resolver_factory
 
-    def _add_context_variables(self, eval_context: dict[str, ContextValue], context: dict[str, ContextValue] | None) -> None:
+    def _add_context_variables(self, eval_context: HierarchicalContextDict, context: HierarchicalContextDict) -> None:
         """Add context variables to evaluation context."""
-        if context:
-            # ARCHITECTURE FIX: Ensure all context values are ReferenceValue objects
-            # This prevents raw value injection during context merging
-            for key, value in context.items():
-                if key.startswith("_"):
-                    # Skip internal registry keys
-                    eval_context[key] = value
-                elif isinstance(value, ReferenceValue):
-                    # Already a ReferenceValue - use directly
-                    eval_context[key] = value
+        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
+        # ARCHITECTURE FIX: Ensure all context values are ReferenceValue objects
+        # This prevents raw value injection during context merging
+        for key, value in context.items():
+            if key.startswith("_"):
+                # Use system object method for internal registry keys
+                eval_context._hierarchical_context.set_system_object(key, value)
+            elif isinstance(value, ReferenceValue):
+                # Already a ReferenceValue - use directly
+                self._safe_context_set(eval_context, key, value)
+            else:
+                # Wrap intermediate raw values with ReferenceValue from computed variable results
+                if isinstance(value, (int | float | str | bool)):
+                    _LOGGER.debug(
+                        "Converting raw value '%s'=%s (type: %s) to ReferenceValue for context",
+                        key,
+                        value,
+                        type(value).__name__,
+                    )
+                    ReferenceValueManager.set_variable_with_reference_value(eval_context, key, key, value)
                 else:
-                    # Wrap intermediate raw values with ReferenceValue from computed variable results
-                    if isinstance(value, (int | float | str | bool)):
-                        _LOGGER.debug(
-                            "Converting raw value '%s'=%s (type: %s) to ReferenceValue for context",
-                            key,
-                            value,
-                            type(value).__name__,
-                        )
-                        ReferenceValueManager.set_variable_with_reference_value(eval_context, key, key, value)
-                    else:
-                        # ERROR: Other raw values should not exist at this point
-                        _LOGGER.error(
-                            "CONTEXT_BUG: Raw value '%s'=%s (type: %s) found in context - this indicates an upstream bug",
-                            key,
-                            value,
-                            type(value).__name__,
-                        )
-                        # Fail fast to expose the problem
-                        raise TypeError(
-                            f"Raw value found in context: {key}={value}. Context should only contain ReferenceValue objects."
-                        )
+                    # ERROR: Other raw values should not exist at this point
+                    _LOGGER.error(
+                        "CONTEXT_BUG: Raw value '%s'=%s (type: %s) found in context - this indicates an upstream bug",
+                        key,
+                        value,
+                        type(value).__name__,
+                    )
+                    # Fail fast to expose the problem
+                    raise TypeError(
+                        f"Raw value found in context: {key}={value}. Context should only contain ReferenceValue objects."
+                    )
 
-    def _add_global_variables_to_context(self, eval_context: dict[str, ContextValue]) -> None:
+    def _add_global_variables_to_context(self, eval_context: HierarchicalContextDict) -> None:
         """Add global variables to the evaluation context before computed variable resolution.
 
         This is critical for fixing the empty context issue - global variables must be
@@ -183,10 +226,15 @@ class ContextBuildingPhase:
             _LOGGER.debug("Context building: Added global variable '%s' = %s", var_name, var_value)
 
     def _resolve_entity_dependencies(
-        self, eval_context: dict[str, ContextValue], dependencies: set[str], resolver_factory: VariableResolverFactory
+        self, eval_context: HierarchicalContextDict, dependencies: set[str], resolver_factory: VariableResolverFactory
     ) -> None:
         """Resolve entity dependencies using modern variable resolver factory."""
         for entity_id in dependencies:
+            # ARCHITECTURE FIX: Skip dependencies that are already in context
+            if entity_id in eval_context:
+                _LOGGER.debug("Dependency '%s' already in context, skipping resolution", entity_id)
+                continue
+
             try:
                 resolved_value = resolver_factory.resolve_variable(
                     variable_name=entity_id, variable_value=entity_id, context=eval_context
@@ -202,13 +250,13 @@ class ContextBuildingPhase:
                 raise MissingDependencyError(f"Failed to resolve entity dependency: {entity_id}") from e
 
     def _add_entity_to_context(
-        self, eval_context: dict[str, ContextValue], entity_id: str, value: ContextValue, source: str
+        self, eval_context: HierarchicalContextDict, entity_id: str, value: ContextValue, source: str
     ) -> None:
         """Add entity to evaluation context."""
         # Use centralized ReferenceValueManager for type safety
         # If value is already a ReferenceValue, use it directly
         if isinstance(value, ReferenceValue):
-            eval_context[entity_id] = value
+            self._safe_context_set(eval_context, entity_id, value)
         else:
             # Create ReferenceValue for entity
             ReferenceValueManager.set_variable_with_reference_value(
@@ -221,14 +269,14 @@ class ContextBuildingPhase:
 
     def _resolve_config_variables(
         self,
-        eval_context: dict[str, ContextValue],
+        eval_context: HierarchicalContextDict,
         config: FormulaConfig | None,
         resolver_factory: VariableResolverFactory,
         sensor_config: SensorConfig | None = None,
     ) -> None:
         """Resolve config variables using modern variable resolver factory."""
 
-        def resolver_callback(var_name: str, var_value: Any, context: dict[str, ContextValue], sensor_cfg: Any) -> Any:
+        def resolver_callback(var_name: str, var_value: Any, context: HierarchicalContextDict, sensor_cfg: Any) -> Any:
             # For non-string values (numeric literals), add directly to context
             if not isinstance(var_value, str):
                 return var_value
@@ -250,13 +298,19 @@ class ContextBuildingPhase:
             # Fallback to adding as-is if resolution fails
             return var_value
 
+        # BULLETPROOF: Log what type we're passing to resolve_config_variables from context building phase
+        _LOGGER.warning(
+            "CONTEXT_BUILDING_CALLING: Passing context id=%d type=%s to resolve_config_variables",
+            id(eval_context),
+            type(eval_context).__name__,
+        )
         resolve_config_variables(eval_context, config, resolver_callback, sensor_config)
 
     def _handle_config_variable_none_value(self, var_name: str, config: FormulaConfig) -> None:
         """Handle config variable with None value."""
         _LOGGER.warning("Config variable '%s' in formula '%s' resolved to None", var_name, config.name or config.id)
 
-    def _add_ha_constants_to_context(self, eval_context: dict[str, ContextValue]) -> None:
+    def _add_ha_constants_to_context(self, eval_context: HierarchicalContextDict) -> None:
         """Add Home Assistant constants to the evaluation context.
 
         With lazy loading in place via formula_constants.__getattr__,

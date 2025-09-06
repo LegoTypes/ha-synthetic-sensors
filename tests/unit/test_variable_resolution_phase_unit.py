@@ -7,6 +7,24 @@ from ha_synthetic_sensors.evaluator_phases.variable_resolution.variable_resoluti
     VariableResolutionPhase,
 )
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_hierarchical_context(initial_vars: dict[str, object] = None) -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    context_dict = HierarchicalContextDict(hierarchical_context)
+
+    if initial_vars:
+        for key, value in initial_vars.items():
+            if isinstance(value, ReferenceValue):
+                hierarchical_context.set(key, value)
+            else:
+                # Wrap raw values in ReferenceValue objects
+                hierarchical_context.set(key, ReferenceValue(reference=key, value=value))
+
+    return context_dict
 
 
 class _FakeResolverFactory:
@@ -58,7 +76,7 @@ def _make_phase(hass=None):
 def test_resolve_all_references_with_ha_detection_entity_and_state_paths(mock_hass) -> None:
     sensor_cfg = SensorConfig(unique_id="s1", formulas=[FormulaConfig(id="main", formula="sensor.x + state")])
     formula_cfg = sensor_cfg.formulas[0]
-    eval_ctx = {"x": 1}
+    eval_ctx = _create_hierarchical_context({"x": 1})
 
     phase = _make_phase(hass=mock_hass)
     # The fake resolver returns ReferenceValue objects for entity ids and state, so final expression becomes numeric
@@ -73,7 +91,7 @@ def test_resolve_all_references_with_ha_detection_entity_and_state_paths(mock_ha
 def test_resolve_all_references_in_formula_returns_string(mock_hass) -> None:
     sensor_cfg = SensorConfig(unique_id="s1", formulas=[FormulaConfig(id="main", formula="sensor.a + 1")])
     formula_cfg = sensor_cfg.formulas[0]
-    eval_ctx: dict[str, object] = {}
+    eval_ctx = _create_hierarchical_context()
 
     phase = _make_phase(hass=mock_hass)
     resolved = phase.resolve_all_references_in_formula(formula_cfg.formula, sensor_cfg, eval_ctx, formula_cfg)

@@ -1,0 +1,26 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_entity_listener"
+
+sensors:
+  power_analysis:
+    name: "Power Analysis Sensor"
+    formula: "power_input * 1.1"
+    variables:
+      power_input: "sensor.power_meter"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"
+      state_class: "measurement"
+
+  voltage_analysis:
+    name: "Voltage Analysis Sensor"
+    formula: "voltage_input * 0.95"
+    variables:
+      voltage_input: "sensor.voltage_meter"
+    metadata:
+      unit_of_measurement: "V"
+      device_class: "voltage"
+      state_class: "measurement"
+

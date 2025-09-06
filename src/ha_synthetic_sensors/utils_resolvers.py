@@ -60,12 +60,12 @@ def resolve_via_data_provider_entity(dependency_handler: Any, entity_id: str, or
             if isinstance(value, str):
                 alt_state = identify_alternate_state_value(value)
                 if isinstance(alt_state, str) or is_ha_unknown_equivalent(value):
-                    _LOGGER.debug("Entity resolver: entity '%s' has %s state via data provider", entity_id, value)
+                    # Debug logging removed to reduce verbosity
                     # Return the normalized HA state value wrapped in ReferenceValue
                     normalized_value = normalize_ha_state_value(value)
                     return ReferenceValue(reference=entity_id, value=normalized_value)
 
-            _LOGGER.debug("Entity resolver: resolved '%s' to %s", entity_id, value)
+            # Debug logging removed to reduce verbosity
 
             # Create ReferenceValue object for data provider lookups
             # This ensures that data provider lookups return ReferenceValue objects
@@ -117,28 +117,16 @@ def resolve_via_data_provider_attribute(
                 if isinstance(attribute_value, str):
                     alt_state = identify_alternate_state_value(attribute_value)
                     if isinstance(alt_state, str) or is_ha_unknown_equivalent(attribute_value):
-                        _LOGGER.debug(
-                            "Attribute resolver: attribute '%s' of entity '%s' has %s state via data provider",
-                            attribute_name,
-                            entity_id,
-                            attribute_value,
-                        )
+                        # Debug logging removed to reduce verbosity
+                        pass
                     return normalize_ha_state_value(attribute_value)
 
-                _LOGGER.debug(
-                    "Attribute resolver: resolved '%s' to %s via data provider",
-                    original_reference,
-                    attribute_value,
-                )
+                # Debug logging removed to reduce verbosity
                 return attribute_value
-            _LOGGER.debug(
-                "Attribute resolver: attribute '%s' not found in entity '%s' attributes",
-                attribute_name,
-                entity_id,
-            )
+            # Debug logging removed to reduce verbosity
             raise MissingDependencyError(f"Attribute '{attribute_name}' not found in entity '{entity_id}'")
 
-        _LOGGER.debug("Attribute resolver: entity '%s' does not exist via data provider", entity_id)
+        # Debug logging removed to reduce verbosity
         raise MissingDependencyError(f"Entity '{entity_id}' not found")
     except DataValidationError:
         raise
@@ -171,7 +159,7 @@ def _convert_hass_state_value(state_value: str, entity_id: str, hass_state: Any 
     # Try to convert to numeric value
     try:
         numeric_value = float(state_value) if "." in state_value else int(state_value)
-        _LOGGER.debug("Entity resolver: resolved '%s' to %s via HASS", entity_id, numeric_value)
+        # Debug logging removed to reduce verbosity
         return numeric_value
     except ValueError:
         # Handle boolean-like strings
@@ -180,11 +168,7 @@ def _convert_hass_state_value(state_value: str, entity_id: str, hass_state: Any 
             return result
 
         # Non-numeric, non-boolean state, return as string
-        _LOGGER.debug(
-            "Entity resolver: resolved '%s' to '%s' (non-numeric) via HASS",
-            entity_id,
-            state_value,
-        )
+        # Debug logging removed to reduce verbosity
         return state_value
 
 
@@ -204,12 +188,12 @@ def _convert_boolean_state(state_value: str, entity_id: str, hass_state: Any = N
     # Convert boolean states to numeric values for proper comparison
     # This ensures that comparisons like "binary_sensor.test == on" work correctly
     if state_str in TRUE_STATES:
-        _LOGGER.debug("Entity resolver: converting '%s' to 1.0 for boolean comparison", entity_id)
+        # Debug logging removed to reduce verbosity
         return 1.0  # Convert true states to 1.0
     if state_str in FALSE_STATES:
-        _LOGGER.debug("Entity resolver: converting '%s' to 0.0 for boolean comparison", entity_id)
+        # Debug logging removed to reduce verbosity
         return 0.0  # Convert false states to 0.0
-    _LOGGER.debug("Entity resolver: preserving '%s' as string for SimpleEval comparison", entity_id)
+    # Debug logging removed to reduce verbosity
     return state_value  # Return original string for SimpleEval to handle
 
 
@@ -243,10 +227,7 @@ def resolve_via_hass_entity(dependency_handler: Any, entity_id: str, original_re
 
         # Handle None state values (startup race condition)
         if state_value is None:
-            _LOGGER.debug(
-                "Entity resolver: entity '%s' has None state, preserving None",
-                entity_id,
-            )
+            # Debug logging removed to reduce verbosity
             # Preserve None values - let alternate state handlers decide what to do
             return ReferenceValue(reference=entity_id, value=None)
 
@@ -256,7 +237,7 @@ def resolve_via_hass_entity(dependency_handler: Any, entity_id: str, original_re
         # ARCHITECTURE FIX: Create ReferenceValue object for HA entity lookups
         # This ensures that HA entity lookups return ReferenceValue objects like data provider lookups
         result = ReferenceValue(reference=entity_id, value=converted_value)
-        _LOGGER.debug("UTILS_RESOLVERS: Created ReferenceValue for HA entity '%s': %s", entity_id, result)
+        # Debug logging removed to reduce verbosity
         return result
     except Exception as e:
         _LOGGER.warning("Error resolving entity reference '%s' via HASS: %s", entity_id, e)

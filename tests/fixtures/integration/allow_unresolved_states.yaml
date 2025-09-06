@@ -8,22 +8,13 @@ global_settings:
     attribution: "Allow unresolved states test"
 
 sensors:
-  allow_unresolved_sensor:
+  # test: tests/integration/test_alternate_handlers_runtime.py::test_allow_unresolved_states_behavior
+  # test_sensor_unique_id: test_allow_unresolved_sensor
+  # NOTE: Do NOT set `entity_id` here. Test will map `test_allow_unresolved_sensor` to backing entity via `sensor_to_backing_mapping` as per integration test guide.
+  test_allow_unresolved_sensor:
     name: "Allow Unresolved States Sensor"
-    entity_id: "sensor.allow_unresolved_backing"
-    formula: "state"
-    alternate_states:
-      UNAVAILABLE:
-        formula: "state if within_grace else 'fallback'"
-      UNKNOWN:
-        formula: "state if within_grace else 'fallback'"
-    variables:
-      within_grace:
-        formula: "minutes_between(metadata(state, 'last_changed'), now()) < grace_minutes"
-        alternate_states:
-          UNAVAILABLE: false
-          UNKNOWN: false
-        allow_unresolved_states: true  # Allow alternate states to proceed into formula evaluation
+    formula: "state if state != 'unavailable' else 'sensor_unavailable'"
+    allow_unresolved_states: true
     metadata:
       unit_of_measurement: "W"
       device_class: "power"

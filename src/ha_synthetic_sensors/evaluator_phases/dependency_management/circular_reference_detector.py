@@ -1,7 +1,10 @@
 """Circular reference detector for detecting circular dependencies."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...exceptions import CircularDependencyError
 from .base_manager import DependencyManager
@@ -12,19 +15,20 @@ _LOGGER = logging.getLogger(__name__)
 class CircularReferenceDetector(DependencyManager):
     """Detector for circular dependencies."""
 
-    def can_manage(self, manager_type: str, context: dict[str, Any] | None = None) -> bool:
+    def can_manage(self, manager_type: str, context: "HierarchicalContextDict") -> bool:
         """Determine if this manager can handle circular reference detection."""
         return manager_type == "circular_detection"
 
-    def manage(self, manager_type: str, context: dict[str, Any] | None = None, **kwargs: Any) -> set[str]:
+    def manage(self, manager_type: str, context: "HierarchicalContextDict", **kwargs: Any) -> set[str]:
         """Detect circular references in dependencies."""
-        if manager_type != "circular_detection" or context is None:
+        if manager_type != "circular_detection":
             return set()
 
-        dependencies = context.get("dependencies", set())
-        sensor_name = context.get("sensor_name", "")
-        sensor_registry = context.get("sensor_registry", {})
-        sensor_dependencies: dict[str, set[str]] | None = context.get("sensor_dependencies")
+        # Get data from context first, then fall back to kwargs for backward compatibility
+        dependencies = context.get("dependencies", kwargs.get("dependencies", set()))
+        sensor_name = context.get("sensor_name", kwargs.get("sensor_name", ""))
+        sensor_registry = context.get("sensor_registry", kwargs.get("sensor_registry", {}))
+        sensor_dependencies = context.get("sensor_dependencies", kwargs.get("sensor_dependencies"))
 
         # If a full graph is provided, detect cycles strictly and raise when present
         if isinstance(sensor_dependencies, dict) and sensor_dependencies:
@@ -33,7 +37,10 @@ class CircularReferenceDetector(DependencyManager):
                 raise CircularDependencyError(cycle_path)
             return set()
 
-        circular_refs = self._detect_circular_references(dependencies, sensor_name, sensor_registry)
+        # Ensure we have the right types
+        deps_set: set[str] = set(dependencies) if isinstance(dependencies, set | list | tuple) else set()
+        registry_dict: dict[str, Any] = dict(sensor_registry) if isinstance(sensor_registry, dict) else {}
+        circular_refs = self._detect_circular_references(deps_set, str(sensor_name), registry_dict)
 
         if circular_refs:
             raise CircularDependencyError(list(circular_refs))

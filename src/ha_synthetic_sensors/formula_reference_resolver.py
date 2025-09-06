@@ -13,7 +13,6 @@ Key Features:
 """
 
 import logging
-import re
 from typing import Any
 
 from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
@@ -38,10 +37,10 @@ class ReferencePatternDetector:
     """Detects different types of cross-sensor references in formulas."""
 
     def __init__(self) -> None:
-        # Pattern for entity IDs: sensor.something, binary_sensor.something, etc.
-        self.entity_id_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)\b")
-        # Pattern for standalone sensor keys: just the identifier
-        self.sensor_key_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
+        # Use centralized entity ID and sensor key patterns from regex helper
+        from .regex_helper import create_entity_id_and_sensor_key_patterns
+
+        self.entity_id_pattern, self.sensor_key_pattern = create_entity_id_and_sensor_key_patterns()
 
     def detect_references(self, formula: str, entity_mappings: dict[str, str]) -> list[ReferencePattern]:
         """Detect all cross-sensor references in a formula.
@@ -361,6 +360,7 @@ class FormulaReferenceResolver:
             dependencies=resolved_dependencies,
             variables=resolved_variables,
             alternate_state_handler=formula.alternate_state_handler,  # Preserve alternate state handler
+            allow_unresolved_states=formula.allow_unresolved_states,  # Preserve allow_unresolved_states flag
         )
 
         return resolved_formula

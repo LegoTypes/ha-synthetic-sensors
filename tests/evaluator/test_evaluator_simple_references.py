@@ -13,7 +13,8 @@ def test_simple_variable_evaluator(mock_hass, mock_entity_registry, mock_states)
     evaluator = Evaluator(mock_hass)
 
     # Test simple variable reference
-    config = FormulaConfig(id="test_formula", formula="power_reading", variables={"power_reading": "sensor.power_meter"})
+    # When providing a context with pre-resolved values, don't define variables that reference entities
+    config = FormulaConfig(id="test_formula", formula="power_reading", variables={})
 
     # Create context with the variable value as ReferenceValue (current architecture)
     from ha_synthetic_sensors.type_definitions import ReferenceValue
@@ -102,7 +103,14 @@ def test_numeric_literal(mock_hass, mock_entity_registry, mock_states) -> None:
     # Test numeric literal
     config = FormulaConfig(id="test_formula", formula="123.45", variables={})
 
-    result = evaluator.evaluate_formula(config)
+    # Create proper hierarchical context according to architecture
+    from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+    from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+    hierarchical_context = HierarchicalEvaluationContext("numeric_literal_test")
+    context = HierarchicalContextDict(hierarchical_context)
+
+    result = evaluator.evaluate_formula(config, context)
 
     # Should succeed and return the value
     assert result["success"] is True

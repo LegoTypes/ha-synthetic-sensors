@@ -9,6 +9,12 @@ from ha_synthetic_sensors.type_definitions import ReferenceValue
 
 def test_process_metadata_functions_resolves_with_referencevalue_hass() -> None:
     hass = Mock()
+    # Create proper mock state with attributes dict
+    mock_state = Mock()
+    mock_state.attributes = {}
+    mock_state.entity_id = "sensor.kitchen"
+    hass.states.get.return_value = mock_state
+
     # EvaluationContext should contain ReferenceValue objects
     context = {"_hass": ReferenceValue(reference="_hass", value=hass)}
     formula = "metadata(sensor.kitchen, 'entity_id')"

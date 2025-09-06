@@ -420,6 +420,9 @@ class TestVariableResolutionEdgeCasesIntegration:
         )()
         mock_states["sensor.recovery_value_source"] = type("MockState", (), {"state": "500.0", "attributes": {}})()
 
+        # Add mock state for progressive attribute chain test
+        mock_states["sensor.chain_base_entity"] = type("MockState", (), {"state": "100.0", "attributes": {}})()
+
         # Collection entities for attribute access
         mock_states["sensor.power_device_1"] = type(
             "MockState", (), {"state": "150.0", "attributes": {"battery_level": 80, "power_rating": 120}}
@@ -465,7 +468,7 @@ class TestVariableResolutionEdgeCasesIntegration:
                 yaml_content = f.read()
 
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
-            assert result["sensors_imported"] == 5
+            assert result["sensors_imported"] == 6
 
             # Set up sensor manager for entity attribute access testing
             sensor_manager = await async_setup_synthetic_sensors(
@@ -483,7 +486,7 @@ class TestVariableResolutionEdgeCasesIntegration:
 
             # Verify entity attribute access sensors were created
             sensors = storage_manager.list_sensors(sensor_set_id=sensor_set_id)
-            assert len(sensors) == 5
+            assert len(sensors) == 6
 
             # Verify deep attribute access chains sensor
             deep_access_sensor = next((s for s in sensors if s.unique_id == "deep_attribute_access_chains"), None)
@@ -499,6 +502,23 @@ class TestVariableResolutionEdgeCasesIntegration:
             collection_attr_sensor = next((s for s in sensors if s.unique_id == "collection_with_attribute_access"), None)
             assert collection_attr_sensor is not None
             assert len(collection_attr_sensor.formulas) >= 3  # Main formula + 2 attributes
+
+            # Verify progressive attribute chain sensor - this tests multi-evaluation cycles
+            progressive_chain_sensor = next((s for s in sensors if s.unique_id == "progressive_attribute_chain"), None)
+            assert progressive_chain_sensor is not None
+            assert len(progressive_chain_sensor.formulas) == 7  # Main formula + 6 attributes
+
+            # Verify the progressive chain has the expected dependency structure
+            attribute_formulas = progressive_chain_sensor.formulas[1:]  # Skip main formula
+            level1_formula = next((f for f in attribute_formulas if "level1" in f.id), None)
+            level2_formula = next((f for f in attribute_formulas if "level2" in f.id), None)
+            level5_formula = next((f for f in attribute_formulas if "level5" in f.id), None)
+            final_formula = next((f for f in attribute_formulas if "final_computation" in f.id), None)
+
+            assert level1_formula is not None and level1_formula.formula == "base_value"
+            assert level2_formula is not None and level2_formula.formula == "level1 * 2"
+            assert level5_formula is not None and level5_formula.formula == "level4 + level2"
+            assert final_formula is not None and final_formula.formula == "level5 + level3 + level1"
 
             # Clean up
             await storage_manager.async_delete_sensor_set(sensor_set_id)

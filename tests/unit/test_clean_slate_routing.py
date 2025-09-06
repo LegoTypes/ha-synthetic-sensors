@@ -15,6 +15,24 @@ from homeassistant.core import HomeAssistant
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_hierarchical_context(initial_vars: dict[str, object] = None) -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    context_dict = HierarchicalContextDict(hierarchical_context)
+
+    if initial_vars:
+        for key, value in initial_vars.items():
+            if isinstance(value, ReferenceValue):
+                hierarchical_context.set(key, value)
+            else:
+                # Wrap raw values in ReferenceValue objects
+                hierarchical_context.set(key, ReferenceValue(reference=key, value=value))
+
+    return context_dict
 
 
 class TestCleanSlateRouting(unittest.TestCase):
@@ -35,7 +53,7 @@ class TestCleanSlateRouting(unittest.TestCase):
 
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, 14)) as mock_enhanced:
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "2 + 3 * 4", context, {}, None)
 
             # Verify enhanced evaluation was called directly
@@ -48,7 +66,7 @@ class TestCleanSlateRouting(unittest.TestCase):
 
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, 5.0)) as mock_enhanced:
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "minutes(5) / minutes(1)", context, {}, None)
 
             # Verify enhanced evaluation was called directly
@@ -64,7 +82,7 @@ class TestCleanSlateRouting(unittest.TestCase):
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, expected_date)
         ) as mock_enhanced:
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "add_business_days(today(), 5)", context, {}, None)
 
             # Verify enhanced evaluation was called and date converted to ISO string
@@ -80,7 +98,7 @@ class TestCleanSlateRouting(unittest.TestCase):
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, mock_timedelta)
         ) as mock_enhanced:
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "hours(2) + minutes(30)", context, {}, None)
 
             # Verify enhanced evaluation was called and timedelta converted to seconds
@@ -101,7 +119,7 @@ class TestCleanSlateRouting(unittest.TestCase):
 
         with patch.object(self.evaluator._handler_factory, "get_handler", return_value=mock_metadata_handler):
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "metadata(entity, 'last_changed')", context, {}, None)
 
             # Verify metadata handler was called
@@ -118,7 +136,7 @@ class TestCleanSlateRouting(unittest.TestCase):
 
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(False, None)):
             # EvaluationContext should contain ReferenceValue objects
-            eval_context = {"test_var": ReferenceValue("test", "value")}
+            eval_context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             with self.assertRaises(AlternateStateDetected) as exc_context:
                 self.evaluator._execute_with_handler(config, "unsupported_operation()", eval_context, {}, None)
 
@@ -134,7 +152,7 @@ class TestCleanSlateRouting(unittest.TestCase):
 
         with patch.object(self.evaluator._handler_factory, "get_handler", return_value=None):
             # EvaluationContext should contain ReferenceValue objects
-            eval_context = {"test_var": ReferenceValue("test", "value")}
+            eval_context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             with self.assertRaises(AlternateStateDetected) as exc_context:
                 self.evaluator._execute_with_handler(config, "metadata(entity, 'attr')", eval_context, {}, None)
 
@@ -148,7 +166,7 @@ class TestCleanSlateRouting(unittest.TestCase):
         # Enhanced routing is always enabled in clean slate design
         with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, 5)) as mock_enhanced:
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "2 + 3", context, {}, None)
 
             # Verify enhanced evaluation was called
@@ -163,7 +181,7 @@ class TestCleanSlateRouting(unittest.TestCase):
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, "Hello World")
         ) as mock_enhanced:
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "'Hello' + ' ' + 'World'", context, {}, None)
 
             # Verify enhanced evaluation was called directly
@@ -179,7 +197,7 @@ class TestCleanSlateRouting(unittest.TestCase):
             self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, mock_datetime)
         ) as mock_enhanced:
             # EvaluationContext should contain ReferenceValue objects
-            context = {"test_var": ReferenceValue("test", "value")}
+            context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
             result = self.evaluator._execute_with_handler(config, "now() + days(7)", context, {}, None)
 
             # Verify enhanced evaluation was called and datetime converted to ISO string
@@ -212,7 +230,7 @@ class TestCleanSlateRouting(unittest.TestCase):
 
                 with patch.object(self.evaluator._enhanced_helper, "try_enhanced_eval", return_value=(True, mock_result)):
                     # EvaluationContext should contain ReferenceValue objects
-                    context = {"test_var": ReferenceValue("test", "value")}
+                    context = _create_hierarchical_context({"test_var": ReferenceValue("test", "value")})
                     result = self.evaluator._execute_with_handler(config, formula, context, {}, None)
                     self.assertEqual(result, expected_result)
 

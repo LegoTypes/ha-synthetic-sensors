@@ -1,0 +1,37 @@
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_boolean_issue"
+  variables:
+    grace_period_minutes: 15
+
+sensors:
+  test_boolean_issue:
+    name: Test Boolean Issue
+    formula: "'test'"
+    variables:
+      # Simulate SPAN scenario - use metadata to get the values
+      # For a new sensor, these attributes don't exist yet
+      last_valid_state:
+        formula: metadata(state, 'last_valid_state')
+      last_valid_changed:
+        formula: metadata(state, 'last_valid_changed')
+      # Simulate panel being offline (False = offline)
+      panel_status:
+        formula: "False"  # Boolean False, panel is offline
+      # This evaluates to some number of minutes
+      panel_offline_minutes:
+        formula: "20"  # Panel has been offline for 20 minutes
+      # This should evaluate to False because 20 > 15 (grace period)
+      # But it's showing as None in the attributes
+      is_within_grace_period:
+        #formula: last_valid_state != 'unknown' and not panel_status and panel_offline_minutes < grace_period_minutes
+        formula: last_valid_state is not None and last_valid_state != 'unknown' and not panel_status and panel_offline_minutes < grace_period_minutes
+    attributes:
+      # Debug values
+      last_valid_state_value: last_valid_state
+      panel_status_value: panel_status
+      panel_offline_minutes_value: panel_offline_minutes
+      is_within_grace_period_value: is_within_grace_period
+      # This is the actual test - should be False but shows as None
+      test_result: is_within_grace_period

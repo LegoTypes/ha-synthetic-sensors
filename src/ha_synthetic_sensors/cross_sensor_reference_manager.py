@@ -128,8 +128,7 @@ class CrossSensorReferenceManager:
         )
 
         # Log the complete mapping for debugging
-        for sensor_key, entity_id in self._sensor_key_to_entity_id.items():
-            self._logger.debug("  %s -> %s", sensor_key, entity_id)
+        self._logger.debug("Captured %d sensor mappings", len(self._sensor_key_to_entity_id))
 
         # Phase 3: Resolve formula references if we have the original config
         if self._original_config:
@@ -164,16 +163,8 @@ class CrossSensorReferenceManager:
             )
 
             if replacement_summary:
-                self._logger.debug("Formula reference replacements made:")
-                for sensor_key, formula_replacements in replacement_summary.items():
-                    for formula_id, replacement_info in formula_replacements.items():
-                        self._logger.debug(
-                            "  %s.%s: '%s' with replacements %s",
-                            sensor_key,
-                            formula_id,
-                            replacement_info["original_formula"],
-                            replacement_info["replacements"],
-                        )
+                total_replacements = sum(len(formula_replacements) for formula_replacements in replacement_summary.values())
+                self._logger.debug("Made %d formula reference replacements", total_replacements)
 
         except Exception as e:
             self._logger.error("Error during Phase 3 formula reference resolution: %s", e)

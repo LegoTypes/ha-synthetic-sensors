@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 
 from ..constants_handlers import ERROR_NO_HANDLER_FOR_FORMULA, HANDLER_TYPE_METADATA
-from ..type_definitions import ContextValue
+from ..hierarchical_context_dict import HierarchicalContextDict
 from .base_handler import FormulaHandler
 
 if TYPE_CHECKING:
@@ -21,7 +21,7 @@ class HandlerFactory:
 
     def __init__(
         self,
-        expression_evaluator: Callable[[str, dict[str, ContextValue] | None], Any] | None = None,
+        expression_evaluator: Callable[[str, HierarchicalContextDict], Any] | None = None,
         hass: HomeAssistant | None = None,
     ) -> None:
         """Initialize the handler factory.

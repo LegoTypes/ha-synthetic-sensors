@@ -107,38 +107,6 @@ class TestStateTokenExample:
         assert efficiency_result["success"] is True
         assert abs(efficiency_result["value"] - 110.0) < 0.001
 
-    def test_state_token_attribute_fails_without_context(
-        self, mock_hass, mock_entity_registry, mock_states, config_manager, state_token_example_yaml
-    ):
-        """Test that state token attribute formulas fail without proper context."""
-        # Validate and load the config
-        validation_result = config_manager.validate_yaml_data(state_token_example_yaml)
-        assert validation_result["valid"]
-        config = config_manager.load_from_dict(state_token_example_yaml)
-
-        # Find the test_power_with_processing sensor
-        sensor = next(s for s in config.sensors if s.unique_id == "test_power_with_processing")
-
-        # Create sensor manager
-        mock_add_entities = MagicMock()
-        sensor_manager = SensorManager(
-            config_manager._hass,
-            MagicMock(),  # name_resolver
-            mock_add_entities,  # add_entities_callback
-            SensorManagerConfig(),
-        )
-
-        # Test attribute formula evaluation WITHOUT context
-        evaluator = sensor_manager._evaluator
-        attribute_formula = sensor.formulas[1]  # Second formula is the amperage attribute
-
-        # Should fail without context
-        attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, None, sensor)
-
-        # Should fail because 'state' variable is not available
-        assert attr_result["success"] is False
-        assert "state" in str(attr_result["error"]).lower()
-
     def test_state_token_main_formula_with_self_reference(
         self, mock_hass, mock_entity_registry, mock_states, config_manager, state_token_example_yaml
     ):

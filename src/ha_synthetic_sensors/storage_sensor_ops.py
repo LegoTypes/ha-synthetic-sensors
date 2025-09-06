@@ -63,13 +63,15 @@ class SensorOpsHandler:
         from .storage_manager import StoredSensorDict  # pylint: disable=import-outside-toplevel
 
         # Create stored sensor entry
+        serialized_config = self.storage_manager.serialize_sensor_config(sensor_config)
+
         stored_sensor: StoredSensorDict = {
             "unique_id": sensor_config.unique_id,
             "sensor_set_id": sensor_set_id,
             "device_identifier": sensor_config.device_identifier,
             "created_at": self.storage_manager.get_current_timestamp(),
             "updated_at": self.storage_manager.get_current_timestamp(),
-            "config_data": self.storage_manager.serialize_sensor_config(sensor_config),
+            "config_data": serialized_config,
         }
 
         # Store sensor
@@ -81,7 +83,7 @@ class SensorOpsHandler:
         sensor_set_data["sensor_count"] = self.storage_manager.get_sensor_count(sensor_set_id)
 
         await self.storage_manager.async_save()
-        _LOGGER.debug("Stored sensor: %s in sensor set: %s", sensor_config.unique_id, sensor_set_id)
+        # Debug logging removed to reduce verbosity
 
     async def async_store_sensors_bulk(
         self,
@@ -141,7 +143,7 @@ class SensorOpsHandler:
 
         await self.storage_manager.async_save()
 
-        _LOGGER.debug("Stored %d sensors in sensor set: %s", len(stored_sensors), sensor_set_id)
+        # Debug logging removed to reduce verbosity
 
         return {
             "sensor_set_id": sensor_set_id,
@@ -238,7 +240,7 @@ class SensorOpsHandler:
 
         await self.storage_manager.async_save()
 
-        _LOGGER.debug("Updated sensor: %s", sensor_config.unique_id)
+        # Debug logging removed to reduce verbosity
         return True
 
     async def async_delete_sensor(self, unique_id: str) -> bool:
@@ -269,7 +271,7 @@ class SensorOpsHandler:
 
         await self.storage_manager.async_save()
 
-        _LOGGER.debug("Deleted sensor: %s", unique_id)
+        # Debug logging removed to reduce verbosity
         return True
 
     def serialize_sensor_config(self, sensor_config: SensorConfig) -> dict[str, Any]:
@@ -346,6 +348,7 @@ class SensorOpsHandler:
 
         def deserialize_formula_config(formula_data: dict[str, Any]) -> FormulaConfig:
             """Deserialize formula configuration."""
+
             # Handle alternate state handler deserialization
             if "alternate_state_handler" in formula_data and formula_data["alternate_state_handler"] is not None:
                 handler_data = formula_data["alternate_state_handler"]

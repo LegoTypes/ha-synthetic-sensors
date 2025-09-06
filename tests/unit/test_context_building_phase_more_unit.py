@@ -4,6 +4,14 @@ from ha_synthetic_sensors.config_models import FormulaConfig, SensorConfig
 from ha_synthetic_sensors.evaluator_phases.context_building.context_building_phase import (
     ContextBuildingPhase,
 )
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_hierarchical_context() -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 def test_is_attribute_reference_variants(mock_hass, mock_entity_registry, mock_states) -> None:
@@ -61,8 +69,9 @@ def test_resolve_entity_dependencies_missing_raises() -> None:
 
     # Call through build to hit exception branch in _resolve_entity_dependencies
     deps: set[str] = {"sensor.missing"}
+    context = _create_hierarchical_context()
     try:
-        phase.build_evaluation_context(deps, context=None, config=FormulaConfig(id="main", formula="1+1"))
+        phase.build_evaluation_context(deps, context=context, config=FormulaConfig(id="main", formula="1+1"))
         assert False, "Expected MissingDependencyError"
     except Exception as e:
         assert "Failed to resolve entity dependency" in str(e)

@@ -9,7 +9,15 @@ from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
 from .constants_entities import get_ha_entity_domains
 from .dependency_parser import DependencyParser, DynamicQuery
-from .type_definitions import ContextValue
+from .hierarchical_context_dict import HierarchicalContextDict
+from .regex_helper import (
+    check_pattern_exists,
+    convert_entity_id_to_variable_name,
+    extract_entity_ids_with_attributes,
+    regex_helper,
+    replace_entity_id_with_variable,
+    search_and_replace_with_pattern,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +36,7 @@ class FormulaPreprocessor:
     def preprocess_formula_for_evaluation(
         self,
         formula: str,
-        eval_context: dict[str, ContextValue] | None = None,
+        eval_context: HierarchicalContextDict,
         sensor_config: SensorConfig | None = None,
         formula_config: FormulaConfig | None = None,
         sensor_to_backing_mapping: dict[str, str] | None = None,
@@ -74,7 +82,7 @@ class FormulaPreprocessor:
 
         if is_attribute_formula:
             # For attribute formulas, leave "state" as is - it will be resolved from context
-            _LOGGER.debug("Formula preprocessor: Leaving 'state' token for attribute formula")
+            # Debug logging removed to reduce verbosity
             return formula
 
         # For main formulas, check if there's a resolvable backing entity
@@ -91,7 +99,7 @@ class FormulaPreprocessor:
             # and let the variable resolver handle the attribute access
             if "." in formula and "state." in formula:
                 # Formula contains attribute references - leave "state" as is
-                _LOGGER.debug("Formula preprocessor: Leaving 'state' token for attribute references")
+                # Debug logging removed to reduce verbosity
                 return formula
 
             # No attribute references - resolve state token to backing entity ID
@@ -101,11 +109,11 @@ class FormulaPreprocessor:
                 # Fallback to the old behavior for backward compatibility
                 backing_entity_id = f"sensor.{sensor_key}_backing"
 
-            _LOGGER.debug("Formula preprocessor: Converting 'state' to backing entity '%s'", backing_entity_id)
+            # Debug logging removed to reduce verbosity
             return formula.replace("state", backing_entity_id)
 
         # No backing entity - leave "state" as is (refers to sensor's pre-evaluation state)
-        _LOGGER.debug("Formula preprocessor: Leaving 'state' token for sensor without backing entity")
+        # Debug logging removed to reduce verbosity
         return formula
 
     def _convert_entity_references_to_variables(self, formula: str) -> str:
@@ -119,7 +127,6 @@ class FormulaPreprocessor:
         """
         # Pattern to match entity references like sensor.temperature, binary_sensor.door, etc.
         # But NOT attribute references like state.voltage (which should be handled by variable resolver)
-        entity_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z0-9_.]+)\b")
 
         def replace_entity_ref(match: re.Match[str]) -> str:
             """Replace entity reference with variable name."""
@@ -141,7 +148,18 @@ class FormulaPreprocessor:
             var_name = entity_id.replace(".", "_").replace("-", "_")
             return var_name
 
-        return entity_pattern.sub(replace_entity_ref, formula)
+        # Extract entity IDs and replace them with variable names
+        entity_ids = extract_entity_ids_with_attributes(formula)
+        result_formula = formula
+
+        for entity_id in entity_ids:
+            # Convert entity ID to variable name using centralized helper
+            var_name = convert_entity_id_to_variable_name(entity_id)
+
+            # Replace entity ID with variable name using centralized helper
+            result_formula = replace_entity_id_with_variable(result_formula, entity_id, var_name)
+
+        return result_formula
 
     def _normalize_formula_patterns(self, formula: str) -> str:
         """Normalize collection function patterns in the formula to handle repeated prefixes.
@@ -157,15 +175,9 @@ class FormulaPreprocessor:
         Returns:
             Formula with normalized patterns
         """
-        # Pattern to match collection functions with repeated prefixes
+        # Use centralized pattern from regex helper
         # Matches: function(prefix:value1|prefix:value2|prefix:value3...)
-        pattern = re.compile(
-            r"\b(sum|avg|count|min|max|std|var)\s*\(\s*"
-            r"([a-zA-Z_]+):"  # First prefix (e.g., "device_class:")
-            r"([^)]+)"  # Everything until the closing paren
-            r"\)",
-            re.IGNORECASE,
-        )
+        pattern = regex_helper.create_collection_normalization_pattern()
 
         def normalize_match(match: re.Match[str]) -> str:
             function = match.group(1)
@@ -270,22 +282,15 @@ class FormulaPreprocessor:
         Returns:
             Formula with pattern replaced by default value
         """
-        # Build a regex pattern that matches the function call with optional exclusions
-        escaped_function = re.escape(query.function)
-        escaped_query_type = re.escape(query.query_type)
-        escaped_pattern = re.escape(query.pattern)
-
-        # Create regex pattern that matches the function call with optional exclusions
-        regex_pattern = (
-            rf"\b{escaped_function}\s*\(\s*"
-            rf"(?:['\"]?{escaped_query_type}:\s*{escaped_pattern}['\"]?)"
-            rf"(?:\s+!\s*\([^)]+\)|(?:\s+![^)]+))?"  # Optional exclusions
-            rf"\s*\)"
+        # Use centralized pattern from regex helper
+        regex_pattern_obj = regex_helper.create_collection_function_replacement_pattern(
+            query.function, query.query_type, query.pattern
         )
+        regex_pattern = regex_pattern_obj.pattern
 
         # Try to replace using regex
-        if re.search(regex_pattern, formula):
-            return re.sub(regex_pattern, "0", formula)
+        if check_pattern_exists(formula, regex_pattern):
+            return search_and_replace_with_pattern(formula, regex_pattern, "0")
 
         # Fallback to exact pattern matching (original behavior)
         patterns_to_try = [
@@ -404,27 +409,19 @@ class FormulaPreprocessor:
         Returns:
             Formula with pattern replaced
         """
-        # Build a regex pattern that matches the function call with optional exclusions
+        # Use centralized pattern from regex helper
         # This handles patterns like:
         # - count(device_class:door|window|motion)
         # - count(device_class:door|window|motion !(state:unavailable|unknown|off))
         # - count(device_class:door|window|motion !state:unavailable|unknown|off)
-
-        escaped_function = re.escape(query.function)
-        escaped_query_type = re.escape(query.query_type)
-        escaped_pattern = re.escape(query.pattern)
-
-        # Create regex pattern that matches the function call with optional exclusions
-        regex_pattern = (
-            rf"\b{escaped_function}\s*\(\s*"
-            rf"(?:['\"]?{escaped_query_type}:\s*{escaped_pattern}['\"]?)"
-            rf"(?:\s+!\s*\([^)]+\)|(?:\s+![^)]+))?"  # Optional exclusions
-            rf"\s*\)"
+        regex_pattern_obj = regex_helper.create_collection_function_replacement_pattern(
+            query.function, query.query_type, query.pattern
         )
+        regex_pattern = regex_pattern_obj.pattern
 
         # Try to replace using regex
-        if re.search(regex_pattern, formula):
-            return re.sub(regex_pattern, replacement, formula)
+        if check_pattern_exists(formula, regex_pattern):
+            return search_and_replace_with_pattern(formula, regex_pattern, replacement)
 
         # Fallback to exact pattern matching (original behavior)
         patterns_to_try = [

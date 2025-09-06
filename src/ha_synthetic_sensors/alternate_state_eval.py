@@ -7,7 +7,10 @@ sensor-level alternates (formula pipeline) and computed-variable alternates
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 from .config_models import FormulaConfig, SensorConfig
 from .evaluator_helpers import EvaluatorHelpers
@@ -15,8 +18,9 @@ from .evaluator_helpers import EvaluatorHelpers
 
 def _looks_like_formula(s: str) -> bool:
     """Return True if a string appears to be a formula/expression."""
-    operators = ["+", "-", "*", "/", "(", ")", "<", ">", "=", " and ", " or ", " not "]
-    return any(op in s for op in operators)
+    from .constants_formula import ALL_OPERATORS
+
+    return any(op in s for op in ALL_OPERATORS)
 
 
 def _strip_quotes(s: str) -> str:
@@ -45,7 +49,7 @@ def _try_convert_numeric(s: str) -> Any:
 
 def evaluate_formula_alternate(
     handler_formula: Any,
-    eval_context: dict[str, Any],
+    eval_context: HierarchicalContextDict,
     sensor_config: SensorConfig | None,
     config: FormulaConfig,
     core_evaluator: Any,
@@ -98,7 +102,7 @@ def evaluate_formula_alternate(
 
 def evaluate_computed_alternate(
     handler_formula: Any,
-    eval_context: dict[str, Any],
+    eval_context: HierarchicalContextDict,
     get_enhanced_helper: Any,
     extract_values_for_simpleeval: Any,
 ) -> bool | str | float | int | None:

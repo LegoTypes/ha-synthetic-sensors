@@ -13,13 +13,13 @@ def test_handle_dependency_issues_priority_and_none() -> None:
     except Exception as e:
         assert "Missing dependencies" in str(e)
 
-        # Unavailable takes priority over unknown, but both return STATE_UNKNOWN for consistency
+        # Unavailable and unknown dependencies should flow through to Phase 3 (return None)
         res = phase.handle_dependency_issues(set(), {"x"}, {"y"}, "f")
-        assert isinstance(res, dict) and res.get("state") == "unknown"
+        assert res is None  # Should flow through to Phase 3 for alternate state handling
 
-    # Only unknown -> unknown state
+    # Only unknown -> should also flow through to Phase 3
     res = phase.handle_dependency_issues(set(), set(), {"y"}, "f")
-    assert isinstance(res, dict) and res.get("state") == "unknown"
+    assert res is None  # Should flow through to Phase 3 for alternate state handling
 
 
 def test_extract_formula_dependencies_state_token_rules() -> None:

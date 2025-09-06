@@ -1,9 +1,9 @@
 """Entity registry listener for tracking entity ID changes that affect synthetic sensors."""
-# pylint: disable=duplicate-code  # Entity tracking logic intentionally duplicated in FriendlyNameListener
 
 from __future__ import annotations
 
 from collections.abc import Callable
+import dataclasses
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -14,7 +14,7 @@ from .constants_entities import clear_domain_cache
 from .entity_change_handler import EntityChangeHandler
 
 if TYPE_CHECKING:
-    from .storage_manager import StorageData, StorageManager
+    from .storage_manager import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,40 +115,172 @@ class EntityRegistryListener:
             if action != "update":
                 return
 
-            # Check if entity_id changed - get old and new entity IDs
+            # Extract old/new entity IDs from actual HA event format
+            # Real HA events have: old_entity_id=old, entity_id=new, changes=entity_id=intermediate
             old_entity_id = event_data.get("old_entity_id")
-            if not old_entity_id or not isinstance(old_entity_id, str):
-                return
             new_entity_id = event_data.get("entity_id")
-            if not new_entity_id or not isinstance(new_entity_id, str):
+
+            # Only process if this is actually an entity_id change (has both old and new)
+            changes = event_data.get("changes", {})
+            if not (old_entity_id and new_entity_id and "entity_id" in str(changes)):
+                self._logger.debug("Ignoring non-entity_id update: %s", dict(event_data))
                 return
 
-            # Check if any SensorSet is tracking this entity ID
+            if not isinstance(old_entity_id, str) or not isinstance(new_entity_id, str) or old_entity_id == new_entity_id:
+                self._logger.debug("Ignoring entity_id update with invalid or identical IDs: %s", dict(event_data))
+                return
+
+            # Check if this entity ID exists anywhere in storage
             if not self._is_entity_tracked(old_entity_id):
-                self._logger.debug("Ignoring entity ID change %s -> %s (not tracked)", old_entity_id, new_entity_id)
+                self._logger.debug("Ignoring entity ID change %s -> %s (not found in storage)", old_entity_id, new_entity_id)
                 return
 
             self._logger.info("Processing entity ID change: %s -> %s", old_entity_id, new_entity_id)
 
-            # Schedule the update in the background
+            # Schedule the atomic update in the background
             self.hass.async_create_task(self._async_process_entity_id_change(old_entity_id, new_entity_id))
 
         except Exception as e:
             self._logger.error("Error handling entity registry update: %s", e)
 
-    def _is_entity_tracked(self, entity_id: str) -> bool:  # pylint: disable=duplicate-code
-        """Check if any SensorSet is tracking this entity ID.
+    def _is_entity_tracked(self, entity_id: str) -> bool:
+        """Check if an entity ID is tracked by any sensor set.
 
-        Note: This method is intentionally duplicated in FriendlyNameListener
-        because both listeners need identical entity tracking behavior, and the
-        sensor set approach correctly handles all entity types (global variables,
-        sensor variables, and attribute variables) unlike the storage manager approach.
+        Args:
+            entity_id: The entity ID to check
+
+        Returns:
+            True if the entity ID is tracked
         """
-        for sensor_set_id in self.storage_manager.list_sensor_sets():
-            sensor_set = self.storage_manager.get_sensor_set(sensor_set_id.sensor_set_id)
-            if sensor_set.is_entity_tracked(entity_id):
+        return self._entity_exists_in_storage(entity_id)
+
+    def _entity_exists_in_storage(self, entity_id: str) -> bool:
+        """Check if an entity ID exists anywhere in storage by doing a string search.
+
+        This is simpler and more comprehensive than trying to track entities in indexes.
+        It will find the entity ID anywhere it appears as a string in the storage.
+
+        Args:
+            entity_id: The entity ID to search for
+
+        Returns:
+            True if the entity ID is found anywhere in storage
+        """
+        # Get all sensor sets from storage
+        sensor_sets = self.storage_manager.list_sensor_sets()
+
+        for sensor_set_metadata in sensor_sets:
+            sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
+
+            # Check global settings
+            global_settings = sensor_set.get_global_settings()
+            if self._search_entity_in_config(entity_id, global_settings):
                 return True
+
+            # Check individual sensors
+            sensors = sensor_set.list_sensors()
+            for sensor in sensors:
+                if self._search_entity_in_config(entity_id, sensor):
+                    return True
+
         return False
+
+    def _search_entity_in_config(self, entity_id: str, config: Any) -> bool:
+        """Recursively search for an entity ID string in a configuration object.
+
+        Args:
+            entity_id: The entity ID to search for
+            config: The configuration object to search in
+
+        Returns:
+            True if the entity ID is found
+        """
+        if isinstance(config, str):
+            return entity_id in config
+        if isinstance(config, dict):
+            for _key, value in config.items():
+                if self._search_entity_in_config(entity_id, value):
+                    return True
+        elif isinstance(config, list):
+            for item in config:
+                if self._search_entity_in_config(entity_id, item):
+                    return True
+        elif hasattr(config, "__dict__"):
+            # Handle dataclass instances
+            return self._search_entity_in_config(entity_id, config.__dict__)
+
+        return False
+
+    async def _replace_entity_in_all_storage(self, old_entity_id: str, new_entity_id: str) -> None:
+        """Replace an entity ID string across all storage.
+
+        This does a simple string replacement in all sensor set configurations.
+
+        Args:
+            old_entity_id: The entity ID to replace
+            new_entity_id: The new entity ID
+        """
+        # Update storage data directly with entity ID replacements
+        storage_data = self.storage_manager.data
+        changes_made = False
+
+        # Replace entity IDs in all sensor configurations
+        for _sensor_id, sensor_data in storage_data["sensors"].items():
+            config_data = sensor_data.get("config_data", {})
+            updated_config = self._replace_entity_in_config(old_entity_id, new_entity_id, config_data)
+            if updated_config != config_data:
+                sensor_data["config_data"] = updated_config
+                changes_made = True
+
+        # Replace entity IDs in all sensor set global settings
+        for _sensor_set_id, sensor_set_data in storage_data["sensor_sets"].items():
+            global_settings = sensor_set_data.get("global_settings", {})
+            updated_global_settings = self._replace_entity_in_config(old_entity_id, new_entity_id, global_settings)
+            if updated_global_settings != global_settings:
+                sensor_set_data["global_settings"] = updated_global_settings
+                changes_made = True
+
+        # Save storage if any changes were made
+        if changes_made:
+            await self.storage_manager.async_save()
+
+    def _replace_entity_in_config(self, old_entity_id: str, new_entity_id: str, config: Any) -> Any:
+        """Recursively replace an entity ID string in a configuration object.
+
+        Args:
+            old_entity_id: The entity ID to replace
+            new_entity_id: The new entity ID
+            config: The configuration object to update
+
+        Returns:
+            The updated configuration
+        """
+        if isinstance(config, str):
+            # Simple string replacement
+            return config.replace(old_entity_id, new_entity_id)
+        if isinstance(config, dict):
+            # Recursively update dictionary values
+            return {key: self._replace_entity_in_config(old_entity_id, new_entity_id, value) for key, value in config.items()}
+        if isinstance(config, list):
+            # Recursively update list items
+            return [self._replace_entity_in_config(old_entity_id, new_entity_id, item) for item in config]
+        if hasattr(config, "__dict__"):
+            # Handle dataclass instances - create a new instance with updated values
+            if dataclasses.is_dataclass(config):
+                fields = dataclasses.fields(config)
+                kwargs = {}
+                for field in fields:
+                    old_value = getattr(config, field.name)
+                    new_value = self._replace_entity_in_config(old_entity_id, new_entity_id, old_value)
+                    kwargs[field.name] = new_value
+                # Create new instance of the same dataclass type
+                config_type = type(config)
+                return config_type(**kwargs)  # type: ignore[misc]
+            # For non-dataclass objects, update the __dict__ directly
+            config.__dict__ = self._replace_entity_in_config(old_entity_id, new_entity_id, config.__dict__)
+            return config
+        # Return unchanged for other types (int, float, bool, None)
+        return config
 
     @callback
     def _handle_domain_change(self, event_data: dict[str, Any]) -> None:
@@ -224,288 +356,99 @@ class EntityRegistryListener:
 
     async def _async_process_entity_id_change(self, old_entity_id: str, new_entity_id: str) -> None:
         """
-        Process an entity ID change by updating storage and notifying callbacks.
+        Process an entity ID change atomically with proper coordination.
+
+        This method implements a coordinated approach to entity ID changes that ensures
+        consistency across all components of the synthetic sensors system.
+
+        FLOW OVERVIEW:
+        1. Pause evaluations (prevent inconsistent formula evaluation during update)
+        2. Update storage (replace entity IDs in sensor configs and global variables)
+        3. Reload sensor managers (recreate sensor objects from updated storage)
+        4. Rebuild entity indexes (sync indexes with the reloaded sensor configurations)
+        5. Resume evaluations and notify callbacks
+
+        WHY THIS ORDER MATTERS:
+        - Storage must be updated first so reload gets the correct entity IDs
+        - Reload must happen before entity index rebuild (reload wipes sensor manager state)
+        - Entity indexes must be rebuilt after reload (reload doesn't rebuild them automatically)
 
         Args:
-            old_entity_id: Old entity ID
-            new_entity_id: New entity ID
+            old_entity_id: The old entity ID to replace
+            new_entity_id: The new entity ID to use
         """
         try:
-            # Update storage with new entity ID
+            # STEP 1: Pause all formula evaluations during the update
+            # This prevents sensors from evaluating with inconsistent entity references
+            # while we're in the middle of updating storage and reloading configurations
+            self.entity_change_handler.pause_evaluations()
+
+            # STEP 2: Update storage with new entity IDs
+            # This replaces entity ID strings in both sensor configurations and global variables
+            # Storage is the source of truth, so this must happen before reload
             await self._update_storage_entity_ids(old_entity_id, new_entity_id)
 
-            # Notify entity change handler to coordinate all other updates
+            # STEP 3: Reload all registered sensor managers from updated storage
+            # This recreates sensor objects from the updated storage (with new entity IDs)
+            # The reload clears sensor manager's internal tracking and rebuilds it from storage
+            # NOTE: This does NOT rebuild entity indexes in sensor sets - that's step 4
+            try:
+                if hasattr(self.entity_change_handler, "reload_all_managers_from_storage"):
+                    await self.entity_change_handler.reload_all_managers_from_storage(self.storage_manager)
+                else:
+                    self._logger.warning("reload_all_managers_from_storage method not found on entity_change_handler")
+            except Exception as reload_err:
+                self._logger.error("Error reloading managers from storage: %s", reload_err)
+
+            # STEP 4: Rebuild entity indexes AFTER reload to reflect the updated configurations
+            # CRITICAL: This must happen AFTER reload, not before!
+            # - Reload recreates sensors from updated storage (with new entity IDs)
+            # - But reload doesn't rebuild entity indexes in sensor sets
+            # - So entity indexes still contain old entity IDs even though sensors have new ones
+            # - We must rebuild indexes to sync them with the reloaded sensor configurations
+            try:
+                for sensor_set_metadata in self.storage_manager.list_sensor_sets():
+                    sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
+                    # Rebuild the entity index to track entities from the reloaded configuration
+                    sensor_set.rebuild_entity_index()
+                    self._logger.debug("Rebuilt entity index for sensor set %s after reload", sensor_set_metadata.sensor_set_id)
+            except Exception as rebuild_err:
+                self._logger.error("Error rebuilding entity indexes after reload: %s", rebuild_err)
+
+            # STEP 5: Clear evaluator caches and notify integration callbacks
+            # This resumes evaluations (clears the global evaluation guard) and notifies
+            # any integration-specific callbacks about the entity ID change
             self.entity_change_handler.handle_entity_id_change(old_entity_id, new_entity_id)
 
-            self._logger.info("Successfully processed entity ID change: %s -> %s", old_entity_id, new_entity_id)
+            self._logger.info("Successfully processed entity ID change atomically: %s -> %s", old_entity_id, new_entity_id)
 
         except Exception as e:
             self._logger.error("Failed to process entity ID change %s -> %s: %s", old_entity_id, new_entity_id, e)
+        finally:
+            # 6) Always resume evaluations to avoid persisting a closed gate
+            try:
+                self.entity_change_handler.resume_evaluations()
+            except Exception as resume_err:
+                self._logger.error("Failed to resume evaluations after entity ID change: %s", resume_err)
 
     async def _update_storage_entity_ids(self, old_entity_id: str, new_entity_id: str) -> None:
-        """
-        Update all storage references from old entity ID to new entity ID.
+        """Update entity IDs in storage.
+
+        This method performs a direct string replacement across all storage data:
+        - Sensor configurations: formula variables, entity_id fields
+        - Global variables: variable values in sensor set global_settings
+
+        The storage update is atomic - either all changes succeed or none are applied.
 
         Args:
-            old_entity_id: Old entity ID to replace
-            new_entity_id: New entity ID to use
-        """
-        # Work directly with the actual storage data, not a copy
-        data = self.storage_manager.data
-
-        # Track which sensor sets need entity index rebuilding BEFORE we update storage
-        sensor_sets_needing_rebuild = self._get_sensor_sets_needing_rebuild(old_entity_id)
-
-        # Update sensor configurations
-        updated_sensors = self._update_sensor_configurations(data, old_entity_id, new_entity_id)
-
-        # Update global settings in sensor sets
-        updated_sensor_sets = self._update_global_settings(data, old_entity_id, new_entity_id)
-
-        # Save changes if any updates were made
-        await self._save_and_rebuild_if_needed(
-            updated_sensors, updated_sensor_sets, sensor_sets_needing_rebuild, old_entity_id, new_entity_id
-        )
-
-    def _get_sensor_sets_needing_rebuild(self, old_entity_id: str) -> list[Any]:
-        """Get sensor sets that need to be rebuilt due to entity ID change."""
-        sensor_sets_needing_rebuild: list[Any] = []
-        for sensor_set_metadata in self.storage_manager.list_sensor_sets():
-            sensor_set = self.storage_manager.get_sensor_set(sensor_set_metadata.sensor_set_id)
-            if sensor_set.is_entity_tracked(old_entity_id):
-                sensor_sets_needing_rebuild.append(sensor_set)
-        return sensor_sets_needing_rebuild
-
-    def _update_sensor_configurations(self, data: StorageData, old_entity_id: str, new_entity_id: str) -> list[str]:
-        """
-        Update sensor configurations with new entity ID.
-
-        Args:
-            data: Storage data
-            old_entity_id: Old entity ID to replace
-            new_entity_id: New entity ID to use
-
-        Returns:
-            List of sensor set IDs that were updated
-        """
-        updated_sensor_sets: list[str] = []
-
-        # Iterate through stored sensors directly (they're at the top level)
-        for unique_id, stored_sensor in data["sensors"].items():
-            if not isinstance(stored_sensor, dict) or "config_data" not in stored_sensor:
-                continue
-
-            sensor_config = stored_sensor["config_data"]
-            sensor_set_id = stored_sensor.get("sensor_set_id", "unknown")
-
-            sensors_updated = self._update_sensors_in_set(
-                {unique_id: sensor_config}, old_entity_id, new_entity_id, sensor_set_id
-            )
-            if sensors_updated and sensor_set_id not in updated_sensor_sets:
-                updated_sensor_sets.append(sensor_set_id)
-
-        return updated_sensor_sets
-
-    def _update_sensors_in_set(
-        self, sensors: dict[Any, Any], old_entity_id: str, new_entity_id: str, sensor_set_id: str
-    ) -> bool:
-        """Update sensors in a sensor set."""
-        sensors_updated = False
-
-        for sensor_key, sensor_config in sensors.items():
-            if not isinstance(sensor_config, dict):
-                continue
-
-            # Update entity_id field and collect all formula updates
-            if self._update_sensor_entity_id(sensor_config, old_entity_id, new_entity_id):
-                sensors_updated = True
-
-            if self._update_sensor_formulas(sensor_config, old_entity_id, new_entity_id, sensor_key):
-                sensors_updated = True
-
-            if self._update_sensor_attributes(sensor_config, old_entity_id, new_entity_id, sensor_key):
-                sensors_updated = True
-
-        return sensors_updated
-
-    def _update_sensor_entity_id(self, sensor_config: dict[Any, Any], old_entity_id: str, new_entity_id: str) -> bool:
-        """Update entity_id field if present."""
-        if "entity_id" in sensor_config and sensor_config["entity_id"] == old_entity_id:
-            sensor_config["entity_id"] = new_entity_id
-            return True
-        return False
-
-    def _update_sensor_formulas(
-        self, sensor_config: dict[Any, Any], old_entity_id: str, new_entity_id: str, sensor_key: Any
-    ) -> bool:
-        """Update formulas in sensor configuration."""
-        formulas_updated = False
-
-        # Update formulas list (current format)
-        if "formulas" in sensor_config and isinstance(sensor_config["formulas"], list):
-            for formula_config in sensor_config["formulas"]:
-                if isinstance(formula_config, dict) and self._update_formula_variables(
-                    formula_config, old_entity_id, new_entity_id, sensor_key
-                ):
-                    formulas_updated = True
-
-        # Update legacy format variables and formula
-        for key in ("variables", "formula"):
-            if key in sensor_config and self._update_formula_variables(sensor_config, old_entity_id, new_entity_id, sensor_key):
-                formulas_updated = True
-
-        return formulas_updated
-
-    def _update_sensor_attributes(
-        self, sensor_config: dict[Any, Any], old_entity_id: str, new_entity_id: str, sensor_key: Any
-    ) -> bool:
-        """Update attributes in sensor configuration."""
-        if "attributes" not in sensor_config:
-            return False
-
-        attributes_updated = False
-        for attr_config in sensor_config["attributes"].values():
-            if (
-                isinstance(attr_config, dict)
-                and "formula" in attr_config
-                and self._update_formula_variables(attr_config, old_entity_id, new_entity_id, sensor_key)
-            ):
-                attributes_updated = True
-
-        return attributes_updated
-
-    def _update_formula_variables(self, sensor_config: Any, old_entity_id: str, new_entity_id: str, unique_id: str) -> bool:
-        """
-        Update entity ID references in formula variables.
-
-        Args:
-            sensor_config: Sensor configuration
-            old_entity_id: Old entity ID to replace
-            new_entity_id: New entity ID to use
-            unique_id: Sensor unique ID for logging
-
-        Returns:
-            True if any updates were made
-        """
-        updated = False
-
-        # Update variables
-        if "variables" in sensor_config:
-            for var_name, var_value in sensor_config["variables"].items():
-                if isinstance(var_value, str) and var_value == old_entity_id:
-                    # Handle string variables (direct entity ID references)
-                    sensor_config["variables"][var_name] = new_entity_id
-                    updated = True
-                    self._logger.debug(
-                        "Updated variable '%s' in sensor '%s': %s -> %s", var_name, unique_id, old_entity_id, new_entity_id
-                    )
-                elif isinstance(var_value, dict) and "formula" in var_value:
-                    # Handle ComputedVariable objects (stored as dicts with "formula" key)
-                    formula = var_value["formula"]
-                    if isinstance(formula, str) and old_entity_id in formula:
-                        updated_formula = formula.replace(old_entity_id, new_entity_id)
-                        var_value["formula"] = updated_formula
-                        updated = True
-                        self._logger.debug(
-                            "Updated ComputedVariable '%s' in sensor '%s': %s -> %s",
-                            var_name,
-                            unique_id,
-                            old_entity_id,
-                            new_entity_id,
-                        )
-
-        # Update formula
-        if "formula" in sensor_config:
-            formula = sensor_config["formula"]
-            if isinstance(formula, str) and old_entity_id in formula:
-                sensor_config["formula"] = formula.replace(old_entity_id, new_entity_id)
-                updated = True
-                self._logger.debug("Updated formula in sensor '%s': %s -> %s", unique_id, old_entity_id, new_entity_id)
-
-        return updated
-
-    def _update_global_settings(self, data: StorageData, old_entity_id: str, new_entity_id: str) -> list[str]:
-        """
-        Update global settings with new entity ID.
-
-        Args:
-            data: Storage data
-            old_entity_id: Old entity ID to replace
-            new_entity_id: New entity ID to use
-
-        Returns:
-            List of sensor set IDs that were updated
-        """
-        updated_sensor_sets: list[str] = []
-
-        for sensor_set_id, sensor_set_data in data["sensor_sets"].items():
-            if "global_settings" not in sensor_set_data:
-                continue
-
-            global_settings = sensor_set_data["global_settings"]
-            settings_updated = False
-
-            # Update variables in global settings
-            if "variables" in global_settings:
-                for var_name, var_value in global_settings["variables"].items():
-                    if isinstance(var_value, str) and var_value == old_entity_id:
-                        global_settings["variables"][var_name] = new_entity_id
-                        settings_updated = True
-                        self._logger.debug(
-                            "Updated global variable '%s' in sensor set '%s': %s -> %s",
-                            var_name,
-                            sensor_set_id,
-                            old_entity_id,
-                            new_entity_id,
-                        )
-
-            # Update device_identifier if present
-            if "device_identifier" in global_settings and global_settings["device_identifier"] == old_entity_id:
-                global_settings["device_identifier"] = new_entity_id
-                settings_updated = True
-                self._logger.debug(
-                    "Updated device_identifier in sensor set '%s': %s -> %s", sensor_set_id, old_entity_id, new_entity_id
-                )
-
-            if settings_updated:
-                updated_sensor_sets.append(sensor_set_id)
-
-        return updated_sensor_sets
-
-    async def _save_and_rebuild_if_needed(
-        self,
-        updated_sensors: list[str],
-        updated_sensor_sets: list[str],
-        sensor_sets_needing_rebuild: list[Any],
-        old_entity_id: str,
-        new_entity_id: str,
-    ) -> None:
-        """
-        Save changes and rebuild entity indexes if needed.
-
-        Args:
-            updated_sensors: List of sensor set IDs with updated sensors
-            updated_sensor_sets: List of sensor set IDs with updated global settings
-            sensor_sets_needing_rebuild: List of sensor sets needing entity index rebuild
-            old_entity_id: Old entity ID that was changed
-            new_entity_id: New entity ID
+            old_entity_id: The old entity ID to replace
+            new_entity_id: The new entity ID to use
         """
         try:
-            # Save changes if any updates were made
-            if updated_sensors or updated_sensor_sets:
-                await self.storage_manager.async_save()
-                self._logger.info("Saved storage changes for entity ID change: %s -> %s", old_entity_id, new_entity_id)
-
-            # Rebuild entity indexes for affected sensor sets
-            for sensor_set in sensor_sets_needing_rebuild:
-                try:
-                    await sensor_set.async_rebuild_entity_index()
-                    self._logger.debug("Rebuilt entity index for sensor set: %s", sensor_set.sensor_set_id)
-                except Exception as e:
-                    self._logger.warning("Failed to rebuild entity index for sensor set %s: %s", sensor_set.sensor_set_id, e)
-
+            # Use the existing replacement logic
+            await self._replace_entity_in_all_storage(old_entity_id, new_entity_id)
         except Exception as e:
-            self._logger.error("Failed to save changes for entity ID change %s -> %s: %s", old_entity_id, new_entity_id, e)
+            self._logger.error("Failed to update storage entity IDs from %s to %s: %s", old_entity_id, new_entity_id, e)
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about the entity registry listener."""

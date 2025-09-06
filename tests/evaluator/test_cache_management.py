@@ -12,6 +12,14 @@ import pytest
 
 from ha_synthetic_sensors.config_manager import FormulaConfig
 from ha_synthetic_sensors.evaluator import Evaluator
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def _create_empty_context() -> HierarchicalContextDict:
+    """Create empty HierarchicalContextDict for testing - architectural compliance."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    return HierarchicalContextDict(hierarchical_context)
 
 
 class TestCacheValidation:
@@ -27,25 +35,25 @@ class TestCacheValidation:
         config2 = FormulaConfig(id="math_test_min(10, 20, 5)", name="Math Test", formula="min(10, 20, 5)")
 
         # Evaluate first formula
-        result1 = evaluator.evaluate_formula(config1)
+        result1 = evaluator.evaluate_formula(config1, _create_empty_context())
         assert result1["success"] is True
         assert result1["value"] == 50
         assert result1.get("cached", False) is False  # First evaluation should not be cached
 
         # Evaluate second formula - should NOT return cached result from first
-        result2 = evaluator.evaluate_formula(config2)
+        result2 = evaluator.evaluate_formula(config2, _create_empty_context())
         assert result2["success"] is True
         assert result2["value"] == 5  # Should be 5, NOT 50 from abs(-50)
         assert result2.get("cached", False) is False  # Should be fresh evaluation
 
         # Re-evaluate first formula - should now be cached
-        result1_cached = evaluator.evaluate_formula(config1)
+        result1_cached = evaluator.evaluate_formula(config1, _create_empty_context())
         assert result1_cached["success"] is True
         assert result1_cached["value"] == 50
         assert result1_cached.get("cached", False) is True
 
         # Re-evaluate second formula - should now be cached
-        result2_cached = evaluator.evaluate_formula(config2)
+        result2_cached = evaluator.evaluate_formula(config2, _create_empty_context())
         assert result2_cached["success"] is True
         assert result2_cached["value"] == 5
         assert result2_cached.get("cached", False) is True
@@ -60,8 +68,8 @@ class TestCacheValidation:
         config2 = FormulaConfig(id="sensor_2", name="Test Sensor", formula="50 + 50")
 
         # Evaluate both
-        result1 = evaluator.evaluate_formula(config1)
-        result2 = evaluator.evaluate_formula(config2)
+        result1 = evaluator.evaluate_formula(config1, _create_empty_context())
+        result2 = evaluator.evaluate_formula(config2, _create_empty_context())
 
         assert result1["success"] is True
         assert result1["value"] == 30
@@ -70,8 +78,8 @@ class TestCacheValidation:
         assert result2["value"] == 100
 
         # Re-evaluate to test caching
-        result1_cached = evaluator.evaluate_formula(config1)
-        result2_cached = evaluator.evaluate_formula(config2)
+        result1_cached = evaluator.evaluate_formula(config1, _create_empty_context())
+        result2_cached = evaluator.evaluate_formula(config2, _create_empty_context())
 
         assert result1_cached["value"] == 30
         assert result2_cached["value"] == 100
@@ -93,7 +101,7 @@ class TestCacheValidation:
         for i, (id_val, formula, expected) in enumerate(test_cases):
             config = FormulaConfig(id=id_val, name=f"Test {i}", formula=formula)
 
-            result = evaluator.evaluate_formula(config)
+            result = evaluator.evaluate_formula(config, _create_empty_context())
             results.append(result)
 
             assert result["success"] is True, f"Formula {formula} failed"
@@ -123,7 +131,7 @@ class TestCacheValidation:
         for i, (formula, expected) in enumerate(formulas):
             config = FormulaConfig(id=f"unique_test_{i}", name=f"Unique Test {i}", formula=formula)
 
-            result = evaluator.evaluate_formula(config)
+            result = evaluator.evaluate_formula(config, _create_empty_context())
             results[formula] = result
 
             assert result["success"] is True, f"Formula {formula} failed: {result.get('error')}"
@@ -144,7 +152,7 @@ class TestCacheValidation:
         for i, (formula, expected) in enumerate(formulas):
             config = FormulaConfig(id=f"unique_test_{i}", name=f"Unique Test {i}", formula=formula)
 
-            result = evaluator.evaluate_formula(config)
+            result = evaluator.evaluate_formula(config, _create_empty_context())
 
             assert result["success"] is True, f"Cached formula {formula} failed"
             assert result.get("cached", False) is True, f"Re-evaluation of {formula} should be cached"
@@ -167,14 +175,20 @@ class TestCacheValidation:
         config = FormulaConfig(id="context_test", name="Context Test", formula="var_a + var_b")
 
         # First evaluation with context
-        context1: dict[str, Any] = {"var_a": 10, "var_b": 20}
+        from ha_synthetic_sensors.type_definitions import ReferenceValue
+
+        context1 = _create_empty_context()
+        context1._hierarchical_context.set("var_a", ReferenceValue("var_a", 10))
+        context1._hierarchical_context.set("var_b", ReferenceValue("var_b", 20))
         result1 = evaluator.evaluate_formula(config, context1)
         assert result1["success"] is True
         assert result1["value"] == 30
         assert result1.get("cached", False) is False
 
         # Second evaluation with different context - should not use cached result
-        context2: dict[str, Any] = {"var_a": 100, "var_b": 200}
+        context2 = _create_empty_context()
+        context2._hierarchical_context.set("var_a", ReferenceValue("var_a", 100))
+        context2._hierarchical_context.set("var_b", ReferenceValue("var_b", 200))
         result2 = evaluator.evaluate_formula(config, context2)
         assert result2["success"] is True
         assert result2["value"] == 300  # Should be 300, NOT 30 from cache

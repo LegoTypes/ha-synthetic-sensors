@@ -93,6 +93,32 @@ class EntityChangeHandler:
             self._sensor_managers.append(sensor_manager)
             self._logger.debug("Registered sensor manager for entity change handling")
 
+    # Evaluation barrier controls
+    def pause_evaluations(self) -> None:
+        """Pause evaluations across all registered sensor managers."""
+        for manager in self._sensor_managers:
+            try:
+                manager.pause_evaluations()
+            except Exception as e:
+                self._logger.error("Error pausing evaluations on sensor manager: %s", e)
+
+    def resume_evaluations(self) -> None:
+        """Resume evaluations across all registered sensor managers."""
+        for manager in self._sensor_managers:
+            try:
+                manager.resume_evaluations()
+            except Exception as e:
+                self._logger.error("Error resuming evaluations on sensor manager: %s", e)
+
+    async def reload_all_managers_from_storage(self, storage_manager: Any) -> None:
+        """Reload all registered sensor managers from storage."""
+        for manager in self._sensor_managers:
+            try:
+                if hasattr(manager, "reload_from_storage"):
+                    await manager.reload_from_storage(storage_manager)
+            except Exception as e:
+                self._logger.error("Error reloading sensor manager from storage: %s", e)
+
     def unregister_sensor_manager(self, sensor_manager: SensorManager) -> None:
         """
         Unregister a sensor manager.

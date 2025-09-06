@@ -5,6 +5,24 @@ from ha_synthetic_sensors.evaluator_phases.context_building.context_building_pha
     ContextBuildingPhase,
 )
 from ha_synthetic_sensors.type_definitions import ReferenceValue
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+
+def _create_hierarchical_context(initial_vars: dict[str, object] = None) -> HierarchicalContextDict:
+    """Create a proper HierarchicalContextDict for testing."""
+    hierarchical_context = HierarchicalEvaluationContext("test")
+    context_dict = HierarchicalContextDict(hierarchical_context)
+
+    if initial_vars:
+        for key, value in initial_vars.items():
+            if isinstance(value, ReferenceValue):
+                hierarchical_context.set(key, value)
+            else:
+                # Wrap raw values in ReferenceValue objects
+                hierarchical_context.set(key, ReferenceValue(reference=key, value=value))
+
+    return context_dict
 
 
 def test_build_evaluation_context_includes_hass_current_sensor_and_globals() -> None:
@@ -16,7 +34,7 @@ def test_build_evaluation_context_includes_hass_current_sensor_and_globals() -> 
     phase.set_global_settings({"variables": {"g": 5}})
 
     # Existing context with a ReferenceValue should be preserved
-    existing_ctx = {"x": ReferenceValue(reference="x", value=1)}
+    existing_ctx = _create_hierarchical_context({"x": ReferenceValue(reference="x", value=1)})
     # Numeric variable should be added directly
     cfg = FormulaConfig(id="main", formula="1+1", variables={"y": 10})
     scfg = SensorConfig(unique_id="s1", entity_id="sensor.s1", formulas=[cfg])

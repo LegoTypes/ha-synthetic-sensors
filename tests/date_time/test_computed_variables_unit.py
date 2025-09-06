@@ -7,7 +7,23 @@ from ha_synthetic_sensors.config_models import ComputedVariable, FormulaConfig
 from ha_synthetic_sensors.config_manager import ConfigManager
 from ha_synthetic_sensors.exceptions import MissingDependencyError
 from ha_synthetic_sensors.utils_config import resolve_config_variables
-from ha_synthetic_sensors.type_definitions import ContextValue
+from ha_synthetic_sensors.type_definitions import ContextValue, ReferenceValue
+from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+
+
+def create_test_context(test_data: dict[str, any]) -> HierarchicalContextDict:
+    """Create a test context with the given data wrapped in ReferenceValue objects."""
+    eval_context = HierarchicalEvaluationContext("test")
+
+    # Push a layer with the test data wrapped in ReferenceValue objects
+    wrapped_data = {}
+    for key, value in test_data.items():
+        wrapped_data[key] = ReferenceValue(reference=key, value=value)
+
+    eval_context.push_layer("test_data", wrapped_data)
+
+    return HierarchicalContextDict(eval_context)
 
 
 class TestComputedVariable:
@@ -143,7 +159,7 @@ class TestVariableResolution:
         """Test resolving only simple variables."""
         config = FormulaConfig(id="test", formula="a + b", variables={"a": "sensor.a", "b": 42})
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         entity_values = {"sensor.a": 10.0}
         resolver = self.create_mock_resolver(entity_values)
 
@@ -159,7 +175,7 @@ class TestVariableResolution:
         computed_var = ComputedVariable(formula="a + b")
         config = FormulaConfig(id="test", formula="result", variables={"a": "sensor.a", "b": 42, "result": computed_var})
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         entity_values = {"sensor.a": 10.0}
         resolver = self.create_mock_resolver(entity_values)
 
@@ -195,7 +211,7 @@ class TestVariableResolution:
             variables={"base": "sensor.base", "multiplier": 2.0, "bonus": 100, "intermediate": cv1, "final": cv2},
         )
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         entity_values = {"sensor.base": 25.0}
         resolver = self.create_mock_resolver(entity_values)
 
@@ -235,7 +251,7 @@ class TestVariableResolution:
             variables={"input_power": 1500.0, "efficiency": 0.9, "output_power": cv1, "derated_power": cv2, "final_power": cv3},
         )
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         resolver = self.create_mock_resolver({})
 
         # Mock the pipeline evaluation for complex expressions
@@ -264,18 +280,13 @@ class TestVariableResolution:
 
     def test_resolve_computed_variables_missing_dependencies(self):
         """Test handling of missing dependencies in computed variables."""
-        # Clear global state that may be affected by previous tests
-        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
-
-        FormulaEvaluatorService._core_evaluator = None
-        FormulaEvaluatorService._evaluator = None
         cv = ComputedVariable(formula="missing_var + 10")
         config = FormulaConfig(id="test", formula="result", variables={"result": cv})
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         resolver = self.create_mock_resolver({})
 
-        with pytest.raises(MissingDependencyError, match="Could not resolve computed variables"):
+        with pytest.raises(MissingDependencyError, match="Could not resolve variables"):
             resolve_config_variables(eval_context, config, resolver)
 
     def test_resolve_computed_variables_context_priority(self):
@@ -286,7 +297,7 @@ class TestVariableResolution:
         config = FormulaConfig(id="test", formula="result", variables={"a": "sensor.a", "b": 50, "result": cv})
 
         # Pre-populate context with some values
-        eval_context: dict[str, ContextValue] = {"a": 999.0}  # Override sensor.a
+        eval_context: HierarchicalContextDict = create_test_context({"a": 999.0})  # Override sensor.a
         entity_values = {"sensor.a": 10.0}  # This should be ignored
         resolver = self.create_mock_resolver(entity_values)
 
@@ -304,26 +315,21 @@ class TestVariableResolution:
         ):
             resolve_config_variables(eval_context, config, resolver)
 
-        assert eval_context["a"] == 999.0  # Context value preserved (raw value)
+        assert eval_context["a"].value == 999.0  # Context value preserved (ReferenceValue)
         assert eval_context["b"].value == 50
         assert eval_context["result"].value == 1049.0  # 999.0 + 50
 
     def test_circular_dependency_detection(self):
         """Test detection of circular dependencies in computed variables."""
-        # Clear global state that may be affected by previous tests
-        from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
-
-        FormulaEvaluatorService._core_evaluator = None
-        FormulaEvaluatorService._evaluator = None
         cv1 = ComputedVariable(formula="var2 + 1")
         cv2 = ComputedVariable(formula="var1 + 1")
 
         config = FormulaConfig(id="test", formula="var1", variables={"var1": cv1, "var2": cv2})
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         resolver = self.create_mock_resolver({})
 
-        with pytest.raises(MissingDependencyError, match="Could not resolve computed variables"):
+        with pytest.raises(MissingDependencyError, match="Could not resolve variables"):
             resolve_config_variables(eval_context, config, resolver)
 
     def test_max_iterations_protection(self):
@@ -340,7 +346,7 @@ class TestVariableResolution:
 
         config = FormulaConfig(id="test", formula="var19", variables=variables)
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         resolver = self.create_mock_resolver({})
 
         # Mock the pipeline evaluation to return sequential increments
@@ -377,7 +383,7 @@ class TestVariableResolution:
             variables={"pi_val": 3.14159, "val1": 100, "val2": 200, "abs_result": cv1, "round_result": cv2, "max_result": cv3},
         )
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
         resolver = self.create_mock_resolver({})
 
         # Mock the pipeline evaluation for mathematical functions
@@ -481,7 +487,7 @@ class TestComputedVariablesInAttributes:
             variables={"raw_value": 120.0, "factor": 2.0, "computed_voltage": cv},
         )
 
-        eval_context: dict[str, ContextValue] = {}
+        eval_context: HierarchicalContextDict = create_test_context({})
 
         def mock_resolver(var_name: str, var_value: any, context: dict, sensor_config: any) -> any:
             from ha_synthetic_sensors.type_definitions import ReferenceValue
@@ -521,7 +527,7 @@ class TestComputedVariablesInAttributes:
         )
 
         # Pre-populate context with 'state' representing main sensor's post-evaluation result
-        eval_context: dict[str, ContextValue] = {"state": 100.0}  # Main sensor evaluated to 100
+        eval_context: HierarchicalContextDict = create_test_context({"state": 100.0})  # Main sensor evaluated to 100
 
         def mock_resolver(var_name: str, var_value: any, context: dict, sensor_config: any) -> any:
             from ha_synthetic_sensors.type_definitions import ReferenceValue
@@ -545,7 +551,7 @@ class TestComputedVariablesInAttributes:
             resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify computed variable used the state value correctly
-        assert eval_context["state"] == 100.0  # Should preserve original state (raw value)
+        assert eval_context["state"].value == 100.0  # Should preserve original state (ReferenceValue)
         assert eval_context["multiplier"].value == 1.5
         assert eval_context["scaled_result"].value == 150.0  # state (100) * multiplier (1.5)
 
@@ -571,7 +577,7 @@ class TestComputedVariablesInAttributes:
         )
 
         # Simulate main sensor result of 120
-        eval_context: dict[str, ContextValue] = {"state": 120.0}
+        eval_context: HierarchicalContextDict = create_test_context({"state": 120.0})
 
         def mock_resolver(var_name: str, var_value: any, context: dict, sensor_config: any) -> any:
             from ha_synthetic_sensors.type_definitions import ReferenceValue
@@ -599,7 +605,7 @@ class TestComputedVariablesInAttributes:
             resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
         # Verify the dependency chain resolved correctly
-        assert eval_context["state"] == 120.0  # Preserved original state (raw value)
+        assert eval_context["state"].value == 120.0  # Preserved original state (ReferenceValue)
         assert eval_context["offset"].value == 50
         assert eval_context["scale_factor"].value == 1.2
         assert eval_context["threshold"].value == 200

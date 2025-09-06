@@ -7,7 +7,10 @@ between evaluator.py and evaluator_core_helpers.py.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 from .alternate_state_processor import alternate_state_processor
 from .alternate_state_utils import detect_alternate_state_value
@@ -22,11 +25,12 @@ _LOGGER = logging.getLogger(__name__)
 def process_alternate_state_result(
     result: Any,
     config: Any,
-    eval_context: dict[str, Any],
+    eval_context: HierarchicalContextDict,
     sensor_config: Any,
     core_evaluator: Any,
     resolve_all_references_in_formula: Any,
     pre_eval: bool = True,
+    alternate_state_processor_instance: Any = None,
 ) -> EvaluationResult:
     """Process a result through alternate state handling and normalization.
 
@@ -35,7 +39,12 @@ def process_alternate_state_result(
     2. Normalizing with EvaluatorHelpers
     3. Creating success result
     """
-    processed_result = alternate_state_processor.process_evaluation_result(
+    # Use provided alternate state processor instance or fall back to global
+    processor = (
+        alternate_state_processor_instance if alternate_state_processor_instance is not None else alternate_state_processor
+    )
+
+    processed_result = processor.process_evaluation_result(
         result=result,
         exception=None,
         context=eval_context,

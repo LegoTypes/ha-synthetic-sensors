@@ -1,10 +1,14 @@
 """Entity attribute resolver for synthetic sensor package."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 from ...exceptions import MissingDependencyError
 from ...shared_constants import get_ha_domains
+from ...type_definitions import ContextValue
 from ...utils_resolvers import resolve_via_data_provider_attribute, resolve_via_hass_attribute
 from .base_resolver import VariableResolver
 
@@ -46,7 +50,7 @@ class EntityAttributeResolver(VariableResolver):
 
         return False
 
-    def resolve(self, variable_name: str, variable_value: str | Any, context: dict[str, Any]) -> Any | None:
+    def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:
         """Resolve an entity attribute reference."""
         if not isinstance(variable_value, str):
             return None
@@ -71,7 +75,7 @@ class EntityAttributeResolver(VariableResolver):
         )
 
         # Resolve the entity attribute using the same logic as EntityReferenceResolver
-        return self._resolve_entity_attribute(entity_id, attribute_name, variable_value)
+        return self._resolve_entity_attribute(entity_id, attribute_name, variable_value)  # type: ignore[no-any-return]
 
     def _resolve_entity_attribute(self, entity_id: str, attribute_name: str, original_reference: str) -> Any:
         """Resolve the entity attribute value using data provider or HA lookups."""
@@ -102,7 +106,7 @@ class EntityAttributeResolver(VariableResolver):
 
         return tuple(parts)
 
-    def _get_entity_id_from_context(self, entity_variable: str, context: dict[str, Any]) -> str | None:
+    def _get_entity_id_from_context(self, entity_variable: str, context: "HierarchicalContextDict") -> str | None:
         """Get the entity ID from context or formula config."""
         # Get formula_config from context to access original variable definitions
         formula_config = context.get("formula_config")

@@ -1,10 +1,12 @@
 """Result creation utilities for formula evaluation."""
 
+import logging
 from typing import Any, cast
 
 from homeassistant.const import STATE_UNKNOWN
 
 from .alternate_state_utils import detect_alternate_state_value
+from .constants_alternate import STATE_NONE_YAML
 from .constants_evaluation_results import (
     ERROR_RESULT_KEYS,
     RESULT_KEY_ERROR,
@@ -18,6 +20,8 @@ from .constants_evaluation_results import (
     SUCCESS_RESULT_KEYS,
 )
 from .type_definitions import EvaluationResult
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class EvaluatorResults:
@@ -61,7 +65,15 @@ class EvaluatorResults:
         # Add valid additional fields
         valid_kwargs = {k: v for k, v in kwargs.items() if k in SUCCESS_RESULT_KEYS}
 
-        return cast(EvaluationResult, {**base_fields, **valid_kwargs})
+        result_dict = {**base_fields, **valid_kwargs}
+
+        # Debug logging for boolean False values
+        if RESULT_KEY_VALUE in valid_kwargs and valid_kwargs[RESULT_KEY_VALUE] is False:
+            _LOGGER.warning(
+                "STATE_RESULT_DEBUG: Created result with state=%s, value=%s", state, result_dict.get(RESULT_KEY_VALUE)
+            )
+
+        return cast(EvaluationResult, result_dict)
 
     @staticmethod
     def create_error_result(error_message: str, state: str = EVAL_STATE_UNAVAILABLE, **kwargs: Any) -> EvaluationResult:
@@ -95,14 +107,15 @@ class EvaluatorResults:
         if isinstance(result, dict) and RESULT_KEY_SUCCESS in result:
             return cast(EvaluationResult, result)
 
-        # CRITICAL FIX: Handle None values by returning STATE_UNKNOWN with None value
-        # This preserves None values for Home Assistant while maintaining proper state handling.
-        # Home Assistant will handle None appropriately by converting to STATE_UNKNOWN internally.
+        # CRITICAL FIX: Handle None values by returning STATE_NONE with None value
+        # This preserves None values for proper alternate state classification.
+        # The alternate state processor will handle None appropriately by triggering NONE handlers.
         if result is None:
-            return EvaluatorResults.create_success_result_with_state(STATE_UNKNOWN, **{RESULT_KEY_VALUE: None})
+            return EvaluatorResults.create_success_result_with_state(STATE_NONE_YAML, **{RESULT_KEY_VALUE: None})
         # CRITICAL FIX: Check for boolean first, since bool is a subclass of int in Python
         # This prevents True/False from being converted to 1.0/0.0
         if isinstance(result, bool):
+            _LOGGER.warning("BOOLEAN_RESULT_DEBUG: Creating success result for boolean %s", result)
             return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
         if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))

@@ -383,13 +383,25 @@ class AlternateStateDetected(Exception):
     3. Formula evaluation - when final result is alternate state
     """
 
-    def __init__(self, message: str, alternate_state_value: Any):
+    def __init__(self, message: str, alternate_state_value: Any, alternate_state_type: str | None = None):
         """Initialize the exception.
 
         Args:
             message: Description of where the alternate state was detected
             alternate_state_value: The alternate state value that was detected
+            alternate_state_type: The alternate state type (e.g., "none", "unavailable", "unknown")
+                                 If None, will be determined from alternate_state_value
         """
         super().__init__(message)
         self.alternate_state_value = alternate_state_value
         self.message = message
+
+        # Store the alternate state type to avoid re-identification
+        if alternate_state_type is not None:
+            self.alternate_state_type = alternate_state_type
+        else:
+            # Determine the type from the value if not provided
+            from .constants_alternate import identify_alternate_state_value
+
+            identified_type = identify_alternate_state_value(alternate_state_value)
+            self.alternate_state_type = identified_type if isinstance(identified_type, str) else "unknown"

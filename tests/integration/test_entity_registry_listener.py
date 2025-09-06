@@ -187,24 +187,22 @@ class TestEntityRegistryListener:
             return Mock()
 
         with patch.object(listener.hass, "async_create_task", side_effect=mock_async_create_task) as mock_create_task:
-            # Setup mock to return tracked entity
-            mock_sensor_set_metadata = MagicMock()
-            mock_sensor_set_metadata.sensor_set_id = "test_set"
-            mock_storage_manager.list_sensor_sets.return_value = [mock_sensor_set_metadata]
+            # Mock _is_entity_tracked to return True
+            with patch.object(listener, "_is_entity_tracked", return_value=True):
+                event = Event(
+                    "entity_registry_updated",
+                    {
+                        "action": "update",
+                        "entity_id": "sensor.new",
+                        "old_entity_id": "sensor.old",
+                        "changes": {"entity_id": "sensor.intermediate"},
+                    },
+                )
 
-            mock_sensor_set = MagicMock()
-            mock_sensor_set.is_entity_tracked.return_value = True
-            mock_storage_manager.get_sensor_set.return_value = mock_sensor_set
+                listener._handle_entity_registry_updated(event)
 
-            event = Event(
-                "entity_registry_updated",
-                {"action": "update", "entity_id": "sensor.new", "old_entity_id": "sensor.old", "changes": {}},
-            )
-
-            listener._handle_entity_registry_updated(event)
-
-            # Task should be created to process the change
-            mock_create_task.assert_called_once()
+                # Task should be created to process the change
+                mock_create_task.assert_called_once()
 
     def test_handle_entity_registry_updated_exception(self, mock_hass, mock_entity_registry, mock_states, listener):
         """Test handling entity registry event when an exception occurs."""
@@ -227,7 +225,12 @@ class TestEntityRegistryListener:
                 # Create valid event data that will trigger the _is_entity_tracked call
                 event = Event(
                     "entity_registry_updated",
-                    {"action": "update", "entity_id": "sensor.new", "old_entity_id": "sensor.old", "changes": {}},
+                    {
+                        "action": "update",
+                        "entity_id": "sensor.new",
+                        "old_entity_id": "sensor.old",
+                        "changes": {"entity_id": "sensor.intermediate"},
+                    },
                 )
 
                 # Should not raise an error, but log it and not create any async tasks
@@ -329,21 +332,15 @@ class TestEntityRegistryListener:
         # Verify save was called
         mock_storage_manager.async_save.assert_called_once()
 
-    async def test_update_storage_entity_ids_rebuild_indexes(
+    async def test_update_storage_entity_ids_only_updates_storage(
         self, mock_hass, mock_entity_registry, mock_states, listener, mock_storage_manager
     ):
-        """Test that entity indexes are rebuilt after storage updates."""
-        # Setup mock sensor set that tracks the entity
-        mock_sensor_set_metadata = MagicMock()
-        mock_sensor_set_metadata.sensor_set_id = "test_set"
-        mock_storage_manager.list_sensor_sets.return_value = [mock_sensor_set_metadata]
+        """Test that _update_storage_entity_ids only updates storage, not entity indexes.
 
-        mock_sensor_set = MagicMock()
-        mock_sensor_set.is_entity_tracked.side_effect = lambda entity_id: entity_id in ["sensor.old", "sensor.new"]
-        mock_sensor_set.async_rebuild_entity_index = AsyncMock()
-        mock_storage_manager.get_sensor_set.return_value = mock_sensor_set
-
-        # Setup storage data with change
+        Per the simplified architecture, entity index rebuilding happens during
+        the reload step in _async_process_entity_id_change, not in _update_storage_entity_ids.
+        """
+        # Setup storage data with entity ID to replace
         storage_data = {
             "sensors": {},
             "sensor_sets": {"test_set": {"global_settings": {"variables": {"power_meter": "sensor.old"}}}},
@@ -352,8 +349,14 @@ class TestEntityRegistryListener:
 
         await listener._update_storage_entity_ids("sensor.old", "sensor.new")
 
-        # Verify entity index was rebuilt
-        mock_sensor_set.async_rebuild_entity_index.assert_called_once()
+        # Verify storage was updated with new entity ID
+        assert storage_data["sensor_sets"]["test_set"]["global_settings"]["variables"]["power_meter"] == "sensor.new"
+
+        # Verify save was called
+        mock_storage_manager.async_save.assert_called_once()
+
+        # NOTE: Entity index rebuilding happens during reload in _async_process_entity_id_change,
+        # not in this method. This method is only responsible for storage updates.
 
     def test_get_stats_no_sensor_sets(self, mock_hass, mock_entity_registry, mock_states, listener, mock_storage_manager):
         """Test get_stats with no sensor sets."""

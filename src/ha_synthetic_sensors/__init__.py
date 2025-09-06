@@ -17,7 +17,6 @@ from .config_models import FormulaConfig, SensorConfig
 
 # Public API - Utility classes
 from .device_association import DeviceAssociationHelper
-from .entity_factory import EntityDescription, EntityFactory
 
 # Public API - Exceptions
 from .exceptions import SyntheticSensorsConfigError
@@ -83,7 +82,8 @@ def _register_backing_entities_and_mappings(
 
     else:
         # No backing entities provided - sensors will use HA entity references or direct values
-        logger.debug("No backing entities provided - sensors will use HA entity references or direct values")
+        # Debug logging removed to reduce verbosity
+        pass
 
     return registered_backing_ids
 
@@ -96,7 +96,7 @@ def _maybe_trigger_initial_update(
     """Trigger an initial coarse update if possible and needed."""
     if not change_notifier or not backing_entity_ids:
         return
-    logger.debug("Triggering initial coarse update for %d backing entities", len(backing_entity_ids))
+    # Debug logging removed to reduce verbosity
     try:
         change_notifier(backing_entity_ids)
     except Exception as err:
@@ -416,259 +416,7 @@ async def async_setup_synthetic_sensors_with_entities(
     return sensor_manager
 
 
-async def async_setup_synthetic_integration(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-    integration_domain: str,
-    sensor_configs: list[SensorConfig],
-    sensor_to_backing_mapping: dict[str, str] | None = None,
-    data_provider_callback: DataProviderCallback | None = None,
-    sensor_set_name: str | None = None,
-    change_notifier: DataProviderChangeNotifier | None = None,
-) -> tuple[StorageManager, SensorManager]:
-    """Complete setup pattern for synthetic sensors following logical flow.
-
-    This function follows the logical sequence:
-    1. Setup StorageManager
-    2. Get/Create SensorSet from StorageManager
-    3. Define YAML configuration + backing entities (provided by caller)
-    4. Load everything in one atomic operation with change detection
-
-    Args:
-        hass: Home Assistant instance
-        config_entry: Integration's ConfigEntry
-        async_add_entities: AddEntitiesCallback from sensor platform
-        integration_domain: Domain name for the integration
-        sensor_configs: List of SensorConfig objects defining the sensors
-        sensor_to_backing_mapping: Optional mapping from sensor unique IDs to backing entity IDs
-        data_provider_callback: Optional callback for live data
-        sensor_set_name: Optional name for the sensor set (defaults to device-based name)
-        allow_ha_lookups: If True, backing entities can fall back to HA state lookups
-                        when not found in data provider. If False (default), backing
-                        entities are always virtual and only use data provider callback.
-        change_notifier: Optional callback that the integration can call when backing
-                       entity data changes to trigger selective sensor updates.
-
-    Returns:
-        Tuple of (StorageManager, SensorManager): Both configured and ready
-
-    Example:
-        ```python
-        # In your sensor.py platform
-        from ha_synthetic_sensors import async_setup_synthetic_integration, SensorConfig, FormulaConfig
-
-        async def async_setup_entry(hass, config_entry, async_add_entities):
-            # Your native sensors first
-            async_add_entities(native_sensors)
-
-            # Define your synthetic sensor configurations
-            sensor_configs = [
-                SensorConfig(
-                    unique_id="main_power",
-                    name="Main Power",
-                    entity_id="sensor.span_main_power",
-                    device_identifier=device_id,
-                    formulas=[FormulaConfig(
-                        id="main",
-                        formula="source_value",
-                        variables={"source_value": "sensor.span_backing_main_power"}
-                    )]
-                )
-            ]
-
-            backing_entities = {"sensor.span_backing_main_power"}
-
-            # One call sets up everything
-            storage_manager, sensor_manager = await async_setup_synthetic_integration(
-                hass=hass,
-                config_entry=config_entry,
-                async_add_entities=async_add_entities,
-                integration_domain=DOMAIN,
-                device_identifier=coordinator.device_id,
-                sensor_configs=sensor_configs,
-                sensor_to_backing_mapping=backing_entities, # Pass the mapping
-                data_provider_callback=create_data_provider(coordinator),
-            )
-        ```
-    """
-
-    # Setup StorageManager
-    storage_manager = StorageManager(hass, f"{integration_domain}_synthetic", integration_domain=integration_domain)
-    await storage_manager.async_load()
-
-    # Get/Create SensorSet from StorageManager
-    # Require device_identifier from YAML/global_settings; do not pass separately
-    # Determine device_identifier from provided sensor_configs/global settings
-    effective_device_identifier = next(
-        (s.device_identifier for s in sensor_configs if s.device_identifier),
-        None,
-    )
-    # Fallback to global settings if available after initial create path
-    sensor_set_id = f"{(effective_device_identifier or 'default')}_sensors"
-    sensor_set_display_name = sensor_set_name or (
-        f"{integration_domain.title()} {effective_device_identifier or 'default'} Sensors"
-    )
-
-    if storage_manager.sensor_set_exists(sensor_set_id):
-        sensor_set = storage_manager.get_sensor_set(sensor_set_id)
-
-        # Existing storage - preserve user customizations
-        # Only add new sensors that don't exist
-        existing_sensor_ids = {s.unique_id for s in sensor_set.list_sensors()}
-        new_sensors = [s for s in sensor_configs if s.unique_id not in existing_sensor_ids]
-
-        if new_sensors:
-            for sensor_config in new_sensors:
-                await sensor_set.async_add_sensor(sensor_config)
-    else:
-        # Fresh install - create sensor set with provided configurations
-        await storage_manager.async_create_sensor_set(
-            sensor_set_id=sensor_set_id,
-            device_identifier=effective_device_identifier,
-            name=sensor_set_display_name,
-        )
-        sensor_set = storage_manager.get_sensor_set(sensor_set_id)
-        await sensor_set.async_replace_sensors(sensor_configs)
-
-    # Configuration is already defined (provided by caller as sensor_configs)
-
-    # Load everything in one atomic operation with change detection
-
-    # Get device info if available (integration-specific)
-    device_info = _get_device_info(hass, config_entry, domain_override=integration_domain)
-
-    # Create sensor manager
-    sensor_manager = await async_create_sensor_manager(
-        hass=hass,
-        integration_domain=integration_domain,
-        add_entities_callback=async_add_entities,
-        device_info=device_info,
-        data_provider_callback=data_provider_callback,
-    )
-
-    # Register backing entities/mappings if provided
-    if sensor_to_backing_mapping:
-        mapped_ids = set(sensor_to_backing_mapping.values())
-        if mapped_ids:
-            sensor_manager.register_data_provider_entities(mapped_ids, change_notifier)
-            sensor_manager.register_sensor_to_backing_mapping(sensor_to_backing_mapping)
-
-    # Register with storage manager for entity change notifications
-    sensor_manager.register_with_storage_manager(storage_manager)
-
-    # Load configuration from storage (this triggers sensor creation)
-    config = storage_manager.to_config(sensor_set_id=sensor_set_id)
-    await sensor_manager.load_configuration(config)
-
-    return storage_manager, sensor_manager
-
-
-async def async_setup_synthetic_integration_with_auto_backing(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-    integration_domain: str,
-    sensor_configs: list[SensorConfig],
-    data_provider_callback: DataProviderCallback | None = None,
-    sensor_set_name: str | None = None,
-) -> tuple[StorageManager, SensorManager]:
-    """Complete setup with automatic backing entity management.
-
-    This is the most advanced interface that automatically extracts and manages
-    backing entities from sensor configurations, making them completely invisible
-    to the caller. Perfect for integrations that want zero backing entity management.
-
-    Args:
-        hass: Home Assistant instance
-        config_entry: Integration's ConfigEntry
-        async_add_entities: AddEntitiesCallback from sensor platform
-        integration_domain: Domain name for the integration
-        sensor_configs: List of SensorConfig objects defining the sensors
-        data_provider_callback: Optional callback for live data
-        sensor_set_name: Optional name for the sensor set (defaults to device-based name)
-        allow_ha_lookups: If True, backing entities can fall back to HA state lookups
-                        when not found in data provider. If False (default), backing
-                        entities are always virtual and only use data provider callback.
-
-    Returns:
-        Tuple of (StorageManager, SensorManager): Both configured and ready
-    """
-
-    # Setup StorageManager
-    storage_manager = StorageManager(hass, f"{integration_domain}_synthetic", integration_domain=integration_domain)
-    await storage_manager.async_load()
-
-    # Get/Create SensorSet from StorageManager
-    effective_device_identifier = next(
-        (s.device_identifier for s in sensor_configs if s.device_identifier),
-        None,
-    )
-    sensor_set_id = f"{(effective_device_identifier or 'default')}_sensors"
-    sensor_set_display_name = sensor_set_name or (
-        f"{integration_domain.title()} {effective_device_identifier or 'default'} Sensors"
-    )
-
-    if storage_manager.sensor_set_exists(sensor_set_id):
-        sensor_set = storage_manager.get_sensor_set(sensor_set_id)
-
-        # Existing storage - preserve user customizations
-        # Only add new sensors that don't exist
-        existing_sensor_ids = {s.unique_id for s in sensor_set.list_sensors()}
-        new_sensors = [s for s in sensor_configs if s.unique_id not in existing_sensor_ids]
-
-        if new_sensors:
-            for sensor_config in new_sensors:
-                await sensor_set.async_add_sensor(sensor_config)
-    else:
-        # Fresh install - create sensor set with provided configurations
-        await storage_manager.async_create_sensor_set(
-            sensor_set_id=sensor_set_id,
-            device_identifier=effective_device_identifier,
-            name=sensor_set_display_name,
-        )
-        sensor_set = storage_manager.get_sensor_set(sensor_set_id)
-        await sensor_set.async_replace_sensors(sensor_configs)
-
-    # Extract backing entities automatically from sensor configurations
-    all_backing_entities: set[str] = set()
-    for sensor_config in sensor_configs:
-        for formula in sensor_config.formulas:
-            if formula.variables:
-                for _var_name, var_value in formula.variables.items():
-                    # Check if this looks like an entity ID that would use integration data provider
-                    if isinstance(var_value, str) and var_value.startswith("sensor."):
-                        all_backing_entities.add(var_value)
-
-    # Load everything in one atomic operation with automatic backing entity management
-
-    # Get device info if available (integration-specific)
-    device_info = _get_device_info(hass, config_entry, domain_override=integration_domain)
-
-    # Create sensor manager
-    sensor_manager = await async_create_sensor_manager(
-        hass=hass,
-        integration_domain=integration_domain,
-        add_entities_callback=async_add_entities,
-        device_info=device_info,
-        data_provider_callback=data_provider_callback,
-    )
-
-    # Register backing entities automatically (invisible to caller)
-    if all_backing_entities:
-        sensor_manager.register_data_provider_entities(all_backing_entities)
-
-    # Register with storage manager for entity change notifications
-    sensor_manager.register_with_storage_manager(storage_manager)
-
-    # Load configuration from storage (this triggers sensor creation with automatic backing entity management)
-    config = storage_manager.to_config(sensor_set_id=sensor_set_id)
-    await sensor_manager.load_configuration(config)
-
-    return storage_manager, sensor_manager
-
-
-def configure_logging(level: int = logging.DEBUG) -> None:
+def configure_logging(level: int = logging.INFO) -> None:
     """Configure logging level for the ha_synthetic_sensors package.
 
     This function ensures that all synthetic sensors logging will be visible
@@ -679,7 +427,7 @@ def configure_logging(level: int = logging.DEBUG) -> None:
 
     Example:
         import ha_synthetic_sensors
-        ha_synthetic_sensors.configure_logging(logging.DEBUG)
+        ha_synthetic_sensors.configure_logging(logging.INFO)
     """
     # Get the root package logger
     package_logger = logging.getLogger("ha_synthetic_sensors")
@@ -739,9 +487,7 @@ def test_logging() -> None:
     """
     # Test logging from various modules
     logging.getLogger("ha_synthetic_sensors").info("TEST: Main package logger")
-    logging.getLogger("ha_synthetic_sensors.evaluator").debug("TEST: Evaluator debug message")
-    logging.getLogger("ha_synthetic_sensors.service_layer").debug("TEST: Service layer debug message")
-    logging.getLogger("ha_synthetic_sensors.config_manager").debug("TEST: Config manager debug message")
+    # Debug logging removed to reduce verbosity
 
 
 try:
@@ -756,8 +502,6 @@ __all__ = [
     "DataProviderChangeNotifier",
     "DataProviderResult",
     "DeviceAssociationHelper",
-    "EntityDescription",
-    "EntityFactory",
     "FormulaConfig",
     "SensorConfig",
     "SensorManager",
@@ -767,8 +511,7 @@ __all__ = [
     "async_create_sensor_manager",
     "async_reload_integration",
     "async_setup_integration",
-    "async_setup_synthetic_integration",
-    "async_setup_synthetic_integration_with_auto_backing",
+    # REMOVED: async_setup_synthetic_integration functions (violated architecture)
     "async_setup_synthetic_sensors",
     "async_setup_synthetic_sensors_with_entities",
     "async_unload_integration",
