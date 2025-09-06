@@ -401,7 +401,7 @@ async def test_alternate_handlers_and_guard_runtime(
         # Missing entity used to trigger alternates: represent as UNAVAILABLE so context isn't raw None
         mock_entity_registry.register_entity("sensor.nonexistent_value", "sensor.nonexistent_value", "sensor")
         mock_states.register_state("sensor.nonexistent_value", "unavailable", {})
-        
+
         # Missing value entity used by literal_alternate_sensor and object_alternate_sensor
         mock_entity_registry.register_entity("sensor.missing_value", "sensor.missing_value", "sensor")
         mock_states.register_state("sensor.missing_value", "unavailable", {})

@@ -26,35 +26,24 @@ async def test_span_simulator_solar_direct_entity_refs(
 
     # Seed required HA entities with numeric states
     from unittest.mock import Mock
+
     mock_states["sensor.span_simulator_unmapped_tab_30_power"] = Mock(
-        state="500.0", 
-        entity_id="sensor.span_simulator_unmapped_tab_30_power", 
-        attributes={}
+        state="500.0", entity_id="sensor.span_simulator_unmapped_tab_30_power", attributes={}
     )
     mock_states["sensor.span_simulator_unmapped_tab_32_power"] = Mock(
-        state="600.0", 
-        entity_id="sensor.span_simulator_unmapped_tab_32_power", 
-        attributes={}
+        state="600.0", entity_id="sensor.span_simulator_unmapped_tab_32_power", attributes={}
     )
     mock_states["sensor.span_simulator_unmapped_tab_30_energy_produced"] = Mock(
-        state="100.0", 
-        entity_id="sensor.span_simulator_unmapped_tab_30_energy_produced", 
-        attributes={}
+        state="100.0", entity_id="sensor.span_simulator_unmapped_tab_30_energy_produced", attributes={}
     )
     mock_states["sensor.span_simulator_unmapped_tab_32_energy_produced"] = Mock(
-        state="200.0", 
-        entity_id="sensor.span_simulator_unmapped_tab_32_energy_produced", 
-        attributes={}
+        state="200.0", entity_id="sensor.span_simulator_unmapped_tab_32_energy_produced", attributes={}
     )
     mock_states["sensor.span_simulator_unmapped_tab_30_energy_consumed"] = Mock(
-        state="50.0", 
-        entity_id="sensor.span_simulator_unmapped_tab_30_energy_consumed", 
-        attributes={}
+        state="50.0", entity_id="sensor.span_simulator_unmapped_tab_30_energy_consumed", attributes={}
     )
     mock_states["sensor.span_simulator_unmapped_tab_32_energy_consumed"] = Mock(
-        state="75.0", 
-        entity_id="sensor.span_simulator_unmapped_tab_32_energy_consumed", 
-        attributes={}
+        state="75.0", entity_id="sensor.span_simulator_unmapped_tab_32_energy_consumed", attributes={}
     )
 
     # Set up storage manager with proper mocking
