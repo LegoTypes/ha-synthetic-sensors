@@ -10,9 +10,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 
-from ..constants_alternate import ALTERNATE_STATE_NONE, STATE_NONE
+from ..constants_alternate import ALTERNATE_STATE_NONE, STATE_NONE, identify_alternate_state_value
 from ..constants_handlers import HANDLER_NAME_METADATA
 from ..constants_metadata import (
+    ERROR_METADATA_ENTITY_NOT_FOUND,
     ERROR_METADATA_FUNCTION_PARAMETER_COUNT,
     ERROR_METADATA_HASS_NOT_AVAILABLE,
     ERROR_METADATA_KEY_NOT_FOUND,
@@ -21,6 +22,7 @@ from ..constants_metadata import (
 )
 from ..exceptions import AlternateStateDetected
 from ..hierarchical_context_dict import HierarchicalContextDict
+from ..regex_helper import RegexHelper, create_metadata_function_pattern
 from ..shared_constants import get_ha_domains
 from ..type_definitions import ReferenceValue
 from .base_handler import FormulaHandler
@@ -163,10 +165,7 @@ class MetadataHandler(FormulaHandler):
         # Find all metadata function calls and replace them with their results
         def replace_metadata_function(match: re.Match[str]) -> str:
             nonlocal metadata_counter
-            full_call = match.group(0)  # Full metadata(...) call
             params_str = match.group(1)  # Content inside parentheses
-
-            _LOGGER.warning("METADATA_PROCESSING_CALL: Processing metadata call: %s", full_call)
 
             # Parse parameters (simple comma split for now)
             params = [p.strip() for p in params_str.split(",")]
@@ -179,19 +178,14 @@ class MetadataHandler(FormulaHandler):
             # The entity_ref might be a variable name or an entity ID
             # If it's a variable name, we need to resolve it to the entity ID
             # If it's already an entity ID, use it directly
-            _LOGGER.warning("METADATA_RESOLVING_ENTITY: Resolving entity_ref=%s", entity_ref)
             try:
                 resolved_entity_id = self._resolve_entity_reference(entity_ref, context)
-                _LOGGER.warning("METADATA_RESOLVED_ENTITY: Resolved to entity_id=%s", resolved_entity_id)
             except Exception as e:
-                _LOGGER.warning("METADATA_ENTITY_RESOLUTION_ERROR: Failed to resolve entity_ref=%s, error=%s", entity_ref, e)
-                raise
+                raise ValueError(f"Cannot resolve entity reference: {e}") from e
 
             # Check 1: Is the entity reference itself an alternate state?
             if self._is_alternate_state(resolved_entity_id):
                 # Determine the alternate state type for the entity reference
-                from ..constants_alternate import identify_alternate_state_value
-
                 alternate_state_type = identify_alternate_state_value(resolved_entity_id)
                 state_type = alternate_state_type if isinstance(alternate_state_type, str) else "unknown"
                 raise AlternateStateDetected(
@@ -199,36 +193,12 @@ class MetadataHandler(FormulaHandler):
                 )
 
             # Get metadata value
-            _LOGGER.warning("METADATA_GETTING_VALUE: Getting metadata for entity=%s, key=%s", resolved_entity_id, metadata_key)
-
-            # Debug: Check what state object we're getting
-            if self._hass is None:
-                raise RuntimeError("HomeAssistant instance is None")
-            state_obj = self._hass.states.get(resolved_entity_id)
-            _LOGGER.warning("METADATA_STATE_DEBUG: Got state_obj=%s (type: %s)", state_obj, type(state_obj).__name__)
-            if state_obj and hasattr(state_obj, "attributes"):
-                _LOGGER.warning("METADATA_ATTRIBUTES_DEBUG: state_obj.attributes=%s", state_obj.attributes)
-                # ARCHITECTURE FIX: Handle mock objects and non-iterable attributes gracefully
-                try:
-                    if metadata_key in state_obj.attributes:
-                        attr_value = state_obj.attributes[metadata_key]
-                        _LOGGER.warning(
-                            "METADATA_ATTR_VALUE_DEBUG: state_obj.attributes['%s']=%s (type: %s)",
-                            metadata_key,
-                            attr_value,
-                            type(attr_value).__name__,
-                        )
-                except (TypeError, AttributeError) as e:
-                    _LOGGER.warning("METADATA_ATTRIBUTES_ERROR: Cannot check attributes: %s", e)
-
             metadata_value = self._get_metadata_value(resolved_entity_id, metadata_key, context)
             _LOGGER.debug("METADATA_GOT_VALUE: Got metadata value=%s (type: %s)", metadata_value, type(metadata_value).__name__)
 
             # Check 2: Is the metadata result an alternate state?
             if self._is_alternate_state(metadata_value):
                 # Determine the alternate state type for the metadata value
-                from ..constants_alternate import identify_alternate_state_value
-
                 alternate_state_type = identify_alternate_state_value(metadata_value)
                 state_type = alternate_state_type if isinstance(alternate_state_type, str) else "unknown"
                 raise AlternateStateDetected(
@@ -253,8 +223,6 @@ class MetadataHandler(FormulaHandler):
             return f"metadata_result({metadata_key_name})"
 
         # Use centralized metadata function pattern from regex helper
-        from ..regex_helper import RegexHelper, create_metadata_function_pattern
-
         regex_helper = RegexHelper()
         metadata_pattern = create_metadata_function_pattern(METADATA_FUNCTION_NAME)
         processed_formula = regex_helper.replace_with_function(
@@ -287,11 +255,11 @@ class MetadataHandler(FormulaHandler):
         # PRIORITY 1: Check for the specific key added by context building phase
         if "current_sensor_entity_id" in context:
             value = context["current_sensor_entity_id"]
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "METADATA_CURRENT_SENSOR_DEBUG: Found current_sensor_entity_id=%s (type: %s)", value, type(value).__name__
             )
             if isinstance(value, ReferenceValue):
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "METADATA_CURRENT_SENSOR_DEBUG: ReferenceValue.value=%s (type: %s)", value.value, type(value.value).__name__
                 )
             if isinstance(value, ReferenceValue) and isinstance(value.value, str):
@@ -299,7 +267,6 @@ class MetadataHandler(FormulaHandler):
             elif isinstance(value, str) and value.startswith("sensor."):
                 entity_id = value
             if entity_id:
-                _LOGGER.warning("METADATA_CURRENT_SENSOR_SUCCESS: Found current sensor entity ID: %s", entity_id)
                 return entity_id
             _LOGGER.warning("METADATA_CURRENT_SENSOR_INVALID: current_sensor_entity_id value is not valid: %s", value)
         else:
@@ -542,8 +509,8 @@ class MetadataHandler(FormulaHandler):
 
         # Handle case where entity doesn't exist
         if state_obj is None:
-            _LOGGER.debug("METADATA_ENTITY_NOT_FOUND: Entity %s not found, returning None", entity_id)
-            return None
+            _LOGGER.debug("METADATA_ENTITY_NOT_FOUND: Entity %s not found", entity_id)
+            raise ValueError(ERROR_METADATA_ENTITY_NOT_FOUND.format(entity_id=entity_id))
 
         # Get the metadata property
         # First check state attributes dict for the key (most common case)
@@ -561,7 +528,7 @@ class MetadataHandler(FormulaHandler):
         # Then check for direct attribute on the state object (e.g., last_changed)
         if hasattr(state_obj, metadata_key):
             value = getattr(state_obj, metadata_key)
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "METADATA_FROM_DIRECT: Retrieved direct metadata %s for %s: %s (type: %s)",
                 metadata_key,
                 entity_id,

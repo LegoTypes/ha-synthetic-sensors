@@ -1,7 +1,7 @@
 """Context building phase for compiler-like formula evaluation."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import DataValidationError, MissingDependencyError
@@ -84,21 +84,13 @@ class ContextBuildingPhase:
         sensor_config: SensorConfig | None = None,
     ) -> HierarchicalContextDict:
         """Build the complete evaluation context for formula evaluation."""
-        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
-        eval_context = context  # Preserve the hierarchical context
-        _LOGGER.warning(
-            "CONTEXT_BUILDING_PRESERVE: Using input context id=%d type=%s with %d items",
-            id(eval_context),
-            type(eval_context).__name__,
-            len(eval_context),
-        )
 
+        eval_context = context  # Preserve the hierarchical context
         # Add Home Assistant instance for metadata handler access
         if self._hass is not None:
-            _LOGGER.warning("CONTEXT_BUILDING_HASS: Adding HASS instance to context: %s", type(self._hass).__name__)
             eval_context._hierarchical_context.set_system_object("_hass", self._hass)
         else:
-            _LOGGER.warning("CONTEXT_BUILDING_NO_HASS: No HASS instance available in context building phase")
+            raise ValueError("Home Assistant instance is required for context building phase")
 
         # Add Home Assistant constants to evaluation context (lowest priority)
         self._add_ha_constants_to_context(eval_context)
@@ -131,7 +123,7 @@ class ContextBuildingPhase:
         if config is not None:
             eval_context._hierarchical_context.set_system_object("_formula_config", config)
 
-        # CRITICAL: Add state variable to context immediately after globals
+        # Add state variable to context immediately after globals
         # The state is ALWAYS needed even if purely calculated (value would be None)
         self._add_state_to_context(eval_context, resolver_factory)
 
@@ -173,7 +165,8 @@ class ContextBuildingPhase:
             return
 
         if sensor_config_raw is not None and hasattr(sensor_config_raw, "unique_id"):
-            sensor_config = sensor_config_raw
+            # Type narrowing: we know this is a SensorConfig if it has unique_id
+            sensor_config = cast(SensorConfig, sensor_config_raw)
 
             # Get StateResolver from resolver factory and use prior state resolution
             try:
@@ -346,7 +339,7 @@ class ContextBuildingPhase:
         resolver_factory: VariableResolverFactory,
         sensor_config: SensorConfig | None = None,
     ) -> None:
-        """Resolve config variables using modern variable resolver factory."""
+        """Resolve config variables using variable resolver factory."""
 
         def resolver_callback(var_name: str, var_value: Any, context: HierarchicalContextDict, sensor_cfg: Any) -> Any:
             # For non-string values (numeric literals), add directly to context
@@ -370,12 +363,6 @@ class ContextBuildingPhase:
             # Fallback to adding as-is if resolution fails
             return var_value
 
-        # BULLETPROOF: Log what type we're passing to resolve_config_variables from context building phase
-        _LOGGER.warning(
-            "CONTEXT_BUILDING_CALLING: Passing context id=%d type=%s to resolve_config_variables",
-            id(eval_context),
-            type(eval_context).__name__,
-        )
         resolve_config_variables(eval_context, config, resolver_callback, sensor_config)
 
     def _handle_config_variable_none_value(self, var_name: str, config: FormulaConfig) -> None:

@@ -61,13 +61,6 @@ class HierarchicalContextDict:
                 f"Stack trace:\n{stack_trace}"
             )
 
-        _LOGGER.warning(
-            "HIERARCHICAL_DICT_SETITEM: Assignment %s = %s (bypass=%s)",
-            key,
-            type(value).__name__,
-            self._allow_direct_assignment,
-        )
-
         if self._allow_direct_assignment:
             # Temporary bypass for internal operations
             self._internal_dict[key] = value
@@ -205,13 +198,11 @@ class HierarchicalContextDict:
         context_id = hierarchical_context.name
         if context_id in cls._instances:
             del cls._instances[context_id]
-            _LOGGER.warning("HIERARCHICAL_DICT_CLEANUP: Removed singleton instance for context %s", context_id)
 
     @classmethod
     def clear_all_singletons(cls) -> None:
         """Clear all singleton instances - for testing purposes."""
         cls._instances.clear()
-        _LOGGER.warning("HIERARCHICAL_DICT_CLEANUP: Cleared all singleton instances")
 
 
 class DirectAssignmentContext:

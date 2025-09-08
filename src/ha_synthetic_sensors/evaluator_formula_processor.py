@@ -30,12 +30,7 @@ class FormulaProcessor:
         self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
     ) -> tuple[VariableResolutionResult, str]:
         """Resolve formula variables and return resolution result and resolved formula."""
-        # BULLETPROOF: Log context type at formula processor entry
-        _LOGGER.warning(
-            "CONTEXT_FLOW_PROCESSOR: Received context id=%d type=%s in formula processor",
-            id(eval_context),
-            type(eval_context).__name__,
-        )
+
         # Check if formula is already resolved (contains only numbers, operators, and functions)
         formula_variables = regex_helper.extract_formula_variables_for_resolution(config.formula)
         variables_needing_resolution = regex_helper.filter_variables_needing_resolution(formula_variables)

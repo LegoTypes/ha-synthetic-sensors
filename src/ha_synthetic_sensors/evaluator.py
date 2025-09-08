@@ -992,10 +992,6 @@ class Evaluator(FormulaEvaluator):
         self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
     ) -> tuple[VariableResolutionResult, str]:
         """Resolve formula variables and return resolution result and resolved formula."""
-        # BULLETPROOF: Log context type at evaluator entry
-        _LOGGER.warning(
-            "CONTEXT_FLOW_EVALUATOR: Received context id=%d type=%s in evaluator", id(eval_context), type(eval_context).__name__
-        )
 
         if self._formula_processor is None:
             raise RuntimeError("Formula processor not initialized")

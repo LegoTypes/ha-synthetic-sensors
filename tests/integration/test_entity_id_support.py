@@ -182,99 +182,104 @@ class TestEntityIdSupport:
         # Should have the custom entity_id
         assert dynamic_sensor.entity_id == "sensor.comprehensive_energy"
 
-    def test_state_token_in_main_formula(self, mock_hass, mock_entity_registry, mock_states, config_manager):
+    async def test_state_token_in_main_formula(
+        self, mock_hass, mock_entity_registry, mock_device_registry, mock_states, mock_config_entry, mock_async_add_entities
+    ):
         """Test that the 'state' token in main formulas resolves to the backing entity."""
-        # Load the state token example
         from pathlib import Path
+        from ha_synthetic_sensors import async_setup_synthetic_sensors
+        from ha_synthetic_sensors.storage_manager import StorageManager
+        from unittest.mock import patch, AsyncMock
+        import yaml
 
+        # Load the state token example
         example_path = Path(__file__).parent.parent.parent / "examples" / "state_token_example.yaml"
         with open(example_path) as f:
             state_token_yaml = yaml.safe_load(f)
 
-        config = config_manager._parse_yaml_config(state_token_yaml)
+        # Set up storage manager with the YAML config
 
-        # Find the current power sensor
-        current_power_sensor = next(s for s in config.sensors if s.unique_id == "test_current_power")
+        with (
+            patch("ha_synthetic_sensors.storage_manager.Store") as MockStore,
+            patch("homeassistant.helpers.device_registry.async_get") as MockDeviceRegistry,
+        ):
+            mock_store = AsyncMock()
+            mock_store.async_load.return_value = None
+            MockStore.return_value = mock_store
+            MockDeviceRegistry.return_value = mock_device_registry
 
-        # Should have explicit entity_id set
-        assert current_power_sensor.entity_id == "sensor.current_power"
+            storage_manager = StorageManager(mock_hass, "test_state_token", enable_entity_listener=False)
+            storage_manager._store = mock_store
+            await storage_manager.async_load()
 
-        # The main formula should be "state"
-        assert current_power_sensor.formulas[0].formula == "state"
+            sensor_set_id = "state_token_test"
+            await storage_manager.async_create_sensor_set(
+                sensor_set_id=sensor_set_id, device_identifier="test-device-001", name="State Token Test"
+            )
 
-        # Mock the backing entity state
-        mock_state = MagicMock()
-        mock_state.state = "1500.0"  # Simulate a power reading
+            # Load YAML content into the sensor set
+            yaml_content = yaml.dump(state_token_yaml)
+            result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
+            assert result["sensors_imported"] == 4  # Should import 4 sensors
 
-        # Set up the mock to return the state for the backing entity
-        def mock_states_get(entity_id):
-            if entity_id == "sensor.current_power":
-                return mock_state
-            return None
+            # Set up backing entity data for virtual entities (Pattern 1 from guide)
+            # These sensors use 'state' token to reference backing entities
+            backing_data = {
+                "sensor.current_power": 1500.0,  # Test current power sensor
+                "sensor.feed_through_power": 2000.0,  # Test feed through power sensor
+                "sensor.energy_consumed": 5000.0,  # Test energy consumed sensor
+                "sensor.raw_power": 1000.0,  # Test processed power sensor (backing entity)
+            }
 
-        config_manager._hass.states.get.side_effect = mock_states_get
+            # Create data provider for virtual backing entities
+            def data_provider(entity_id: str):
+                if entity_id in backing_data:
+                    return {"value": backing_data[entity_id], "exists": True}
+                return {"value": None, "exists": False}
 
-        # Test that the sensor can be created and the state token is resolved
-        evaluator = Evaluator(config_manager._hass)
+            # Create sensor-to-backing mapping for 'state' token resolution
+            # Maps sensor unique_id to backing entity_id
+            sensor_to_backing_mapping = {
+                "test_current_power": "sensor.current_power",
+                "test_feed_through_power": "sensor.feed_through_power",
+                "test_energy_consumed": "sensor.energy_consumed",
+                "test_power_with_processing": "sensor.raw_power",
+            }
 
-        # Set up data provider callback that uses the mock_hass.states.get
-        def mock_data_provider(entity_id: str):
-            state = config_manager._hass.states.get(entity_id)
-            if state:
-                return {"value": float(state.state), "exists": True}
-            return {"value": None, "exists": False}
+            # Set up sensor manager using public API (Pattern 1 from guide)
+            sensor_manager = await async_setup_synthetic_sensors(
+                hass=mock_hass,
+                config_entry=mock_config_entry,
+                async_add_entities=mock_async_add_entities,
+                storage_manager=storage_manager,
+                sensor_set_id=sensor_set_id,
+                data_provider_callback=data_provider,  # For virtual entities
+                sensor_to_backing_mapping=sensor_to_backing_mapping,  # Map 'state' token
+            )
 
-        evaluator.data_provider_callback = mock_data_provider
+            # Verify sensors were created
+            assert sensor_manager is not None
+            all_entities = mock_async_add_entities.call_args[0][0]
+            assert len(all_entities) == 4  # Should have 4 sensors
 
-        # Register the sensor-to-backing mapping for state token resolution
-        sensor_to_backing_mapping = {"test_current_power": "sensor.current_power"}
-        evaluator.update_sensor_to_backing_mapping(sensor_to_backing_mapping)
+            # Find the current power sensor
+            current_power_entity = next(e for e in all_entities if e.unique_id == "test_current_power")
 
-        mock_sensor_manager = MagicMock()
-        dynamic_sensor = DynamicSensor(
-            config_manager._hass, current_power_sensor, evaluator, mock_sensor_manager, SensorManagerConfig()
-        )
+            # Verify the sensor has the correct entity_id
+            assert current_power_entity.entity_id == "sensor.current_power"
 
-        # Should have the custom entity_id
-        assert dynamic_sensor.entity_id == "sensor.current_power"
+            # Test that the sensor evaluates correctly with the 'state' token
+            await current_power_entity.async_update()
 
-        # Test that the formula dependencies include the backing entity
-        # The state token should be resolved to the backing entity during evaluation
-        main_formula = current_power_sensor.formulas[0]
+            # The sensor should return the backing entity's value (1500.0)
+            assert current_power_entity.state == 1500.0
 
-        # The raw formula should contain "state"
-        assert main_formula.formula == "state"
+            # Test the processed power sensor (uses formula: state * 1.1)
+            processed_power_entity = next(e for e in all_entities if e.unique_id == "test_power_with_processing")
+            await processed_power_entity.async_update()
 
-        # The dependencies should include "state" (this is the raw dependency extraction)
-        dependencies = evaluator.get_formula_dependencies(main_formula.formula)
-        assert "state" in dependencies
-
-        # Test that the state token is properly resolved during evaluation
-        # This tests the actual state token resolution functionality
-
-        # Add debug output to see what's happening
-        print(f"Testing evaluation with formula: {main_formula.formula}")
-        print(f"Backing entity ID: {current_power_sensor.entity_id}")
-
-        # Test the preprocessing first
-        processed_formula = evaluator._formula_preprocessor.preprocess_formula_for_evaluation(
-            main_formula.formula, None, current_power_sensor, main_formula, evaluator._sensor_to_backing_mapping
-        )
-        print(f"Processed formula: {processed_formula}")
-
-        # Create proper evaluation context as the sensor manager would
-        from ha_synthetic_sensors.sensor_evaluation_context import SensorEvaluationContext
-
-        sensor_context = SensorEvaluationContext(
-            current_power_sensor.unique_id, config_manager._hass, current_power_sensor.entity_id
-        )
-        eval_context = sensor_context.get_context_for_evaluation()
-
-        result = evaluator.evaluate_formula_with_sensor_config(main_formula, eval_context, current_power_sensor)
-
-        # The evaluation should succeed and return the backing entity's value
-        assert result["success"] is True
-        assert result["value"] == 1500.0  # Should be the mocked state value
+            # Should be 1000.0 * 1.1 = 1100.0
+            assert processed_power_entity.state == 1100.0
 
     def test_entity_id_in_schema_validation(self, mock_hass, mock_entity_registry, mock_states, config_manager, entity_id_yaml):
         """Test that schema validation accepts entity_id field."""

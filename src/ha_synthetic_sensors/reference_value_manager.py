@@ -106,6 +106,24 @@ class ReferenceValueManager:
         ReferenceValueManager._entity_cache.clear()
 
     @staticmethod
+    def invalidate_entities(entity_ids: set[str]) -> None:
+        """Invalidate cached ReferenceValues for specific entities.
+
+        This forces fresh resolution of the specified entities on next access.
+
+        Args:
+            entity_ids: Set of entity IDs to invalidate from cache
+        """
+        invalidated_count = 0
+        for entity_id in entity_ids:
+            if entity_id in ReferenceValueManager._entity_cache:
+                del ReferenceValueManager._entity_cache[entity_id]
+                invalidated_count += 1
+
+        if invalidated_count > 0:
+            _LOGGER.debug("ReferenceValueManager: Invalidated %d cached entities: %s", invalidated_count, list(entity_ids))
+
+    @staticmethod
     def get_cache_stats() -> dict[str, Any]:
         """Get statistics about the internal cache. Used for debugging."""
         return {

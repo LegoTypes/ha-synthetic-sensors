@@ -120,13 +120,14 @@ class StateResolver(VariableResolver):
             The updated ReferenceValue for the state
         """
         # Set flag to indicate we're updating with main result (force update of cached ReferenceValue)
-        context._updating_main_result = True
+        context.get_hierarchical_context()._updating_main_result = True
         try:
             return self._set_unified_state_reference(context, sensor_config, main_result_value)
         finally:
             # Clean up the flag
-            if hasattr(context, "_updating_main_result"):
-                delattr(context, "_updating_main_result")
+            hierarchical_context = context.get_hierarchical_context()
+            if hasattr(hierarchical_context, "_updating_main_result"):
+                delattr(hierarchical_context, "_updating_main_result")
 
     @classmethod
     def update_context_with_main_result(
@@ -135,7 +136,7 @@ class StateResolver(VariableResolver):
         sensor_config: SensorConfig,
         main_result_value: Any,
         sensor_to_backing_mapping: dict[str, str],
-        data_provider_callback: Callable[[str], dict[str, Any]] | None,
+        data_provider_callback: Callable[[str], DataProviderResult] | None,
         hass: Any,
     ) -> ReferenceValue:
         """Convenience method to create StateResolver and update context with main result.
@@ -283,7 +284,8 @@ class StateResolver(VariableResolver):
         # Use ReferenceValueManager to create/reuse ReferenceValue for this entity
         # This ensures that both 'state' and the sensor's entity_id share the same ReferenceValue
         # Force update when this is called from update_state_with_main_result to ensure main result overwrites backing entity value
-        force_update = hasattr(context, "_updating_main_result") and context._updating_main_result
+        hierarchical_context = context.get_hierarchical_context()
+        force_update = hasattr(hierarchical_context, "_updating_main_result") and hierarchical_context._updating_main_result
         ReferenceValueManager.set_variable_with_reference_value(
             context, "state", sensor_entity_id, state_value, force_update=force_update
         )

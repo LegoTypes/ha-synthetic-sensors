@@ -67,12 +67,6 @@ class EvaluatorResults:
 
         result_dict = {**base_fields, **valid_kwargs}
 
-        # Debug logging for boolean False values
-        if RESULT_KEY_VALUE in valid_kwargs and valid_kwargs[RESULT_KEY_VALUE] is False:
-            _LOGGER.warning(
-                "STATE_RESULT_DEBUG: Created result with state=%s, value=%s", state, result_dict.get(RESULT_KEY_VALUE)
-            )
-
         return cast(EvaluationResult, result_dict)
 
     @staticmethod
@@ -115,7 +109,6 @@ class EvaluatorResults:
         # CRITICAL FIX: Check for boolean first, since bool is a subclass of int in Python
         # This prevents True/False from being converted to 1.0/0.0
         if isinstance(result, bool):
-            _LOGGER.warning("BOOLEAN_RESULT_DEBUG: Creating success result for boolean %s", result)
             return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})
         if isinstance(result, int | float):
             return EvaluatorResults.create_success_result(float(result))

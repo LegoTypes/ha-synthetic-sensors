@@ -85,10 +85,17 @@ class MissingDependencyError(DependencyError):
     def __init__(self, dependency: str, formula_name: str | None = None):
         self.dependency = dependency
         self.formula_name = formula_name
-        if formula_name:
-            super().__init__(f"Missing dependency '{dependency}' in formula '{formula_name}'")
+
+        # If dependency looks like a detailed error message (contains newlines or is very long),
+        # use it directly as the message
+        if "\n" in dependency or len(dependency) > 100:
+            super().__init__(dependency)
         else:
-            super().__init__(f"Missing dependency '{dependency}'")
+            # Standard dependency name - format with formula context
+            if formula_name:
+                super().__init__(f"Missing dependency '{dependency}' in formula '{formula_name}'")
+            else:
+                super().__init__(f"Missing dependency '{dependency}'")
 
 
 class BackingEntityResolutionError(MissingDependencyError):

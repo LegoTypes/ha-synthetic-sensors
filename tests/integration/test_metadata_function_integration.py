@@ -277,6 +277,7 @@ class TestMetadataFunctionIntegration:
                 # 2) Formula values are dicts with preserved structure (structure-preserving path)
                 # 3) Formula values are fully evaluated (string/number), while direct values may still be
                 #    raw variable names (e.g., 'computed_metadata_value') that will resolve next cycle.
+                # 4) Both direct and formula values are fully evaluated to concrete values (new runtime inheritance pattern)
                 if isinstance(direct_attrs.get("last_changed_formula"), dict) and isinstance(
                     direct_attrs.get("grace_active_formula"), dict
                 ):
@@ -300,6 +301,17 @@ class TestMetadataFunctionIntegration:
                     # but formula references work because they're evaluated in a different context
                     assert direct_attrs["last_changed_formula"] not in {"", "unknown", "unavailable"}
                     # This is acceptable in test environment where metadata functions may fail
+                elif (
+                    isinstance(direct_attrs.get("last_changed_direct"), str)
+                    and isinstance(direct_attrs.get("grace_active_direct"), bool)
+                    and isinstance(direct_attrs.get("last_changed_formula"), str)
+                    and isinstance(direct_attrs.get("grace_active_formula"), bool)
+                ):
+                    # New runtime inheritance pattern: Both direct and formula references evaluate to concrete values
+                    # This happens when variables are inherited at runtime and both paths resolve successfully
+                    assert direct_attrs["last_changed_direct"] not in {"", "unknown", "unavailable"}
+                    assert direct_attrs["last_changed_formula"] not in {"", "unknown", "unavailable"}
+                    # This is the expected behavior with the new runtime inheritance fix
                 else:
                     # Any other combination is unexpected
                     assert False, f"Unexpected attribute types: {direct_attrs}"

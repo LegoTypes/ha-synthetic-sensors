@@ -567,9 +567,9 @@ class SensorSet(SensorSetYamlOperationsMixin):
     def _log_modification_debug(self, modification: SensorSetModification) -> None:
         """Log debug information about the modification."""
         if modification.entity_id_changes:
-            _LOGGER.warning("DEBUG: async_modify called with entity_id_changes: %s", modification.entity_id_changes)
+            pass  # TODO: Add debug logging for entity ID changes
         else:
-            _LOGGER.warning("DEBUG: async_modify called with NO entity_id_changes")
+            pass  # TODO: Add debug logging for other modifications
 
     def _initialize_changes_summary(self) -> dict[str, Any]:
         """Initialize the changes summary dictionary."""
@@ -633,9 +633,7 @@ class SensorSet(SensorSetYamlOperationsMixin):
 
         # 9. Reload sensors if entity IDs were changed to pick up new configurations
         if changes_summary["entity_ids_changed"] > 0:
-            _LOGGER.warning("DEBUG: Reloading sensors after entity ID changes to update in-memory configurations")
             await self._reload_sensors_from_storage()
-            _LOGGER.warning("DEBUG: Sensor reload completed")
 
         _LOGGER.debug(
             "Modified sensor set %s: %d added, %d removed, %d updated, %d entity IDs changed",
@@ -753,7 +751,6 @@ class SensorSet(SensorSetYamlOperationsMixin):
     async def _reload_sensors_from_storage(self) -> None:
         """Reload all sensors from storage to pick up configuration changes."""
         try:
-            _LOGGER.warning("DEBUG: Starting sensor reload from storage")
             # Get fresh sensor configurations from storage
             await self.storage_manager.async_load()
             storage_data = self.storage_manager.data
@@ -773,8 +770,6 @@ class SensorSet(SensorSetYamlOperationsMixin):
                 if sensor_data.get("sensor_set_id") == self.sensor_set_id
             }
 
-            _LOGGER.warning("DEBUG: Found %d sensors for sensor set %s", len(sensor_set_sensors), self.sensor_set_id)
-
             # Convert storage format back to SensorConfig objects
             fresh_sensors = {}
             for unique_id, stored_sensor in sensor_set_sensors.items():
@@ -791,7 +786,6 @@ class SensorSet(SensorSetYamlOperationsMixin):
                     continue
 
             # Log the reload
-            _LOGGER.warning("DEBUG: Successfully reloaded %d sensors from storage", len(fresh_sensors))
 
         except Exception as e:
             _LOGGER.error("Failed to reload sensors from storage: %s", e)

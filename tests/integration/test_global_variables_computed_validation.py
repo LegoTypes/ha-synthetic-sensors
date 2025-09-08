@@ -102,11 +102,18 @@ class TestGlobalVariablesComputedValidation:
 
                 # Create sensor to backing mapping for 'state' token resolution
                 sensor_to_backing_mapping = {
-                    "simple_global_reference": "sensor.simple_backing",
-                    "computed_variables_with_globals": "sensor.computed_backing",
-                    "mixed_computed_variables": "sensor.mixed_backing",
-                    "span_like_grace_period": "sensor.span_backing",
+                    "span_main_meter_produced_energy": "sensor.span_backing",
+                    "builtin_functions_test": "sensor.computed_backing",
+                    "global_math_operations": "sensor.mixed_backing",
+                    "complex_expression_test": "sensor.simple_backing",
                 }
+
+                # Create data provider for virtual backing entities (Pattern 1 from guide)
+                def data_provider(entity_id: str):
+                    if entity_id in required_entities:
+                        entity_data = required_entities[entity_id]
+                        return {"value": float(entity_data["state"]), "exists": True}
+                    return {"value": None, "exists": False}
 
                 # Set up synthetic sensors
                 sensor_manager = await async_setup_synthetic_sensors(
@@ -115,6 +122,7 @@ class TestGlobalVariablesComputedValidation:
                     async_add_entities=mock_async_add_entities,
                     storage_manager=storage_manager,
                     sensor_to_backing_mapping=sensor_to_backing_mapping,
+                    data_provider_callback=data_provider,  # Provide backing entity data
                 )
 
                 # BULLETPROOF ASSERTION 2: Sensor manager must be created

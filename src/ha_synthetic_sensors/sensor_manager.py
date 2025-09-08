@@ -304,7 +304,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         # ARCHITECTURE FIX: Resolve ALL attributes that reference context variables
         # This handles both calculated attributes AND simple string attributes from main formula
-        _LOGGER.warning("DEBUG_UPDATE_ATTRS: sensor_context is None: %s", sensor_context is None)
         if sensor_context is not None:
             current_context = sensor_context.get_context_for_evaluation()
 
@@ -737,11 +736,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     def _get_computed_variable_for_formula(self, formula: FormulaConfig) -> ComputedVariable | None:
         """Get the computed variable if the formula is a simple reference to one."""
         token = formula.formula.strip()
-        _LOGGER.warning(
-            "DEBUG_GET_COMPUTED_VAR: Looking for token '%s' in main_formula.variables: %s",
-            token,
-            list(self._main_formula.variables.keys()),
-        )
         if token in self._main_formula.variables:
             maybe_cv = self._main_formula.variables[token]
             if isinstance(maybe_cv, ComputedVariable):
@@ -926,7 +920,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             )
 
             # Use StateResolver to get the prior state reference
-            state_ref = state_resolver.resolve_prior_state_reference(self._config, sensor_context.context)
+            # Create HierarchicalContextDict wrapper for the evaluation context
+            context_dict = HierarchicalContextDict(sensor_context.context)
+            state_ref = state_resolver.resolve_prior_state_reference(self._config, context_dict)
 
             if state_ref:
                 # Set the resolved state in the sensor context
@@ -1037,8 +1033,55 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # Evaluate calculated attributes with inherited sensor context
             self._evaluate_attributes(main_result, sensor_context)
 
+            # CRITICAL FIX: Preserve last-valid attributes during alternate state processing
+            # Store existing last_valid_state attributes before _update_extra_state_attributes overwrites them
+            preserved_last_valid_state = None
+            preserved_last_valid_changed = None
+            try:
+                if hasattr(self, "_attr_extra_state_attributes") and self._attr_extra_state_attributes:
+                    preserved_last_valid_state = self._attr_extra_state_attributes.get(LAST_VALID_STATE_KEY)
+                    preserved_last_valid_changed = self._attr_extra_state_attributes.get(LAST_VALID_CHANGED_KEY)
+                    _LOGGER.debug(
+                        "Alternate state preservation: Found existing attributes for %s: last_valid_state=%s, last_valid_changed=%s",
+                        self.entity_id,
+                        preserved_last_valid_state,
+                        preserved_last_valid_changed,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Alternate state preservation: No existing attributes to preserve for %s (hasattr=%s, attrs=%s)",
+                        self.entity_id,
+                        hasattr(self, "_attr_extra_state_attributes"),
+                        getattr(self, "_attr_extra_state_attributes", None),
+                    )
+            except Exception:
+                _LOGGER.debug("Failed to preserve existing last_valid_* attributes for %s", self.entity_id, exc_info=True)
+
             # Update extra state attributes with calculated values using hierarchical context
             self._update_extra_state_attributes(sensor_context)
+
+            # Restore preserved last-valid attributes after _update_extra_state_attributes
+            # These should only be updated on successful evaluations, not during alternate state processing
+            try:
+                if preserved_last_valid_state is not None or preserved_last_valid_changed is not None:
+                    attrs = dict(self._attr_extra_state_attributes or {})
+
+                    if preserved_last_valid_state is not None:
+                        attrs[LAST_VALID_STATE_KEY] = preserved_last_valid_state
+                    if preserved_last_valid_changed is not None:
+                        attrs[LAST_VALID_CHANGED_KEY] = preserved_last_valid_changed
+
+                    self._attr_extra_state_attributes = attrs
+                    _LOGGER.debug(
+                        "Preserved last-valid attributes during alternate state for %s: state=%s, changed=%s",
+                        self.entity_id,
+                        preserved_last_valid_state,
+                        preserved_last_valid_changed,
+                    )
+            except Exception:  # defensive - should never fail
+                _LOGGER.debug(
+                    "Failed to restore last_valid_* attributes during alternate state for %s", self.entity_id, exc_info=True
+                )
 
             _LOGGER.debug(
                 "Sensor %s handled alternate state result successfully - result: %s",
@@ -1107,7 +1150,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         context_manager = get_context_manager()
         # Use entity_id if available, otherwise construct from unique_id
         entity_id = getattr(self, "entity_id", None) or f"sensor.{self._config.unique_id}"
-        _LOGGER.warning("SENSOR_MANAGER_ENTITY_ID: Using entity_id=%s for context creation", entity_id)
         sensor_context = context_manager.create_context(self._config.unique_id, self._hass, entity_id)
 
         try:
@@ -1141,8 +1183,8 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             self._add_variables_to_sensor_context(self._main_formula, sensor_context)
 
             # Check if this sensor has a backing entity
-            has_backing_entity = self._config.entity_id is not None or (
-                self._sensor_manager.sensor_to_backing_mapping
+            has_backing_entity: bool = self._config.entity_id is not None or (
+                bool(self._sensor_manager.sensor_to_backing_mapping)
                 and self._config.unique_id in self._sensor_manager.sensor_to_backing_mapping
             )
 
@@ -1169,16 +1211,13 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # CRITICAL FIX: Set up proper state reference FIRST, before building context
             # This ensures the state token resolves to the backing entity value, not None
             self._setup_initial_state_in_context(sensor_context, has_backing_entity)
-            _LOGGER.warning("DEBUG_STATE_SETUP: Completed _setup_initial_state_in_context")
 
             # Get the accumulated context for evaluation (now includes proper state)
             eval_context = sensor_context.get_context_for_evaluation()
 
             # Evaluate the main formula with the hierarchical context
             # The evaluator modifies the context in place during evaluation
-            _LOGGER.warning("DEBUG_MAIN_EVAL: About to evaluate main formula %s", self._main_formula.id)
             main_result = self._evaluator.evaluate_formula_with_sensor_config(self._main_formula, eval_context, self._config)
-            _LOGGER.warning("DEBUG_MAIN_EVAL: Main formula result: %s", main_result)
 
             # CRITICAL: Update the state value in context immediately after main evaluation
             # This ensures attribute formulas can access the main sensor result via 'state' token
@@ -1950,6 +1989,17 @@ class SensorManager:
 
         try:
             if sensor_configs is None:
+                # CRITICAL FIX: For full sensor updates, invalidate sensor entity caches to prevent
+                # state variable from resolving to sensor's own calculated result instead of backing entity
+                sensor_entity_ids = set()
+                for sensor in self._sensors_by_unique_id.values():
+                    if sensor.config.entity_id:
+                        sensor_entity_ids.add(sensor.config.entity_id)
+
+                if sensor_entity_ids:
+                    ReferenceValueManager.invalidate_entities(sensor_entity_ids)
+                    _LOGGER.debug("SensorManager: Invalidated sensor entity caches for full update: %s", sensor_entity_ids)
+
                 # Update all managed sensors with cross-sensor evaluation order
                 evaluation_order = self._get_cross_sensor_evaluation_order()
                 await self._update_sensors_in_order(evaluation_order)
@@ -2298,6 +2348,26 @@ class SensorManager:
         """
         if not changed_entity_ids:
             return
+
+        # CRITICAL FIX: Invalidate cached ReferenceValues for changed entities
+        # This ensures that fresh values are read from the data provider instead of using stale cached values
+
+        # Find all sensor entity IDs that depend on the changed backing entities
+        # We need to invalidate both the backing entities AND the sensors that depend on them
+        entities_to_invalidate = set(changed_entity_ids)
+
+        for sensor in self._sensors_by_unique_id.values():
+            sensor_backing_entities = self._extract_backing_entities_from_sensor(sensor.config)
+            if sensor_backing_entities.intersection(changed_entity_ids) and sensor.config.entity_id:
+                # This sensor depends on a changed backing entity, so invalidate its cache too
+                entities_to_invalidate.add(sensor.config.entity_id)
+
+        ReferenceValueManager.invalidate_entities(entities_to_invalidate)
+        _LOGGER.debug(
+            "SensorManager: Invalidated ReferenceValue cache for entities: %s (changed: %s)",
+            entities_to_invalidate,
+            changed_entity_ids,
+        )
 
         # Find sensors that use any of the changed backing entities
         affected_sensor_configs = []

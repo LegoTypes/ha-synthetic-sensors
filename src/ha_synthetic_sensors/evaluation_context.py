@@ -38,6 +38,9 @@ class HierarchicalEvaluationContext:
         self._item_count = 0  # Total unique items across all layers
         self._generation = 0  # Increments on each modification
 
+        # State resolver flags
+        self._updating_main_result: bool = False  # Flag for main result updates
+
     def push_layer(self, name: str, variables: dict[str, ContextValue] | None = None) -> None:
         """Push a new context layer onto the stack."""
         layer = variables.copy() if variables else {}
@@ -139,18 +142,6 @@ class HierarchicalEvaluationContext:
         for i in range(len(self._layers) - 1, -1, -1):
             if key in self._layers[i]:
                 value = self._layers[i][key]
-
-                # Debug logging for retrieval
-                if "grace" in key.lower():
-                    _LOGGER.warning(
-                        "CONTEXT_GET: Found %s = %s in layer '%s' (layer %d of %d)",
-                        key,
-                        value,
-                        self._layer_names[i],
-                        i + 1,
-                        len(self._layers),
-                    )
-
                 return value
 
         raise KeyError(f"Key '{key}' not found in any context layer")
@@ -213,17 +204,6 @@ class HierarchicalEvaluationContext:
 
     def debug_dump(self) -> None:
         """Dump the entire context structure for debugging."""
-        _LOGGER.warning("=== CONTEXT DUMP ===")
-        _LOGGER.warning("Total layers: %d", len(self._layers))
-
-        for i, (name, layer) in enumerate(zip(self._layer_names, self._layers, strict=False)):
-            _LOGGER.warning("Layer %d: '%s' (%d variables)", i + 1, name, len(layer))
-
-            for key, value in layer.items():
-                if isinstance(value, ReferenceValue):
-                    _LOGGER.warning("  %s = ReferenceValue(value=%s, ref='%s')", key, value.value, value.reference[:50])
-                else:
-                    _LOGGER.warning("  %s = %s", key, value)
 
     def _update_tracking(self) -> None:
         """Update context integrity tracking."""

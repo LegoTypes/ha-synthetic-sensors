@@ -27,7 +27,7 @@ from homeassistant.helpers import area_registry as ar, device_registry as dr, en
 
 from .condition_parser import ConditionParser
 from .dependency_parser import DynamicQuery
-from .exceptions import InvalidCollectionPatternError
+from .exceptions import InvalidCollectionPatternError, MissingDependencyError
 from .shared_constants import get_ha_domains
 
 _LOGGER = logging.getLogger(__name__)
@@ -161,7 +161,6 @@ class CollectionResolver:
                 return set(excluded_entities)
 
         # If no pattern matches, treat as direct entity reference
-        _LOGGER.warning("Could not parse exclusion pattern '%s', treating as entity ID", exclusion_pattern)
         return {exclusion_pattern}
 
     def _dispatch_query_resolution(self, query_type: str, resolved_pattern: str) -> list[str]:
@@ -212,7 +211,7 @@ class CollectionResolver:
                     if entity_entry is not None and hasattr(entity_entry, "state") and entity_entry.state is not None:
                         return str(entity_entry.state.state)
             except Exception as e:
-                _LOGGER.warning("Failed to resolve entity reference %s: %s", entity_id, e)
+                raise MissingDependencyError(entity_id) from e
             return entity_id
 
         return self.entity_reference_pattern.sub(replace_entity_ref, pattern)
@@ -635,8 +634,7 @@ class CollectionResolver:
         """
         parsed = self._parse_attribute_condition(condition)
         if not parsed:
-            _LOGGER.warning("Invalid attribute condition: %s", condition)
-            return []
+            raise ValueError(f"Invalid attribute condition: {condition}")
 
         attribute_name, op, expected_value = parsed
         matching_entities: list[str] = []
@@ -700,8 +698,7 @@ class CollectionResolver:
             return self._compare_values(actual_value, op, expected_value)
 
         except Exception as e:
-            _LOGGER.warning("Error checking attribute condition for %s: %s", entity_id, e)
-            return False
+            raise InvalidCollectionPatternError(entity_id, f"Error checking attribute condition: {e}") from e
 
     def _resolve_state_pattern(self, pattern: str) -> list[str]:
         """Resolve a state pattern to matching entity IDs.
@@ -799,8 +796,7 @@ class CollectionResolver:
             return self._compare_values(state.state, op, expected_value)
 
         except Exception as e:
-            _LOGGER.warning("Error checking state condition for %s: %s", entity_id, e)
-            return False
+            raise InvalidCollectionPatternError(entity_id, f"Error checking state condition: {e}") from e
 
     def _compare_values(self, actual: Any, op: str, expected: Any) -> bool:
         """Compare two values using the specified operator.
@@ -844,8 +840,7 @@ class CollectionResolver:
                     # Missing or unavailable entity, use 0.0
                     values.append(0.0)
             except Exception as e:
-                _LOGGER.warning("Error getting value for entity %s: %s", entity_id, e)
-                values.append(0.0)
+                raise InvalidCollectionPatternError(entity_id, f"Error getting value for entity: {e}") from e
 
         return values
 
@@ -864,9 +859,10 @@ class CollectionResolver:
             try:
                 entities = self.resolve_collection_pattern(dependency)
                 matching_entities.update(entities)
-            except Exception as e:
-                _LOGGER.warning("Error resolving collection pattern '%s': %s", dependency, e)
-
+            except InvalidCollectionPatternError:
+                # Invalid patterns should be handled gracefully - skip and continue
+                _LOGGER.debug("Skipping invalid collection pattern: %s", dependency)
+                continue
         return matching_entities
 
     def resolve_collection_pattern(self, pattern: str) -> set[str]:

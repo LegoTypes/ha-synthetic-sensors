@@ -67,7 +67,6 @@ class AlternateStateProcessor:
         Returns:
             Result from alternate state handler if triggered, None otherwise
         """
-        self._logger.warning("PRE_EVAL_CHECK_ENTRY: Called with formula=%s", config.formula)
 
         # Check allow_unresolved_states value
         allow_unresolved = getattr(config, "allow_unresolved_states", False)
@@ -182,9 +181,7 @@ class AlternateStateProcessor:
                 return result_obj.get("value", output) if isinstance(result_obj, dict) else output
 
         # Handle successful results that are alternate states
-        self._logger.warning("PROCESS_EVAL_RESULT: Checking result=%s (type: %s) for alternate state", result, type(result))
         result_alternate_state = self._identify_alternate_state(result)
-        self._logger.warning("PROCESS_EVAL_RESULT: result_alternate_state=%s", result_alternate_state)
         if result_alternate_state is not False:
             self._logger.debug("Evaluation result is %s, triggering alternate handler", result_alternate_state)
             # Create AlternateStateDetected exception with the identified state
@@ -237,7 +234,7 @@ class AlternateStateProcessor:
         if has_none_value:
             handler = config.alternate_state_handler
             if handler is None:
-                self._logger.warning("Alternate state handler missing from config when expected; returning None")
+                self._logger.debug("No alternate state handler configured; returning None (sensor will be unknown)")
                 return True, None
             # Create AlternateStateDetected exception for None state
             none_exception = AlternateStateDetected(
@@ -258,7 +255,7 @@ class AlternateStateProcessor:
         self._logger.debug("Evaluation returned None (missing state guard), triggering UNAVAILABLE alternate handler")
         handler = config.alternate_state_handler
         if handler is None:
-            self._logger.warning("Alternate state handler missing from config when expected; returning None")
+            self._logger.debug("No alternate state handler configured; returning None (sensor will be unknown)")
             return True, None
         # Create AlternateStateDetected exception for unavailable state
         unavailable_exception = AlternateStateDetected(
@@ -298,7 +295,7 @@ class AlternateStateProcessor:
             )
             handler = config.alternate_state_handler
             if handler is None:
-                self._logger.warning("Alternate state handler missing from config when expected; returning None")
+                self._logger.debug("No alternate state handler configured; returning None (sensor will be unknown)")
                 return True, None
             return True, self._trigger_alternate_handler(
                 exception,
@@ -335,7 +332,7 @@ class AlternateStateProcessor:
 
         handler = config.alternate_state_handler
         if handler is None:
-            self._logger.warning("Alternate state handler missing from config when expected; returning None")
+            self._logger.debug("No alternate state handler configured; returning None (sensor will be unknown)")
             return True, None
         return True, self._trigger_alternate_handler(
             alternate_exception,
@@ -418,12 +415,8 @@ class AlternateStateProcessor:
             handler_found = True
             self._logger.debug("Using FALLBACK handler for %s state: %s", state_type, handler_value)
 
-        # If no specific handler and no FALLBACK handler, log warning and return None to let sensor become unavailable
+        # If no specific handler and no FALLBACK handler return None to let sensor become unavailable
         if not handler_found:
-            self._logger.warning(
-                "No alternate handler defined for %s state (no specific handler, no FALLBACK) - sensor will become unavailable",
-                state_type,
-            )
             return None
 
         # Evaluate the handler using the standard formula evaluation pipeline

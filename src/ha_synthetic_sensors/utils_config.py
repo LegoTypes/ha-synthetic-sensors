@@ -530,29 +530,6 @@ def _evaluate_cv_via_pipeline(
     alternate_state_handler: AlternateStateHandler | None = None,
     sensor_config: Any = None,
 ) -> dict[str, Any]:
-    _LOGGER.warning("EVAL_CV_PIPELINE_ENTRY: Function called with formula '%s'", formula)
-    # BULLETPROOF: Log context type and ID at entry point
-    _LOGGER.warning(
-        "CONTEXT_FLOW_PIPELINE: Received context id=%d type=%s for formula '%s'",
-        id(eval_context),
-        type(eval_context).__name__,
-        formula[:50],
-    )
-    # CONTEXT DUMP: Log what's in the context before evaluation
-    _LOGGER.warning("EVAL_CV_PIPELINE: About to get context_uuid")
-    context_uuid = eval_context.get("_context_uuid", None) or "NO_UUID"
-    _LOGGER.warning("EVAL_CV_PIPELINE: Got context_uuid: %s", context_uuid)
-    _LOGGER.warning(
-        "CONTEXT_DUMP_BEFORE_EVAL: UUID=%s Formula='%s' Context keys=%s",
-        context_uuid,
-        formula[:50],
-        {
-            k: type(v).__name__ + (f"(value={v.value})" if isinstance(v, ReferenceValue) else f"={v}")
-            for k, v in eval_context.items()
-            if not k.startswith("_")
-        },
-    )
-
     variables_view = _build_simple_variables_view(parent_config)
 
     # Ensure boolean state constants are available in computed variable evaluation context
@@ -593,22 +570,6 @@ def _evaluate_cv_via_pipeline(
 
 
 def _set_reference_value(eval_context: HierarchicalContextDict, var_name: str, formula: str, value: Any) -> None:
-    # BULLETPROOF: Log context type and ID before assignment
-    _LOGGER.warning(
-        "CONTEXT_FLOW_SET_REF: About to set %s in context id=%d type=%s",
-        var_name,
-        id(eval_context),
-        type(eval_context).__name__,
-    )
-
-    if "grace" in var_name.lower() or (isinstance(value, bool) and not value):
-        _LOGGER.warning(
-            "SET_REF_VALUE_DEBUG: Setting %s = %s (type: %s) with formula: %s",
-            var_name,
-            value,
-            type(value).__name__,
-            formula[:50],
-        )
     ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, formula, value)
 
 
@@ -627,13 +588,9 @@ def _resolve_metadata_computed_variable(
     hass_val = eval_context.get("_hass")
     hass = hass_val.value if isinstance(hass_val, ReferenceValue) else hass_val
     if not hass:
-        _LOGGER.warning("METADATA_NO_HASS: No HASS instance available, setting lazy reference for %s", var_name)
         _set_lazy_reference(eval_context, var_name, computed_var.formula)
         return True
 
-    _LOGGER.warning(
-        "METADATA_RESOLVING: Attempting to resolve metadata variable %s with formula: %s", var_name, computed_var.formula
-    )
     eval_result = _evaluate_cv_via_pipeline(
         computed_var.formula,
         eval_context,
@@ -644,11 +601,9 @@ def _resolve_metadata_computed_variable(
     )
     if eval_result.get(RESULT_KEY_SUCCESS):
         value = eval_result.get(RESULT_KEY_VALUE)
-        _LOGGER.warning("METADATA_SUCCESS: Variable %s resolved to %s (type: %s)", var_name, value, type(value).__name__)
         _set_reference_value(eval_context, var_name, computed_var.formula, value)
         return True
 
-    _LOGGER.warning("METADATA_FAILED: Variable %s pipeline evaluation failed. Result: %s", var_name, eval_result)
     _set_lazy_reference(eval_context, var_name, computed_var.formula)
     # This code is unreachable due to the return statement above
     # eval_result = _evaluate_cv_via_pipeline(
@@ -661,29 +616,11 @@ def _resolve_metadata_computed_variable(
     if eval_result.get(RESULT_KEY_SUCCESS):
         result = eval_result[RESULT_KEY_VALUE]
 
-        # Debug logging for grace period evaluation
-        if "grace" in var_name.lower():
-            _LOGGER.warning("EVAL_RESULT_DEBUG: Variable %s eval_result = %s", var_name, eval_result)
-
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
         _LOGGER.info("METADATA_CV_RESOLVED: Variable %s resolved to %s (type: %s)", var_name, result, type(result).__name__)
 
-        # CONTEXT DUMP: After setting reference value
-        _LOGGER.warning(
-            "CONTEXT_AFTER_VAR_SET: Set %s, Context now has %d items: %s",
-            var_name,
-            len(eval_context),
-            {
-                k: type(v).__name__ + (f"(value={v.value})" if isinstance(v, ReferenceValue) else f"={v}")
-                for k, v in eval_context.items()
-                if not k.startswith("_") and k != "sensor_config"
-            },
-        )
-
         return True
 
-    _LOGGER.warning("METADATA_CV_FAILED: Variable %s pipeline evaluation failed. Result: %s", var_name, eval_result)
-    _LOGGER.warning("METADATA_CV_FAILED_DETAIL: Formula was '%s'", computed_var.formula)
     _set_lazy_reference(eval_context, var_name, computed_var.formula)
     return True
 
@@ -703,15 +640,9 @@ def _resolve_non_metadata_computed_variable(
         None,  # sensor_config not available for computed variables
     )
 
-    # Debug logging for all variables to see what's happening
-    _LOGGER.warning("NON_METADATA_CV_EVAL: Variable %s eval_result = %s", var_name, eval_result)
-
     if eval_result.get(RESULT_KEY_SUCCESS):
         result = eval_result[RESULT_KEY_VALUE]
         _set_reference_value(eval_context, var_name, computed_var.formula, result)
-
-        # CONTEXT DUMP: After setting non-metadata variable
-        _LOGGER.warning("CONTEXT_AFTER_NON_META_VAR: Set %s=%s, Context size=%d", var_name, result, len(eval_context))
 
         return True
 
@@ -1004,12 +935,6 @@ def resolve_config_variables(
         # HierarchicalContextDict doesn't support len(), use keys count
         context_len = len(list(eval_context.keys())) if hasattr(eval_context, "keys") else 0
 
-    _LOGGER.warning(
-        "RESOLVE_CONFIG_VARS_ENTRY: Received context id=%d type=%s with %d items",
-        id(eval_context),
-        type(eval_context).__name__,
-        context_len,
-    )
     if not config or not config.variables:
         return
 

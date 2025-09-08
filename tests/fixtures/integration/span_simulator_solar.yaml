@@ -1,3 +1,15 @@
+# Test: test_delayed_entity_availability_with_dependency_tracking
+# This fixture tests delayed entity availability and dependency re-evaluation with two update phases:
+#
+# PHASE 1: async_update_sensors() called with underlying entities "unavailable"
+#   - All tab entities (30_power, 32_power, 30_energy_*, 32_energy_*) have state "unavailable"
+#   - Sensors should use alternate state handlers to return fallback values
+#
+# PHASE 2: async_update_sensors_for_entities() called after entities become available
+#   - Tab entities updated to numeric values: 30_power=500.0, 32_power=600.0, etc.
+#   - Cache cleared, dependency change notification sent
+#   - Sensors should recalculate using real formulas with new entity values
+
 version: '1.0'
 global_settings:
   device_identifier: "span-sim-001"
@@ -6,6 +18,9 @@ global_settings:
   metadata:
     attribution: Data from SPAN Panel
 sensors:
+  # SENSOR: solar_current_power
+  # PHASE 1: Formula fails (entities unavailable) -> UNAVAILABLE alternate state -> returns 0.0
+  # PHASE 2: Formula succeeds (500.0 + 600.0) -> returns 1100.0 ← FAILING ASSERTION
   "span_span-sim-001_solar_current_power":
     entity_id: sensor.solar_current_power
     name: Solar Current Power
@@ -14,9 +29,10 @@ sensors:
       state_class: measurement
       suggested_display_precision: 0
       unit_of_measurement: W
+    # Main formula: should calculate 500.0 + 600.0 = 1100.0 in Phase 2
     formula: sensor.span_simulator_unmapped_tab_30_power + sensor.span_simulator_unmapped_tab_32_power
     alternate_states:
-      UNAVAILABLE: 0.0
+      UNAVAILABLE: 0.0  # Phase 1: returns this when entities unavailable
       UNKNOWN: 0.0
       NONE: 0.0
     attributes:
@@ -29,6 +45,9 @@ sensors:
       tabs: "tabs [30:32]"
       voltage: 240
 
+  # SENSOR: solar_produced_energy
+  # PHASE 1: Formula fails -> UNAVAILABLE alternate -> last_valid_state (0.0) if within_grace else 'unknown'
+  # PHASE 2: Formula succeeds (100.0 + 200.0) -> returns 300.0
   "span_span-sim-001_solar_produced_energy":
     entity_id: sensor.solar_produced_energy
     name: Solar Produced Energy
@@ -37,21 +56,25 @@ sensors:
       state_class: total_increasing
       suggested_display_precision: 2
       unit_of_measurement: Wh
+    # Main formula: should calculate 100.0 + 200.0 = 300.0 in Phase 2
     formula: sensor.span_simulator_unmapped_tab_30_energy_produced + sensor.span_simulator_unmapped_tab_32_energy_produced
     alternate_states:
+      # Phase 1: Uses grace period logic with last_valid_state
       UNAVAILABLE:
         formula: last_valid_state if (within_grace and last_valid_state is not None) else 'unknown'
       UNKNOWN:
         formula: last_valid_state if (within_grace and last_valid_state is not None) else 'unknown'
     variables:
       last_valid_state:
+        # Phase 1: Gets "0.0" from sensor's last_valid_state attribute
         formula: metadata(state, 'last_valid_state')
         alternate_states:
           FALLBACK: unknown
       within_grace:
+        # Phase 1: Calculates if sensor was updated within 15 minutes (should be true)
         formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
         alternate_states:
-          UNAVAILABLE: false
+          UNAVAILABLE: false  # Fallback if metadata unavailable
           UNKNOWN: false
     attributes:
       grace_period_active:
@@ -59,6 +82,9 @@ sensors:
       tabs: "tabs [30:32]"
       voltage: 240
 
+  # SENSOR: solar_consumed_energy
+  # PHASE 1: Formula fails -> UNAVAILABLE alternate -> last_valid_state (0.0) if within_grace else 'unknown'
+  # PHASE 2: Formula succeeds (50.0 + 75.0) -> returns 125.0
   "span_span-sim-001_solar_consumed_energy":
     entity_id: sensor.solar_consumed_energy
     name: Solar Consumed Energy
@@ -67,21 +93,25 @@ sensors:
       state_class: total_increasing
       suggested_display_precision: 2
       unit_of_measurement: Wh
+    # Main formula: should calculate 50.0 + 75.0 = 125.0 in Phase 2
     formula: sensor.span_simulator_unmapped_tab_30_energy_consumed + sensor.span_simulator_unmapped_tab_32_energy_consumed
     alternate_states:
+      # Phase 1: Uses grace period logic (note: different from produced_energy - no 'and last_valid_state is not None')
       UNAVAILABLE:
         formula: last_valid_state if within_grace else 'unknown'
       UNKNOWN:
         formula: last_valid_state if within_grace else 'unknown'
     variables:
       last_valid_state:
+        # Phase 1: Gets "0.0" from sensor's last_valid_state attribute
         formula: metadata(state, 'last_valid_state')
         alternate_states:
           FALLBACK: unknown
       within_grace:
+        # Phase 1: Calculates if sensor was updated within 15 minutes (should be true)
         formula: minutes_between(metadata(state, 'last_changed'), now()) < energy_grace_period_minutes
         alternate_states:
-          UNAVAILABLE: false
+          UNAVAILABLE: false  # Fallback if metadata unavailable
           UNKNOWN: false
     attributes:
       grace_period_active:
