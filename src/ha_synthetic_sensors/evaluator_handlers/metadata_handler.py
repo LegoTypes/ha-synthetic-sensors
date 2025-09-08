@@ -301,8 +301,7 @@ class MetadataHandler(FormulaHandler):
             if entity_id:
                 _LOGGER.warning("METADATA_CURRENT_SENSOR_SUCCESS: Found current sensor entity ID: %s", entity_id)
                 return entity_id
-            else:
-                _LOGGER.warning("METADATA_CURRENT_SENSOR_INVALID: current_sensor_entity_id value is not valid: %s", value)
+            _LOGGER.warning("METADATA_CURRENT_SENSOR_INVALID: current_sensor_entity_id value is not valid: %s", value)
         else:
             _LOGGER.warning("METADATA_CURRENT_SENSOR_MISSING: current_sensor_entity_id not found in context")
 
@@ -540,6 +539,11 @@ class MetadataHandler(FormulaHandler):
             raise ValueError(ERROR_METADATA_HASS_NOT_AVAILABLE)
 
         state_obj = self._hass.states.get(entity_id)
+
+        # Handle case where entity doesn't exist
+        if state_obj is None:
+            _LOGGER.debug("METADATA_ENTITY_NOT_FOUND: Entity %s not found, returning None", entity_id)
+            return None
 
         # Get the metadata property
         # First check state attributes dict for the key (most common case)

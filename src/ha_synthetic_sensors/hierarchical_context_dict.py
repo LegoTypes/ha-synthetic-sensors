@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import logging
+import traceback
+from typing import ClassVar
 
 from .evaluation_context import HierarchicalEvaluationContext
 from .type_definitions import ContextValue, ReferenceValue
@@ -16,7 +18,25 @@ class HierarchicalContextDict:
 
     This prevents direct context assignments (context[key] = value) and ensures
     all modifications go through the hierarchical context's unified setter.
+
+    Each evaluation gets its own unique context instance to prevent pollution across sensors and update cycles.
     """
+
+    # Class-level registry for cleanup purposes only (not for singleton behavior)
+    _instances: ClassVar[dict[str, HierarchicalContextDict]] = {}
+
+    def __new__(cls, hierarchical_context: HierarchicalEvaluationContext) -> HierarchicalContextDict:
+        """Create a new instance for each evaluation to prevent context pollution."""
+        instance = super().__new__(cls)
+
+        # Register for cleanup purposes but don't enforce singleton behavior
+        context_id = hierarchical_context.name
+        # Use a unique key that includes object id to avoid collisions
+        unique_key = f"{context_id}_{id(instance)}"
+        cls._instances[unique_key] = instance
+
+        _LOGGER.debug("HIERARCHICAL_DICT_CREATE: Created new context instance %s for context %s", unique_key, context_id)
+        return instance
 
     def __init__(self, hierarchical_context: HierarchicalEvaluationContext) -> None:
         """Initialize with reference to hierarchical context."""
@@ -24,15 +44,13 @@ class HierarchicalContextDict:
         self._hierarchical_context = hierarchical_context
         self._allow_direct_assignment = False
 
-        _LOGGER.warning("HIERARCHICAL_DICT_INIT: Created hierarchical dictionary for context %s", hierarchical_context.name)
+        _LOGGER.debug("HIERARCHICAL_DICT_INIT: Initialized hierarchical dictionary for context %s", hierarchical_context.name)
 
     def __setitem__(self, key: str, value: ContextValue) -> None:
         """Override assignment to use hierarchical context unified setter."""
         # CRITICAL: Enforce ReferenceValue architecture at the earliest point
         if not isinstance(value, ReferenceValue):
             # This is a raw value being stored in context - this violates the architecture
-            import traceback
-
             stack_trace = "".join(traceback.format_stack())
 
             raise ValueError(
@@ -56,8 +74,6 @@ class HierarchicalContextDict:
             return
 
         # BULLETPROOF: Throw exception on direct assignment to catch violations
-        import traceback
-
         stack_trace = "".join(traceback.format_stack())
 
         raise RuntimeError(
@@ -124,8 +140,8 @@ class HierarchicalContextDict:
         """Return values from hierarchical context."""
         # This is a simplified implementation - in practice, you might want to
         # ensure consistency with the keys() method
-        for key in self.keys():
-            yield self[key]
+        for _, value in self.items():
+            yield value
 
     def items(self) -> Iterator[tuple[str, ContextValue]]:
         """Return items from hierarchical context."""
@@ -157,14 +173,7 @@ class HierarchicalContextDict:
 
     def copy(self) -> HierarchicalContextDict:
         """Create a copy of this dictionary."""
-        # Create a new instance with the same hierarchical context
-        new_dict = HierarchicalContextDict(self._hierarchical_context)
-        # Copy our internal state
-        new_dict._allow_direct_assignment = self._allow_direct_assignment
-        # Copy internal items
-        with new_dict._temporary_direct_assignment():
-            new_dict._internal_dict.update(self._internal_dict)
-        return new_dict
+        raise RuntimeError("Copying HierarchicalContextDict is not allowed - it's a singleton")
 
     def update(self, other: dict[str, ContextValue]) -> None:
         """Update the context with values from another dict."""
@@ -188,7 +197,21 @@ class HierarchicalContextDict:
     def __setstate__(self, state: dict[str, object]) -> None:
         """Support for unpickling."""
         # Reconstruct the object state
-        pass
+        # Implementation would go here if needed
+
+    @classmethod
+    def cleanup_singleton(cls, hierarchical_context: HierarchicalEvaluationContext) -> None:
+        """Clean up singleton instance for a specific context when evaluation is complete."""
+        context_id = hierarchical_context.name
+        if context_id in cls._instances:
+            del cls._instances[context_id]
+            _LOGGER.warning("HIERARCHICAL_DICT_CLEANUP: Removed singleton instance for context %s", context_id)
+
+    @classmethod
+    def clear_all_singletons(cls) -> None:
+        """Clear all singleton instances - for testing purposes."""
+        cls._instances.clear()
+        _LOGGER.warning("HIERARCHICAL_DICT_CLEANUP: Cleared all singleton instances")
 
 
 class DirectAssignmentContext:

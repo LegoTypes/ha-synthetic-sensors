@@ -7,7 +7,6 @@ from homeassistant.core import HomeAssistant
 
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
-from .constants_entities import get_ha_entity_domains
 from .dependency_parser import DependencyParser, DynamicQuery
 from .hierarchical_context_dict import HierarchicalContextDict
 from .regex_helper import (
@@ -127,26 +126,6 @@ class FormulaPreprocessor:
         """
         # Pattern to match entity references like sensor.temperature, binary_sensor.door, etc.
         # But NOT attribute references like state.voltage (which should be handled by variable resolver)
-
-        def replace_entity_ref(match: re.Match[str]) -> str:
-            """Replace entity reference with variable name."""
-            entity_id = match.group(1)
-
-            # Skip attribute references (they should be handled by variable resolver)
-            # Attribute references are typically in the form "base.attribute" where base is a simple name
-            if "." in entity_id:
-                parts = entity_id.split(".", 1)
-                base = parts[0]
-                # Get HA entity domain prefixes from registry - these should be converted to variables
-                known_domains = get_ha_entity_domains(self._hass)
-                # If base is NOT a known HA domain, it's likely an attribute reference
-                if base not in known_domains:
-                    # This looks like an attribute reference, don't convert it
-                    return entity_id
-
-            # Convert entity_id to variable name (replace dots and dashes with underscores)
-            var_name = entity_id.replace(".", "_").replace("-", "_")
-            return var_name
 
         # Extract entity IDs and replace them with variable names
         entity_ids = extract_entity_ids_with_attributes(formula)

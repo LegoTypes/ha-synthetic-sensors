@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 import hashlib
 import logging
+import traceback
 from typing import Any
 
 from .type_definitions import ContextValue, ReferenceValue
@@ -83,8 +84,6 @@ class HierarchicalEvaluationContext:
         # CRITICAL: Enforce ReferenceValue architecture at the hierarchical level
         if not isinstance(value, ReferenceValue) and not (callable(value) or isinstance(value, dict) or value is None):
             # This is a raw value being stored in context - this violates the architecture
-            import traceback
-
             stack_trace = "".join(traceback.format_stack())
 
             raise ValueError(
@@ -235,7 +234,7 @@ class HierarchicalEvaluationContext:
         """Get a checksum of all keys for integrity checking."""
         all_keys = sorted({key for layer in self._layers for key in layer})
         key_string = "|".join(all_keys)
-        return hashlib.md5(key_string.encode()).hexdigest()[:8]
+        return hashlib.md5(key_string.encode(), usedforsecurity=False).hexdigest()[:8]
 
     def get_integrity_info(self) -> dict[str, Any]:
         """Get context integrity information for tracking."""
@@ -267,9 +266,4 @@ class HierarchicalEvaluationContext:
 
     def copy(self) -> HierarchicalEvaluationContext:
         """Create a deep copy of the context."""
-        new_context = HierarchicalEvaluationContext(self.name)
-        new_context._layers = [layer.copy() for layer in self._layers]
-        new_context._layer_names = self._layer_names.copy()
-        # Don't copy tracking info - new instance gets new tracking
-        new_context._update_tracking()
-        return new_context
+        raise RuntimeError("Copying HierarchicalEvaluationContext is not allowed")

@@ -1382,6 +1382,14 @@ def clear_global_state():
     except ImportError:
         pass
 
+    # Clear HierarchicalContextDict singleton instances
+    try:
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+        HierarchicalContextDict.clear_all_singletons()
+    except ImportError:
+        pass
+
     yield  # Run the test
 
     # Clear state after test as well for extra safety
@@ -1404,5 +1412,12 @@ def clear_global_state():
         from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
 
         ReferenceValueManager.clear_cache()
+    except ImportError:
+        pass
+
+    try:
+        from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
+        HierarchicalContextDict.clear_all_singletons()
     except ImportError:
         pass

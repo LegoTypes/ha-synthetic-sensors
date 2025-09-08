@@ -262,7 +262,15 @@ class TestEntityIdSupport:
         )
         print(f"Processed formula: {processed_formula}")
 
-        result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, current_power_sensor)
+        # Create proper evaluation context as the sensor manager would
+        from ha_synthetic_sensors.sensor_evaluation_context import SensorEvaluationContext
+
+        sensor_context = SensorEvaluationContext(
+            current_power_sensor.unique_id, config_manager._hass, current_power_sensor.entity_id
+        )
+        eval_context = sensor_context.get_context_for_evaluation()
+
+        result = evaluator.evaluate_formula_with_sensor_config(main_formula, eval_context, current_power_sensor)
 
         # The evaluation should succeed and return the backing entity's value
         assert result["success"] is True

@@ -40,9 +40,9 @@ sensors:
     formula: sensor.span_simulator_unmapped_tab_30_energy_produced + sensor.span_simulator_unmapped_tab_32_energy_produced
     alternate_states:
       UNAVAILABLE:
-        formula: last_valid_state if (within_grace and last_valid_state is not None) else UNKNOWN
+        formula: last_valid_state if (within_grace and last_valid_state is not None) else 'unknown'
       UNKNOWN:
-        formula: last_valid_state if (within_grace and last_valid_state is not None) else UNKNOWN
+        formula: last_valid_state if (within_grace and last_valid_state is not None) else 'unknown'
     variables:
       last_valid_state:
         formula: metadata(state, 'last_valid_state')
@@ -70,9 +70,9 @@ sensors:
     formula: sensor.span_simulator_unmapped_tab_30_energy_consumed + sensor.span_simulator_unmapped_tab_32_energy_consumed
     alternate_states:
       UNAVAILABLE:
-        formula: last_valid_state if within_grace else UNKNOWN
+        formula: last_valid_state if within_grace else 'unknown'
       UNKNOWN:
-        formula: last_valid_state if within_grace else UNKNOWN
+        formula: last_valid_state if within_grace else 'unknown'
     variables:
       last_valid_state:
         formula: metadata(state, 'last_valid_state')

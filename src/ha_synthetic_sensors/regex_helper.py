@@ -329,7 +329,7 @@ class RegexHelper:
             replacement_func: Function that takes attribute name and returns replacement
         """
         pattern = self._get_pattern("state_attributes_deep", r"\bstate\.attributes\.([a-zA-Z0-9_.]+)\b")
-        return pattern.sub(lambda m: replacement_func(m), text)
+        return pattern.sub(replacement_func, text)
 
     def substitute_state_attributes_simple(self, text: str, replacement_func: Callable[[re.Match[str]], str]) -> str:
         """Replace simple state attribute references with replacement function results.
@@ -1719,7 +1719,7 @@ def extract_dependencies_safe(formula: str) -> set[str]:
     dependencies = set()
     for match in re.finditer(identifier_pattern, formula):
         identifier = match.group(1)
-        match_start, match_end = match.span()
+        match_start, _ = match.span()
 
         # Skip if this identifier is inside a string literal
         is_in_string = any(start <= match_start < end for start, end in string_ranges)

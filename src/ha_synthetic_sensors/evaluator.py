@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 import logging
 import traceback
 from typing import Any, cast
+import uuid
 
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import STATE_UNKNOWN, HomeAssistant
@@ -16,17 +17,17 @@ from .alternate_state_processor import AlternateStateProcessor
 from .cache import CacheConfig
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
-from .constants_alternate import STATE_NONE_YAML, identify_alternate_state_value
+from .constants_alternate import STATE_NONE, STATE_NONE_YAML, identify_alternate_state_value
 from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_STATE, RESULT_KEY_UNAVAILABLE_DEPENDENCIES
 from .constants_formula import is_reserved_word
 from .dependency_parser import DependencyParser
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluation_common import (
     check_dependency_management_conditions,
-    handle_alternate_state_detection,
     handle_evaluation_exception,
     process_alternate_state_result,
 )
+from .evaluation_context import HierarchicalEvaluationContext
 from .evaluation_error_handlers import (
     handle_backing_entity_error as _handle_backing_entity_error_helper,
     handle_value_error as _handle_value_error_helper,
@@ -273,11 +274,6 @@ class Evaluator(FormulaEvaluator):
         return self._execution_engine
 
     @property
-    def resolve_all_references_in_formula(self) -> Any:
-        """Get the resolve all references in formula method."""
-        return self._resolve_all_references_in_formula
-
-    @property
     def needs_dependency_resolution(self) -> Any:
         """Get the needs dependency resolution method."""
         return self._needs_dependency_resolution
@@ -321,17 +317,17 @@ class Evaluator(FormulaEvaluator):
         self, config: FormulaConfig, context: HierarchicalContextDict | dict[str, Any] | None
     ) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling."""
-        # ARCHITECTURE FIX: Create HierarchicalContextDict if None or dict is passed
+        # ARCHITECTURE FIX: Ensure proper context is always provided
         if context is None:
-            from .evaluation_context import HierarchicalEvaluationContext
-
-            hierarchical_context = HierarchicalEvaluationContext("sensor")
-            context = HierarchicalContextDict(hierarchical_context)
+            raise ValueError(
+                "No evaluation context provided. The evaluator requires a proper HierarchicalContextDict "
+                "from the sensor manager to prevent context pollution across evaluations. "
+                "This indicates a bug in the evaluation flow where context creation is bypassed."
+            )
         elif isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
-            from .evaluation_context import HierarchicalEvaluationContext
-            from .type_definitions import ReferenceValue
-
-            hierarchical_context = HierarchicalEvaluationContext("sensor")
+            # Create unique context name to prevent pollution across evaluations
+            unique_context_name = f"sensor_dict_conversion_{uuid.uuid4().hex[:8]}"
+            hierarchical_context = HierarchicalEvaluationContext(unique_context_name)
             hierarchical_dict = HierarchicalContextDict(hierarchical_context)
             for key, value in context.items():
                 # Ensure all values are wrapped in ReferenceValue objects per architecture
@@ -374,17 +370,17 @@ class Evaluator(FormulaEvaluator):
         bypass_dependency_management: bool = False,
     ) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling and sensor context."""
-        # ARCHITECTURE FIX: Create HierarchicalContextDict if None or dict is passed
+        # ARCHITECTURE FIX: Ensure proper context is always provided
         if context is None:
-            from .evaluation_context import HierarchicalEvaluationContext
-
-            hierarchical_context = HierarchicalEvaluationContext("sensor")
-            context = HierarchicalContextDict(hierarchical_context)
+            raise ValueError(
+                "No evaluation context provided. The evaluator requires a proper HierarchicalContextDict "
+                "from the sensor manager to prevent context pollution across evaluations. "
+                "This indicates a bug in the evaluation flow where context creation is bypassed."
+            )
         elif isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
-            from .evaluation_context import HierarchicalEvaluationContext
-            from .type_definitions import ReferenceValue
-
-            hierarchical_context = HierarchicalEvaluationContext("sensor")
+            # Create unique context name to prevent pollution across evaluations
+            unique_context_name = f"sensor_dict_conversion_{uuid.uuid4().hex[:8]}"
+            hierarchical_context = HierarchicalEvaluationContext(unique_context_name)
             hierarchical_dict = HierarchicalContextDict(hierarchical_context)
             for key, value in context.items():
                 # Ensure all values are wrapped in ReferenceValue objects per architecture
@@ -417,7 +413,7 @@ class Evaluator(FormulaEvaluator):
                 config,
                 sensor_config,
                 self._execution_engine.core_evaluator,
-                self._resolve_all_references_in_formula,
+                self._variable_resolution_phase.resolve_all_references_in_formula,
             )
             result = EvaluatorResults.create_success_from_result(raw_result)
             return result
@@ -568,7 +564,7 @@ class Evaluator(FormulaEvaluator):
             sensor_config=sensor_config,
             core_evaluator=self._execution_engine.core_evaluator,
             alternate_state_processor_instance=self._alternate_state_processor,
-            resolve_all_references_in_formula=self._resolve_all_references_in_formula,
+            resolve_all_references_in_formula=self._variable_resolution_phase.resolve_all_references_in_formula,
             pre_eval=True,
         )
 
@@ -776,12 +772,18 @@ class Evaluator(FormulaEvaluator):
 
         # Get the handler value for this alternate state
         handler_value = None
-        if alternate_state_value == "unavailable":
+        if alternate_state_value == STATE_UNAVAILABLE:
             handler_value = config.alternate_state_handler.unavailable
-        elif alternate_state_value == "unknown":
+            if handler_value is None:
+                handler_value = config.alternate_state_handler.fallback
+        elif alternate_state_value == STATE_UNKNOWN:
             handler_value = config.alternate_state_handler.unknown
-        elif alternate_state_value == "none":
+            if handler_value is None:
+                handler_value = config.alternate_state_handler.fallback
+        elif alternate_state_value is None or alternate_state_value == STATE_NONE:
             handler_value = config.alternate_state_handler.none
+            if handler_value is None:
+                handler_value = config.alternate_state_handler.fallback
         else:
             # Try fallback handler
             handler_value = config.alternate_state_handler.fallback
@@ -810,7 +812,7 @@ class Evaluator(FormulaEvaluator):
             alternate_config = FormulaConfig(
                 id=f"{config.id}_alternate_{alternate_state_value}",
                 formula=handler_value["formula"],
-                variables=handler_value["variables"],
+                variables=handler_value.get("variables", {}),  # Use get() to handle missing variables key
             )
 
         # Evaluate using the standard pipeline - exactly like attributes
@@ -822,8 +824,7 @@ class Evaluator(FormulaEvaluator):
         # need to return the actual value to be processed by the main evaluation pipeline
         if isinstance(result, dict) and "value" in result:
             return result["value"]
-        else:
-            return result
+        return result
 
     def _looks_like_formula(self, s: str) -> bool:
         """Check if a string looks like a formula expression."""
@@ -915,7 +916,7 @@ class Evaluator(FormulaEvaluator):
                     sensor_config,
                     config,
                     self._execution_engine.core_evaluator,
-                    self._resolve_all_references_in_formula,
+                    self._variable_resolution_phase.resolve_all_references_in_formula,
                 )
                 if result is not None:
                     _LOGGER.debug("Resolved formula %s using exception handler: %s", config.id, result)
@@ -985,16 +986,6 @@ class Evaluator(FormulaEvaluator):
         # Store the accumulated context for later retrieval
         # CRITICAL FIX: Store reference to original context, not a copy
         # This ensures that modifications during variable resolution are preserved
-        if context:
-            self._last_accumulated_context = context  # No .copy() - preserve reference
-            context_uuid = context.get("_context_uuid", None) or "NO_UUID"
-            _LOGGER.info(
-                "CONTEXT_STORED: UUID=%s Stored reference to context with %d items after evaluating %s",
-                context_uuid,
-                len(self._last_accumulated_context),
-                config.id,
-            )
-
         return final_result
 
     def _resolve_formula_variables(
@@ -1068,18 +1059,9 @@ class Evaluator(FormulaEvaluator):
         sensor_config: SensorConfig | None,
     ) -> float | str | bool | None:
         """Validate result type and cache if appropriate."""
-        if self._formula_processor is None:
-            raise RuntimeError("Formula processor not initialized")
-        # If the raw result is an HA alternate-state string (e.g., 'unknown'/'unavailable'),
-        # preserve it as-is since this method should return raw values, not EvaluationResult objects
-        # The conversion to EvaluationResult happens later in the pipeline
-        is_alternate, _ = handle_alternate_state_detection(result)
-        if is_alternate:
-            # For HA alternate states, return the state string as-is
-            # The evaluation pipeline will handle conversion to EvaluationResult later
-            return result
-
-        return self._formula_processor.finalize_result(result, config, context, cache_key_id, sensor_config)
+        # Direct return - no post-processing needed
+        # None values are preserved through the evaluation pipeline
+        return result
 
     def _build_evaluation_context(
         self,
@@ -1090,18 +1072,6 @@ class Evaluator(FormulaEvaluator):
     ) -> HierarchicalContextDict:
         """Build evaluation context from dependencies and configuration."""
         return self._context_building_phase.build_evaluation_context(dependencies, context, config, sensor_config)
-
-    def _resolve_all_references_in_formula(
-        self,
-        formula: str,
-        sensor_config: SensorConfig | None,
-        eval_context: HierarchicalContextDict,
-        formula_config: FormulaConfig | None = None,
-    ) -> str:
-        """Delegate to the Variable Resolution Phase for complete resolution."""
-        return self._variable_resolution_phase.resolve_all_references_in_formula(
-            formula, sensor_config, eval_context, formula_config
-        )
 
     # Public interface methods
     def get_formula_dependencies(self, formula: str) -> set[str]:

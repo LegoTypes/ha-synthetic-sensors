@@ -110,7 +110,7 @@ def extract_numeric_values(context: dict[str, ContextValue]) -> dict[str, float 
                 f"for key '{key}'. All variables must be ReferenceValue objects. "
                 f"Use ReferenceValueManager to wrap values."
             )
-        elif isinstance(value, ReferenceValue) and isinstance(value.value, int | float):
+        if isinstance(value, ReferenceValue) and isinstance(value.value, int | float):
             # Handle ReferenceValue objects - extract the numeric value
             numeric_context[key] = value.value
         elif isinstance(value, ReferenceValue) and value.value is not None:
@@ -152,7 +152,7 @@ def extract_string_values(context: dict[str, ContextValue]) -> dict[str, str]:
                 f"All variables must be ReferenceValue objects. "
                 f"Use ReferenceValueManager to wrap values."
             )
-        elif isinstance(value, ReferenceValue) and isinstance(value.value, str):
+        if isinstance(value, ReferenceValue) and isinstance(value.value, str):
             # Handle ReferenceValue objects - extract the string value
             string_context[key] = value.value
         elif isinstance(value, ReferenceValue) and value.value is not None:
@@ -228,7 +228,7 @@ def safe_context_set(context: HierarchicalContextDict, key: str, value: ContextV
 
     if hasattr(context, "_hierarchical_context"):
         # This is our HierarchicalContextDict - use unified setter
-        context._hierarchical_context.set(key, value)
+        context._hierarchical_context.set(key, value)  # pylint: disable=protected-access
     else:
         # Regular dict - use direct assignment
         context[key] = value
@@ -254,7 +254,7 @@ def safe_context_get(context: HierarchicalContextDict, key: str) -> ContextValue
     Raises:
         ValueError: If context contains raw values (architecture violation)
     """
-    value = context._hierarchical_context.get(key) if hasattr(context, "_hierarchical_context") else context.get(key)
+    value = context._hierarchical_context.get(key) if hasattr(context, "_hierarchical_context") else context.get(key)  # pylint: disable=protected-access
 
     # If we got a raw value from context, this violates the architecture
     if not isinstance(value, ReferenceValue):
@@ -282,8 +282,7 @@ def safe_context_contains(context: HierarchicalContextDict, key: str) -> bool:
     """
     if hasattr(context, "_hierarchical_context"):
         # This is our HierarchicalContextDict - use hierarchical contains
-        hierarchical_context = context._hierarchical_context
+        hierarchical_context = context._hierarchical_context  # pylint: disable=protected-access
         return bool(hierarchical_context.has(key))
-    else:
-        # Regular dict - use normal contains
-        return key in context
+    # Regular dict - use normal contains
+    return key in context

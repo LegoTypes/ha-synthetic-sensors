@@ -22,6 +22,7 @@ from homeassistant.util import slugify
 
 from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
+from .constants_alternate import STATE_NONE
 from .constants_evaluation_results import (
     RESULT_KEY_ERROR,
     RESULT_KEY_STATE,
@@ -39,6 +40,7 @@ from .constants_metadata import (
 from .cross_sensor_reference_manager import CrossSensorReferenceManager
 from .evaluator import Evaluator
 from .evaluator_phases.dependency_management.generic_dependency_manager import GenericDependencyManager
+from .evaluator_phases.variable_resolution.state_resolver import StateResolver
 from .exceptions import (
     CrossSensorResolutionError,
     DependencyValidationError,
@@ -349,6 +351,15 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                     isinstance(attr_value, str),
                     attr_name not in base_attributes,
                 )
+
+                # CRITICAL FIX: Skip re-evaluation of attributes that are already calculated
+                # This prevents double evaluation which causes string concatenation corruption
+                if attr_name in self._calculated_attributes:
+                    _LOGGER.debug(
+                        "SKIP_DOUBLE_EVAL: Attribute %s already calculated, skipping re-evaluation",
+                        attr_name,
+                    )
+                    continue
                 if isinstance(attr_value, str):
                     # Try to resolve from hierarchical context
                     if attr_value in current_context:
@@ -377,8 +388,8 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                             attr_value["formula"],
                         )
 
-                        # Evaluate the formula using the existing context
-                        # The current_context already contains all the resolved variables we need
+                        # Evaluate the formula using the existing hierarchical context
+                        # ARCHITECTURE: Attribute variables are isolated within the hierarchical context layers
                         from .utils_config import _evaluate_cv_via_pipeline
 
                         result = _evaluate_cv_via_pipeline(
@@ -493,41 +504,32 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         """Handle when a dependency entity changes."""
         await self._async_update_sensor()
 
-    def _build_variable_context(self, formula_config: FormulaConfig) -> HierarchicalContextDict | None:
-        """Build variable context from formula config for evaluation using hierarchical context.
+    def _add_variables_to_sensor_context(self, formula_config: FormulaConfig, sensor_context: SensorEvaluationContext) -> None:
+        """Add variables from formula config directly to the existing sensor context.
 
-        CRITICAL: This method creates a NEW hierarchical context for the sensor's main formula.
-        This is correct for the main sensor evaluation, but attributes should inherit from this context.
+        CRITICAL: This method adds variables directly to the existing hierarchical context
+        instead of creating a new one. This maintains the single context architecture.
 
         Args:
             formula_config: Formula configuration with variables
-
-        Returns:
-            HierarchicalContextDict with variables, or None if no variables
-            or if data provider callback is available (natural fallback will be used)
+            sensor_context: The existing sensor evaluation context to add variables to
         """
         # Early returns for cases where we don't need to build context
         if not self._should_build_variable_context(formula_config):
-            return None
+            return
 
-        from .evaluation_context import HierarchicalEvaluationContext
-        from .hierarchical_context_dict import HierarchicalContextDict
+        # Get the hierarchical context dict from the sensor context
+        context_dict = sensor_context.get_context_for_evaluation()
 
-        # Create hierarchical context for variable evaluation
-        hierarchical_context = HierarchicalEvaluationContext("sensor")
-        context_dict = HierarchicalContextDict(hierarchical_context)
+        # Add variables layer to the existing hierarchical context
+        sensor_context.context.push_layer("sensor_variables")
 
-        # Push base layer for variables
-        hierarchical_context.push_layer("variables_layer")
-
-        # Build context from variables
+        # Build context from variables directly into the existing context
         for var_name, var_value in formula_config.variables.items():
             self._process_variable(context_dict, var_name, var_value)
 
         # Inject canonical state reference
         self._inject_canonical_state_reference(context_dict)
-
-        return context_dict if len(context_dict) > 0 else None
 
     def _should_build_variable_context(self, formula_config: FormulaConfig) -> bool:
         """Determine if we should build variable context or delegate to evaluator."""
@@ -598,9 +600,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 )
                 ReferenceValueManager.set_variable_with_reference_value(context, "state", ref, rv)
                 # Debug logging removed to reduce verbosity
-        except Exception:
-            # Debug logging removed to reduce verbosity
-            pass
+        except Exception as e:
+            # Log the error for debugging but don't fail the function
+            _LOGGER.debug("Error in _seed_last_valid_state: %s", e)
 
     def _attempt_seed_last_valid(self, backing_entity_id: str | None = None) -> None:
         """Try to seed LAST_VALID_STATE_KEY/ LAST_VALID_CHANGED_KEY from backing data.
@@ -905,6 +907,47 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     # ARCHITECTURE FIX: Removed _capture_resolved_variables_from_evaluator method
     # The hierarchical context is the single source of truth for all resolved variables
 
+    def _setup_initial_state_in_context(self, sensor_context: SensorEvaluationContext, has_backing_entity: bool) -> None:
+        """Set up initial state reference in context BEFORE building evaluation context.
+
+        This method uses the StateResolver to properly set up the state reference
+        with backing entity values, avoiding evaluation pipeline issues.
+
+        Args:
+            sensor_context: The sensor evaluation context to set state in
+            has_backing_entity: Whether this sensor has a backing entity
+        """
+        try:
+            # Create a StateResolver with the sensor manager's configuration
+            state_resolver = StateResolver(
+                sensor_to_backing_mapping=self._sensor_manager.sensor_to_backing_mapping,
+                data_provider_callback=self._sensor_manager._manager_config.data_provider_callback,
+                hass=self._hass,
+            )
+
+            # Use StateResolver to get the prior state reference
+            state_ref = state_resolver.resolve_prior_state_reference(self._config, sensor_context.context)
+
+            if state_ref:
+                # Set the resolved state in the sensor context
+                sensor_context.context.set("state", state_ref)
+                _LOGGER.debug(
+                    "Sensor manager: StateResolver set initial state for %s: %s", self._config.unique_id, state_ref.value
+                )
+            else:
+                _LOGGER.debug("Sensor manager: StateResolver returned None for %s - using fallback", self._config.unique_id)
+                # Fallback to basic state reference
+                fallback_state_ref = ReferenceValue(reference=self.entity_id or "state", value=None)
+                sensor_context.context.set("state", fallback_state_ref)
+
+        except Exception as e:
+            _LOGGER.error(
+                "Sensor manager: Failed to set up initial state using StateResolver for %s: %s", self._config.unique_id, e
+            )
+            # Ensure we always have some state reference
+            fallback_state_ref = ReferenceValue(reference=self.entity_id or "state", value=None)
+            sensor_context.context.set("state", fallback_state_ref)
+
     def _handle_main_result(self, main_result: EvaluationResult, sensor_context: SensorEvaluationContext) -> None:
         """Handle the main formula evaluation result with sensor context for attribute evaluation."""
         main_result_dict = cast(dict[str, Any], main_result)
@@ -972,8 +1015,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # ARCHITECTURE FIX: Handle successful alternate state handler results with STATE_NONE
         # When alternate state handlers return None, the result has state=None (STATE_NONE)
         # This should be treated as a successful evaluation, not a failure
-        from .constants_alternate import STATE_NONE
-
         # DEBUG: Log what we're comparing
         actual_state = main_result_dict.get(RESULT_KEY_STATE)
         _LOGGER.debug(
@@ -1073,7 +1114,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             # FIRST: Add global variables as ReferenceValues (from evaluator's context building phase)
             context_building_phase = getattr(self._evaluator, "_context_building_phase", None)
             if context_building_phase and hasattr(context_building_phase, "_global_settings"):
-                global_settings = context_building_phase._global_settings
+                global_settings = context_building_phase._global_settings  # pylint: disable=protected-access
                 if global_settings and "variables" in global_settings:
                     # Convert global variables to ReferenceValues
                     global_refs = {}
@@ -1095,16 +1136,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                         global_context_values[var_name] = ref_value
                     sensor_context.add_global_variables(global_context_values)
 
-            # Build variable context for the main formula
-            main_context = self._build_variable_context(self._main_formula)
-
-            # Add sensor variables to the context
-            if main_context:
-                # Convert HierarchicalContextDict to dict[str, ContextValue]
-                sensor_vars: dict[str, ContextValue] = {}
-                for key, value in main_context.items():
-                    sensor_vars[key] = value
-                sensor_context.add_sensor_variables(sensor_vars)
+            # Add variables from the main formula directly to the sensor context
+            # This maintains the single context architecture instead of creating separate contexts
+            self._add_variables_to_sensor_context(self._main_formula, sensor_context)
 
             # Check if this sensor has a backing entity
             has_backing_entity = self._config.entity_id is not None or (
@@ -1128,24 +1162,16 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 # If still not set (no backing entity or seeding failed), use defaults
                 attrs = dict(self._attr_extra_state_attributes or {})
                 if LAST_VALID_STATE_KEY not in attrs:
-                    from datetime import datetime
-
                     attrs[LAST_VALID_STATE_KEY] = "unknown"
                     attrs[LAST_VALID_CHANGED_KEY] = datetime.now(UTC).isoformat()
                     self._attr_extra_state_attributes = attrs
 
-            # If no backing entity and we have a previous state, provide it in context
-            if not has_backing_entity and self._attr_native_value is not None:
-                # ARCHITECTURE FIX: Use ReferenceValueManager for state token
-                state_ref = ReferenceValue(
-                    reference=self.entity_id or "state",
-                    value=self._attr_native_value,
-                    last_valid_state=self._attr_native_value,
-                    last_valid_changed=None,
-                )
-                sensor_context.context.set("state", state_ref)
+            # CRITICAL FIX: Set up proper state reference FIRST, before building context
+            # This ensures the state token resolves to the backing entity value, not None
+            self._setup_initial_state_in_context(sensor_context, has_backing_entity)
+            _LOGGER.warning("DEBUG_STATE_SETUP: Completed _setup_initial_state_in_context")
 
-            # Get the accumulated context for evaluation
+            # Get the accumulated context for evaluation (now includes proper state)
             eval_context = sensor_context.get_context_for_evaluation()
 
             # Evaluate the main formula with the hierarchical context
@@ -1154,13 +1180,25 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             main_result = self._evaluator.evaluate_formula_with_sensor_config(self._main_formula, eval_context, self._config)
             _LOGGER.warning("DEBUG_MAIN_EVAL: Main formula result: %s", main_result)
 
-            # The evaluator modifies the context in place during evaluation
-            # No need to get a separate context - the eval_context already contains all resolved variables
-            # The hierarchical context automatically accumulates all variables during evaluation
-
-            # No need to extract variables - hierarchical context contains everything
-            # The sensor_context.get_context_for_evaluation() already provides all resolved variables
-            # Attribute evaluation will use the hierarchical context directly
+            # CRITICAL: Update the state value in context immediately after main evaluation
+            # This ensures attribute formulas can access the main sensor result via 'state' token
+            main_result_dict = cast(dict[str, Any], main_result)
+            if main_result_dict[RESULT_KEY_SUCCESS] and main_result_dict[RESULT_KEY_VALUE] is not None:
+                # Use StateResolver to properly update the state reference with unified logic
+                # This ensures both 'state' token and entity_id reference the same ReferenceValue
+                StateResolver.update_context_with_main_result(
+                    context=eval_context,
+                    sensor_config=self._config,
+                    main_result_value=main_result_dict[RESULT_KEY_VALUE],
+                    sensor_to_backing_mapping=self._sensor_manager.sensor_to_backing_mapping,
+                    data_provider_callback=self._sensor_manager._manager_config.data_provider_callback,
+                    hass=self._hass,
+                )
+                _LOGGER.debug(
+                    "StateResolver updated state value in context after main evaluation: %s -> %s",
+                    self._config.entity_id or f"sensor.{self._config.unique_id}",
+                    main_result_dict[RESULT_KEY_VALUE],
+                )
 
             # Handle the main result with sensor context for proper attribute inheritance
             self._handle_main_result(main_result, sensor_context)

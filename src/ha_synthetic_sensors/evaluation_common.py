@@ -9,15 +9,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from .hierarchical_context_dict import HierarchicalContextDict
-
 from .alternate_state_processor import alternate_state_processor
 from .alternate_state_utils import detect_alternate_state_value
 from .evaluator_helpers import EvaluatorHelpers
 from .evaluator_results import EvaluatorResults
 from .exceptions import DataValidationError, MissingDependencyError, SensorMappingError
 from .type_definitions import EvaluationResult
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 

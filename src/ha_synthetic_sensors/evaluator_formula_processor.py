@@ -98,26 +98,3 @@ class FormulaProcessor:
 
         # Return the original context to preserve HierarchicalContextDict
         return context
-
-    def resolve_all_references_in_formula(
-        self, formula: str, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
-    ) -> str:
-        """Resolve all references in a formula string."""
-        # This is a simplified version - the full implementation would be in the variable resolution phase
-        return formula
-
-    def finalize_result(
-        self,
-        result: float | str | bool | None,
-        config: FormulaConfig,
-        context: HierarchicalContextDict,
-        cache_key_id: str,
-        sensor_config: SensorConfig | None,
-    ) -> float | str | bool | None:
-        """Finalize the evaluation result with any post-processing."""
-        # CRITICAL FIX: Accept None values to preserve them through the evaluation pipeline
-        # This ensures that None values (indicating missing/unavailable data) are properly
-        # handled throughout the evaluation process without premature conversion to strings.
-        # Post-processing logic can be added here if needed
-        # Debug logging removed to reduce verbosity
-        return result

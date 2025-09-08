@@ -169,9 +169,9 @@ def _discover_domain_characteristics(domain: str) -> set[str]:
             # This is better than using hardcoded lists - we just don't know
             pass
 
-    except Exception:
-        # Debug logging removed to reduce verbosity
-        pass
+    except Exception as e:
+        # Log the error for debugging but don't fail the function
+        _LOGGER.debug("Error analyzing entity characteristics: %s", e)
 
     return characteristics
 

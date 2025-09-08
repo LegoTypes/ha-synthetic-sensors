@@ -528,6 +528,7 @@ def _evaluate_cv_via_pipeline(
     parent_config: FormulaConfig | None,
     allow_unresolved_states: bool = False,
     alternate_state_handler: AlternateStateHandler | None = None,
+    sensor_config: Any = None,
 ) -> dict[str, Any]:
     _LOGGER.warning("EVAL_CV_PIPELINE_ENTRY: Function called with formula '%s'", formula)
     # BULLETPROOF: Log context type and ID at entry point
@@ -557,7 +558,7 @@ def _evaluate_cv_via_pipeline(
     # Ensure boolean state constants are available in computed variable evaluation context
     # This fixes the issue where computed variables don't have access to boolean constants
     # CRITICAL FIX: Work with original context, not a copy, to preserve hierarchical context
-    enhanced_context = eval_context  # No .copy() - preserve reference to hierarchical context
+    enhanced_context = eval_context
     _ensure_boolean_constants_in_context(enhanced_context)
 
     # ARCHITECTURAL FIX: Do NOT inject resolved values into variables_view
@@ -583,9 +584,10 @@ def _evaluate_cv_via_pipeline(
             bypass_dependency_management=False,
             allow_unresolved_states=allow_unresolved_states,
             alternate_state_handler=alternate_state_handler,
+            sensor_config=sensor_config,
         )
-    except Exception:
-        raise
+    except Exception as e:
+        raise e
 
     return result
 
@@ -638,6 +640,7 @@ def _resolve_metadata_computed_variable(
         parent_config,
         computed_var.allow_unresolved_states,
         computed_var.alternate_state_handler,
+        None,  # sensor_config not available for computed variables
     )
     if eval_result.get(RESULT_KEY_SUCCESS):
         value = eval_result.get(RESULT_KEY_VALUE)
@@ -647,15 +650,14 @@ def _resolve_metadata_computed_variable(
 
     _LOGGER.warning("METADATA_FAILED: Variable %s pipeline evaluation failed. Result: %s", var_name, eval_result)
     _set_lazy_reference(eval_context, var_name, computed_var.formula)
-    return True
-
-    eval_result = _evaluate_cv_via_pipeline(
-        computed_var.formula,
-        eval_context,
-        parent_config,
-        computed_var.allow_unresolved_states,
-        computed_var.alternate_state_handler,
-    )
+    # This code is unreachable due to the return statement above
+    # eval_result = _evaluate_cv_via_pipeline(
+    #     computed_var.formula,
+    #     eval_context,
+    #     parent_config,
+    #     computed_var.allow_unresolved_states,
+    #     computed_var.alternate_state_handler,
+    # )
     if eval_result.get(RESULT_KEY_SUCCESS):
         result = eval_result[RESULT_KEY_VALUE]
 
@@ -698,6 +700,7 @@ def _resolve_non_metadata_computed_variable(
         parent_config,
         computed_var.allow_unresolved_states,
         computed_var.alternate_state_handler,
+        None,  # sensor_config not available for computed variables
     )
 
     # Debug logging for all variables to see what's happening
@@ -814,7 +817,7 @@ def _try_alternate_state_handler(
             or computed_var.alternate_state_handler.unknown
         )
 
-    if not handler_formula:
+    if handler_formula is None:
         return None
 
     try:

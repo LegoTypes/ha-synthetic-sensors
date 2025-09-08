@@ -217,8 +217,8 @@ async def test_delayed_entity_availability_with_dependency_tracking(
             "sensor.span_simulator_unmapped_tab_32_energy_consumed",
         }
 
-        # Trigger sensor update (this should re-evaluate formulas with now-available entities)
-        await sensor_manager.async_update_sensors()
+        # Trigger sensor update for the specific entities that changed
+        await sensor_manager.async_update_sensors_for_entities(changed_entity_ids)
 
         # PHASE 2 VERIFICATION: Should now have numeric values
         assert float(current_sensor.native_value) == pytest.approx(1100.0)

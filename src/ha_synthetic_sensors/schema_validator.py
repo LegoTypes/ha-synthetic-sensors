@@ -469,9 +469,9 @@ class SchemaValidator:
 
         attr_formula = attr_config.get("formula", "")
 
-        # Allow 'state' variable in attribute formulas
-        # Use variables directly and add state temporarily
-        variables["state"] = "main_sensor_state"
+        # Note: 'state' variable should be naturally available in context
+        # It resolves to the current sensor's entity ID through normal context inheritance
+        # No need to add a placeholder here
 
         # Include the current attribute's own variables
         attr_own_variables = attr_config.get("variables", {})

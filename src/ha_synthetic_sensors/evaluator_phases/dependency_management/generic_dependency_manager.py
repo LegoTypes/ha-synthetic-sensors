@@ -156,7 +156,8 @@ class GenericDependencyManager:
             Complete context with all formula values calculated
         """
         # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
-        context = base_context.copy()
+        # Don't copy the context since HierarchicalContextDict is a singleton
+        context = base_context
 
         # Get evaluation order
         evaluation_order = self.get_evaluation_order(sensor_config)
@@ -232,7 +233,8 @@ class GenericDependencyManager:
         """
         try:
             # Enhance context with cross-sensor registry values for cross-sensor reference resolution
-            enhanced_context = context.copy()
+            # Don't copy the context since HierarchicalContextDict is a singleton
+            enhanced_context = context
             if self._sensor_registry_phase:
                 # Add all registered sensor values to the context
                 registry_values = self._sensor_registry_phase.get_all_sensor_values()

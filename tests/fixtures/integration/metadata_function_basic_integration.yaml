@@ -74,7 +74,7 @@ sensors:
         formula: "state if within_grace else UNAVAILABLE"
     variables:
       within_grace:
-        formula: "minutes_between(metadata(sensor.span_grace_period_test, 'last_changed'), now()) < grace_period_minutes"
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < grace_period_minutes"
         alternate_states:
           UNAVAILABLE: false
       grace_period_minutes: "15"

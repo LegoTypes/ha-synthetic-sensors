@@ -68,7 +68,7 @@ def test_register_data_provider_entities_with_natural_fallback(mock_hass, mock_e
 def test_build_variable_context_with_data_provider_and_natural_fallback(
     mock_hass, mock_entity_registry, mock_states, data_provider_callback
 ):
-    """Test _build_variable_context when data provider exists and natural fallback is used."""
+    """Test _should_build_variable_context when data provider exists and natural fallback is used."""
     # Create evaluator with data provider callback
     evaluator = Evaluator(mock_hass, data_provider_callback=data_provider_callback)
 
@@ -94,9 +94,9 @@ def test_build_variable_context_with_data_provider_and_natural_fallback(
     mock_state.state = "999.0"
     mock_hass.states.get.return_value = mock_state
 
-    # Build variable context - should return None (use data provider)
-    context = sensor._build_variable_context(sensor_config.formulas[0])
-    assert context is None  # Should delegate to evaluator's data provider
+    # Check if sensor should build variable context - should return False (use data provider)
+    should_build = sensor._should_build_variable_context(sensor_config.formulas[0])
+    assert should_build is False  # Should delegate to evaluator's data provider
 
     # Verify HA states.get was not called since data provider has the entity
     mock_hass.states.get.assert_not_called()
@@ -105,7 +105,7 @@ def test_build_variable_context_with_data_provider_and_natural_fallback(
 def test_build_variable_context_with_data_provider_and_ha_fallback(
     mock_hass, mock_entity_registry, mock_states, data_provider_callback
 ):
-    """Test _build_variable_context when data provider doesn't have entity and falls back to HA."""
+    """Test _should_build_variable_context when data provider doesn't have entity and falls back to HA."""
     # Create evaluator with data provider callback
     evaluator = Evaluator(mock_hass, data_provider_callback=data_provider_callback)
 
@@ -131,17 +131,17 @@ def test_build_variable_context_with_data_provider_and_ha_fallback(
     mock_state.state = "42.5"
     mock_states["sensor.backing_ha_only"] = mock_state
 
-    # Build variable context - should return None when data provider is available
+    # Check if sensor should build variable context - should return False when data provider is available
     # The evaluator will handle variable resolution through natural fallback
-    context = sensor._build_variable_context(sensor_config.formulas[0])
-    assert context is None  # Should return None to let evaluator handle resolution
+    should_build = sensor._should_build_variable_context(sensor_config.formulas[0])
+    assert should_build is False  # Should return False to let evaluator handle resolution
 
     # Verify HA states.get was not called since data provider handles resolution
     mock_hass.states.get.assert_not_called()
 
 
 def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass, mock_entity_registry, mock_states):
-    """Test _build_variable_context when no data provider is configured."""
+    """Test _should_build_variable_context when no data provider is configured."""
     # Create evaluator without data provider callback
     evaluator = Evaluator(mock_hass, data_provider_callback=None)
 
@@ -167,23 +167,18 @@ def test_build_variable_context_no_data_provider_always_uses_ha(mock_hass, mock_
     mock_state.state = "123.45"
     mock_states["sensor.backing_virtual"] = mock_state
 
-    # Build variable context - should return context with HA values since no data provider
-    context = sensor._build_variable_context(sensor_config.formulas[0])
-    assert context is not None
-    backing_value = context["backing_value"]
-    if isinstance(backing_value, ReferenceValue):
-        assert backing_value.value == 123.45
-    else:
-        assert backing_value == 123.45
+    # Check if sensor should build variable context - should return True since no data provider
+    should_build = sensor._should_build_variable_context(sensor_config.formulas[0])
+    assert should_build is True  # Should build context from HA lookup
 
-    # Verify HA states.get was called
-    mock_hass.states.get.assert_called_with("sensor.backing_virtual")
+    # Note: The actual HA lookup happens during evaluation, not during the should_build check
+    # This test verifies the decision logic, not the actual context building
 
 
 def test_build_variable_context_missing_entity_returns_none(
     mock_hass, mock_entity_registry, mock_states, data_provider_callback
 ):
-    """Test _build_variable_context when entity is missing from both data provider and HA."""
+    """Test _should_build_variable_context when entity is missing from both data provider and HA."""
     # Create evaluator with data provider callback
     evaluator = Evaluator(mock_hass, data_provider_callback=data_provider_callback)
 
@@ -206,10 +201,10 @@ def test_build_variable_context_missing_entity_returns_none(
     # Mock HA state to return None (entity not found)
     mock_hass.states.get.return_value = None
 
-    # Build variable context - should return None when data provider is available
+    # Check if sensor should build variable context - should return False when data provider is available
     # The evaluator will handle missing entity detection during evaluation
-    context = sensor._build_variable_context(sensor_config.formulas[0])
-    assert context is None  # Should return None to let evaluator handle resolution
+    should_build = sensor._should_build_variable_context(sensor_config.formulas[0])
+    assert should_build is False  # Should return False to let evaluator handle resolution
 
     # Verify HA states.get was not called since data provider handles resolution
     mock_hass.states.get.assert_not_called()

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from .config_models import FormulaConfig, SensorConfig
     from .type_definitions import DataProviderCallback, DependencyValidation
+
 from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)

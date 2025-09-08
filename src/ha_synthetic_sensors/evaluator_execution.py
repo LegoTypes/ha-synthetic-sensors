@@ -5,9 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from .hierarchical_context_dict import HierarchicalContextDict
-
 from .config_models import FormulaConfig, SensorConfig
 from .constants_evaluation_results import (
     ERROR_KEYWORD_DIVISION_BY_ZERO,
@@ -26,6 +23,9 @@ from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_error_handler import EvaluatorErrorHandler
 from .evaluator_handlers import HandlerFactory
 from .exceptions import BackingEntityResolutionError
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 

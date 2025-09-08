@@ -13,7 +13,6 @@ from ha_synthetic_sensors.constants_formula import is_reserved_word
 from ha_synthetic_sensors.evaluator_handlers.metadata_handler import MetadataHandler
 from ha_synthetic_sensors.exceptions import DataValidationError, MissingDependencyError
 from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
-from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
 from ha_synthetic_sensors.shared_constants import get_ha_domains
 from ha_synthetic_sensors.type_definitions import DataProviderResult, ReferenceValue
 from ha_synthetic_sensors.utils_config import resolve_config_variables
@@ -169,7 +168,12 @@ class VariableResolutionPhase:
         if entity_mappings_from_entities:
             self._last_discovered_entities.update(entity_mappings_from_entities.keys())
 
+        # Resolve collection functions first (always, regardless of sensor config)
+        # This ensures computed variables in attributes can use collection functions
+        resolved_formula = self._resolve_collection_functions(resolved_formula, sensor_config, eval_context, formula_config)
+
         # Early return if no sensor config for the remaining steps
+        # sensor_config will be None for computed variables
         if not sensor_config:
             # NOTE: Most advanced resolution features are skipped for formulas without sensor config
             # to avoid breaking the cache mechanism. Entity reference resolution is now done above.
@@ -282,10 +286,10 @@ class VariableResolutionPhase:
             if resolve_func and callable(resolve_func):
                 # pylint: disable=not-callable
                 resolved_formula = resolve_func(formula, exclude_entity_ids)
-                _LOGGER.debug("Collection function resolution: '%s' -> '%s'", formula, resolved_formula)
                 return str(resolved_formula)
             return formula
         except Exception as e:
+            _LOGGER.error("Error resolving collection functions in formula '%s': %s", formula, e)
             raise MissingDependencyError(f"Error resolving collection functions in formula '{formula}': {e}") from e
 
     def _resolve_metadata_functions(
@@ -349,52 +353,6 @@ class VariableResolutionPhase:
 
         resolve_config_variables(eval_context, config, resolver_callback, sensor_config)
 
-    def _resolve_state_attribute_references(self, formula: str, sensor_config: SensorConfig) -> str:
-        """Resolve state.attribute references.
-
-        For main formulas and attributes that reference backing entity attributes
-        (state.xxx or state.attributes.xxx), resolve to concrete values using the
-        current data provider and sensor_to_backing mapping.
-        """
-        try:
-            mapping = getattr(self._resolver_factory, "sensor_to_backing_mapping", {}) or {}
-            data_provider = getattr(self._resolver_factory, "data_provider_callback", None)
-            backing_entity_id = mapping.get(sensor_config.unique_id)
-            if not backing_entity_id or not callable(data_provider):
-                return formula
-
-            entity_data = data_provider(backing_entity_id)
-            if not (entity_data and entity_data.get("exists")):
-                return formula
-
-            attributes = entity_data.get("attributes", {}) or {}
-
-            # Replace state.attributes.some.path first (deep access)
-            def replace_state_attributes(match: re.Match[str]) -> str:
-                path = match.group(1)
-                current: Any = attributes
-                for part in path.split("."):
-                    if isinstance(current, dict) and part in current:
-                        current = current[part]
-                    else:
-                        return match.group(0)
-                return str(current)
-
-            new_formula = regex_helper.substitute_state_attributes_deep(formula, replace_state_attributes)
-
-            # Replace simple state.attribute (single-level)
-            def replace_state_simple(match: re.Match[str]) -> str:
-                attr = match.group(1)
-                if isinstance(attributes, dict) and attr in attributes:
-                    return str(attributes[attr])
-                return match.group(0)
-
-            new_formula = regex_helper.substitute_state_attributes_simple(new_formula, replace_state_simple)
-
-            return new_formula
-        except Exception:
-            return formula
-
     def _resolve_state_references(
         self, formula: str, sensor_config: SensorConfig, eval_context: HierarchicalContextDict
     ) -> tuple[str, list[HADependency]]:
@@ -412,19 +370,12 @@ class VariableResolutionPhase:
         # Use the resolver factory to resolve the state reference and store in context
         resolved_value = self._resolver_factory.resolve_variable("state", "state", eval_context)
         if resolved_value is not None:
-            # CRITICAL FIX: Only override state if it's not already correctly resolved
-            # Context building phase may have already set state to backing entity value
-            existing_state = eval_context.get("state")
-            if existing_state is None or (isinstance(existing_state, ReferenceValue) and existing_state.value is None):
-                # WFF: Use ReferenceValueManager for state dual storage (state + entity_id)
-                # This ensures dependency checking can find the resolved state under either name
-                entity_reference = resolved_value.reference if isinstance(resolved_value, ReferenceValue) else "state"
-                ReferenceValueManager.set_variable_with_reference_value(eval_context, "state", entity_reference, resolved_value)
-            else:
-                # State is already correctly resolved, use the existing value
-                resolved_value = existing_state
+            # StateResolver has already handled ReferenceValue creation and sharing via ReferenceValueManager
+            # No need to call ReferenceValueManager again - this would create a duplicate ReferenceValue
+            # The StateResolver ensures that both 'state' and the sensor's entity_id share the same ReferenceValue
 
             # State value resolved and stored in context - alternate state handling happens later
+            pass
         else:
             # This should not happen if StateResolver is working correctly
             raise MissingDependencyError("State token resolution returned None unexpectedly")
@@ -1081,8 +1032,7 @@ class VariableResolutionPhase:
         entity_to_value_mappings: dict[str, str] = {}  # entity_reference -> resolved_value
         # Start with the original formula
         resolved_formula = formula
-        # Resolve collection functions (always, regardless of sensor config)
-        resolved_formula = self._resolve_collection_functions(resolved_formula, sensor_config, eval_context, formula_config)
+        # Collection functions are now resolved earlier in the pipeline
         return entity_mappings, unavailable_dependencies, entity_to_value_mappings, resolved_formula
 
     def _perform_main_resolution_steps(
@@ -1101,12 +1051,10 @@ class VariableResolutionPhase:
         # Phase 3: Value Resolution - extract values from ReferenceValues for formula evaluation
         # Phase 4: Formula Evaluation - handled by CoreFormulaEvaluator
 
-        # STEP 1: Resolve state.attribute references FIRST (before entity references)
-        if sensor_config:
-            resolved_formula = self._resolve_state_attribute_references(resolved_formula, sensor_config)
-        # STEP 2: Pre-scan for variable.attribute patterns to identify variables that need entity ID preservation
+        # State.attribute references are handled by StateAttributeResolver in the resolver system
+        # STEP 1: Pre-scan for variable.attribute patterns to identify variables that need entity ID preservation
         variables_needing_entity_ids = FormulaHelpers.identify_variables_for_attribute_access(resolved_formula, formula_config)
-        # STEP 3: Resolve config variables with special handling for attribute access variables
+        # STEP 2: Resolve config variables with special handling for attribute access variables
         if formula_config:
             # First do the attribute preservation (no tracking)
             self._resolve_config_variables_with_attribute_preservation(

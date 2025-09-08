@@ -1,0 +1,28 @@
+# Minimal YAML for debugging span_grace_period_validation_test sensor
+global_settings:
+  device_identifier: "test_device_span_debug"
+
+sensors:
+  # SPAN Panel Grace Period Validation Test - demonstrates ACTUAL SPAN Panel pattern
+  span_grace_period_validation_test:
+    name: "SPAN Grace Period Validation Test"
+    entity_id: "sensor.span_grace_period_test"
+    formula: "state"
+    # Test that literal entity IDs in metadata functions now work with validation fix
+    alternate_states:
+      UNAVAILABLE:
+        formula: "state if within_grace else 'unknown'"
+    variables:
+      within_grace:
+        formula: "minutes_between(metadata(state, 'last_changed'), now()) < grace_period_minutes"
+        alternate_states:
+          UNAVAILABLE: false
+      grace_period_minutes: "15"
+    attributes:
+      grace_period_active:
+        formula: "within_grace"
+      source_entity:
+        formula: "metadata(state, 'entity_id')"
+    metadata:
+      unit_of_measurement: "W"
+      device_class: "power"

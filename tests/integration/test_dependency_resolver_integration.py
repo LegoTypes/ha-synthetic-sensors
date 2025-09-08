@@ -399,8 +399,12 @@ sensors:
         """
 
         # Phase 1: Set up backing entity with valid value (test should pass)
+        import uuid
+
+        test_uuid = str(uuid.uuid4())[:8]
+        backing_entity_id = f"sensor.backing_entity_{test_uuid}"
         backing_data = {
-            "sensor.backing_entity": 1000.0  # Good value initially
+            backing_entity_id: 1000.0  # Good value initially
         }
 
         # Create data provider for virtual backing entities
@@ -424,23 +428,26 @@ sensors:
             storage_manager._store = mock_store
             await storage_manager.async_load()
 
-            # Create sensor set for None value test
-            sensor_set_id = "dynamic_none_test"
+            # Create sensor set for None value test with unique ID
+            sensor_set_id = f"dynamic_none_test_{test_uuid}"
+            device_identifier = f"test_device_{test_uuid}"
             await storage_manager.async_create_sensor_set(
-                sensor_set_id=sensor_set_id, device_identifier="test_device_123", name="Dynamic None Value Test Sensors"
+                sensor_set_id=sensor_set_id,
+                device_identifier=device_identifier,
+                name=f"Dynamic None Value Test Sensors {test_uuid}",
             )
 
             # Create YAML for testing
-            test_yaml = """
+            test_yaml = f"""
 version: "1.0"
 
 global_settings:
-  device_identifier: "test_device_123"
+  device_identifier: "{device_identifier}"
 
 sensors:
   none_value_sensor:
     name: "None Value Test Sensor"
-    entity_id: "sensor.backing_entity"
+    entity_id: "{backing_entity_id}"
     formula: "state * 2"  # Simple formula using backing entity
     metadata:
       unit_of_measurement: "W"
@@ -455,7 +462,7 @@ sensors:
             assert result["sensors_imported"] == 1
 
             # Set up sensor manager
-            sensor_to_backing_mapping = {"none_value_sensor": "sensor.backing_entity"}
+            sensor_to_backing_mapping = {"none_value_sensor": backing_entity_id}
 
             def change_notifier_callback(changed_entity_ids: set[str]) -> None:
                 pass
@@ -480,7 +487,7 @@ sensors:
                 added_entities = mock_async_add_entities.call_args[0][0]
                 sensor_entity = added_entities[0]
 
-                print(f"✅ Phase 1: Good value ({backing_data['sensor.backing_entity']}) - sensor state: {sensor_entity.state}")
+                print(f"✅ Phase 1: Good value ({backing_data[backing_entity_id]}) - sensor state: {sensor_entity.state}")
 
                 # Should have a valid numeric state (1000.0 * 2 = 2000.0)
                 assert sensor_entity.state is not None, "Phase 1 should have valid state"
@@ -492,10 +499,10 @@ sensors:
             print("🔄 Phase 2: Changing backing entity to None value...")
 
             # Update the data provider to return None
-            backing_data["sensor.backing_entity"] = None
+            backing_data[backing_entity_id] = None
 
             # Trigger update with None value
-            await sensor_manager.async_update_sensors_for_entities({"sensor.backing_entity"})
+            await sensor_manager.async_update_sensors_for_entities({backing_entity_id})
 
             # Get updated sensor state
             added_entities = mock_async_add_entities.call_args[0][0]

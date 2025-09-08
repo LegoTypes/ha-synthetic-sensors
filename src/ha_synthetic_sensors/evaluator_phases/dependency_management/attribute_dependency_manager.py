@@ -102,7 +102,8 @@ class AttributeDependencyManager:
             Complete context with all attribute values calculated
         """
         # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
-        context = base_context.copy()
+        # Don't copy the context since HierarchicalContextDict is a singleton
+        context = base_context
         # ARCHITECTURE FIX: Use ReferenceValueManager for state token
         entity_id = sensor_config.entity_id if sensor_config else "state"
         ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)

@@ -13,14 +13,6 @@ from typing import TYPE_CHECKING, Any, cast
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import STATE_UNKNOWN
 
-from .evaluator_results import EvaluatorResults
-from .exceptions import AlternateStateDetected
-from .type_definitions import ReferenceValue
-
-if TYPE_CHECKING:
-    from .hierarchical_context_dict import HierarchicalContextDict
-
-
 from .config_models import AlternateStateHandler, FormulaConfig, SensorConfig
 from .constants_alternate import (
     ALTERNATE_STATE_NONE,
@@ -29,6 +21,13 @@ from .constants_alternate import (
     identify_alternate_state_value,
 )
 from .constants_formula import ALL_OPERATORS
+from .evaluator_results import EvaluatorResults
+from .exceptions import AlternateStateDetected
+from .formula_evaluator_service import FormulaEvaluatorService
+from .type_definitions import ReferenceValue
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,12 +123,11 @@ class AlternateStateProcessor:
                 raw_val,
                 str(alternate_state) if alternate_state is not True else None,
             )
-        else:
-            self._logger.debug(
-                "Pre-evaluation optimization: Single variable '%s' is %s, letting evaluation continue to Phase 3",
-                var_name,
-                alternate_state,
-            )
+        self._logger.debug(
+            "Pre-evaluation optimization: Single variable '%s' is %s, letting evaluation continue to Phase 3",
+            var_name,
+            alternate_state,
+        )
 
         return True
 
@@ -457,8 +455,6 @@ class AlternateStateProcessor:
                 # Object form: Use FormulaEvaluatorService directly to avoid recursive pre-evaluation checks
                 # Alternate handlers should not go through the full evaluation pipeline
                 # since they're already handling an alternate state
-                from .formula_evaluator_service import FormulaEvaluatorService
-
                 result = FormulaEvaluatorService.evaluate_formula(
                     handler_value["formula"],
                     handler_value["formula"],

@@ -120,19 +120,6 @@ class ContextBuildingPhase:
             )
             _LOGGER.debug("Added current sensor entity_id to context: %s", sensor_config.entity_id)
 
-        # CRITICAL FIX: Update state token to backing entity if mapping exists
-        # This ensures state token resolves to backing entity value, not synthetic sensor ID
-        if sensor_config and hasattr(self, "_sensor_to_backing_mapping") and self._sensor_to_backing_mapping:
-            backing_entity_id = self._sensor_to_backing_mapping.get(sensor_config.unique_id)
-            if backing_entity_id and backing_entity_id in eval_context:
-                # Update state to point to the backing entity value
-                backing_entity_value = eval_context[backing_entity_id]
-                if isinstance(backing_entity_value, ReferenceValue):
-                    self._add_entity_to_context(eval_context, "state", backing_entity_value, "backing_entity")
-                    _LOGGER.debug(
-                        "Updated state token to backing entity: %s -> %s", backing_entity_id, backing_entity_value.value
-                    )
-
         # Add global variables BEFORE resolving computed variables
         # This ensures global variables are available when computed variables are evaluated
         self._add_global_variables_to_context(eval_context)
@@ -144,6 +131,10 @@ class ContextBuildingPhase:
         if config is not None:
             eval_context._hierarchical_context.set_system_object("_formula_config", config)
 
+        # CRITICAL: Add state variable to context immediately after globals
+        # The state is ALWAYS needed even if purely calculated (value would be None)
+        self._add_state_to_context(eval_context, resolver_factory)
+
         # Resolve entity dependencies
         self._resolve_entity_dependencies(eval_context, dependencies, resolver_factory)
 
@@ -153,6 +144,87 @@ class ContextBuildingPhase:
 
         _LOGGER.debug("Context building phase: built context with %d variables", len(eval_context))
         return eval_context
+
+    def _add_state_to_context(self, eval_context: HierarchicalContextDict, resolver_factory: Any) -> None:
+        """Ensure state variable is properly set in context using prior state resolution.
+
+        This method sets up the initial state reference using prior/backing values,
+        avoiding full evaluation that could trigger alternate state processing.
+        """
+        # Check if state is already properly set in context
+        existing_state = eval_context.get("state")
+        if (
+            isinstance(existing_state, ReferenceValue) and existing_state.reference and existing_state.reference != "state"
+        ):  # Has proper entity_id reference
+            _LOGGER.debug("Context building: State already properly set with entity_id reference: %s", existing_state.reference)
+            return
+
+        _LOGGER.debug("Context building: State needs to be set using prior state resolution")
+
+        # Try to get sensor config from context (should be set by build_evaluation_context)
+        try:
+            sensor_config_raw = eval_context._hierarchical_context.get("_sensor_config")
+        except KeyError:
+            # No sensor config available - this can happen for computed variables or cross-sensor references
+            _LOGGER.debug("Context building: No _sensor_config in context - setting basic state reference")
+            # Set a basic state reference for computed variables
+            basic_state_ref = ReferenceValue(reference="state", value=None)
+            self._safe_context_set(eval_context, "state", basic_state_ref)
+            return
+
+        if sensor_config_raw is not None and hasattr(sensor_config_raw, "unique_id"):
+            sensor_config = sensor_config_raw
+
+            # Get StateResolver from resolver factory and use prior state resolution
+            try:
+                # Get the StateResolver instance from the factory
+                state_resolver = None
+                if hasattr(resolver_factory, "_resolvers"):
+                    for resolver in resolver_factory._resolvers:
+                        if hasattr(resolver, "resolve_prior_state_reference"):
+                            state_resolver = resolver
+                            break
+
+                if state_resolver:
+                    # Use the new prior state resolution method
+                    prior_state_ref = state_resolver.resolve_prior_state_reference(sensor_config, eval_context)
+                    if prior_state_ref:
+                        self._safe_context_set(eval_context, "state", prior_state_ref)
+                        _LOGGER.debug(
+                            "Context building: Set prior state reference for sensor %s: %s",
+                            sensor_config.unique_id,
+                            prior_state_ref.value,
+                        )
+                    else:
+                        # No prior state available - set basic reference
+                        basic_state_ref = ReferenceValue(
+                            reference=sensor_config.entity_id if sensor_config.entity_id else "state", value=None
+                        )
+                        self._safe_context_set(eval_context, "state", basic_state_ref)
+                        _LOGGER.debug(
+                            "Context building: No prior state available for sensor %s - set basic reference",
+                            sensor_config.unique_id,
+                        )
+                else:
+                    _LOGGER.warning("Context building: No StateResolver found in resolver factory")
+                    # Fallback to basic state reference
+                    basic_state_ref = ReferenceValue(
+                        reference=sensor_config.entity_id if sensor_config.entity_id else "state", value=None
+                    )
+                    self._safe_context_set(eval_context, "state", basic_state_ref)
+
+            except Exception as e:
+                _LOGGER.error("Context building: Failed to resolve prior state for sensor %s: %s", sensor_config.unique_id, e)
+                # Fallback to basic state reference
+                basic_state_ref = ReferenceValue(
+                    reference=sensor_config.entity_id if sensor_config.entity_id else "state", value=None
+                )
+                self._safe_context_set(eval_context, "state", basic_state_ref)
+        else:
+            _LOGGER.debug("Context building: Invalid sensor_config - setting basic state reference")
+            # Set a basic state reference
+            basic_state_ref = ReferenceValue(reference="state", value=None)
+            self._safe_context_set(eval_context, "state", basic_state_ref)
 
     def _create_resolver_factory(self, context: HierarchicalContextDict) -> VariableResolverFactory:
         """Create modern variable resolver factory for direct resolution."""

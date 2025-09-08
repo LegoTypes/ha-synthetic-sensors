@@ -31,7 +31,7 @@ from .regex_helper import (
 from .storage_manager import SensorSetMetadata
 
 if TYPE_CHECKING:
-    from .storage_manager import SensorSetMetadata, StorageManager
+    from .storage_manager import StorageManager
 
 __all__ = ["SensorSetOpsHandler"]
 

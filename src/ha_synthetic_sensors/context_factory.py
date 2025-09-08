@@ -6,6 +6,7 @@ principle of "NO NEW CONTEXT CREATION".
 """
 
 import threading
+import traceback
 from typing import Any, Optional
 
 from .evaluation_context import HierarchicalEvaluationContext
@@ -14,8 +15,6 @@ from .hierarchical_context_dict import HierarchicalContextDict
 
 class ContextCreationViolationError(Exception):
     """Raised when attempting to create multiple contexts for the same ID."""
-
-    pass
 
 
 class ContextFactory:
@@ -154,8 +153,6 @@ _original_hierarchical_context_dict_init = None
 
 def _patched_hierarchical_evaluation_context_init(self: Any, name: str = "root") -> None:
     """Patched init that throws exception on direct creation."""
-    import traceback
-
     stack_trace = "".join(traceback.format_stack())
 
     # Allow creation only from the factory or specific allowed locations
@@ -177,8 +174,6 @@ def _patched_hierarchical_evaluation_context_init(self: Any, name: str = "root")
 
 def _patched_hierarchical_context_dict_init(self: Any, hierarchical_context: HierarchicalEvaluationContext) -> None:
     """Patched init that throws exception on direct creation."""
-    import traceback
-
     stack_trace = "".join(traceback.format_stack())
 
     # Allow creation only from the factory or specific allowed locations

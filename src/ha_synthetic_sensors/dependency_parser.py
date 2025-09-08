@@ -521,6 +521,17 @@ class DependencyParser:
         excluded.update(BUILTIN_TYPES)
         excluded.update(BOOLEAN_LITERALS)
 
+        # Add Home Assistant boolean state constants to prevent them from being treated as dependencies
+        try:
+            from .boolean_states import BooleanStates
+
+            boolean_names = BooleanStates.get_all_boolean_names()
+            excluded.update(boolean_names.keys())
+        except Exception as e:
+            _LOGGER.debug("Could not load boolean state constants for exclusion: %s", e)
+            # Add common boolean states as fallback
+            excluded.update({"on", "off", "true", "false", "yes", "no"})
+
         # Mathematical constants that might appear
         excluded.update({"pi", "e"})
 

@@ -681,11 +681,11 @@ The two approaches work together seamlessly:
 - AST for general variable extraction
 - Regex for entity references and collection patterns
 
-2. **Variable Resolution**: Primarily AST-based for comprehensive variable discovery
+**Variable Resolution**: Primarily AST-based for comprehensive variable discovery
 
-3. **Metadata Functions**: Regex-based for identifying and extracting metadata calls
+**Metadata Functions**: Regex-based for identifying and extracting metadata calls
 
-#### Architecture Benefits
+## Architecture Benefits
 
 **Centralization**: All regex patterns are defined in `regex_helper.py`, making them:
 
@@ -730,9 +730,9 @@ Provides service interfaces for external interactions:
 - Provides service documentation and discovery
 - Supports service extensibility and customization
 
-3. **ConfigModels** create typed configuration objects
-4. **SensorManager** creates sensor entities based on configuration
-5. **SensorSet** organizes sensors into manageable groups
+**ConfigModels** create typed configuration objects
+**SensorManager** creates sensor entities based on configuration
+**SensorSet** organizes sensors into manageable groups
 
 ### Evaluation Flow
 

@@ -12,14 +12,12 @@ All formulas are siblings that use the same evaluation pipeline.
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from .hierarchical_context_dict import HierarchicalContextDict
-
-from .config_models import FormulaConfig
+from .config_models import FormulaConfig, SensorConfig
+from .core_formula_evaluator import CoreFormulaEvaluator
 
 if TYPE_CHECKING:
     from .config_models import AlternateStateHandler
-from .core_formula_evaluator import CoreFormulaEvaluator
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,6 +111,7 @@ class FormulaEvaluatorService:
         bypass_dependency_management: bool = True,
         allow_unresolved_states: bool = False,
         alternate_state_handler: "AlternateStateHandler | None" = None,
+        sensor_config: "SensorConfig | None" = None,
     ) -> dict[str, object]:
         """
         Evaluate a formula string via the complete evaluation pipeline (Phases 0-4).
@@ -187,7 +186,7 @@ class FormulaEvaluatorService:
         result: dict[str, object] = cls._evaluator.evaluate_formula_with_sensor_config(
             temp_config,
             context,
-            sensor_config=None,
+            sensor_config=sensor_config,
             bypass_dependency_management=bypass_dependency_management,
         )
         return result

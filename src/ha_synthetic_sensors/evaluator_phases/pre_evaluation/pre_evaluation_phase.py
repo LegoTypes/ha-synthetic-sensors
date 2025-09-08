@@ -14,7 +14,6 @@ from ...constants_evaluation_results import (
     RESULT_KEY_MISSING_DEPENDENCIES,
     RESULT_KEY_STATE,
     RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
-    STATE_UNAVAILABLE,
 )
 from ...evaluator_cache import EvaluatorCache
 from ...evaluator_dependency import EvaluatorDependency
@@ -124,11 +123,7 @@ class PreEvaluationPhase:
             if cache_result:
                 return cache_result, context
 
-        # Step 3: Validate state token resolution (if formula contains 'state')
-        if "state" in config.formula and sensor_config:
-            state_token_result = self._validate_state_token_resolution(sensor_config, config)
-            if state_token_result:
-                return state_token_result, context
+        # Step 3: State token validation removed - StateResolver already handles proper state setup
 
         # Step 4: Process dependencies and build context (unless bypassed)
         if bypass_dependency_management:
@@ -175,6 +170,42 @@ class PreEvaluationPhase:
                     _LOGGER.debug(
                         "Pre-evaluation collection function resolution: '%s' -> '%s'", original_formula, resolved_formula
                     )
+
+                # Also resolve collection functions in computed variables to prevent dependency parser confusion
+                if config.variables:
+                    original_variables = {}
+                    modified_variables = {}
+                    for var_name, var_value in config.variables.items():
+                        if hasattr(var_value, "formula"):
+                            # This is a ComputedVariable with a formula
+                            original_var_formula = var_value.formula
+                            resolved_var_formula = self._variable_resolution_phase._resolve_collection_functions(
+                                var_value.formula, sensor_config, resolved_context, config
+                            )
+                            if resolved_var_formula != original_var_formula:
+                                # Store original for restoration
+                                original_variables[var_name] = original_var_formula
+                                # Create a copy of the computed variable with resolved formula
+                                from ...config_models import ComputedVariable
+
+                                resolved_var = ComputedVariable(
+                                    formula=resolved_var_formula,
+                                    dependencies=getattr(var_value, "dependencies", set()),
+                                    alternate_state_handler=getattr(var_value, "alternate_state_handler", None),
+                                    allow_unresolved_states=getattr(var_value, "allow_unresolved_states", False),
+                                )
+                                modified_variables[var_name] = resolved_var
+                                _LOGGER.debug(
+                                    "Pre-evaluation computed variable collection function resolution: '%s' -> '%s'",
+                                    original_var_formula,
+                                    resolved_var_formula,
+                                )
+                    # Store original variables for restoration and update config
+                    if original_variables:
+                        config._original_variables = original_variables  # type: ignore[attr-defined]
+                        # Update the variables in config for dependency extraction
+                        for var_name, resolved_var in modified_variables.items():
+                            config.variables[var_name] = resolved_var
         else:
             resolved_context = context
 
@@ -214,6 +245,25 @@ class PreEvaluationPhase:
             if hasattr(config, "_original_formula"):
                 delattr(config, "_original_formula")
 
+        # Restore original computed variables after dependency extraction if they were modified
+        if hasattr(config, "_original_variables"):
+            original_variables = config._original_variables
+            for var_name, original_formula in original_variables.items():
+                if var_name in config.variables and hasattr(config.variables[var_name], "formula"):
+                    # Restore the original formula in the computed variable
+                    from ...config_models import ComputedVariable
+
+                    current_var = config.variables[var_name]
+                    original_var = ComputedVariable(
+                        formula=original_formula,
+                        dependencies=getattr(current_var, "dependencies", set()),
+                        alternate_state_handler=getattr(current_var, "alternate_state_handler", None),
+                        allow_unresolved_states=getattr(current_var, "allow_unresolved_states", False),
+                    )
+                    config.variables[var_name] = original_var
+            # Clean up the temporary attribute
+            delattr(config, "_original_variables")
+
         # Handle dependency issues
         dependency_result = self._handle_dependency_issues(missing_deps, unavailable_deps, unknown_deps, formula_name)
         if dependency_result:
@@ -233,50 +283,6 @@ class PreEvaluationPhase:
 
         # Return the built evaluation context with resolved variables
         return None, final_context
-
-    def _validate_state_token_resolution(self, sensor_config: SensorConfig, config: FormulaConfig) -> EvaluationResult | None:
-        """Validate that state token can be resolved for the given sensor configuration.
-
-        Implements the new backing entity behavior rules:
-        - Fatal errors: No mapping exists for backing entity and previous state cannot be resolved in HA
-        - Transient conditions: Mapping exists but value is None (treated as Unknown)
-        """
-        if not sensor_config:
-            return EvaluatorResults.create_error_result("State token requires sensor configuration", state=STATE_UNAVAILABLE)
-
-        # Check if this is an attribute formula (has underscore in ID and not the main formula)
-        is_attribute_formula = "_" in config.id and config.id != sensor_config.unique_id
-
-        # Only validate backing entity for main formulas, not attributes
-        # Attributes get their state token from context (main sensor result)
-        if not is_attribute_formula:
-            # For main formulas, state token resolution follows this priority:
-            # 1. Explicit backing entity mapping (if exists)
-            # 2. Sensor's own HA state (if sensor has entity_id)
-            # 3. Previous calculated value (for recursive calculations)
-            backing_entity_id = None
-            if self._sensor_to_backing_mapping is not None:
-                backing_entity_id = self._sensor_to_backing_mapping.get(sensor_config.unique_id)
-
-            if backing_entity_id:
-                # This sensor has explicit backing entity mapping - validate it's registered
-                if self._dependency_handler and hasattr(self._dependency_handler, "get_integration_entities"):
-                    integration_entities = self._dependency_handler.get_integration_entities()
-                    if integration_entities and backing_entity_id not in integration_entities:
-                        return EvaluatorResults.create_error_result(
-                            f"Backing entity '{backing_entity_id}' for sensor '{sensor_config.unique_id}' is not registered with integration",
-                            state=STATE_UNAVAILABLE,
-                        )
-                return None
-            if sensor_config.entity_id:
-                # No explicit backing entity mapping, but sensor has entity_id
-                # State token will fall back to sensor's own HA state - this is valid
-                return None
-            # No backing entity mapping and no entity_id - this is self-reference/recursive calculation
-            # The state token will resolve to the sensor's previous calculated value
-            return None
-
-        return None
 
     def _handle_dependency_issues(
         self, missing_deps: set[str], unavailable_deps: set[str], unknown_deps: set[str], formula_name: str

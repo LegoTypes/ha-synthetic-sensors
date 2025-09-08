@@ -24,7 +24,7 @@ class ReferenceValueManager:
 
     @staticmethod
     def set_variable_with_reference_value(
-        eval_context: "HierarchicalContextDict", var_name: str, var_value: Any, resolved_value: Any
+        eval_context: "HierarchicalContextDict", var_name: str, var_value: Any, resolved_value: Any, force_update: bool = False
     ) -> None:
         """Set a variable in evaluation context using entity-centric ReferenceValue approach.
 
@@ -35,6 +35,7 @@ class ReferenceValueManager:
             var_name: The variable name
             var_value: The original variable value (entity ID or reference)
             resolved_value: The resolved state value
+            force_update: If True, force creation of new ReferenceValue even if entity is cached
         """
         # Debug: Check what type of context we received
         _LOGGER.debug(
@@ -45,7 +46,7 @@ class ReferenceValueManager:
         entity_reference = var_value if isinstance(var_value, str) else str(var_value)
 
         # Check internal cache for existing ReferenceValue
-        if entity_reference in ReferenceValueManager._entity_cache:
+        if entity_reference in ReferenceValueManager._entity_cache and not force_update:
             # Reuse existing ReferenceValue for this entity (deduplication)
             existing_ref_value = ReferenceValueManager._entity_cache[entity_reference]
             safe_context_set(eval_context, var_name, existing_ref_value)
@@ -88,9 +89,13 @@ class ReferenceValueManager:
                 )
 
             # Debug logging for grace period and False values
+            action = (
+                "force updated" if force_update and entity_reference in ReferenceValueManager._entity_cache else "created new"
+            )
             _LOGGER.debug(
-                "ReferenceValueManager: %s created new ReferenceValue for entity %s: value=%s",
+                "ReferenceValueManager: %s %s ReferenceValue for entity %s: value=%s",
                 var_name,
+                action,
                 entity_reference,
                 resolved_value,
             )

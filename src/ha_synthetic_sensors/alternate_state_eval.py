@@ -9,16 +9,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .config_models import FormulaConfig, SensorConfig
+from .constants_formula import ALL_OPERATORS
+from .evaluator_helpers import EvaluatorHelpers
+
 if TYPE_CHECKING:
     from .hierarchical_context_dict import HierarchicalContextDict
-
-from .config_models import FormulaConfig, SensorConfig
-from .evaluator_helpers import EvaluatorHelpers
 
 
 def _looks_like_formula(s: str) -> bool:
     """Return True if a string appears to be a formula/expression."""
-    from .constants_formula import ALL_OPERATORS
 
     return any(op in s for op in ALL_OPERATORS)
 
@@ -84,17 +84,16 @@ def evaluate_formula_alternate(
     # Object form with local variables
     if isinstance(handler_formula, dict) and "formula" in handler_formula:
         local_vars = handler_formula.get("variables") or {}
-        temp_context = eval_context.copy()
+        # Use hierarchical context layering instead of copying
         if isinstance(local_vars, dict):
-            for key, val in local_vars.items():
-                temp_context[key] = val
+            eval_context.get_hierarchical_context().push_layer("alternate_handler", local_vars)
 
         resolved_handler_formula = resolve_all_references_in_formula(
-            str(handler_formula["formula"]), sensor_config, temp_context, config
+            str(handler_formula["formula"]), sensor_config, eval_context, config
         )
         # Use the normal evaluation path through CoreFormulaEvaluator
         original_formula = str(handler_formula["formula"])
-        eval_result = core_evaluator.evaluate_formula(resolved_handler_formula, original_formula, temp_context)
+        eval_result = core_evaluator.evaluate_formula(resolved_handler_formula, original_formula, eval_context)
         result_value = EvaluatorHelpers.process_evaluation_result(eval_result)
 
     return result_value
@@ -135,11 +134,10 @@ def evaluate_computed_alternate(
 
     if isinstance(handler_formula, dict) and "formula" in handler_formula:
         local_vars = handler_formula.get("variables") or {}
-        temp_context = eval_context.copy()
+        # Use hierarchical context layering instead of copying
         if isinstance(local_vars, dict):
-            for key, val in local_vars.items():
-                temp_context[key] = val
-        enhanced_context = extract_values_for_simpleeval(temp_context)
+            eval_context.get_hierarchical_context().push_layer("alternate_handler", local_vars)
+        enhanced_context = extract_values_for_simpleeval(eval_context)
         success, result = enhanced_helper.try_enhanced_eval(str(handler_formula["formula"]), enhanced_context)
         if success:
             result_value = EvaluatorHelpers.process_evaluation_result(result)

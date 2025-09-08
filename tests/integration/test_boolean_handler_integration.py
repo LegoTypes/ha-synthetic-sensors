@@ -37,13 +37,21 @@ class TestBooleanHandlerIntegration:
         """Test that boolean handler works with YAML fixture and uses proper Python operators."""
 
         # Set up mock HA states for entity references
-        mock_states["binary_sensor.front_door"] = type("MockState", (), {"state": "locked", "attributes": {}})()
-        mock_states["binary_sensor.motion_detector"] = type("MockState", (), {"state": "clear", "attributes": {}})()
-        mock_states["device_tracker.phone_home"] = type("MockState", (), {"state": "home", "attributes": {}})()
-        mock_states["device_tracker.phone_work"] = type("MockState", (), {"state": "not_home", "attributes": {}})()
-        mock_states["alarm_control_panel.home_alarm"] = type("MockState", (), {"state": "armed_away", "attributes": {}})()
-        mock_states["sensor.living_room_temperature"] = type("MockState", (), {"state": "22.5", "attributes": {}})()
-        mock_states["binary_sensor.test_direct"] = type("MockState", (), {"state": "on", "attributes": {}})()
+        from unittest.mock import Mock
+
+        mock_states["binary_sensor.front_door"] = Mock(state="locked", entity_id="binary_sensor.front_door", attributes={})
+        mock_states["binary_sensor.motion_detector"] = Mock(
+            state="clear", entity_id="binary_sensor.motion_detector", attributes={}
+        )
+        mock_states["device_tracker.phone_home"] = Mock(state="home", entity_id="device_tracker.phone_home", attributes={})
+        mock_states["device_tracker.phone_work"] = Mock(state="not_home", entity_id="device_tracker.phone_work", attributes={})
+        mock_states["alarm_control_panel.home_alarm"] = Mock(
+            state="armed_away", entity_id="alarm_control_panel.home_alarm", attributes={}
+        )
+        mock_states["sensor.living_room_temperature"] = Mock(
+            state="22.5", entity_id="sensor.living_room_temperature", attributes={}
+        )
+        mock_states["binary_sensor.test_direct"] = Mock(state="on", entity_id="binary_sensor.test_direct", attributes={})
 
         # Register entities in the entity registry
         mock_entity_registry.register_entity("binary_sensor.front_door", "front_door", "binary_sensor", device_class="door")

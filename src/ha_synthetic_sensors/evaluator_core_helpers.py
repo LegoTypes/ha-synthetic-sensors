@@ -10,9 +10,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-if TYPE_CHECKING:
-    from .hierarchical_context_dict import HierarchicalContextDict
-
 from .evaluation_common import (
     check_dependency_management_conditions,
     handle_evaluation_exception,
@@ -20,6 +17,9 @@ from .evaluation_common import (
 )
 from .evaluator_results import EvaluatorResults
 from .type_definitions import EvaluationResult
+
+if TYPE_CHECKING:
+    from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ def process_early_result(
         eval_context=eval_context,
         sensor_config=sensor_config,
         core_evaluator=evaluator.execution_engine.core_evaluator,
-        alternate_state_processor_instance=evaluator._alternate_state_processor,
-        resolve_all_references_in_formula=evaluator.resolve_all_references_in_formula,
+        alternate_state_processor_instance=evaluator._alternate_state_processor,  # pylint: disable=protected-access
+        resolve_all_references_in_formula=evaluator._variable_resolution_phase.resolve_all_references_in_formula,
         pre_eval=True,
     )
 

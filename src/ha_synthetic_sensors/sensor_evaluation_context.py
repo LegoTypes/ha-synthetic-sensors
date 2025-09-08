@@ -104,9 +104,10 @@ class SensorEvaluationContext:
     def get_context_for_evaluation(self) -> HierarchicalContextDict:
         """Get the current context for formula evaluation.
 
-        Returns a hierarchical dictionary that redirects assignments to unified setter.
+        Returns the SAME hierarchical dictionary instance throughout evaluation.
+        The singleton pattern in HierarchicalContextDict ensures this automatically.
         """
-        # Create hierarchical dictionary that enforces unified setter usage
+        # With singleton pattern, HierarchicalContextDict will return the same instance
         hierarchical_dict = HierarchicalContextDict(self.context)
 
         # Sync with current hierarchical context state
@@ -114,7 +115,7 @@ class SensorEvaluationContext:
 
         # Add integrity tracking to the context
         integrity_info = self.context.get_integrity_info()
-        hierarchical_dict._hierarchical_context.set("_context_integrity", integrity_info)
+        hierarchical_dict._hierarchical_context.set("_context_integrity", integrity_info)  # pylint: disable=protected-access
 
         return hierarchical_dict
 

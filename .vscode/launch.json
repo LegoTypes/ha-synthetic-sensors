@@ -144,7 +144,43 @@
       "stopOnEntry": false
     },
     {
-      "name": "Debug Panel Variable Injection Test",
+      "name": "Debug Span Minimal Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_span_debug_minimal.py::TestSpanDebugMinimal::test_span_sensor_debug",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false,
+    },
+    {
+      "name": "Debug Failing Dependency Resolver Test",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/integration/test_dependency_resolver_integration.py::TestDependencyResolverIntegration::test_dependency_resolution_dynamic_none_values",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
+    },
+    {
+      "name": "Debug Span Panel Variable Injection Test",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",

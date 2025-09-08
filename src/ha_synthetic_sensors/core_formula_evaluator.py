@@ -170,7 +170,7 @@ class CoreFormulaEvaluator:
                             # Store metadata results in evaluation context for SimpleEval lookup
                             # Use the key itself as the reference since these are internal metadata keys
                             # Use the hierarchical context's unified setter method
-                            handler_context._hierarchical_context.set(key, ReferenceValue(reference=key, value=value))
+                            handler_context._hierarchical_context.set(key, ReferenceValue(reference=key, value=value))  # pylint: disable=protected-access
                             _LOGGER.debug("METADATA_CONTEXT_ADDED: Successfully stored metadata result: %s = %s", key, value)
                 else:
                     _LOGGER.debug("METADATA_HANDLER_UNAVAILABLE: No metadata handler available or can't handle formula")
@@ -218,10 +218,6 @@ class CoreFormulaEvaluator:
                         final_result,
                         str(alternate_state) if alternate_state is not True else None,
                     )
-
-                # Debug logging for boolean False results
-                if final_result is False and "is not None and" in resolved_formula:
-                    _LOGGER.debug("CORE_EVAL_RETURNING_FALSE: Returning boolean False for formula")
 
                 return final_result
 
