@@ -24,6 +24,12 @@ async def test_last_good_state_attribute_preserved_and_updated(
     # Save original state for restoration
     original_entities = dict(mock_entity_registry._entities)
     original_states = dict(mock_states)
+    
+    # Ensure no mock state exists for our test sensors to prevent restoration interference
+    test_sensor_entities = ["sensor.last_good_sensor", "sensor.last_good_reader"]
+    for entity_id in test_sensor_entities:
+        if entity_id in mock_states:
+            del mock_states[entity_id]
 
     try:
         # YAML fixture path for a simple sensor that uses 'state' token
@@ -92,12 +98,23 @@ async def test_last_good_state_attribute_preserved_and_updated(
             # Initial update - backing=10 -> sensor state = 20
             await sensor_manager.async_update_sensors()
 
+            # Yield control to HA event loop to ensure sensor updates are processed
+            await mock_hass.async_block_till_done()
+
             entity_lookup = {entity.unique_id: entity for entity in all_entities}
             sensor = entity_lookup.get("last_good_sensor")
             assert sensor is not None, f"Sensor not found. Available: {list(entity_lookup.keys())}"
 
+            # Wait for sensor to have the expected value (handle async evaluation timing)
+            import asyncio
+            for attempt in range(10):  # Try up to 10 times
+                if sensor.native_value == 20.0:
+                    break
+                await asyncio.sleep(0.01)  # Small delay
+                await mock_hass.async_block_till_done()  # Process any pending tasks
+            
             # Validate calculated native value
-            assert float(sensor.native_value) == 20.0, f"Expected 20.0, got {sensor.native_value}"
+            assert float(sensor.native_value) == 20.0, f"Expected 20.0, got {sensor.native_value} after {attempt + 1} attempts"
 
             attrs = getattr(sensor, "extra_state_attributes", {}) or {}
             # last_valid_state should be set to the calculated state (20.0)
@@ -110,6 +127,7 @@ async def test_last_good_state_attribute_preserved_and_updated(
             # Simulate backing entity becoming None/unavailable -> alternate state
             backing_data["sensor.test_backing"] = None
             await sensor_manager.async_update_sensors_for_entities({"sensor.test_backing"})
+            await mock_hass.async_block_till_done()
 
             # After alternate write, __last_valid_state should remain unchanged
             attrs = getattr(sensor, "extra_state_attributes", {}) or {}
@@ -119,6 +137,7 @@ async def test_last_good_state_attribute_preserved_and_updated(
             # Now restore new valid backing value -> should update last-good
             backing_data["sensor.test_backing"] = 11.0
             await sensor_manager.async_update_sensors_for_entities({"sensor.test_backing"})
+            await mock_hass.async_block_till_done()
 
             attrs = getattr(sensor, "extra_state_attributes", {}) or {}
             # New calculated value = 22.0
@@ -129,6 +148,7 @@ async def test_last_good_state_attribute_preserved_and_updated(
 
             # After new valid backing (22.0), attribute should update
             await sensor_manager.async_update_sensors()
+            await mock_hass.async_block_till_done()
             attrs = getattr(sensor, "extra_state_attributes", {}) or {}
             assert float(attrs.get("last_valid_state", 0)) == 22.0, (
                 f"Attribute updated should be 22.0, got {attrs.get('last_valid_state')}"
