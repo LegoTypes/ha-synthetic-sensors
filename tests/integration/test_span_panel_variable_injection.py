@@ -64,7 +64,7 @@ class TestSpanPanelVariableInjection:
     @pytest.fixture
     def mock_async_add_entities(self):
         """Mock async_add_entities function."""
-        return AsyncMock()
+        return Mock()
 
     @pytest.fixture
     def mock_device_registry(self, mock_device_entry):
