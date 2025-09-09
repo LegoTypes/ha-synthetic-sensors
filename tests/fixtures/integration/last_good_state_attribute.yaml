@@ -14,6 +14,6 @@ sensors:
     # Read the last-good attribute from the first sensor via variable.attribute access
     variables:
       source: "sensor.last_good_sensor"
-    formula: "source.last_valid_state * 1"
+    formula: "metadata(source, 'last_valid_state') * 1"
 
 

@@ -24,7 +24,7 @@ async def test_last_good_state_attribute_preserved_and_updated(
     # Save original state for restoration
     original_entities = dict(mock_entity_registry._entities)
     original_states = dict(mock_states)
-    
+
     # Ensure no mock state exists for our test sensors to prevent restoration interference
     test_sensor_entities = ["sensor.last_good_sensor", "sensor.last_good_reader"]
     for entity_id in test_sensor_entities:
@@ -107,12 +107,13 @@ async def test_last_good_state_attribute_preserved_and_updated(
 
             # Wait for sensor to have the expected value (handle async evaluation timing)
             import asyncio
+
             for attempt in range(10):  # Try up to 10 times
                 if sensor.native_value == 20.0:
                     break
                 await asyncio.sleep(0.01)  # Small delay
                 await mock_hass.async_block_till_done()  # Process any pending tasks
-            
+
             # Validate calculated native value
             assert float(sensor.native_value) == 20.0, f"Expected 20.0, got {sensor.native_value} after {attempt + 1} attempts"
 
