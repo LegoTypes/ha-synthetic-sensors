@@ -120,6 +120,22 @@ class CrossSensorDependencyManager(DependencyManager):
             if sensor_name in formula and self._is_valid_cross_sensor_reference(formula, sensor_name):
                 dependencies.add(sensor_name)
 
+        # 3. Handle variable references in metadata function calls using generic dependency manager
+        from .generic_dependency_manager import GenericDependencyManager
+
+        generic_manager = GenericDependencyManager()
+        generic_manager.set_sensor_registry_phase(self._sensor_registry_phase)
+
+        metadata_cross_sensor_deps = generic_manager.extract_cross_sensor_dependencies_with_context(formula, current_sensor)
+        dependencies.update(metadata_cross_sensor_deps)
+
+        for dep in metadata_cross_sensor_deps:
+            _LOGGER.debug(
+                "Added cross-sensor dependency: %s -> %s (via generic dependency manager)",
+                current_sensor.unique_id if current_sensor else "unknown",
+                dep,
+            )
+
         return dependencies
 
     def _extract_collection_function_dependencies(

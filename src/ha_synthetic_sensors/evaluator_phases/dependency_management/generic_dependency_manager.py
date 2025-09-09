@@ -328,6 +328,80 @@ class GenericDependencyManager:
 
         return dependencies
 
+    def extract_cross_sensor_dependencies_with_context(self, formula: str, current_sensor: Any = None) -> set[str]:
+        """Extract cross-sensor dependencies from a formula with sensor context.
+
+        This method enhances the standard dependency extraction by resolving
+        variables in metadata() calls to cross-sensor dependencies.
+
+        Args:
+            formula: The formula to analyze
+            current_sensor: The sensor that owns this formula (for variable resolution)
+
+        Returns:
+            Set of sensor unique IDs that this formula depends on
+        """
+        if not current_sensor:
+            return set()
+
+        from ...regex_helper import extract_variable_references_from_metadata
+
+        metadata_variables = extract_variable_references_from_metadata(formula)
+
+        cross_sensor_deps = set()
+        for variable in metadata_variables:
+            sensor_id = self._resolve_variable_to_sensor_id(variable, current_sensor)
+            if sensor_id:
+                cross_sensor_deps.add(sensor_id)
+
+        return cross_sensor_deps
+
+    def _resolve_variable_to_sensor_id(self, variable: str, current_sensor: Any) -> str | None:
+        """Resolve a variable to a sensor unique ID if it maps to a registered sensor.
+
+        Args:
+            variable: Variable name to resolve
+            current_sensor: The sensor containing the variable definition
+
+        Returns:
+            Sensor unique ID if variable maps to a registered sensor, None otherwise
+        """
+        # Find the variable value in the sensor's formula configurations
+        var_value = self._find_variable_value(variable, current_sensor)
+        if not var_value:
+            return None
+
+        # Check if variable maps to a sensor entity ID
+        if not (isinstance(var_value, str) and var_value.startswith("sensor.")):
+            return None
+
+        potential_unique_id = var_value[7:]  # Remove "sensor." prefix
+
+        # Verify this corresponds to a registered sensor
+        if self._is_registered_sensor(potential_unique_id):
+            return potential_unique_id
+
+        return None
+
+    def _find_variable_value(self, variable: str, current_sensor: Any) -> str | None:
+        """Find the value of a variable in the sensor's formula configurations."""
+        for formula_config in current_sensor.formulas:
+            if hasattr(formula_config, "variables") and formula_config.variables and variable in formula_config.variables:
+                value = formula_config.variables[variable]
+                # Convert to string if it's a numeric literal or ComputedVariable
+                if isinstance(value, str):
+                    return value
+                # For numeric literals and ComputedVariable, convert to string representation
+                return str(value)
+        return None
+
+    def _is_registered_sensor(self, sensor_unique_id: str) -> bool:
+        """Check if a sensor unique ID is registered."""
+        if not (hasattr(self, "_sensor_registry_phase") and self._sensor_registry_phase):
+            return False
+        registered_sensors = self._sensor_registry_phase.get_registered_sensors()
+        return sensor_unique_id in registered_sensors
+
     def _classify_dependency(self, identifier: str, formula: str) -> DependencyType | None:
         """Classify what type of dependency an identifier represents."""
 

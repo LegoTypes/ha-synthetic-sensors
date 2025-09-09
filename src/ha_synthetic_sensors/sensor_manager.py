@@ -2259,7 +2259,6 @@ class SensorManager:
         if hasattr(self._evaluator, "update_sensor_to_backing_mapping"):
             self._evaluator.update_sensor_to_backing_mapping(sensor_to_backing_mapping)
 
-
     def update_data_provider_entities(
         self, entity_ids: set[str], change_notifier: DataProviderChangeNotifier | None = None
     ) -> None:
