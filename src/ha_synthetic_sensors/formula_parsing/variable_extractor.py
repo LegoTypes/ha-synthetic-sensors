@@ -10,6 +10,7 @@ from enum import Enum
 
 from ..constants_boolean_states import get_core_false_states, get_core_true_states
 from ..constants_formula import FORMULA_RESERVED_WORDS
+from ..regex_helper import create_identifier_pattern, find_all_matches
 from ..shared_constants import METADATA_FUNCTIONS
 
 # Use centralized constants instead of hardcoded lists
@@ -124,7 +125,6 @@ class FormulaVariableExtractor:
     def _fallback_regex_extraction(self, formula: str) -> set[str]:
         """Fallback regex-based extraction for cases where AST parsing fails."""
         # Use centralized identifier pattern from regex helper
-        from ..regex_helper import create_identifier_pattern, find_all_matches
 
         identifier_pattern = create_identifier_pattern()
         identifiers = set(find_all_matches(formula, identifier_pattern))

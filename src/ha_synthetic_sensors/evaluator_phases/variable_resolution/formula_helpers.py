@@ -6,6 +6,13 @@ from typing import Any
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.constants_alternate import identify_alternate_state_value
 
+from ...regex_helper import (
+    create_attribute_access_pattern,
+    create_metadata_function_pattern,
+    create_single_token_pattern,
+    extract_variable_references_from_metadata,
+    match_pattern,
+)
 from .resolution_types import HADependency, VariableResolutionResult
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,8 +30,6 @@ class FormulaHelpers:
         protected_ranges: list[tuple[int, int]] = []
 
         # Use centralized metadata function pattern from regex helper
-        from ...regex_helper import create_metadata_function_pattern
-
         metadata_pattern = create_metadata_function_pattern()
 
         for match in metadata_pattern.finditer(formula):
@@ -93,8 +98,6 @@ class FormulaHelpers:
         variables_needing_entity_ids: set[str] = set()
 
         # 1. Check dot notation attribute access (variable.attribute)
-        from ...regex_helper import create_attribute_access_pattern
-
         attribute_pattern = create_attribute_access_pattern()
 
         for match in attribute_pattern.finditer(formula):
@@ -115,8 +118,6 @@ class FormulaHelpers:
                     )
 
         # 2. Check metadata function calls (metadata(variable, 'attribute'))
-        from ...regex_helper import extract_variable_references_from_metadata
-
         metadata_vars = extract_variable_references_from_metadata(formula)
 
         for var_name in metadata_vars:
@@ -248,8 +249,6 @@ class FormulaHelpers:
             token = token[1:-1].strip()
 
         # Use centralized single token pattern from regex helper
-        from ...regex_helper import create_single_token_pattern, match_pattern
-
         single_token_pattern = create_single_token_pattern()
         if match_pattern(token, single_token_pattern):
             return token

@@ -14,14 +14,27 @@ from dataclasses import dataclass, field
 import keyword
 import logging
 import re
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from homeassistant.core import HomeAssistant
 
-from .constants_formula import ARITHMETIC_OPERATORS
+from .boolean_states import BooleanStates
+from .constants_formula import ARITHMETIC_OPERATORS, FORMULA_RESERVED_WORDS
 from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
 from .math_functions import MathFunctions
-from .regex_helper import create_entity_pattern_for_domains, regex_helper
+from .regex_helper import (
+    create_entity_pattern_for_domains,
+    create_query_type_patterns,
+    extract_direct_entity_references,
+    extract_entity_function_references,
+    extract_states_dot_notation_entities,
+    get_direct_entity_pattern,
+    get_entity_function_patterns,
+    get_no_match_pattern,
+    get_states_dot_notation_pattern,
+    get_variable_references_pattern,
+    regex_helper,
+)
 from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, METADATA_FUNCTIONS, PYTHON_KEYWORDS, get_ha_domains
 
 if TYPE_CHECKING:
@@ -83,7 +96,6 @@ class DependencyParser:
         domains_pattern = self._entity_domains_pattern
         if not domains_pattern:
             # Return a pattern that matches nothing when no domains are available
-            from .regex_helper import get_no_match_pattern
 
             return get_no_match_pattern()
         return create_entity_pattern_for_domains(domains_pattern.split("|"))
@@ -99,7 +111,6 @@ class DependencyParser:
     def _build_variable_pattern() -> re.Pattern[str]:
         """Build the variable pattern excluding keywords and built-in functions."""
         # Use centralized constants instead of hardcoded lists
-        from .constants_formula import FORMULA_RESERVED_WORDS
 
         # All reserved words are now centralized in constants
         excluded_keywords = list(FORMULA_RESERVED_WORDS)
@@ -110,7 +121,6 @@ class DependencyParser:
     VARIABLE_PATTERN = _build_variable_pattern()
 
     # Query type patterns - use centralized method from regex helper
-    from .regex_helper import create_query_type_patterns
 
     QUERY_PATTERNS: ClassVar[dict[str, re.Pattern[str]]] = create_query_type_patterns()
 
@@ -119,12 +129,6 @@ class DependencyParser:
         self.hass = hass
 
         # Use domain-focused methods from regex helper - no patterns in implementation
-        from .regex_helper import (
-            get_direct_entity_pattern,
-            get_entity_function_patterns,
-            get_states_dot_notation_pattern,
-            get_variable_references_pattern,
-        )
 
         # Get compiled patterns from centralized regex helper
         self._entity_patterns: list[re.Pattern[str]] = get_entity_function_patterns()
@@ -196,86 +200,18 @@ class DependencyParser:
         if self._is_literal_expression(formula):
             return dependencies
 
-        # ARCHITECTURE FIX: Use centralized regex helper for string literal extraction
+        # : Use centralized regex helper for string literal extraction
         # Extract variables while excluding string literals (both in metadata and general usage)
         string_ranges = regex_helper.find_string_literals(formula)
 
-        # Python keywords to exclude
-        python_keywords = {
-            "and",
-            "or",
-            "not",
-            "in",
-            "is",
-            "if",
-            "else",
-            "elif",
-            "for",
-            "while",
-            "def",
-            "class",
-            "return",
-            "yield",
-            "try",
-            "except",
-            "finally",
-            "with",
-            "as",
-            "import",
-            "from",
-            "global",
-            "nonlocal",
-            "lambda",
-            "True",
-            "False",
-            "None",
-            "pass",
-            "break",
-            "continue",
-            "del",
-            "assert",
-            "raise",
-        }
+        # Python keywords to exclude - use shared constant
+        python_keywords = PYTHON_KEYWORDS
 
         variable_matches = regex_helper.extract_variables_from_formula(formula, context="dependency_parsing")
         for var in variable_matches:
             # Skip if this variable is inside a string literal
-            # Find all positions where this variable appears in the formula
-            var_positions = []
-            start_pos = 0
-            while True:
-                pos = formula.find(var, start_pos)
-                if pos == -1:
-                    break
-                # Check if this is a whole word match (not part of another identifier)
-                if (pos == 0 or (not formula[pos - 1].isalnum() and formula[pos - 1] != "_")) and (
-                    pos + len(var) >= len(formula) or (not formula[pos + len(var)].isalnum() and formula[pos + len(var)] != "_")
-                ):
-                    var_positions.append(pos)
-                start_pos = pos + 1
-
-            # Check if any occurrence of this variable is inside a string literal
-            # BUT exclude collection pattern strings (like 'device_class:power' in sum('device_class:power'))
-            is_in_string = False
-            for var_pos in var_positions:
-                for string_range in string_ranges:
-                    if string_range.start <= var_pos < string_range.end:
-                        # Check if this string is part of a collection function call
-                        # Look for aggregation functions like sum(), count(), etc. around this position
-                        is_collection_pattern = False
-                        for func_match in regex_helper.extract_aggregation_function_matches(formula):
-                            func_start = func_match.start()
-                            func_end = func_match.end()
-                            # If the string is inside an aggregation function, it's a collection pattern
-                            if func_start < string_range.start and string_range.end < func_end:
-                                is_collection_pattern = True
-                                break
-
-                        if not is_collection_pattern:
-                            is_in_string = True
-                            break
-                    if is_in_string:
-                        break
+            var_positions = self._find_variable_positions(formula, var)
+            is_in_string = self._check_if_variable_in_string(formula, var_positions, string_ranges)
 
             # Skip Python keywords
             is_keyword = var in python_keywords
@@ -318,11 +254,6 @@ class DependencyParser:
             Set of entity IDs referenced in the formula
         """
         # Use domain-focused extraction methods from regex helper
-        from .regex_helper import (
-            extract_direct_entity_references,
-            extract_entity_function_references,
-            extract_states_dot_notation_entities,
-        )
 
         # Check if it's a known domain - domains must be available
         ha_domains = get_ha_domains(self.hass)
@@ -523,8 +454,6 @@ class DependencyParser:
 
         # Add Home Assistant boolean state constants to prevent them from being treated as dependencies
         try:
-            from .boolean_states import BooleanStates
-
             boolean_names = BooleanStates.get_all_boolean_names()
             excluded.update(boolean_names.keys())
         except Exception as e:
@@ -701,7 +630,7 @@ class DependencyParser:
         Returns:
             Tuple of (clean_pattern, exclusions_list)
         """
-        # ARCHITECTURE FIX: Use centralized regex helper for exclusion parsing
+        # : Use centralized regex helper for exclusion parsing
         main_pattern, exclusions_list = regex_helper.find_exclusions_in_pattern(pattern)
         if not exclusions_list:
             return pattern, []
@@ -807,3 +736,41 @@ class DependencyParser:
             refs.add(full_ref)
 
         return refs
+
+    def _find_variable_positions(self, formula: str, var: str) -> list[int]:
+        """Find all positions where a variable appears in the formula."""
+        var_positions = []
+        start_pos = 0
+        while True:
+            pos = formula.find(var, start_pos)
+            if pos == -1:
+                break
+            # Check if this is a whole word match (not part of another identifier)
+            is_start_of_word = pos == 0 or (not formula[pos - 1].isalnum() and formula[pos - 1] != "_")
+            is_end_of_word = pos + len(var) >= len(formula) or (
+                not formula[pos + len(var)].isalnum() and formula[pos + len(var)] != "_"
+            )
+            if is_start_of_word and is_end_of_word:
+                var_positions.append(pos)
+            start_pos = pos + 1
+        return var_positions
+
+    def _check_if_variable_in_string(self, formula: str, var_positions: list[int], string_ranges: list[Any]) -> bool:
+        """Check if any occurrence of a variable is inside a string literal."""
+        for var_pos in var_positions:
+            for string_range in string_ranges:
+                if string_range.start <= var_pos < string_range.end and not self._is_collection_pattern_string(
+                    formula, string_range
+                ):
+                    return True
+        return False
+
+    def _is_collection_pattern_string(self, formula: str, string_range: Any) -> bool:
+        """Check if a string is part of a collection function call."""
+        for func_match in regex_helper.extract_aggregation_function_matches(formula):
+            func_start = func_match.start()
+            func_end = func_match.end()
+            # If the string is inside an aggregation function, it's a collection pattern
+            if func_start < string_range.start and string_range.end < func_end:
+                return True
+        return False

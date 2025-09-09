@@ -4,7 +4,7 @@ This module provides all regex functionality used throughout the synthetic senso
 in a centralized, testable format. All regex patterns are wrapped in Python methods
 that can be easily tested in isolation and provide clear interfaces.
 
-ARCHITECTURE: All regex usage should go through this module to ensure:
+All regex usage should go through this module to ensure:
 1. Patterns are centralized and maintainable
 2. Methods can be tested in isolation
 3. Consistent behavior across all components

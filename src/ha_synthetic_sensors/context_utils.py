@@ -58,7 +58,7 @@ def set_context_value(context: dict[str, ContextValue], key: str, value: Context
     Raises:
         ValueError: If attempting to store raw values in context
     """
-    # CRITICAL: Enforce ReferenceValue architecture
+    # Enforce ReferenceValue architecture
     if not isinstance(value, ReferenceValue):
         # This is a raw value being stored in context - this violates the architecture
         raise ValueError(
@@ -104,7 +104,7 @@ def extract_numeric_values(context: dict[str, ContextValue]) -> dict[str, float 
     numeric_context: dict[str, float | int] = {}
     for key, value in context.items():
         if isinstance(value, int | float):
-            # CRITICAL: Raw numeric values in context violate the ReferenceValue architecture
+            # Raw numeric values in context violate the ReferenceValue architecture
             raise ValueError(
                 f"Context contains raw numeric value '{value}' (type: {type(value).__name__}) "
                 f"for key '{key}'. All variables must be ReferenceValue objects. "
@@ -146,7 +146,7 @@ def extract_string_values(context: dict[str, ContextValue]) -> dict[str, str]:
     string_context: dict[str, str] = {}
     for key, value in context.items():
         if isinstance(value, str):
-            # CRITICAL: Raw strings in context violate the ReferenceValue architecture
+            # Raw strings in context violate the ReferenceValue architecture
             raise ValueError(
                 f"Context contains raw string '{value}' for key '{key}'. "
                 f"All variables must be ReferenceValue objects. "
@@ -189,7 +189,7 @@ def get_reference_value(context: dict[str, ContextValue], key: str) -> ContextVa
     if isinstance(value, ReferenceValue):
         return value
 
-    # CRITICAL: This should never happen in the new architecture
+    # This should never happen in the new architecture
     # If we find raw values in context, it means the setter validation failed
     # or there's a bug in the variable resolution system
     raise ValueError(
@@ -216,7 +216,7 @@ def safe_context_set(context: HierarchicalContextDict, key: str, value: ContextV
     Raises:
         ValueError: If attempting to store raw values in context
     """
-    # CRITICAL: Enforce ReferenceValue architecture
+    # Enforce ReferenceValue architecture
     if not isinstance(value, ReferenceValue):
         # This is a raw value being stored in context - this violates the architecture
         raise ValueError(

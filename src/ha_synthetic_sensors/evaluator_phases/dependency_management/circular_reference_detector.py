@@ -3,11 +3,12 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from ...exceptions import CircularDependencyError
+from .base_manager import DependencyManager
+
 if TYPE_CHECKING:
     from ...hierarchical_context_dict import HierarchicalContextDict
 
-from ...exceptions import CircularDependencyError
-from .base_manager import DependencyManager
 
 _LOGGER = logging.getLogger(__name__)
 

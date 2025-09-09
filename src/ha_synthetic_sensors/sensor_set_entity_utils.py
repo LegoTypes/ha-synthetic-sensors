@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from .config_models import AlternateStateHandler, ComputedVariable
 from .dependency_parser import DependencyParser
+from .regex_helper import regex_helper, safe_entity_replacement
 
 if TYPE_CHECKING:
     from .config_models import FormulaConfig, SensorConfig
@@ -85,12 +86,10 @@ def _update_formula_string(formula_str: str, entity_id_changes: dict[str, str]) 
             if old_id in referenced_entities:
                 _LOGGER.debug("Replacing entity id %s -> %s in formula: %s", old_id, new_id, formula_str)
                 # Use centralized safe entity replacement from regex helper
-                from .regex_helper import safe_entity_replacement
 
                 updated_formula = safe_entity_replacement(updated_formula, old_id, new_id)
     else:
         # ARCHITECTURE FIX: Use centralized regex helper for entity replacement
-        from .regex_helper import regex_helper
 
         for old_id, new_id in sorted(entity_id_changes.items(), key=lambda x: len(x[0]), reverse=True):
             updated_formula = regex_helper.replace_entity_references(updated_formula, old_id, new_id)

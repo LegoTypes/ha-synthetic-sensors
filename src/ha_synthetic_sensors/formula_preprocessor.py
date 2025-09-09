@@ -184,6 +184,18 @@ class FormulaPreprocessor:
 
         return pattern.sub(normalize_match, formula)
 
+    def resolve_collection_functions(self, formula: str, exclude_entity_ids: set[str] | None = None) -> str:
+        """Public method to resolve collection functions in the formula.
+
+        Args:
+            formula: Formula string to process
+            exclude_entity_ids: Optional set of entity IDs to exclude from collection results
+
+        Returns:
+            Formula with collection functions resolved
+        """
+        return self._resolve_collection_functions(formula, exclude_entity_ids)
+
     def _resolve_collection_functions(self, formula: str, exclude_entity_ids: set[str] | None = None) -> str:
         """Resolve collection functions in the formula.
 
@@ -246,9 +258,14 @@ class FormulaPreprocessor:
             # Replace the pattern in the formula
             return self._replace_collection_pattern(formula, query, str(calculated_result))
 
+        except (ValueError, TypeError, AttributeError) as e:
+            # Handle expected data issues (invalid values, missing attributes, type errors)
+            _LOGGER.warning("Data error in collection resolution %s:%s: %s", query.query_type, query.pattern, e)
+            return self._replace_with_default_value(formula, query, f"Data error: {e}")
         except Exception as e:
-            _LOGGER.warning("Failed to resolve collection query %s:%s: %s", query.query_type, query.pattern, e)
-            return self._replace_with_default_value(formula, query, f"Resolution error: {e}")
+            # Unexpected errors should be raised, not masked
+            _LOGGER.error("Unexpected error in collection resolution %s:%s: %s", query.query_type, query.pattern, e)
+            raise
 
     def _replace_with_default_value(self, formula: str, query: DynamicQuery, reason: str) -> str:
         """Replace a collection pattern with a default value when resolution fails.
@@ -286,8 +303,10 @@ class FormulaPreprocessor:
             if pattern in formula:
                 return formula.replace(pattern, "0")
 
-        _LOGGER.warning("Could not find pattern to replace for %s:%s: %s", query.query_type, query.pattern, reason)
-        return formula
+        # This indicates a serious problem with pattern matching
+        raise RuntimeError(
+            f"Could not find pattern to replace for {query.query_type}:{query.pattern} - {reason}. This indicates a bug in pattern matching logic."
+        )
 
     def _calculate_collection_result(self, function: str, values: list[float]) -> float | int:
         """Calculate the result of a collection function.
@@ -312,9 +331,10 @@ class FormulaPreprocessor:
         if statistical_result is not None:
             return statistical_result
 
-        # Default to sum for unknown functions
-        _LOGGER.warning("Unknown collection function: %s, defaulting to sum", function)
-        return sum(values)
+        # Unknown function - raise error instead of fallback
+        raise ValueError(
+            f"Unknown collection function: {function}. Supported functions: sum, count, avg, average, mean, min, max, std, var"
+        )
 
     def _try_basic_arithmetic(self, function: str, values: list[float]) -> float | int | None:
         """Try to calculate basic arithmetic functions.
@@ -375,7 +395,8 @@ class FormulaPreprocessor:
         if function == "std":
             return float(variance**0.5)
 
-        return 0  # Fallback
+        # This should never happen since _try_statistical_functions filters the functions
+        raise ValueError(f"Unexpected statistical function: {function}")
 
     def _replace_collection_pattern(self, formula: str, query: DynamicQuery, replacement: str) -> str:
         """Replace collection pattern in formula with replacement value.

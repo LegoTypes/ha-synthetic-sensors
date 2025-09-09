@@ -3,14 +3,15 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from .base_manager import DependencyManager
 from .circular_reference_detector import CircularReferenceDetector
 from .cross_sensor_dependency_manager import CrossSensorDependencyManager
 from .dependency_extractor import DependencyExtractor
 from .dependency_validator import DependencyValidator
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,9 +27,9 @@ class DependencyManagerFactory:
 
     def _register_default_managers(self) -> None:
         """Register the default set of managers."""
-        # ARCHITECTURE FIX: Pass hass instance to managers that need domain validation
+        # Pass hass instance to managers that need domain validation
         extractor = DependencyExtractor()
-        extractor._hass = self._hass
+        extractor.hass = self._hass
         self.register_manager(extractor)
         self.register_manager(DependencyValidator())
         self.register_manager(CircularReferenceDetector())

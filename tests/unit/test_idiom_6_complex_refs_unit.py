@@ -108,7 +108,7 @@ class TestIdiom6ComplexRefs:
         assert main_result["value"] == 1100.0  # state * 1.1 = 1000 * 1.1 = 1100
 
         # Test attribute formulas with context from main result
-        # ARCHITECTURE FIX: Create proper context that includes backing entity attributes
+        # Create proper context that includes backing entity attributes
         from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
         from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
         from ha_synthetic_sensors.type_definitions import ReferenceValue
@@ -124,7 +124,7 @@ class TestIdiom6ComplexRefs:
         hierarchical_context.set("state.current", ReferenceValue("state.current", 4.17))
         hierarchical_context.set("state.power_factor", ReferenceValue("state.power_factor", 0.95))
 
-        # ARCHITECTURE FIX: Also add plain attribute names for dependency resolution
+        # Also add plain attribute names for dependency resolution
         hierarchical_context.set("voltage", ReferenceValue("voltage", 240.0))
         hierarchical_context.set("current", ReferenceValue("current", 4.17))
         hierarchical_context.set("power_factor", ReferenceValue("power_factor", 0.95))

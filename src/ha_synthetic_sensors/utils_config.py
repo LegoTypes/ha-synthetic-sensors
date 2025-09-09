@@ -200,7 +200,7 @@ def _is_entity_id_reference(reference: str) -> bool:
     # The actual domain validation will happen during evaluation when hass is available
     # This prevents false negatives during config validation while still catching obvious syntax errors
 
-    # ARCHITECTURE FIX: Use centralized regex helper for validation
+    # Use centralized regex helper for validation
 
     if not regex_helper.is_valid_domain_format(domain):
         return False
@@ -240,7 +240,7 @@ def _is_entity_id_reference_with_hass(reference: str, hass: Any) -> bool:
         return domain in valid_domains
     except Exception:
         # If we can't get domains from registry, fall back to basic pattern validation
-        # ARCHITECTURE FIX: Use centralized regex helper for validation
+        # Use centralized regex helper for validation
         return regex_helper.is_valid_domain_format(domain) and regex_helper.is_valid_object_id_format(object_id)
 
 
@@ -327,7 +327,7 @@ def _resolve_simple_variables(
         sensor_config: Sensor configuration for context
         config: FormulaConfig for context
     """
-    # ARCHITECTURE FIX: No longer need separate registry dict
+    # No longer need separate registry dict
     # Registry data is stored directly in hierarchical context with prefixed keys
 
     for var_name, var_value in simple_variables.items():
@@ -534,7 +534,7 @@ def _evaluate_cv_via_pipeline(
 
     # Ensure boolean state constants are available in computed variable evaluation context
     # This fixes the issue where computed variables don't have access to boolean constants
-    # CRITICAL FIX: Work with original context, not a copy, to preserve hierarchical context
+    # Work with original context, not a copy, to preserve hierarchical context
     enhanced_context = eval_context
     _ensure_boolean_constants_in_context(enhanced_context)
 
@@ -584,7 +584,7 @@ def _resolve_metadata_computed_variable(
     eval_context: HierarchicalContextDict,
     parent_config: FormulaConfig | None,
 ) -> bool:
-    # CRITICAL FIX: Now that HASS is available from the start, try to resolve metadata variables
+    # Now that HASS is available from the start, try to resolve metadata variables
     hass_val = eval_context.get("_hass")
     hass = hass_val.value if isinstance(hass_val, ReferenceValue) else hass_val
     if not hass:

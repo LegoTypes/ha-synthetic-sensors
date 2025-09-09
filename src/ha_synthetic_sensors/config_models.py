@@ -120,6 +120,10 @@ class FormulaConfig:
     alternate_state_handler: AlternateStateHandler | None = None  # Alternate state handling for UNAVAILABLE/UNKNOWN
     allow_unresolved_states: bool = False  # Allow alternate states to proceed into formula evaluation
 
+    # Private attributes for temporary storage during processing
+    _original_formula: str | None = field(default=None, init=False)
+    _original_variables: dict[str, Any] | None = field(default=None, init=False)
+
     def __post_init__(self) -> None:
         """Extract dependencies from formula after initialization."""
         # Only extract dependencies if not already set (e.g., from deserialization)
@@ -147,6 +151,26 @@ class FormulaConfig:
         if not self.dependencies:
             self.dependencies = self._extract_dependencies(hass)
         return self.dependencies
+
+    @property
+    def original_formula(self) -> str | None:
+        """Get the original formula (for restoration purposes)."""
+        return getattr(self, "_original_formula", None)
+
+    @original_formula.setter
+    def original_formula(self, value: str | None) -> None:
+        """Set the original formula (for restoration purposes)."""
+        self._original_formula = value
+
+    @property
+    def original_variables(self) -> dict[str, Any] | None:
+        """Get the original variables (for restoration purposes)."""
+        return getattr(self, "_original_variables", None)
+
+    @original_variables.setter
+    def original_variables(self, value: dict[str, Any] | None) -> None:
+        """Set the original variables (for restoration purposes)."""
+        self._original_variables = value
 
 
 @dataclass

@@ -12,6 +12,12 @@ from typing import Any, TypedDict
 from homeassistant.core import HomeAssistant
 
 from .device_classes import is_valid_ha_domain
+from .regex_helper import (
+    extract_entity_function_calls,
+    extract_potential_entity_ids,
+    is_valid_variable_name,
+    normalize_name_to_identifier,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,7 +91,6 @@ class NameResolver:
             str: Normalized name suitable for use as a variable in formulas
         """
         # Replace spaces, hyphens, and other special characters with underscores
-        from .regex_helper import normalize_name_to_identifier
 
         normalized = normalize_name_to_identifier(name)
 
@@ -166,7 +171,6 @@ class NameResolver:
             set: Set of entity IDs found in the formula
         """
         # Use centralized entity function extraction from regex helper
-        from .regex_helper import extract_entity_function_calls
 
         matches = extract_entity_function_calls(formula)
         return set(matches)
@@ -269,7 +273,6 @@ class NameResolver:
         """
         # Variable names must start with a letter or underscore
         # Use centralized variable name validation from regex helper
-        from .regex_helper import is_valid_variable_name
 
         return is_valid_variable_name(name)
 
@@ -346,7 +349,6 @@ class NameResolver:
 
         # Check for direct entity references (domain.entity format)
         # Use centralized potential entity ID extraction from regex helper
-        from .regex_helper import extract_potential_entity_ids
 
         matches = extract_potential_entity_ids(formula)
 

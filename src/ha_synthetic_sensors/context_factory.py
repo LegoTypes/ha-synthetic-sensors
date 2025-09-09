@@ -5,6 +5,7 @@ are reused rather than creating new ones, which violates the architecture
 principle of "NO NEW CONTEXT CREATION".
 """
 
+from collections.abc import Callable
 import threading
 import traceback
 from typing import Any, Optional
@@ -147,73 +148,144 @@ def get_or_create_context_dict(context_id: str, name: str = "sensor", allow_new:
 
 
 # Monkey patch to intercept direct context creation
-_original_hierarchical_evaluation_context_init = None
-_original_hierarchical_context_dict_init = None
+class ContextCreationMonitor:
+    """Monitor for direct context creation to catch violations."""
+
+    def __init__(self) -> None:
+        """Initialize the monitor."""
+        self._original_hierarchical_evaluation_context_init: Any = None
+        self._original_hierarchical_context_dict_init: Any = None
+
+    def _patched_hierarchical_evaluation_context_init(
+        self, self_instance: HierarchicalEvaluationContext, name: str = "root"
+    ) -> None:
+        """Patched init that throws exception on direct creation."""
+        stack_trace = "".join(traceback.format_stack())
+
+        # Allow creation only from the factory or specific allowed locations
+        if (
+            "context_factory.py" in stack_trace
+            or "test_" in stack_trace  # Allow in tests
+            or "_test" in stack_trace  # Allow in test fixtures
+            or "conftest.py" in stack_trace
+        ) and self._original_hierarchical_evaluation_context_init is not None:  # Allow in test configuration
+            self._original_hierarchical_evaluation_context_init(self_instance, name)
+            return
+
+        raise ContextCreationViolationError(
+            f"Direct creation of HierarchicalEvaluationContext('{name}') detected! "
+            f"Use ContextFactory.get_or_create_context() instead to prevent context duplication. "
+            f"This violates the 'NO NEW CONTEXT CREATION' architecture principle.\n"
+            f"Stack trace:\n{stack_trace}"
+        )
+
+    def _create_patched_hierarchical_evaluation_context_init(self) -> Callable[[HierarchicalEvaluationContext, str], None]:
+        """Create a patched init method with the correct signature."""
+
+        def patched_init(self_instance: HierarchicalEvaluationContext, name: str = "root") -> None:
+            """Patched init that throws exception on direct creation."""
+            stack_trace = "".join(traceback.format_stack())
+
+            # Allow creation only from the factory or specific allowed locations
+            if (
+                "context_factory.py" in stack_trace
+                or "test_" in stack_trace  # Allow in tests
+                or "_test" in stack_trace  # Allow in test fixtures
+                or "conftest.py" in stack_trace
+            ) and self._original_hierarchical_evaluation_context_init is not None:  # Allow in test configuration
+                self._original_hierarchical_evaluation_context_init(self_instance, name)
+                return
+
+            raise ContextCreationViolationError(
+                f"Direct creation of HierarchicalEvaluationContext('{name}') detected! "
+                f"Use ContextFactory.get_or_create_context() instead to prevent context duplication. "
+                f"This violates the 'NO NEW CONTEXT CREATION' architecture principle.\n"
+                f"Stack trace:\n{stack_trace}"
+            )
+
+        return patched_init
+
+    def _patched_hierarchical_context_dict_init(
+        self, self_instance: HierarchicalContextDict, hierarchical_context: HierarchicalEvaluationContext
+    ) -> None:
+        """Patched init that throws exception on direct creation."""
+        stack_trace = "".join(traceback.format_stack())
+
+        # Allow creation only from the factory or specific allowed locations
+        if (
+            "context_factory.py" in stack_trace
+            or "test_" in stack_trace  # Allow in tests
+            or "_test" in stack_trace  # Allow in test fixtures
+            or "conftest.py" in stack_trace
+        ) and self._original_hierarchical_context_dict_init is not None:  # Allow in test configuration
+            self._original_hierarchical_context_dict_init(self_instance, hierarchical_context)
+            return
+
+        raise ContextCreationViolationError(
+            f"Direct creation of HierarchicalContextDict detected! "
+            f"Use ContextFactory.get_or_create_context_dict() instead to prevent context duplication. "
+            f"This violates the 'NO NEW CONTEXT CREATION' architecture principle.\n"
+            f"Stack trace:\n{stack_trace}"
+        )
+
+    def _create_patched_hierarchical_context_dict_init(
+        self,
+    ) -> Callable[[HierarchicalContextDict, HierarchicalEvaluationContext], None]:
+        """Create a patched init method with the correct signature."""
+
+        def patched_init(self_instance: HierarchicalContextDict, hierarchical_context: HierarchicalEvaluationContext) -> None:
+            """Patched init that throws exception on direct creation."""
+            stack_trace = "".join(traceback.format_stack())
+
+            # Allow creation only from the factory or specific allowed locations
+            if (
+                "context_factory.py" in stack_trace
+                or "test_" in stack_trace  # Allow in tests
+                or "_test" in stack_trace  # Allow in test fixtures
+                or "conftest.py" in stack_trace
+            ) and self._original_hierarchical_context_dict_init is not None:  # Allow in test configuration
+                self._original_hierarchical_context_dict_init(self_instance, hierarchical_context)
+                return
+
+            raise ContextCreationViolationError(
+                f"Direct creation of HierarchicalContextDict detected! "
+                f"Use ContextFactory.get_or_create_context_dict() instead to prevent context duplication. "
+                f"This violates the 'NO NEW CONTEXT CREATION' architecture principle.\n"
+                f"Stack trace:\n{stack_trace}"
+            )
+
+        return patched_init
+
+    def enable_monitoring(self) -> None:
+        """Enable monitoring of direct context creation to catch violations."""
+        if self._original_hierarchical_evaluation_context_init is None:
+            self._original_hierarchical_evaluation_context_init = HierarchicalEvaluationContext.__init__
+            HierarchicalEvaluationContext.__init__ = self._create_patched_hierarchical_evaluation_context_init()
+
+        if self._original_hierarchical_context_dict_init is None:
+            self._original_hierarchical_context_dict_init = HierarchicalContextDict.__init__
+            HierarchicalContextDict.__init__ = self._create_patched_hierarchical_context_dict_init()
+
+    def disable_monitoring(self) -> None:
+        """Disable monitoring of direct context creation."""
+        if self._original_hierarchical_evaluation_context_init is not None:
+            HierarchicalEvaluationContext.__init__ = self._original_hierarchical_evaluation_context_init
+            self._original_hierarchical_evaluation_context_init = None
+
+        if self._original_hierarchical_context_dict_init is not None:
+            HierarchicalContextDict.__init__ = self._original_hierarchical_context_dict_init
+            self._original_hierarchical_context_dict_init = None
 
 
-def _patched_hierarchical_evaluation_context_init(self: Any, name: str = "root") -> None:
-    """Patched init that throws exception on direct creation."""
-    stack_trace = "".join(traceback.format_stack())
-
-    # Allow creation only from the factory or specific allowed locations
-    if (
-        "context_factory.py" in stack_trace
-        or "test_" in stack_trace  # Allow in tests
-        or "_test" in stack_trace  # Allow in test fixtures
-        or "conftest.py" in stack_trace
-    ) and _original_hierarchical_evaluation_context_init is not None:  # Allow in test configuration
-        return _original_hierarchical_evaluation_context_init(self, name)
-
-    raise ContextCreationViolationError(
-        f"Direct creation of HierarchicalEvaluationContext('{name}') detected! "
-        f"Use ContextFactory.get_or_create_context() instead to prevent context duplication. "
-        f"This violates the 'NO NEW CONTEXT CREATION' architecture principle.\n"
-        f"Stack trace:\n{stack_trace}"
-    )
-
-
-def _patched_hierarchical_context_dict_init(self: Any, hierarchical_context: HierarchicalEvaluationContext) -> None:
-    """Patched init that throws exception on direct creation."""
-    stack_trace = "".join(traceback.format_stack())
-
-    # Allow creation only from the factory or specific allowed locations
-    if (
-        "context_factory.py" in stack_trace
-        or "test_" in stack_trace  # Allow in tests
-        or "_test" in stack_trace  # Allow in test fixtures
-        or "conftest.py" in stack_trace
-    ) and _original_hierarchical_context_dict_init is not None:  # Allow in test configuration
-        return _original_hierarchical_context_dict_init(self, hierarchical_context)
-
-    raise ContextCreationViolationError(
-        f"Direct creation of HierarchicalContextDict detected! "
-        f"Use ContextFactory.get_or_create_context_dict() instead to prevent context duplication. "
-        f"This violates the 'NO NEW CONTEXT CREATION' architecture principle.\n"
-        f"Stack trace:\n{stack_trace}"
-    )
+# Global monitor instance
+_context_monitor = ContextCreationMonitor()
 
 
 def enable_context_creation_monitoring() -> None:
     """Enable monitoring of direct context creation to catch violations."""
-    global _original_hierarchical_evaluation_context_init, _original_hierarchical_context_dict_init
-
-    if _original_hierarchical_evaluation_context_init is None:
-        _original_hierarchical_evaluation_context_init = HierarchicalEvaluationContext.__init__
-        HierarchicalEvaluationContext.__init__ = _patched_hierarchical_evaluation_context_init  # type: ignore[method-assign]
-
-    if _original_hierarchical_context_dict_init is None:
-        _original_hierarchical_context_dict_init = HierarchicalContextDict.__init__
-        HierarchicalContextDict.__init__ = _patched_hierarchical_context_dict_init  # type: ignore[method-assign]
+    _context_monitor.enable_monitoring()
 
 
 def disable_context_creation_monitoring() -> None:
     """Disable monitoring of direct context creation."""
-    global _original_hierarchical_evaluation_context_init, _original_hierarchical_context_dict_init
-
-    if _original_hierarchical_evaluation_context_init is not None:
-        HierarchicalEvaluationContext.__init__ = _original_hierarchical_evaluation_context_init  # type: ignore[method-assign]
-        _original_hierarchical_evaluation_context_init = None
-
-    if _original_hierarchical_context_dict_init is not None:
-        HierarchicalContextDict.__init__ = _original_hierarchical_context_dict_init  # type: ignore[method-assign]
-        _original_hierarchical_context_dict_init = None
+    _context_monitor.disable_monitoring()

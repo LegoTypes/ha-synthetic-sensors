@@ -8,6 +8,7 @@ from typing import Any
 
 from ..evaluator_handlers.base_handler import FormulaHandler
 from ..hierarchical_context_dict import HierarchicalContextDict
+from ..regex_helper import create_datetime_function_pattern
 from .function_registry import get_datetime_function_registry
 
 
@@ -19,7 +20,6 @@ class DateTimeHandler(FormulaHandler):
         super().__init__(expression_evaluator)
         self._registry = get_datetime_function_registry()
         # Use centralized datetime function pattern from regex helper
-        from ..regex_helper import create_datetime_function_pattern
 
         self._function_pattern = create_datetime_function_pattern()
 

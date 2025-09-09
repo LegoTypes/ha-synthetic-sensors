@@ -38,7 +38,7 @@ def process_early_result(
         sensor_config=sensor_config,
         core_evaluator=evaluator.execution_engine.core_evaluator,
         alternate_state_processor_instance=evaluator._alternate_state_processor,  # pylint: disable=protected-access
-        resolve_all_references_in_formula=evaluator._variable_resolution_phase.resolve_all_references_in_formula,
+        resolve_all_references_in_formula=evaluator.variable_resolution_phase.resolve_all_references_in_formula,
         pre_eval=True,
     )
 

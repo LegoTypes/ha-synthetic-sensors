@@ -3,9 +3,6 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
-
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.exceptions import MissingDependencyError
 from ha_synthetic_sensors.regex_helper import extract_attribute_access_pairs, extract_variable_references_no_dots, regex_helper
@@ -13,6 +10,9 @@ from ha_synthetic_sensors.type_definitions import ReferenceValue
 from ha_synthetic_sensors.utils_resolvers import resolve_via_data_provider_attribute, resolve_via_hass_attribute
 
 from .attribute_reference_resolver import AttributeReferenceResolver
+
+if TYPE_CHECKING:
+    from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 

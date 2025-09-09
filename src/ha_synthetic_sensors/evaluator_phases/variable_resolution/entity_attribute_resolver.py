@@ -3,14 +3,14 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...exceptions import MissingDependencyError
 from ...shared_constants import get_ha_domains
 from ...type_definitions import ContextValue
 from ...utils_resolvers import resolve_via_data_provider_attribute, resolve_via_hass_attribute
 from .base_resolver import VariableResolver
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 

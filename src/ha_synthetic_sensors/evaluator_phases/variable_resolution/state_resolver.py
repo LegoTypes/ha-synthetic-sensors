@@ -1,23 +1,18 @@
 """State resolver for handling standalone state token references."""
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import STATE_UNKNOWN
-
-from ...hierarchical_context_dict import HierarchicalContextDict
-
-if TYPE_CHECKING:
-    pass
-
-from datetime import UTC
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_boolean_states import get_current_core_false_states, get_current_core_true_states
 from ...constants_evaluation_results import RESULT_KEY_VALUE
 from ...exceptions import BackingEntityResolutionError, MissingDependencyError
+from ...hierarchical_context_dict import HierarchicalContextDict
 from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import LAST_VALID_CHANGED_KEY, LAST_VALID_STATE_KEY
 from ...type_definitions import ContextValue, DataProviderResult, ReferenceValue
@@ -120,14 +115,14 @@ class StateResolver(VariableResolver):
             The updated ReferenceValue for the state
         """
         # Set flag to indicate we're updating with main result (force update of cached ReferenceValue)
-        context.get_hierarchical_context()._updating_main_result = True
+        hierarchical_context = context.get_hierarchical_context()
+        hierarchical_context.updating_main_result = True
         try:
             return self._set_unified_state_reference(context, sensor_config, main_result_value)
         finally:
             # Clean up the flag
             hierarchical_context = context.get_hierarchical_context()
-            if hasattr(hierarchical_context, "_updating_main_result"):
-                delattr(hierarchical_context, "_updating_main_result")
+            hierarchical_context.updating_main_result = False
 
     @classmethod
     def update_context_with_main_result(
@@ -191,22 +186,22 @@ class StateResolver(VariableResolver):
                     state_value.value,
                 )
                 return state_value
-            else:
-                # Convert raw value to ReferenceValue for consistency, but only if not None
-                if state_value is not None:
-                    # Get sensor_config from context to use unified method for proper sharing
-                    sensor_config_raw = context.get("_sensor_config")
-                    if isinstance(sensor_config_raw, SensorConfig):
-                        # Use unified method to ensure proper sharing and context variable setting
-                        final_value = state_value if isinstance(state_value, str | int | float | bool) else str(state_value)
-                        return self._set_unified_state_reference(context, sensor_config_raw, final_value)
-                    else:
-                        # Missing sensor_config in context indicates improper setup
-                        raise RuntimeError(
-                            "StateResolver requires _sensor_config in context for proper state reference sharing. "
-                            "This indicates improper context initialization or direct resolver usage without proper setup."
-                        )
-                # Fall through to backing entity resolution if value is None
+
+            # Convert raw value to ReferenceValue for consistency, but only if not None
+            if state_value is not None:
+                # Get sensor_config from context to use unified method for proper sharing
+                sensor_config_raw = context.get("_sensor_config")
+                if isinstance(sensor_config_raw, SensorConfig):
+                    # Use unified method to ensure proper sharing and context variable setting
+                    final_value = state_value if isinstance(state_value, str | int | float | bool) else str(state_value)
+                    return self._set_unified_state_reference(context, sensor_config_raw, final_value)
+
+                # Missing sensor_config in context indicates improper setup
+                raise RuntimeError(
+                    "StateResolver requires _sensor_config in context for proper state reference sharing. "
+                    "This indicates improper context initialization or direct resolver usage without proper setup."
+                )
+            # Fall through to backing entity resolution if value is None
 
         # If not in context, use the common resolution logic
         return self._resolve_state_from_context_or_backing_entity(context)
@@ -285,7 +280,7 @@ class StateResolver(VariableResolver):
         # This ensures that both 'state' and the sensor's entity_id share the same ReferenceValue
         # Force update when this is called from update_state_with_main_result to ensure main result overwrites backing entity value
         hierarchical_context = context.get_hierarchical_context()
-        force_update = hasattr(hierarchical_context, "_updating_main_result") and hierarchical_context._updating_main_result
+        force_update = hierarchical_context.updating_main_result
         ReferenceValueManager.set_variable_with_reference_value(
             context, "state", sensor_entity_id, state_value, force_update=force_update
         )
@@ -340,8 +335,6 @@ class StateResolver(VariableResolver):
                     # For backing entities, use the current state as last_valid_state
                     last_valid_state_value = result.get("value")
                     # Use current time as last_valid_changed (since we don't have historical data)
-                    from datetime import datetime
-
                     last_valid_changed_value = datetime.now(UTC).isoformat()
             except Exception as e:
                 _LOGGER.debug("StateResolver: Failed to get last_valid values from backing entity: %s", e)
@@ -445,12 +438,6 @@ class StateResolver(VariableResolver):
         """Resolve the sensor's own HA state for recursive/self-reference calculations."""
         entity_id = sensor_config.entity_id
 
-        _LOGGER.debug(
-            "State resolver: Resolving sensor's own HA state for sensor '%s' -> entity_id '%s'",
-            sensor_config.unique_id,
-            entity_id,
-        )
-
         if not self._hass or not hasattr(self._hass, "states"):
             raise BackingEntityResolutionError(
                 entity_id=entity_id or "unknown",
@@ -460,75 +447,63 @@ class StateResolver(VariableResolver):
         # Get the current HA state for the sensor's entity_id
         hass_state = self._hass.states.get(entity_id)
         if hass_state is None:
-            # If sensor doesn't exist in HA yet raise MissingDependencyError
             raise MissingDependencyError(f"Sensor '{entity_id}' not found in HA")
-        # Extract numeric value from the state
+
         state_value = hass_state.state
+        return self._process_state_value(state_value, sensor_config, context, entity_id or "unknown")
+
+    def _process_state_value(
+        self, state_value: Any, sensor_config: SensorConfig, context: HierarchicalContextDict | None, entity_id: str
+    ) -> Any:
+        """Process a state value and return appropriate ReferenceValue."""
         # Handle None separately to preserve it for alternate state handlers
         if state_value is None:
-            _LOGGER.debug(
-                "State resolver: Sensor '%s' has None state, preserving for alternate state handlers",
-                entity_id,
-            )
-            # Preserve None values - let alternate state handlers decide what to do
-            # Use unified state setting method if context is available
-            if context is not None:
-                return self._set_unified_state_reference(context, sensor_config, None)
-            return ReferenceValue(reference=entity_id or "unknown", value=None)
+            return self._create_reference_value(None, sensor_config, context, entity_id, "None state")
 
         # Handle alternate states - preserve original values for proper alternate state classification
         if state_value in [STATE_UNKNOWN, STATE_UNAVAILABLE, "None"]:
-            _LOGGER.debug(
-                "State resolver: Sensor '%s' has alternate state '%s', preserving for alternate handler",
-                entity_id,
-                state_value,
+            return self._create_reference_value(
+                state_value, sensor_config, context, entity_id, f"alternate state '{state_value}'"
             )
-            # Use unified state setting method if context is available
-            if context is not None:
-                return self._set_unified_state_reference(context, sensor_config, state_value)
-            return ReferenceValue(reference=entity_id or "unknown", value=state_value)
 
         # Try to convert to numeric value
         try:
             numeric_value = float(state_value)
-            _LOGGER.debug(
-                "State resolver: Successfully resolved sensor's own HA state '%s' -> %s",
-                entity_id,
-                numeric_value,
+            return self._create_reference_value(
+                numeric_value, sensor_config, context, entity_id, f"numeric state -> {numeric_value}"
             )
-            # Return ReferenceValue for numeric state
-            # Use unified state setting method if context is available
-            if context is not None:
-                return self._set_unified_state_reference(context, sensor_config, numeric_value)
-            return ReferenceValue(reference=entity_id or "unknown", value=numeric_value)
         except (ValueError, TypeError):
-            # Handle boolean-like states using centralized constants
-            true_states = get_current_core_true_states()
-            false_states = get_current_core_false_states()
+            return self._handle_boolean_state(state_value, sensor_config, context, entity_id)
 
-            if state_value in true_states:
-                # Return ReferenceValue for boolean true state
-                # Use unified state setting method if context is available
-                if context is not None:
-                    return self._set_unified_state_reference(context, sensor_config, 1.0)
-                return ReferenceValue(reference=entity_id or "unknown", value=1.0)
-            if state_value in false_states:
-                # Return ReferenceValue for boolean false state
-                # Use unified state setting method if context is available
-                if context is not None:
-                    return self._set_unified_state_reference(context, sensor_config, 0.0)
-                return ReferenceValue(reference=entity_id or "unknown", value=0.0)
+    def _handle_boolean_state(
+        self, state_value: Any, sensor_config: SensorConfig, context: HierarchicalContextDict | None, entity_id: str
+    ) -> Any:
+        """Handle boolean-like states using centralized constants."""
+        true_states = get_current_core_true_states()
+        false_states = get_current_core_false_states()
 
-            _LOGGER.warning(
-                "State resolver: Cannot convert sensor's own state '%s' (value: '%s') to numeric, defaulting to 0.0",
-                entity_id,
-                state_value,
-            )
-            # Return ReferenceValue for default fallback state
-            # Use unified state setting method if context is available
-            if context is not None:
-                return self._set_unified_state_reference(context, sensor_config, 0.0)
-            return ReferenceValue(reference=entity_id or "unknown", value=0.0)
+        if state_value in true_states:
+            return self._create_reference_value(1.0, sensor_config, context, entity_id, "boolean true state")
+        if state_value in false_states:
+            return self._create_reference_value(0.0, sensor_config, context, entity_id, "boolean false state")
+
+        _LOGGER.warning(
+            "State resolver: Cannot convert sensor's own state '%s' (value: '%s') to numeric, defaulting to 0.0",
+            entity_id,
+            state_value,
+        )
+        return self._create_reference_value(0.0, sensor_config, context, entity_id, "default fallback state")
+
+    def _create_reference_value(
+        self, value: Any, sensor_config: SensorConfig, context: HierarchicalContextDict | None, entity_id: str, description: str
+    ) -> Any:
+        """Create a ReferenceValue using unified state setting method if context is available."""
+        if description and value is not None and description not in ["None state", "default fallback state"]:
+            _LOGGER.debug("State resolver: Sensor '%s' has %s", entity_id, description)
+
+        if context is not None:
+            return self._set_unified_state_reference(context, sensor_config, value)
+        return ReferenceValue(reference=entity_id or "unknown", value=value)
 
     def _is_attribute_formula(self, sensor_config: SensorConfig, formula_config: FormulaConfig) -> bool:
         """Determine if this is an attribute formula (not the main formula)."""

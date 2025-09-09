@@ -2,10 +2,10 @@
 
 from typing import TYPE_CHECKING, Any
 
+from ...type_definitions import ContextValue
+
 if TYPE_CHECKING:
     from ...hierarchical_context_dict import HierarchicalContextDict
-
-from ...type_definitions import ContextValue
 
 
 class VariableResolver:

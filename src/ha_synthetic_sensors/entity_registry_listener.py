@@ -47,7 +47,6 @@ class EntityRegistryListener:
         try:
             # Check if already started
             if self._unsub_registry is not None:
-                self._logger.warning("Synthetic sensors: Entity registry listener already started")
                 return
 
             # Get initial set of known domains
@@ -74,7 +73,7 @@ class EntityRegistryListener:
             registry = er.async_get(self.hass)
             self._known_domains = {entity.domain for entity in registry.entities.values()}
         except Exception as e:
-            self._logger.warning("Failed to update known domains: %s", e)
+            raise ValueError(f"Failed to update known domains: {e}") from e
 
     def add_entity_change_callback(self, change_callback: Callable[[str, str], None]) -> None:
         """
@@ -401,7 +400,7 @@ class EntityRegistryListener:
                 self._logger.error("Error reloading managers from storage: %s", reload_err)
 
             # STEP 4: Rebuild entity indexes AFTER reload to reflect the updated configurations
-            # CRITICAL: This must happen AFTER reload, not before!
+            # This must happen AFTER reload, not before!
             # - Reload recreates sensors from updated storage (with new entity IDs)
             # - But reload doesn't rebuild entity indexes in sensor sets
             # - So entity indexes still contain old entity IDs even though sensors have new ones

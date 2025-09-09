@@ -166,7 +166,7 @@ class TestHybridDataAccess:
         """Test complex sensor with mixed data sources in attributes."""
         from unittest.mock import patch
 
-        # CRITICAL: Patch dependency parser's entity registry access to use the same mock
+        # Patch dependency parser's entity registry access to use the same mock
         # This ensures entity domain recognition works properly in tests
         with (
             patch("ha_synthetic_sensors.dependency_parser.get_ha_domains") as mock_get_domains,

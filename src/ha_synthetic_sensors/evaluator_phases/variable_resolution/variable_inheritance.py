@@ -3,14 +3,15 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
-
 from ha_synthetic_sensors.config_models import ComputedVariable, FormulaConfig, SensorConfig
 from ha_synthetic_sensors.exceptions import DataValidationError
 from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
 
 from .resolution_helpers import ResolutionHelpers
+
+if TYPE_CHECKING:
+    from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
+
 
 _LOGGER = logging.getLogger(__name__)
 

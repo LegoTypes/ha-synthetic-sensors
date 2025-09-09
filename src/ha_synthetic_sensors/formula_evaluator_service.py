@@ -12,11 +12,11 @@ All formulas are siblings that use the same evaluation pipeline.
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .config_models import FormulaConfig, SensorConfig
+from .config_models import FormulaConfig
 from .core_formula_evaluator import CoreFormulaEvaluator
 
 if TYPE_CHECKING:
-    from .config_models import AlternateStateHandler
+    from .config_models import AlternateStateHandler, SensorConfig
     from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
@@ -172,7 +172,7 @@ class FormulaEvaluatorService:
         # ARCHITECTURAL FIX: Use empty variables to prevent dependency extraction contamination
         # The pipeline will resolve variables naturally from the context (ReferenceValue objects)
         # instead of from FormulaConfig.variables which was causing timestamp contamination
-        # ARCHITECTURE FIX: Include alternate_state_handler for computed variables
+        # : Include alternate_state_handler for computed variables
         temp_config = FormulaConfig(
             id=f"temp_cv_{abs(hash(formula))}",
             name="Computed Variable",

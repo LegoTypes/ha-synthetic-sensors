@@ -33,7 +33,7 @@ class SensorEvaluationContext:
         # Generate unique context ID for tracking
         self._context_uuid = str(uuid.uuid4())
 
-        # CRITICAL: Add HASS instance immediately as a system object
+        # Add HASS instance immediately as a system object
         if hass is not None:
             self.context.set_system_object("_hass", hass)
         else:

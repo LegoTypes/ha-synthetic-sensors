@@ -18,6 +18,7 @@ from typing import Any
 
 from .config_models import Config, SensorConfig
 from .formula_utils import tokenize_formula
+from .regex_helper import create_collection_function_detection_pattern
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -207,7 +208,6 @@ class CrossSensorReferenceDetector:
             Formula with collection function calls replaced by placeholders
         """
         # Use centralized collection function detection pattern from regex helper
-        from .regex_helper import create_collection_function_detection_pattern
 
         collection_pattern = create_collection_function_detection_pattern()
 

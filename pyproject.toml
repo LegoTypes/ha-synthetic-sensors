@@ -119,6 +119,10 @@ ignore_errors = true
 module = "ha_synthetic_sensors.schema_validator"
 ignore_errors = true
 
+[[tool.mypy.overrides]]
+module = "ha_synthetic_sensors.context_factory"
+disable_error_code = ["method-assign", "assignment"]
+
 [tool.coverage.run]
 source = ["src/ha_synthetic_sensors"]
 omit = [

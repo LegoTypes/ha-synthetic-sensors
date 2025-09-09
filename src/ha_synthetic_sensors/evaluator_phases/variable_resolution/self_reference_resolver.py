@@ -3,9 +3,6 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...constants_evaluation_results import RESULT_KEY_VALUE
 from ...data_validation import validate_data_provider_result
 from ...exceptions import DataValidationError, FormulaEvaluationError
@@ -13,6 +10,9 @@ from ...shared_constants import extract_entity_key_from_domain, is_entity_from_d
 from ...type_definitions import ContextValue
 from ...utils_resolvers import _convert_hass_state_value
 from .base_resolver import VariableResolver
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 

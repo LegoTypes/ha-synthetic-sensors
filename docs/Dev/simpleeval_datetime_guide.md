@@ -527,7 +527,7 @@ def create_ha_synthetic_evaluator():
         'format_iso': format_iso,
     })
 
-    # Critical: Allow access to timedelta methods for SimpleEval compatibility
+    # Allow access to timedelta methods for SimpleEval compatibility
     allowed_attrs = {
         datetime: {'year', 'month', 'day', 'hour', 'minute', 'second', 'weekday'},
         date: {'year', 'month', 'day', 'weekday'},

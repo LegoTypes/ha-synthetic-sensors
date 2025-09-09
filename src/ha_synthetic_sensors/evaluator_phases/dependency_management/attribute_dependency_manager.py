@@ -3,14 +3,15 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
+from ...dependency_parser import DependencyParser
 from ...exceptions import CircularDependencyError
 from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_reserved_words
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,10 +102,10 @@ class AttributeDependencyManager:
         Returns:
             Complete context with all attribute values calculated
         """
-        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
+        # Context is now required parameter - no None checks needed
         # Don't copy the context since HierarchicalContextDict is a singleton
         context = base_context
-        # ARCHITECTURE FIX: Use ReferenceValueManager for state token
+        # Use ReferenceValueManager for state token
         entity_id = sensor_config.entity_id if sensor_config else "state"
         ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
 
@@ -161,9 +162,7 @@ class AttributeDependencyManager:
         """
         dependencies = set()
 
-        # ARCHITECTURE FIX: Use centralized DependencyParser instead of flawed regex helper
-        from ...dependency_parser import DependencyParser
-
+        # Use centralized DependencyParser instead of flawed regex helper
         # Use None for hass since this is attribute-level dependency extraction
         # The DependencyParser will handle this gracefully
         parser = DependencyParser(hass=None)

@@ -11,6 +11,7 @@ from ...constants_evaluation_results import (
     RESULT_KEY_UNAVAILABLE_DEPENDENCIES,
     STATE_UNKNOWN,
 )
+from ...evaluation_context import HierarchicalEvaluationContext
 from ...exceptions import MissingDependencyError
 from ...hierarchical_context_dict import HierarchicalContextDict
 from .manager_factory import DependencyManagerFactory
@@ -217,8 +218,6 @@ class DependencyManagementPhase:
 
         # Create a minimal hierarchical context for dependency management
         # The actual data is passed via kwargs to respect the architecture
-        from ...evaluation_context import HierarchicalEvaluationContext
-        from ...hierarchical_context_dict import HierarchicalContextDict
 
         temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
 
@@ -245,8 +244,6 @@ class DependencyManagementPhase:
         """
         # Create a minimal hierarchical context for dependency management
         # The actual data is passed via kwargs to respect the architecture
-        from ...evaluation_context import HierarchicalEvaluationContext
-        from ...hierarchical_context_dict import HierarchicalContextDict
 
         temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
 
@@ -273,8 +270,6 @@ class DependencyManagementPhase:
         """
         # Create a minimal hierarchical context for dependency management
         # The actual data is passed via kwargs to respect the architecture
-        from ...evaluation_context import HierarchicalEvaluationContext
-        from ...hierarchical_context_dict import HierarchicalContextDict
 
         temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
 
@@ -301,8 +296,6 @@ class DependencyManagementPhase:
         """
         # Create a minimal hierarchical context for dependency management
         # The actual data is passed via kwargs to respect the architecture
-        from ...evaluation_context import HierarchicalEvaluationContext
-        from ...hierarchical_context_dict import HierarchicalContextDict
 
         temp_context = HierarchicalContextDict(HierarchicalEvaluationContext("sensor"))
 

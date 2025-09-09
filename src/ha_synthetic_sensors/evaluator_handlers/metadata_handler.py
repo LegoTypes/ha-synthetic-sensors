@@ -312,7 +312,7 @@ class MetadataHandler(FormulaHandler):
         """
         clean_ref = entity_ref.strip().strip("'\"")
 
-        # CRITICAL: Check if entity_ref is a numeric value - this indicates premature value substitution
+        # Check if entity_ref is a numeric value - this indicates premature value substitution
         # and helps us identify where the variable resolution pipeline is going wrong
         try:
             float(clean_ref)

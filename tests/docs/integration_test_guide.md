@@ -823,7 +823,7 @@ entities_to_remove = [
 ]
 ```
 
-### 🚨 CRITICAL: Collection Resolver Patching
+### 🚨 Collection Resolver Patching
 
 **MOST IMPORTANT:** When testing collection functions like `count('device_class:power')` or `sum('device_class:energy')`, you
 MUST patch the collection resolver's entity registry access. The `CollectionResolver` gets its entity registry through

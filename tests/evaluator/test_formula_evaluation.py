@@ -158,7 +158,7 @@ class TestFormulaEvaluation:
         hierarchical_context.set("A", ReferenceValue("A", 10))
         context = HierarchicalContextDict(hierarchical_context)  # Missing B
 
-        # According to architecture: missing dependencies are fatal errors
+        # Missing dependencies are fatal errors
         from ha_synthetic_sensors.exceptions import MissingDependencyError
 
         with pytest.raises(MissingDependencyError, match="Missing dependencies: B"):

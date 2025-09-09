@@ -17,6 +17,7 @@ from typing import Any
 
 from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
+from .regex_helper import create_entity_id_and_sensor_key_patterns
 from .shared_constants import BOOLEAN_LITERALS, BUILTIN_TYPES, MATH_FUNCTIONS, PYTHON_KEYWORDS, STATE_KEYWORDS
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,8 +39,6 @@ class ReferencePatternDetector:
 
     def __init__(self) -> None:
         # Use centralized entity ID and sensor key patterns from regex helper
-        from .regex_helper import create_entity_id_and_sensor_key_patterns
-
         self.entity_id_pattern, self.sensor_key_pattern = create_entity_id_and_sensor_key_patterns()
 
     def detect_references(self, formula: str, entity_mappings: dict[str, str]) -> list[ReferencePattern]:

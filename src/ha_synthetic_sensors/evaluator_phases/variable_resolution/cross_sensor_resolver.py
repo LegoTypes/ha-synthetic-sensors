@@ -3,12 +3,12 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...exceptions import CrossSensorResolutionError, DependencyValidationError, MissingDependencyError
 from ...type_definitions import ContextValue
 from .base_resolver import VariableResolver
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -16,6 +16,7 @@ from .config_models import FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
 from .entity_index import EntityIndex
 from .exceptions import SensorUpdateError, SyntheticSensorsError
+from .regex_helper import safe_entity_replacement
 from .sensor_set_bulk_ops import SensorSetBulkOps
 from .sensor_set_entity_index import SensorSetEntityIndex
 from .sensor_set_entity_utils import apply_entity_id_changes_to_sensors_util, update_formula_variables_for_entity_changes
@@ -567,9 +568,9 @@ class SensorSet(SensorSetYamlOperationsMixin):
     def _log_modification_debug(self, modification: SensorSetModification) -> None:
         """Log debug information about the modification."""
         if modification.entity_id_changes:
-            pass  # TODO: Add debug logging for entity ID changes
+            _LOGGER.debug("Entity ID changes detected: %s", modification.entity_id_changes)
         else:
-            pass  # TODO: Add debug logging for other modifications
+            _LOGGER.debug("Other modifications detected: %s", modification)
 
     def _initialize_changes_summary(self) -> dict[str, Any]:
         """Initialize the changes summary dictionary."""
@@ -655,7 +656,6 @@ class SensorSet(SensorSetYamlOperationsMixin):
         """
         # Use centralized entity replacement from regex helper
         from .dependency_parser import DependencyParser  # pylint: disable=import-outside-toplevel
-        from .regex_helper import safe_entity_replacement
 
         parser = DependencyParser(getattr(self.storage_manager, "hass", None))
 
@@ -883,7 +883,6 @@ class SensorSet(SensorSetYamlOperationsMixin):
 
         # Import required modules
         from .dependency_parser import DependencyParser  # pylint: disable=import-outside-toplevel
-        from .regex_helper import safe_entity_replacement
 
         # Update our storage (sensor configs) only
         for sensor_config in current_sensors.values():

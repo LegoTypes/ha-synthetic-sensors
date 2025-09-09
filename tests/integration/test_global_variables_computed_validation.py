@@ -283,16 +283,15 @@ def assert_computed_variable_validation_fix_works(entity_lookup):
     for sensor_id in critical_sensors:
         sensor = entity_lookup.get(sensor_id)
         assert sensor is not None, (
-            f"CRITICAL: Sensor '{sensor_id}' not found - computed variable validation fix failed. "
-            f"Available: {list(entity_lookup.keys())}"
+            f"Sensor '{sensor_id}' not found - computed variable validation fix failed. Available: {list(entity_lookup.keys())}"
         )
 
         assert sensor.native_value is not None, (
-            f"CRITICAL: Sensor '{sensor_id}' has None value - computed variables referencing globals failed"
+            f"Sensor '{sensor_id}' has None value - computed variables referencing globals failed"
         )
 
         assert str(sensor.native_value) not in ["unknown", "unavailable", ""], (
-            f"CRITICAL: Sensor '{sensor_id}' has invalid value '{sensor.native_value}' - computed variable evaluation failed"
+            f"Sensor '{sensor_id}' has invalid value '{sensor.native_value}' - computed variable evaluation failed"
         )
 
         print(f"✅ {sensor_id}: {sensor.native_value} (validation fix working)")

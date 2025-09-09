@@ -9,6 +9,8 @@ from typing import Any
 
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
 
+from .constants_alternate import identify_alternate_state_value
+
 
 class SyntheticSensorsError(HomeAssistantError):
     """Base exception for all synthetic sensors errors."""
@@ -408,7 +410,6 @@ class AlternateStateDetected(Exception):
             self.alternate_state_type = alternate_state_type
         else:
             # Determine the type from the value if not provided
-            from .constants_alternate import identify_alternate_state_value
 
             identified_type = identify_alternate_state_value(alternate_state_value)
             self.alternate_state_type = identified_type if isinstance(identified_type, str) else "unknown"

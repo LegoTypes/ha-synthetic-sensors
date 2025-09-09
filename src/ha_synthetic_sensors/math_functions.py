@@ -11,6 +11,8 @@ from datetime import UTC, date, datetime, timedelta
 import math
 from typing import Any
 
+from .regex_helper import clean_whitespace, remove_special_chars, slugify_text
+
 # Type alias for numeric values (excluding complex since it doesn't work with float())
 NumericValue = int | float
 IterableOrValues = NumericValue | Iterable[NumericValue]
@@ -564,7 +566,6 @@ class MathFunctions:
     def normalize(text: str) -> str:
         """Normalize whitespace in string (multiple spaces/tabs/newlines → single space)."""
         # Replace multiple whitespace characters with single space and strip
-        from .regex_helper import clean_whitespace
 
         return clean_whitespace(text)
 
@@ -572,7 +573,6 @@ class MathFunctions:
     def clean(text: str) -> str:
         """Remove special characters but keep alphanumeric and spaces."""
         # Keep only alphanumeric characters and spaces
-        from .regex_helper import remove_special_chars
 
         return remove_special_chars(text)
 
@@ -581,7 +581,6 @@ class MathFunctions:
         """Convert string to safe identifier format (spaces → underscores, special chars → underscores)."""
         # Replace spaces, hyphens, and common special chars with underscores
         text = str(text).strip()
-        from .regex_helper import slugify_text
 
         text = slugify_text(text)
         return text

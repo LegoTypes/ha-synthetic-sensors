@@ -8,6 +8,7 @@ import re
 from homeassistant.helpers.typing import StateType
 
 from ...hierarchical_context_dict import HierarchicalContextDict
+from ...regex_helper import RegexHelper, create_simple_identifier_validation_pattern, match_pattern
 from ...shared_constants import get_reserved_words
 from ...type_definitions import ContextValue, ReferenceValue
 from .base_resolver import VariableResolver
@@ -31,8 +32,6 @@ class AttributeReferenceResolver(VariableResolver):
         2. Variable name and value are the same (direct attribute reference)
         """
         # Check if variable_name is a simple identifier (attribute name)
-        from ...regex_helper import create_simple_identifier_validation_pattern, match_pattern
-
         pattern = create_simple_identifier_validation_pattern()
         if not match_pattern(variable_name, pattern):
             return False
@@ -62,18 +61,12 @@ class AttributeReferenceResolver(VariableResolver):
             attribute_value = context.get(variable_name)
 
             if attribute_value is not None:
-                # Return raw values for formula substitution (architecture: resolvers return raw values)
+                # Return raw values for formula substitution (resolvers return raw values)
                 if isinstance(attribute_value, ReferenceValue):
-                    _LOGGER.debug(
-                        "Attribute reference resolver: '%s' -> %s (extracted from ReferenceValue)",
-                        variable_name,
-                        attribute_value.value,
-                    )
                     return attribute_value  # Return ReferenceValue object to maintain type consistency
                 # For non-ReferenceValue context items (callable, dict), return as-is
                 # These are valid ContextValue types that don't need wrapping
                 return attribute_value
-            _LOGGER.debug("Attribute reference resolver: attribute '%s' found but None", variable_name)
             return None
         # Attribute not found in context - this is expected for variables that aren't attributes
         return None
@@ -127,8 +120,6 @@ class AttributeReferenceResolver(VariableResolver):
                 return attr_name
             # Not an attribute reference, keep as-is
             return attr_name
-
-        from ...regex_helper import RegexHelper
 
         regex_helper = RegexHelper()
         resolved_formula = regex_helper.replace_with_function(formula, pattern, replace_attribute)

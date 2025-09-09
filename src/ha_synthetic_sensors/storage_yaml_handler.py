@@ -15,6 +15,7 @@ import yaml as yaml_lib
 
 from .config_models import FormulaConfig, SensorConfig
 from .constants_alternate import FALLBACK_KEY, NONE_KEY, STATE_NONE_YAML, UNAVAILABLE_KEY, UNKNOWN_KEY
+from .constants_formula import ARITHMETIC_OPERATORS
 from .constants_metadata import (
     METADATA_PROPERTY_DEVICE_CLASS,
     METADATA_PROPERTY_ICON,
@@ -495,8 +496,6 @@ class YamlHandler:
         """Parse simple string literal without operators."""
         try:
             # Check if it contains any mathematical operators
-            from .constants_formula import ARITHMETIC_OPERATORS
-
             if not any(op in formula for op in ARITHMETIC_OPERATORS):
                 return formula
         except (ValueError, AttributeError):

@@ -41,6 +41,16 @@ class HierarchicalEvaluationContext:
         # State resolver flags
         self._updating_main_result: bool = False  # Flag for main result updates
 
+    @property
+    def updating_main_result(self) -> bool:
+        """Get the updating main result flag."""
+        return self._updating_main_result
+
+    @updating_main_result.setter
+    def updating_main_result(self, value: bool) -> None:
+        """Set the updating main result flag."""
+        self._updating_main_result = value
+
     def push_layer(self, name: str, variables: dict[str, ContextValue] | None = None) -> None:
         """Push a new context layer onto the stack."""
         layer = variables.copy() if variables else {}
@@ -84,7 +94,7 @@ class HierarchicalEvaluationContext:
         Raises:
             RuntimeError: If attempting to store raw values in context
         """
-        # CRITICAL: Enforce ReferenceValue architecture at the hierarchical level
+        # Enforce ReferenceValue architecture at the hierarchical level
         if not isinstance(value, ReferenceValue) and not (callable(value) or isinstance(value, dict) or value is None):
             # This is a raw value being stored in context - this violates the architecture
             stack_trace = "".join(traceback.format_stack())

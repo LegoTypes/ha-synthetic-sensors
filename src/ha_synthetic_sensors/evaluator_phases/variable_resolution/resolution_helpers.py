@@ -3,10 +3,10 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
+
 if TYPE_CHECKING:
     from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
-
-from ha_synthetic_sensors.reference_value_manager import ReferenceValueManager
 
 _LOGGER = logging.getLogger(__name__)
 

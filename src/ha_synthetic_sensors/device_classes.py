@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 
+from .regex_helper import create_domain_validation_pattern, match_pattern
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
@@ -124,7 +126,6 @@ def is_valid_ha_domain(domain: str, hass: "HomeAssistant | None" = None) -> bool
     # - Contain only lowercase letters, numbers, and underscores
     # - Be between 2-50 characters long
     # Use centralized domain validation pattern from regex helper
-    from .regex_helper import create_domain_validation_pattern, match_pattern
 
     pattern = create_domain_validation_pattern()
     return bool(match_pattern(domain, pattern))

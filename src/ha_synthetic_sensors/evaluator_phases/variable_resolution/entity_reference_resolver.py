@@ -3,14 +3,14 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...constants_entities import is_valid_entity_id
 from ...exceptions import MissingDependencyError
-from ...type_definitions import ContextValue
+from ...type_definitions import ContextValue, ReferenceValue
 from ...utils_resolvers import resolve_via_data_provider_entity, resolve_via_hass_entity
 from .base_resolver import VariableResolver
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,8 +82,6 @@ class EntityReferenceResolver(VariableResolver):
         if variable_value in context:
             context_value = context[variable_value]
             # If there's a ReferenceValue in context, return it (it's already resolved)
-            from ...type_definitions import ReferenceValue
-
             if isinstance(context_value, ReferenceValue):
                 return context_value
             # For other context values (callable, dict, None), return them as-is

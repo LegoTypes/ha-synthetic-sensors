@@ -159,7 +159,7 @@
       "env": {},
       "python": "${workspaceFolder}/.venv/bin/python",
       "justMyCode": false,
-      "stopOnEntry": false,
+      "stopOnEntry": false
     },
     {
       "name": "Debug Failing Dependency Resolver Test",

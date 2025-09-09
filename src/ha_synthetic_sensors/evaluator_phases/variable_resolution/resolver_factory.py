@@ -4,9 +4,6 @@ from collections.abc import Callable
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...exceptions import MissingDependencyError
 from ...type_definitions import DataProviderResult
 from .attribute_reference_resolver import AttributeReferenceResolver
@@ -18,6 +15,9 @@ from .entity_reference_resolver import EntityReferenceResolver
 from .self_reference_resolver import SelfReferenceResolver
 from .state_attribute_resolver import StateAttributeResolver
 from .state_resolver import StateResolver
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +42,11 @@ class VariableResolverFactory:
         self._hass = hass
         self._state_resolver: StateResolver | None = None
         self._register_default_resolvers()
+
+    @property
+    def resolvers(self) -> list[VariableResolver]:
+        """Get the list of resolvers."""
+        return self._resolvers
 
     @property
     def sensor_to_backing_mapping(self) -> dict[str, str]:

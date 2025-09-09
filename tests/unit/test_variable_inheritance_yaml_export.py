@@ -85,7 +85,7 @@ class TestVariableInheritanceYamlExport:
             assert "energy_grace_period_minutes" in grace_remaining_attr["formula"], "Formula should reference variables"
             assert "panel_offline_minutes" in grace_remaining_attr["formula"], "Formula should reference variables"
             assert "is_within_grace_period" in grace_remaining_attr["formula"], "Formula should reference variables"
-            # CRITICAL: Should NOT have variables section with inherited variables
+            # Should NOT have variables section with inherited variables
             assert "variables" not in grace_remaining_attr, "Complex attribute should not store inherited variables in YAML"
 
             # Check energy_reporting_status attribute
@@ -93,7 +93,7 @@ class TestVariableInheritanceYamlExport:
             assert isinstance(reporting_status_attr, dict), "Complex attribute should be a dictionary"
             assert "formula" in reporting_status_attr, "Complex attribute should have formula"
             assert "grace_period_remaining" in reporting_status_attr["formula"], "Formula should reference other attributes"
-            # CRITICAL: Should NOT have variables section with inherited variables
+            # Should NOT have variables section with inherited variables
             assert "variables" not in reporting_status_attr, "Complex attribute should not store inherited variables in YAML"
 
             # Check attribute with its own variables - these SHOULD be preserved

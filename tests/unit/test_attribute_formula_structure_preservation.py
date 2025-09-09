@@ -55,7 +55,7 @@ def test_attribute_formula_structure_preservation(mock_hass, mock_entity_registr
     # Check direct value attribute (should remain as simple value)
     assert main_attributes.get("voltage") == 240, "Direct value attribute should be preserved"
 
-    # CRITICAL: These should NOT be flattened strings - the bug was here
+    # These should NOT be flattened strings - the bug was here
     # If the bug exists, these would be strings instead of proper structures
     grace_period_attr = main_attributes.get("grace_period_active")
     computed_value_attr = main_attributes.get("computed_value")

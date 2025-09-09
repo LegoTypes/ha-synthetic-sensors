@@ -4,13 +4,13 @@ from contextlib import suppress
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...config_models import SensorConfig
 from ...data_validation import validate_entity_state_value
 from ...type_definitions import ContextValue
 from .base_resolver import VariableResolver
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 

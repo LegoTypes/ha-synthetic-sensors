@@ -6,6 +6,16 @@ from collections.abc import Callable
 from typing import Any, TypedDict
 
 from .exceptions import DataValidationError
+from .regex_helper import (
+    create_condition_parsing_pattern,
+    extract_comparison_condition,
+    extract_negation_condition,
+    has_assignment_operator,
+    has_multiple_comparison_operators,
+    has_non_comparison_operators,
+    is_operator_only,
+    match_pattern,
+)
 from .type_analyzer import OperandType
 
 
@@ -64,17 +74,12 @@ class ConditionParser:
         # STEP 1: Detect and reject invalid cases first
 
         # Check for operators without values (including compound operators like >=, <=, ==, !=)
-        from .regex_helper import is_operator_only
 
         if is_operator_only(condition):
             raise DataValidationError(f"Invalid state condition: '{condition}' is just an operator without a value")
 
-        from .regex_helper import has_assignment_operator
-
         if has_assignment_operator(condition):  # Single = (assignment, not comparison)
             raise DataValidationError(f"Invalid state condition: '{condition}'. Use '==' for comparison, not '='")
-
-        from .regex_helper import has_non_comparison_operators
 
         if has_non_comparison_operators(
             condition
@@ -82,8 +87,6 @@ class ConditionParser:
             raise DataValidationError(
                 f"Invalid state condition: '{condition}'. Expected comparison operators: ==, !=, <, <=, >, >="
             )
-
-        from .regex_helper import has_multiple_comparison_operators
 
         if has_multiple_comparison_operators(condition):  # Multiple > or < (like >>, <<)
             raise DataValidationError(
@@ -93,7 +96,6 @@ class ConditionParser:
         # STEP 2: Parse valid cases
 
         # Handle simple negation: !value (but not != operator)
-        from .regex_helper import extract_negation_condition
 
         negated_condition = extract_negation_condition(condition)
         if negated_condition:
@@ -103,7 +105,6 @@ class ConditionParser:
             return ParsedCondition(operator="!=", value=ConditionParser._clean_value_string(value_str))
 
         # Handle explicit comparison operators: >=, ==, !=, etc.
-        from .regex_helper import extract_comparison_condition
 
         comparison_result = extract_comparison_condition(condition)
         if comparison_result:
@@ -136,7 +137,6 @@ class ConditionParser:
         # Pattern: attribute_name operator value
         # Examples: friendly_name == "Living Room", battery_level > 50
         # Use centralized condition parsing pattern from regex helper
-        from .regex_helper import create_condition_parsing_pattern, match_pattern
 
         pattern = create_condition_parsing_pattern()
         match = match_pattern(condition, pattern)

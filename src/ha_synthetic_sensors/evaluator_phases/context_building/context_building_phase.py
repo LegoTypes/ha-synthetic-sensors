@@ -42,9 +42,9 @@ class ContextBuildingPhase:
 
     def _safe_context_set(self, context: HierarchicalContextDict, key: str, value: ContextValue) -> None:
         """Safely set a value in context, using unified setter if available."""
-        if hasattr(context, "_hierarchical_context"):
+        if hasattr(context, "hierarchical_context"):
             # This is our HierarchicalContextDict - use unified setter
-            context._hierarchical_context.set(key, value)
+            context.hierarchical_context.set(key, value)
             _LOGGER.debug("SAFE_CONTEXT_SET: Used unified setter for %s", key)
         else:
             # Regular dict - use direct assignment
@@ -88,7 +88,7 @@ class ContextBuildingPhase:
         eval_context = context  # Preserve the hierarchical context
         # Add Home Assistant instance for metadata handler access
         if self._hass is not None:
-            eval_context._hierarchical_context.set_system_object("_hass", self._hass)
+            eval_context.hierarchical_context.set_system_object("_hass", self._hass)
         else:
             raise ValueError("Home Assistant instance is required for context building phase")
 
@@ -101,7 +101,7 @@ class ContextBuildingPhase:
         # Add context variables first (highest priority)
         self._add_context_variables(eval_context, context)
 
-        # CRITICAL FIX: Add current sensor entity_id to context for metadata(state, ...) support
+        # Add current sensor entity_id to context for metadata(state, ...) support
         # This ensures the metadata handler can resolve 'state' token to the current sensor's entity_id
         if sensor_config and sensor_config.entity_id:
             self._add_entity_to_context(
@@ -116,12 +116,12 @@ class ContextBuildingPhase:
         # This ensures global variables are available when computed variables are evaluated
         self._add_global_variables_to_context(eval_context)
 
-        # CRITICAL FIX: Add sensor_config and formula_config to context BEFORE resolving entity dependencies
+        # Add sensor_config and formula_config to context BEFORE resolving entity dependencies
         # This ensures the StateResolver can access them when determining resolution strategy
         if sensor_config is not None:
-            eval_context._hierarchical_context.set_system_object("_sensor_config", sensor_config)
+            eval_context.hierarchical_context.set_system_object("_sensor_config", sensor_config)
         if config is not None:
-            eval_context._hierarchical_context.set_system_object("_formula_config", config)
+            eval_context.hierarchical_context.set_system_object("_formula_config", config)
 
         # Add state variable to context immediately after globals
         # The state is ALWAYS needed even if purely calculated (value would be None)
@@ -155,7 +155,7 @@ class ContextBuildingPhase:
 
         # Try to get sensor config from context (should be set by build_evaluation_context)
         try:
-            sensor_config_raw = eval_context._hierarchical_context.get("_sensor_config")
+            sensor_config_raw = eval_context.hierarchical_context.get("_sensor_config")
         except KeyError:
             # No sensor config available - this can happen for computed variables or cross-sensor references
             _LOGGER.debug("Context building: No _sensor_config in context - setting basic state reference")
@@ -172,8 +172,8 @@ class ContextBuildingPhase:
             try:
                 # Get the StateResolver instance from the factory
                 state_resolver = None
-                if hasattr(resolver_factory, "_resolvers"):
-                    for resolver in resolver_factory._resolvers:
+                if hasattr(resolver_factory, "resolvers"):
+                    for resolver in resolver_factory.resolvers:
                         if hasattr(resolver, "resolve_prior_state_reference"):
                             state_resolver = resolver
                             break
@@ -236,13 +236,13 @@ class ContextBuildingPhase:
 
     def _add_context_variables(self, eval_context: HierarchicalContextDict, context: HierarchicalContextDict) -> None:
         """Add context variables to evaluation context."""
-        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
-        # ARCHITECTURE FIX: Ensure all context values are ReferenceValue objects
+        # Context is now required parameter - no None checks needed
+        # Ensure all context values are ReferenceValue objects
         # This prevents raw value injection during context merging
         for key, value in context.items():
             if key.startswith("_"):
                 # Use system object method for internal registry keys
-                eval_context._hierarchical_context.set_system_object(key, value)
+                eval_context.hierarchical_context.set_system_object(key, value)
             elif isinstance(value, ReferenceValue):
                 # Already a ReferenceValue - use directly
                 self._safe_context_set(eval_context, key, value)
@@ -295,7 +295,7 @@ class ContextBuildingPhase:
     ) -> None:
         """Resolve entity dependencies using modern variable resolver factory."""
         for entity_id in dependencies:
-            # ARCHITECTURE FIX: Skip dependencies that are already in context
+            # Skip dependencies that are already in context
             if entity_id in eval_context:
                 _LOGGER.debug("Dependency '%s' already in context, skipping resolution", entity_id)
                 continue

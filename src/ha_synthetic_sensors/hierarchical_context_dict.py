@@ -46,9 +46,14 @@ class HierarchicalContextDict:
 
         _LOGGER.debug("HIERARCHICAL_DICT_INIT: Initialized hierarchical dictionary for context %s", hierarchical_context.name)
 
+    @property
+    def hierarchical_context(self) -> HierarchicalEvaluationContext:
+        """Get the hierarchical context."""
+        return self._hierarchical_context
+
     def __setitem__(self, key: str, value: ContextValue) -> None:
         """Override assignment to use hierarchical context unified setter."""
-        # CRITICAL: Enforce ReferenceValue architecture at the earliest point
+        # Enforce ReferenceValue architecture at the earliest point
         if not isinstance(value, ReferenceValue):
             # This is a raw value being stored in context - this violates the architecture
             stack_trace = "".join(traceback.format_stack())

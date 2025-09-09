@@ -28,6 +28,7 @@ from homeassistant.helpers import area_registry as ar, device_registry as dr, en
 from .condition_parser import ConditionParser
 from .dependency_parser import DynamicQuery
 from .exceptions import InvalidCollectionPatternError, MissingDependencyError
+from .regex_helper import create_entity_reference_pattern_from_domains, create_query_type_patterns, search_case_insensitive
 from .shared_constants import get_ha_domains
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,7 +74,6 @@ class CollectionResolver:
         """Get the compiled entity reference pattern."""
         if self._entity_reference_pattern is None:
             # Use centralized entity reference pattern from regex helper
-            from .regex_helper import create_entity_reference_pattern_from_domains
 
             self._entity_reference_pattern = create_entity_reference_pattern_from_domains(self._entity_domains_pattern)
         return self._entity_reference_pattern
@@ -149,7 +149,6 @@ class CollectionResolver:
             return {exclusion_pattern}
 
         # Use centralized query type patterns from regex helper
-        from .regex_helper import create_query_type_patterns
 
         # Check if it's a query pattern (type:value)
         query_patterns = create_query_type_patterns()
@@ -235,7 +234,6 @@ class CollectionResolver:
         matching_entities = []
 
         # Use centralized case-insensitive pattern creation from regex helper
-        from .regex_helper import search_case_insensitive
 
         for regex_pattern in regex_patterns:
             try:

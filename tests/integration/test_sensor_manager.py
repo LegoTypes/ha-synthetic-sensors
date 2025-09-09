@@ -409,20 +409,19 @@ class TestDynamicSensorExtended:
     async def test_handle_dependency_change_functionality(
         self, dynamic_sensor, mock_evaluator, mock_hass, mock_entity_registry, mock_states
     ):
-        """Test _handle_dependency_change functionality."""
-        # Mock the evaluator to return a successful result
-        mock_evaluator.evaluate_formula_with_sensor_config.return_value = {
-            "success": True,
-            "value": 45.0,
-        }
+        """Test _handle_dependency_change functionality.
 
+        NOTE: Dependency tracking is disabled for synthetic sensors to prevent recursion.
+        The _handle_dependency_change method now does nothing (passes).
+        """
         # Create a mock event
         mock_event = MagicMock()
 
-        # Patch the _async_update_sensor method to verify it's called
+        # Verify that _handle_dependency_change does nothing (no updates triggered)
         with patch.object(dynamic_sensor, "_async_update_sensor", new_callable=AsyncMock) as mock_update:
-            await dynamic_sensor._handle_dependency_change(mock_event)
-            mock_update.assert_called_once()
+            dynamic_sensor._handle_dependency_change(mock_event)
+            # Should NOT be called since dependency tracking is disabled
+            mock_update.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_async_update_sensor_success(

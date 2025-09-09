@@ -101,12 +101,12 @@ class EvaluatorResults:
         if isinstance(result, dict) and RESULT_KEY_SUCCESS in result:
             return cast(EvaluationResult, result)
 
-        # CRITICAL FIX: Handle None values by returning STATE_NONE with None value
+        # : Handle None values by returning STATE_NONE with None value
         # This preserves None values for proper alternate state classification.
         # The alternate state processor will handle None appropriately by triggering NONE handlers.
         if result is None:
             return EvaluatorResults.create_success_result_with_state(STATE_NONE_YAML, **{RESULT_KEY_VALUE: None})
-        # CRITICAL FIX: Check for boolean first, since bool is a subclass of int in Python
+        # : Check for boolean first, since bool is a subclass of int in Python
         # This prevents True/False from being converted to 1.0/0.0
         if isinstance(result, bool):
             return EvaluatorResults.create_success_result_with_state(STATE_OK, **{RESULT_KEY_VALUE: result})

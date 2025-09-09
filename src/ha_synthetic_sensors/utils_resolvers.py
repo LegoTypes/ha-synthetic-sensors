@@ -234,7 +234,7 @@ def resolve_via_hass_entity(dependency_handler: Any, entity_id: str, original_re
         # Convert state value to appropriate type
         converted_value = _convert_hass_state_value(state_value, entity_id, hass_state)
 
-        # ARCHITECTURE FIX: Create ReferenceValue object for HA entity lookups
+        # Create ReferenceValue object for HA entity lookups
         # This ensures that HA entity lookups return ReferenceValue objects like data provider lookups
         result = ReferenceValue(reference=entity_id, value=converted_value)
         # Debug logging removed to reduce verbosity

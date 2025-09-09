@@ -81,15 +81,3 @@ class FormulaProcessor:
 
         # Return the original HierarchicalContextDict with all values normalized to ReferenceValue objects
         return eval_context
-
-    def build_evaluation_context(self, context: HierarchicalContextDict) -> HierarchicalContextDict:
-        """Build the evaluation context for formula processing."""
-        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
-
-        # BULLETPROOF: Preserve HierarchicalContextDict instead of converting to regular dict
-        _LOGGER.warning(
-            "CONTEXT_CONVERSION_POINT: Received context type %s, preserving instead of converting", type(context).__name__
-        )
-
-        # Return the original context to preserve HierarchicalContextDict
-        return context

@@ -3,13 +3,15 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...config_models import SensorConfig
 from ...constants_metadata import METADATA_PROPERTY_DEVICE_CLASS
 from ...dependency_parser import DependencyParser
+from ...regex_helper import create_sensor_name_search_pattern, search_pattern
 from .base_manager import DependencyManager
+from .generic_dependency_manager import GenericDependencyManager
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,8 +123,6 @@ class CrossSensorDependencyManager(DependencyManager):
                 dependencies.add(sensor_name)
 
         # 3. Handle variable references in metadata function calls using generic dependency manager
-        from .generic_dependency_manager import GenericDependencyManager
-
         generic_manager = GenericDependencyManager()
         generic_manager.set_sensor_registry_phase(self._sensor_registry_phase)
 
@@ -238,8 +238,6 @@ class CrossSensorDependencyManager(DependencyManager):
         # For now, we'll do a basic check that the sensor name is not part of a larger word
         # Look for the sensor name as a whole word or variable
         # Use centralized sensor name search pattern from regex helper
-        from ...regex_helper import create_sensor_name_search_pattern, search_pattern
-
         pattern = create_sensor_name_search_pattern(sensor_name)
         return search_pattern(formula, pattern)
 

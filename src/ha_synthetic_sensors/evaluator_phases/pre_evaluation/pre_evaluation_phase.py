@@ -8,7 +8,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from ...alternate_state_processor import alternate_state_processor
-from ...config_models import FormulaConfig, SensorConfig
+from ...config_models import ComputedVariable, FormulaConfig, SensorConfig
 from ...constants_evaluation_results import (
     RESULT_KEY_ERROR,
     RESULT_KEY_MISSING_DEPENDENCIES,
@@ -142,95 +142,117 @@ class PreEvaluationPhase:
         alternate_state_processor_instance: Any = None,
     ) -> tuple[EvaluationResult | None, HierarchicalContextDict]:
         """Process dependencies and build evaluation context."""
+        # PHASE 1: Variable Resolution
+        resolved_context = self._perform_variable_resolution(config, context, sensor_config)
 
-        # PHASE 1: Variable Resolution - Resolve config variables BEFORE checking dependencies
-        # This ensures that variables like 'internal_sensor_a' are resolved to their actual entity IDs
-        # before the dependency checker looks for them
-        if self._variable_resolution_phase:
-            # Create a copy of the context for variable resolution
-            resolved_context = context
-            self._variable_resolution_phase.resolve_config_variables(resolved_context, config, sensor_config)
+        # PHASE 2: Single Value Check
+        self._check_pre_evaluation_states(resolved_context, config, sensor_config, alternate_state_processor_instance)
 
-            # Resolve collection functions BEFORE dependency extraction
-            # Collection functions like sum("device_class:power") must be resolved to actual entity references
-            # before the dependency parser processes the formula, otherwise the parser treats the collection
-            # pattern as missing dependencies (e.g., "device_class", "power")
-            if hasattr(self._variable_resolution_phase, "_resolve_collection_functions"):
-                # Resolve collection functions in the formula to prevent dependency parser confusion
-                original_formula = config.formula
-                resolved_formula = self._variable_resolution_phase._resolve_collection_functions(
-                    config.formula, sensor_config, resolved_context, config
+        # PHASE 3: Dependency Management
+        dependency_result, final_context = self._perform_dependency_management(
+            config, resolved_context, sensor_config, formula_name
+        )
+
+        return dependency_result, final_context
+
+    def _perform_variable_resolution(
+        self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None
+    ) -> HierarchicalContextDict:
+        """Perform variable resolution phase."""
+        if not self._variable_resolution_phase:
+            return context
+
+        resolved_context = context
+        self._variable_resolution_phase.resolve_config_variables(resolved_context, config, sensor_config)
+
+        # Resolve collection functions if available
+        if hasattr(self._variable_resolution_phase, "_resolve_collection_functions"):
+            self._resolve_collection_functions_in_config(config, sensor_config, resolved_context)
+
+        return resolved_context
+
+    def _resolve_collection_functions_in_config(
+        self, config: FormulaConfig, sensor_config: SensorConfig | None, resolved_context: HierarchicalContextDict
+    ) -> None:
+        """Resolve collection functions in formula and computed variables."""
+        if not self._variable_resolution_phase:
+            return
+
+        # Resolve collection functions in the main formula
+        original_formula = config.formula
+        resolved_formula = self._variable_resolution_phase.resolve_collection_functions(
+            config.formula, sensor_config, resolved_context, config
+        )
+        if resolved_formula != original_formula:
+            config.original_formula = original_formula
+            config.formula = resolved_formula
+            _LOGGER.debug("Pre-evaluation collection function resolution: '%s' -> '%s'", original_formula, resolved_formula)
+
+        # Resolve collection functions in computed variables
+        if config.variables:
+            self._resolve_collection_functions_in_variables(config, sensor_config, resolved_context)
+
+    def _resolve_collection_functions_in_variables(
+        self, config: FormulaConfig, sensor_config: SensorConfig | None, resolved_context: HierarchicalContextDict
+    ) -> None:
+        """Resolve collection functions in computed variables."""
+        if not self._variable_resolution_phase:
+            return
+
+        original_variables = {}
+        modified_variables = {}
+
+        for var_name, var_value in config.variables.items():
+            if hasattr(var_value, "formula"):
+                original_var_formula = var_value.formula
+                resolved_var_formula = self._variable_resolution_phase.resolve_collection_functions(
+                    var_value.formula, sensor_config, resolved_context, config
                 )
-                if resolved_formula != original_formula:
-                    # Store original formula for restoration after dependency extraction
-                    config._original_formula = original_formula  # type: ignore[attr-defined]
-                    # Temporarily update the config formula for dependency extraction
-                    # This ensures dependency extraction works on the resolved formula
-                    config.formula = resolved_formula
+                if resolved_var_formula != original_var_formula:
+                    original_variables[var_name] = original_var_formula
+                    resolved_var = ComputedVariable(
+                        formula=resolved_var_formula,
+                        dependencies=getattr(var_value, "dependencies", set()),
+                        alternate_state_handler=getattr(var_value, "alternate_state_handler", None),
+                        allow_unresolved_states=getattr(var_value, "allow_unresolved_states", False),
+                    )
+                    modified_variables[var_name] = resolved_var
                     _LOGGER.debug(
-                        "Pre-evaluation collection function resolution: '%s' -> '%s'", original_formula, resolved_formula
+                        "Pre-evaluation computed variable collection function resolution: '%s' -> '%s'",
+                        original_var_formula,
+                        resolved_var_formula,
                     )
 
-                # Also resolve collection functions in computed variables to prevent dependency parser confusion
-                if config.variables:
-                    original_variables = {}
-                    modified_variables = {}
-                    for var_name, var_value in config.variables.items():
-                        if hasattr(var_value, "formula"):
-                            # This is a ComputedVariable with a formula
-                            original_var_formula = var_value.formula
-                            resolved_var_formula = self._variable_resolution_phase._resolve_collection_functions(
-                                var_value.formula, sensor_config, resolved_context, config
-                            )
-                            if resolved_var_formula != original_var_formula:
-                                # Store original for restoration
-                                original_variables[var_name] = original_var_formula
-                                # Create a copy of the computed variable with resolved formula
-                                from ...config_models import ComputedVariable
+        if original_variables:
+            config.original_variables = original_variables
+            for var_name, resolved_var in modified_variables.items():
+                config.variables[var_name] = resolved_var
 
-                                resolved_var = ComputedVariable(
-                                    formula=resolved_var_formula,
-                                    dependencies=getattr(var_value, "dependencies", set()),
-                                    alternate_state_handler=getattr(var_value, "alternate_state_handler", None),
-                                    allow_unresolved_states=getattr(var_value, "allow_unresolved_states", False),
-                                )
-                                modified_variables[var_name] = resolved_var
-                                _LOGGER.debug(
-                                    "Pre-evaluation computed variable collection function resolution: '%s' -> '%s'",
-                                    original_var_formula,
-                                    resolved_var_formula,
-                                )
-                    # Store original variables for restoration and update config
-                    if original_variables:
-                        config._original_variables = original_variables  # type: ignore[attr-defined]
-                        # Update the variables in config for dependency extraction
-                        for var_name, resolved_var in modified_variables.items():
-                            config.variables[var_name] = resolved_var
-        else:
-            resolved_context = context
+    def _check_pre_evaluation_states(
+        self,
+        resolved_context: HierarchicalContextDict,
+        config: FormulaConfig,
+        sensor_config: SensorConfig | None,
+        alternate_state_processor_instance: Any,
+    ) -> None:
+        """Check for single alternate states before dependency management."""
+        processor = (
+            alternate_state_processor_instance if alternate_state_processor_instance is not None else alternate_state_processor
+        )
+        processor.check_pre_evaluation_states(resolved_context, config, sensor_config)
 
-        # PHASE 1: Single Value Check - Check for single alternate states before dependency management
-        try:
-            # May raise AlternateStateDetected for single state formulas
-            # Use provided alternate state processor instance or fall back to global
-            processor = (
-                alternate_state_processor_instance
-                if alternate_state_processor_instance is not None
-                else alternate_state_processor
-            )
-            processor.check_pre_evaluation_states(resolved_context, config, sensor_config)
-        except Exception as e:
-            # If AlternateStateDetected is raised, let it propagate up to be handled by the main evaluator
-            # Other exceptions should also propagate up
-            raise e
-
-        # Extract and validate dependencies
+    def _perform_dependency_management(
+        self,
+        config: FormulaConfig,
+        resolved_context: HierarchicalContextDict,
+        sensor_config: SensorConfig | None,
+        formula_name: str,
+    ) -> tuple[EvaluationResult | None, HierarchicalContextDict]:
+        """Perform dependency extraction, validation, and context building."""
         if not (self._dependency_management_phase and self._dependency_handler):
             return None, resolved_context
 
-        # Store original formula to restore after dependency extraction
-        original_formula = getattr(config, "_original_formula", None) or config.formula
-
+        # Extract and validate dependencies
         dependencies, collection_pattern_entities = self._dependency_management_phase.extract_and_prepare_dependencies(
             config, resolved_context, sensor_config
         )
@@ -238,40 +260,57 @@ class PreEvaluationPhase:
             dependencies, resolved_context, collection_pattern_entities
         )
 
-        # Restore original formula after dependency extraction if it was modified
-        if original_formula is not None:
-            config.formula = original_formula
-            # Only delete the attribute if it was actually set
-            if hasattr(config, "_original_formula"):
-                delattr(config, "_original_formula")
-
-        # Restore original computed variables after dependency extraction if they were modified
-        if hasattr(config, "_original_variables"):
-            original_variables = config._original_variables
-            for var_name, original_formula in original_variables.items():
-                if var_name in config.variables and hasattr(config.variables[var_name], "formula"):
-                    # Restore the original formula in the computed variable
-                    from ...config_models import ComputedVariable
-
-                    current_var = config.variables[var_name]
-                    original_var = ComputedVariable(
-                        formula=original_formula,
-                        dependencies=getattr(current_var, "dependencies", set()),
-                        alternate_state_handler=getattr(current_var, "alternate_state_handler", None),
-                        allow_unresolved_states=getattr(current_var, "allow_unresolved_states", False),
-                    )
-                    config.variables[var_name] = original_var
-            # Clean up the temporary attribute
-            delattr(config, "_original_variables")
+        # Restore original formulas and variables
+        self._restore_original_config_state(config)
 
         # Handle dependency issues
         dependency_result = self._handle_dependency_issues(missing_deps, unavailable_deps, unknown_deps, formula_name)
         if dependency_result:
             return dependency_result, resolved_context
 
-        # PHASE 3: Context Building - Build evaluation context with resolved variables
+        # Build final context
+        final_context = self._build_final_context(dependencies, resolved_context, config, sensor_config, formula_name)
+        return None, final_context
+
+    def _restore_original_config_state(self, config: FormulaConfig) -> None:
+        """Restore original formula and variables after dependency extraction."""
+        # Restore original formula
+        if config.original_formula is not None:
+            try:
+                original_value = config.original_formula
+                if original_value is not None:
+                    config.formula = original_value
+                config.original_formula = None
+            except AttributeError:
+                pass
+
+        # Restore original computed variables
+        if config.original_variables is not None:
+            restored_variables = config.original_variables
+            if restored_variables:
+                for var_name, original_formula in restored_variables.items():
+                    if var_name in config.variables and hasattr(config.variables[var_name], "formula"):
+                        current_var = config.variables[var_name]
+                        original_var = ComputedVariable(
+                            formula=original_formula,
+                            dependencies=getattr(current_var, "dependencies", set()),
+                            alternate_state_handler=getattr(current_var, "alternate_state_handler", None),
+                            allow_unresolved_states=getattr(current_var, "allow_unresolved_states", False),
+                        )
+                        config.variables[var_name] = original_var
+            config.original_variables = None
+
+    def _build_final_context(
+        self,
+        dependencies: set[str],
+        resolved_context: HierarchicalContextDict,
+        config: FormulaConfig,
+        sensor_config: SensorConfig | None,
+        formula_name: str,
+    ) -> HierarchicalContextDict:
+        """Build the final evaluation context."""
         if not self._context_building_phase:
-            return None, resolved_context
+            return resolved_context
 
         final_context = self._context_building_phase.build_evaluation_context(
             dependencies, resolved_context, config, sensor_config
@@ -279,10 +318,11 @@ class PreEvaluationPhase:
 
         context_result = self._validate_evaluation_context(final_context, formula_name)
         if context_result:
-            return context_result, resolved_context
+            # This should raise an exception rather than return a result
+            # since we're in a context building method
+            raise RuntimeError(f"Context validation failed for formula '{formula_name}': {context_result}")
 
-        # Return the built evaluation context with resolved variables
-        return None, final_context
+        return final_context
 
     def _handle_dependency_issues(
         self, missing_deps: set[str], unavailable_deps: set[str], unknown_deps: set[str], formula_name: str

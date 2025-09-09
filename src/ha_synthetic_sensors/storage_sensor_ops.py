@@ -358,7 +358,10 @@ class SensorOpsHandler:
             if formula_data.get("variables"):
                 formula_data["variables"] = deserialize_variables(formula_data["variables"])
 
-            return FormulaConfig(**formula_data)
+            # Filter out fields that should not be passed to constructor (init=False fields)
+            filtered_data = {k: v for k, v in formula_data.items() if k not in ("_original_formula", "_original_variables")}
+
+            return FormulaConfig(**filtered_data)
 
         # Convert lists back to sets and create SensorConfig
         processed_data = list_to_set(config_data)

@@ -3,12 +3,13 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...config_models import ComputedVariable, FormulaConfig
 from ...dependency_parser import DependencyParser
 from .base_manager import DependencyManager
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,6 +18,16 @@ class DependencyExtractor(DependencyManager):
     """Extractor for dependencies from formulas."""
 
     _hass: Any = None
+
+    @property
+    def hass(self) -> Any:
+        """Get the Home Assistant instance."""
+        return self._hass
+
+    @hass.setter
+    def hass(self, value: Any) -> None:
+        """Set the Home Assistant instance."""
+        self._hass = value
 
     def can_manage(self, manager_type: str, context: "HierarchicalContextDict") -> bool:
         """Determine if this manager can handle dependency extraction."""
@@ -72,7 +83,7 @@ class DependencyExtractor(DependencyManager):
 
     def _extract_dependencies_from_formula(self, formula: str) -> set[str]:
         """Extract entity dependencies from a formula string using the fixed DependencyParser."""
-        # ARCHITECTURE FIX: Get hass instance from the manager factory context
+        # Get hass instance from the manager factory context
         # This ensures proper domain validation and prevents entity IDs from being split
         hass = getattr(self, "_hass", None)
         parser = DependencyParser(hass)

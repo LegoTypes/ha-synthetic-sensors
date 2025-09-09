@@ -1,5 +1,7 @@
 """Constants for device information and configuration."""
 
+from .regex_helper import validate_device_field
+
 # Device info field names used in global settings and sensor configuration
 DEVICE_INFO_FIELDS = [
     "device_identifier",
@@ -181,7 +183,6 @@ def validate_device_info(device_info: dict[str, str]) -> dict[str, list[str] | b
             errors.append(ERROR_DEVICE_INFO_INVALID_VALUE.format(field=field_name, value=value))
 
         # Use centralized device field validation from regex helper
-        from .regex_helper import validate_device_field
 
         # Check pattern if available
         if not validate_device_field(field_name, str(value)):

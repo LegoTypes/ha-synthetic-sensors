@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING
 from ha_synthetic_sensors.config_models import SensorConfig
 from ha_synthetic_sensors.exceptions import CircularDependencyError
 
+from ...dependency_parser import DependencyParser
+from ...regex_helper import create_identifier_pattern, create_standalone_reference_pattern
+
 if TYPE_CHECKING:
     from ha_synthetic_sensors.config_models import FormulaConfig
 
@@ -23,8 +26,6 @@ class CircularReferenceValidator:
     def __init__(self) -> None:
         """Initialize the circular reference validator."""
         # Use centralized identifier pattern from regex helper
-        from ...regex_helper import create_identifier_pattern
-
         self._variable_pattern = create_identifier_pattern()
 
     def validate_formula_config(self, config: "FormulaConfig", sensor_config: SensorConfig | None = None) -> None:
@@ -116,8 +117,6 @@ class CircularReferenceValidator:
         """
         # Use the fixed dependency parser to extract variables correctly
         # This handles string literals properly and won't extract 'domain' from metadata() calls
-        from ...dependency_parser import DependencyParser
-
         parser = DependencyParser(hass=None)
         variables = parser.extract_variables(formula)
 
@@ -133,8 +132,6 @@ class CircularReferenceValidator:
 
             # Pattern to match standalone variable references (not part of nested paths)
             # Use centralized standalone reference pattern from regex helper
-            from ...regex_helper import create_standalone_reference_pattern
-
             standalone_pattern = create_standalone_reference_pattern(name)
 
             # Check if there are any standalone references to this name
@@ -158,8 +155,6 @@ class CircularReferenceValidator:
         for attr_name, attr_formula in attributes.items():
             # Find all attribute references in this formula using fixed dependency parser
             referenced_attrs = set()
-            from ...dependency_parser import DependencyParser
-
             parser = DependencyParser(hass=None)
             variables = parser.extract_variables(attr_formula)
 

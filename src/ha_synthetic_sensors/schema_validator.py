@@ -27,6 +27,20 @@ from .constants_metadata import (
 )
 from .formula_utils import tokenize_formula
 from .ha_constants import HAConstantLoader
+from .regex_helper import (
+    get_entity_id_schema_pattern,
+    get_icon_pattern,
+    get_variable_name_pattern,
+    get_variable_value_pattern,
+    has_entity_id_pattern,
+    has_operators,
+    is_collection_function,
+    is_date_format,
+    is_datetime_format,
+    is_query_pattern,
+    is_valid_entity_id_format,
+    is_version_format,
+)
 from .shared_constants import (
     DATETIME_FUNCTIONS,
     DURATION_FUNCTIONS,
@@ -83,8 +97,6 @@ class SchemaValidator:
     @property
     def VARIABLE_VALUE_PATTERN(self) -> str:
         """Get the variable value pattern from centralized regex helper."""
-        from .regex_helper import get_variable_value_pattern
-
         return get_variable_value_pattern()
 
     def __init__(self) -> None:
@@ -840,20 +852,14 @@ class SchemaValidator:
 
         Supports basic entity IDs (sensor.power_meter) and attribute references (sensor.power_meter.state)
         """
-        from .regex_helper import is_valid_entity_id_format
-
         return is_valid_entity_id_format(value)
 
     def _is_collection_pattern(self, value: str) -> bool:
         """Check if a string is a collection pattern."""
-        from .regex_helper import is_query_pattern
-
         return is_query_pattern(value)
 
     def _is_collection_function(self, value: str) -> bool:
         """Check if a string is a collection function."""
-        from .regex_helper import is_collection_function
-
         return is_collection_function(value)
 
     def _is_formula_expression(self, value: str) -> bool:
@@ -864,8 +870,6 @@ class SchemaValidator:
         # Look for mathematical operators like +, -, *, /, ()
         # Allow decimal numbers (dots followed by digits) but exclude entity IDs (dots followed by letters)
         # Exclude collection patterns (containing colons)
-        from .regex_helper import has_entity_id_pattern, has_operators
-
         has_ops = has_operators(value)
         is_entity_id = has_entity_id_pattern(value)
         has_colon = ":" in value
@@ -873,14 +877,10 @@ class SchemaValidator:
 
     def _is_datetime_literal(self, value: str) -> bool:
         """Check if a string is a datetime literal (full datetime or date-only)."""
-        from .regex_helper import is_date_format, is_datetime_format
-
         return is_datetime_format(value) or is_date_format(value)
 
     def _is_version_literal(self, value: str) -> bool:
         """Check if a string is a version literal (requires 'v' prefix)."""
-        from .regex_helper import is_version_format
-
         return is_version_format(value)
 
     def _validate_formula_tokens(
@@ -1255,8 +1255,6 @@ class SchemaValidator:
     def _get_v1_schema(self) -> dict[str, Any]:
         """Get the JSON schema for version 1.0 configurations (modernized format)."""
         # Define common patterns using centralized regex helper
-        from .regex_helper import get_icon_pattern, get_variable_name_pattern
-
         id_pattern = "^.+$"  # Allow any non-empty string for unique_id, matching HA's real-world requirements
         var_pattern = get_variable_name_pattern()
         icon_pattern = get_icon_pattern()
@@ -1274,8 +1272,6 @@ class SchemaValidator:
 
     def _get_entity_id_pattern(self) -> str:
         """Get the entity ID pattern from regex helper."""
-        from .regex_helper import get_entity_id_schema_pattern
-
         return get_entity_id_schema_pattern()
 
     def _get_sensor_definition(self, id_pattern: str) -> dict[str, Any]:

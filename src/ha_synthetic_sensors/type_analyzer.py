@@ -18,6 +18,12 @@ from .constants_types import (
     UserTypeReducer,
 )
 from .datetime_functions.duration_functions import Duration
+from .regex_helper import (
+    extract_numeric_parts_advanced,
+    extract_version_numeric_parts,
+    is_strict_datetime_string,
+    is_strict_version_string,
+)
 
 __all__ = [
     "AttributeProvider",
@@ -154,7 +160,6 @@ class NumericParser:
             return value
         if isinstance(value, str):
             # Remove common non-numeric suffixes/prefixes
-            from .regex_helper import extract_numeric_parts_advanced
 
             cleaned = extract_numeric_parts_advanced(value)
             if cleaned:
@@ -357,7 +362,6 @@ class VersionParser:
                 clean_version = value.lower().lstrip("v")
 
                 # Extract numeric parts
-                from .regex_helper import extract_version_numeric_parts
 
                 parts = extract_version_numeric_parts(clean_version)
                 if not parts:
@@ -409,14 +413,12 @@ class StringCategorizer:
     @staticmethod
     def _is_strict_datetime_string(value: str) -> bool:
         """Check if string is definitely a datetime (strict validation)."""
-        from .regex_helper import is_strict_datetime_string
 
         return is_strict_datetime_string(value)
 
     @staticmethod
     def _is_version_string(value: str) -> bool:
         """Check if string is definitely a version (requires 'v' prefix)."""
-        from .regex_helper import is_strict_version_string
 
         return is_strict_version_string(value)
 

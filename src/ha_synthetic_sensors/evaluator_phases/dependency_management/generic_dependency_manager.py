@@ -4,17 +4,25 @@ from enum import Enum
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from ...hierarchical_context_dict import HierarchicalContextDict
-
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_entities import COMMON_ENTITY_DOMAINS
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
+from ...dependency_parser import DependencyParser
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
 from ...reference_value_manager import ReferenceValueManager
-from ...regex_helper import extract_entity_references_from_metadata
+from ...regex_helper import (
+    create_collection_function_extraction_pattern,
+    extract_entity_references_from_metadata,
+    extract_variable_references_from_metadata,
+    find_all_match_objects,
+    regex_helper,
+)
 from ...shared_constants import get_reserved_words
 from ...type_definitions import ReferenceValue
+
+if TYPE_CHECKING:
+    from ...hierarchical_context_dict import HierarchicalContextDict
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,7 +163,7 @@ class GenericDependencyManager:
         Returns:
             Complete context with all formula values calculated
         """
-        # ARCHITECTURE FIX: Context is now required parameter - no None checks needed
+        # Context is now required parameter - no None checks needed
         # Don't copy the context since HierarchicalContextDict is a singleton
         context = base_context
 
@@ -194,7 +202,7 @@ class GenericDependencyManager:
                     # Accept successful result even when the value is None (state reflection)
                     if eval_result and eval_result.get(RESULT_KEY_SUCCESS):
                         main_sensor_value = eval_result.get(RESULT_KEY_VALUE)
-                        # ARCHITECTURE FIX: Use ReferenceValueManager for state token
+                        # Use ReferenceValueManager for state token
                         entity_id = sensor_config.entity_id if sensor_config else "state"
                         ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
                         _LOGGER.debug("Main sensor value: %s", main_sensor_value)
@@ -205,7 +213,7 @@ class GenericDependencyManager:
                     # Attribute evaluation
                     # Ensure state is in context for attribute formulas
                     if main_sensor_value is not None and "state" not in context:
-                        # ARCHITECTURE FIX: Use ReferenceValueManager for state token in attributes
+                        # Use ReferenceValueManager for state token in attributes
                         entity_id = sensor_config.entity_id if sensor_config else "state"
                         ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
 
@@ -240,7 +248,7 @@ class GenericDependencyManager:
                 registry_values = self._sensor_registry_phase.get_all_sensor_values()
                 for sensor_name, sensor_value in registry_values.items():
                     if sensor_value is not None:
-                        # ARCHITECTURE FIX: Wrap sensor values in ReferenceValue objects
+                        # Wrap sensor values in ReferenceValue objects
                         # This ensures cross-sensor context uses ReferenceValue objects
                         if isinstance(sensor_value, ReferenceValue):
                             enhanced_context[sensor_name] = sensor_value
@@ -299,9 +307,7 @@ class GenericDependencyManager:
         """
         dependencies = set()
 
-        # ARCHITECTURE FIX: Use centralized DependencyParser instead of flawed regex helper
-        from ...dependency_parser import DependencyParser
-
+        # Use centralized DependencyParser instead of flawed regex helper
         # Get hass instance from sensor registry if available
         hass = getattr(self._sensor_registry_phase, "hass", None) if hasattr(self, "_sensor_registry_phase") else None
         parser = DependencyParser(hass)
@@ -343,8 +349,6 @@ class GenericDependencyManager:
         """
         if not current_sensor:
             return set()
-
-        from ...regex_helper import extract_variable_references_from_metadata
 
         metadata_variables = extract_variable_references_from_metadata(formula)
 
@@ -424,9 +428,7 @@ class GenericDependencyManager:
 
         # Cross-sensor references (would need additional context to determine)
         # For now, treat simple identifiers as potential attributes or variables
-        # ARCHITECTURE FIX: Use centralized regex helper for validation
-        from ...regex_helper import regex_helper
-
+        # Use centralized regex helper for validation
         if regex_helper.is_valid_identifier(identifier):
             # Could be attribute, variable, or cross-sensor - context dependent
             # Default to attribute for now (this could be enhanced with more context)
@@ -440,8 +442,6 @@ class GenericDependencyManager:
 
         # Pattern for collection functions: function_name("pattern")
         # Use centralized collection function extraction pattern from regex helper
-        from ...regex_helper import create_collection_function_extraction_pattern, find_all_match_objects
-
         collection_pattern = create_collection_function_extraction_pattern()
 
         for match in find_all_match_objects(formula, collection_pattern):

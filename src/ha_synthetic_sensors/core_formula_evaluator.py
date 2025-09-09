@@ -29,6 +29,7 @@ from .evaluator_handlers import HandlerFactory
 from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import AlternateStateDetected, MissingDependencyError
 from .hierarchical_context_dict import HierarchicalContextDict
+from .regex_helper import create_referenced_tokens_pattern, find_all_matches
 from .type_definitions import ReferenceValue
 
 # Type for alternate state values
@@ -144,93 +145,19 @@ class CoreFormulaEvaluator:
 
         try:
             # Process metadata functions in the formula before evaluation
-            # This handles metadata() function calls by replacing them with their results
-            # and adding the results to the handler context for SimpleEval
-            if "metadata(" in original_formula.lower():
-                handler = self._handler_factory.get_handler("metadata")
-                if handler and handler.can_handle(original_formula):
-                    _LOGGER.debug("METADATA_HANDLER_PROCESSING: Processing formula with metadata handler")
-                    # Use the helper method to ensure consistent transformation for AST caching
-                    processed, metadata_results = handler.evaluate(original_formula, handler_context)
-                    # Metadata functions return their final values directly
-                    # This is a formula that needs further evaluation (may contain alternate states)
-                    resolved_formula = str(processed)
-
-                    # Debug: Check if metadata results contain the expected values
-                    if metadata_results:
-                        for key, value in metadata_results.items():
-                            _LOGGER.debug("METADATA_RESULT_DETAIL: %s = %s (type: %s)", key, value, type(value).__name__)
-                    else:
-                        _LOGGER.debug("METADATA_RESULT_EMPTY: No metadata results returned")
-
-                    # Add metadata results to handler context for SimpleEval
-                    # Wrap metadata results in ReferenceValue objects to comply with HierarchicalContextDict
-                    if metadata_results:
-                        for key, value in metadata_results.items():
-                            # Store metadata results in evaluation context for SimpleEval lookup
-                            # Use the key itself as the reference since these are internal metadata keys
-                            # Use the hierarchical context's unified setter method
-                            handler_context._hierarchical_context.set(key, ReferenceValue(reference=key, value=value))  # pylint: disable=protected-access
-                            _LOGGER.debug("METADATA_CONTEXT_ADDED: Successfully stored metadata result: %s = %s", key, value)
-                else:
-                    _LOGGER.debug("METADATA_HANDLER_UNAVAILABLE: No metadata handler available or can't handle formula")
+            resolved_formula = self._process_metadata_functions(original_formula, resolved_formula, handler_context)
 
             _LOGGER.debug("About to proceed to Enhanced SimpleEval with formula: %s", resolved_formula)
             # Enhanced SimpleEval with AST Caching (default path for all formulas)
-            #
-            # How SimpleEval AST Caching Works:
-            # 1. Formula string (e.g., "sensor_1 + sensor_2") is parsed into an Abstract Syntax Tree (AST) once
-            # 2. The AST is cached using the formula string as the key
-            # 3. For evaluation, SimpleEval uses the cached AST + variable context dictionary
-            # 4. Variables in the formula are looked up in the context: {"sensor_1": 25.5, "sensor_2": 30.2}
-            #
-            # Why We Do It This Way:
-            # - AST parsing is expensive (5-20x slower than evaluation)
-            # - Same formula = same cached AST = massive performance improvement
-            # - If we substituted values into the formula string ("25.5 + 30.2"), every evaluation
-            #   would create a unique formula string, making AST caching useless
-            # - By keeping variable names in the formula and using context lookup, we get maximum
-            #   cache hits and optimal performance
-            #
-            # Extract raw values for enhanced evaluation - SimpleEval will handle variable lookup
             enhanced_context = self._extract_values_for_enhanced_evaluation(handler_context, resolved_formula)
-
             success, result = self._enhanced_helper.try_enhanced_eval(resolved_formula, enhanced_context)
 
             if success:
-                # Normalize result to a single return
-                final_result: float | int | str | bool
-                if isinstance(result, (int | float | str | bool)):
-                    final_result = result
-                elif hasattr(result, "total_seconds"):
-                    # Convert timedelta to seconds for consistency
-                    final_result = float(result.total_seconds())
-                elif hasattr(result, "isoformat"):
-                    final_result = str(result.isoformat())
-                else:
-                    final_result = str(result)
+                return self._process_successful_evaluation(result)
 
-                # Check 3: Is the final formula result an alternate state?
-                alternate_state = self._get_alternate_state(final_result)
-                if alternate_state is not False:
-                    raise AlternateStateDetected(
-                        f"Formula result '{final_result}' is alternate state",
-                        final_result,
-                        str(alternate_state) if alternate_state is not True else None,
-                    )
-
-                return final_result
-
-            # Enhanced SimpleEval failed - check if we have exception details
-            # The result now contains the exception if enhanced evaluation failed
-            if isinstance(result, Exception):
-                eval_error = result
-                error_msg = str(eval_error)
-
-                raise AlternateStateDetected(error_msg, STATE_NONE, "none")
-
-            # No exception details available
-            raise AlternateStateDetected("Formula evaluation failed: unable to process expression", STATE_NONE, "none")
+            # Enhanced SimpleEval failed - handle the failure
+            self._handle_evaluation_failure(result)
+            return None  # This line should never be reached due to exception
 
         # Definitive Alternate State Detected (actual instance of one of the alternate states as the formula result)
         except AlternateStateDetected as e:
@@ -241,6 +168,88 @@ class CoreFormulaEvaluator:
             # Any evaluation failure results in AlternateStateDetected with STATE_NONE
             _LOGGER.debug("General formula evaluation failure: %s", str(err))
             raise AlternateStateDetected(f"Formula evaluation failed: {err}", STATE_NONE, "none") from err
+
+    def _process_metadata_functions(
+        self, original_formula: str, resolved_formula: str, handler_context: HierarchicalContextDict
+    ) -> str:
+        """Process metadata functions in the formula before evaluation."""
+        if "metadata(" not in original_formula.lower():
+            return resolved_formula
+
+        handler = self._handler_factory.get_handler("metadata")
+        if not (handler and handler.can_handle(original_formula)):
+            _LOGGER.debug("METADATA_HANDLER_UNAVAILABLE: No metadata handler available or can't handle formula")
+            return resolved_formula
+
+        _LOGGER.debug("METADATA_HANDLER_PROCESSING: Processing formula with metadata handler")
+        # Use the helper method to ensure consistent transformation for AST caching
+        processed, metadata_results = handler.evaluate(original_formula, handler_context)
+        # Metadata functions return their final values directly
+        # This is a formula that needs further evaluation (may contain alternate states)
+        resolved_formula = str(processed)
+
+        # Debug: Check if metadata results contain the expected values
+        if metadata_results:
+            for key, value in metadata_results.items():
+                _LOGGER.debug("METADATA_RESULT_DETAIL: %s = %s (type: %s)", key, value, type(value).__name__)
+        else:
+            _LOGGER.debug("METADATA_RESULT_EMPTY: No metadata results returned")
+
+        # Add metadata results to handler context for SimpleEval
+        self._add_metadata_results_to_context(metadata_results, handler_context)
+        return resolved_formula
+
+    def _add_metadata_results_to_context(
+        self, metadata_results: dict[str, Any], handler_context: HierarchicalContextDict
+    ) -> None:
+        """Add metadata results to handler context for SimpleEval."""
+        if not metadata_results:
+            return
+
+        # Wrap metadata results in ReferenceValue objects to comply with HierarchicalContextDict
+        for key, value in metadata_results.items():
+            # Store metadata results in evaluation context for SimpleEval lookup
+            # Use the key itself as the reference since these are internal metadata keys
+            # Use the hierarchical context's unified setter method
+            handler_context._hierarchical_context.set(key, ReferenceValue(reference=key, value=value))  # pylint: disable=protected-access
+            _LOGGER.debug("METADATA_CONTEXT_ADDED: Successfully stored metadata result: %s = %s", key, value)
+
+    def _process_successful_evaluation(self, result: Any) -> float | int | str | bool:
+        """Process and normalize successful evaluation result."""
+        # Normalize result to a single return
+        final_result: float | int | str | bool
+        if isinstance(result, (int | float | str | bool)):
+            final_result = result
+        elif hasattr(result, "total_seconds"):
+            # Convert timedelta to seconds for consistency
+            final_result = float(result.total_seconds())
+        elif hasattr(result, "isoformat"):
+            final_result = str(result.isoformat())
+        else:
+            final_result = str(result)
+
+        # Check if the final formula result is an alternate state
+        alternate_state = self._get_alternate_state(final_result)
+        if alternate_state is not False:
+            raise AlternateStateDetected(
+                f"Formula result '{final_result}' is alternate state",
+                final_result,
+                str(alternate_state) if alternate_state is not True else None,
+            )
+
+        return final_result
+
+    def _handle_evaluation_failure(self, result: Any) -> None:
+        """Handle evaluation failure cases."""
+        # Enhanced SimpleEval failed - check if we have exception details
+        # The result now contains the exception if enhanced evaluation failed
+        if isinstance(result, Exception):
+            eval_error = result
+            error_msg = str(eval_error)
+            raise AlternateStateDetected(error_msg, STATE_NONE, "none")
+
+        # No exception details available
+        raise AlternateStateDetected("Formula evaluation failed: unable to process expression", STATE_NONE, "none")
 
     def _extract_values_for_enhanced_evaluation(
         self, context: HierarchicalContextDict, referenced_formula: str
@@ -259,8 +268,6 @@ class CoreFormulaEvaluator:
         # Precompute referenced variable tokens from the referenced_formula so we only
         # early-detect alternate states for variables actually used by the formula.
         # Use centralized referenced tokens pattern from regex helper
-        from .regex_helper import create_referenced_tokens_pattern, find_all_matches
-
         pattern = create_referenced_tokens_pattern()
         referenced_tokens = set(find_all_matches(referenced_formula, pattern))
         _LOGGER.debug("CORE_EVAL_REFERENCED_TOKENS: Formula '%s' -> tokens: %s", referenced_formula, referenced_tokens)
@@ -303,11 +310,6 @@ class CoreFormulaEvaluator:
                         alternate_state = self._get_alternate_state(raw_value)
                         _LOGGER.debug("CORE_EVAL_ALTERNATE_RESULT: Variable '%s' alternate_state = %s", key, alternate_state)
                         if alternate_state is not False:
-                            _LOGGER.warning(
-                                "CORE_EVAL_ALTERNATE_RAISE: Variable '%s' contains alternate state '%s', raising AlternateStateDetected",
-                                key,
-                                alternate_state,
-                            )
                             raise AlternateStateDetected(
                                 f"Variable '{key}' contains alternate state '{alternate_state}'",
                                 alternate_state,

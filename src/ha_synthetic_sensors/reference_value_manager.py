@@ -42,7 +42,7 @@ class ReferenceValueManager:
             "REF_VALUE_MGR_CONTEXT_TYPE: Received context type %s for variable %s", type(eval_context).__name__, var_name
         )
 
-        # ARCHITECTURE: Use internal cache for entity deduplication (hidden from user context)
+        # Use internal cache for entity deduplication (hidden from user context)
         entity_reference = var_value if isinstance(var_value, str) else str(var_value)
 
         # Check internal cache for existing ReferenceValue
@@ -78,7 +78,7 @@ class ReferenceValueManager:
             # Set in user context under variable name
             safe_context_set(eval_context, var_name, ref_value)
 
-            # ARCHITECTURE FIX: Also store under entity ID for dependency resolution
+            # : Also store under entity ID for dependency resolution
             # This ensures that dependency checking can find already-resolved entities
             if isinstance(var_value, str) and var_value != var_name and "." in var_value:
                 safe_context_set(eval_context, var_value, ref_value)

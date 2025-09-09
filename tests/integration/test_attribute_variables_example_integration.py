@@ -53,7 +53,6 @@ class TestAttributeVariablesExample:
             "sensor.battery_1_level": {"state": "85.0", "attributes": {"unit_of_measurement": "%"}},
             "sensor.battery_2_level": {"state": "90.0", "attributes": {"unit_of_measurement": "%"}},
             # Solar inverter analysis sensor references
-            "sensor.solar_inverter_power": {"state": "800.0", "attributes": {"unit_of_measurement": "W"}},
             "sensor.solar_irradiance": {"state": "800.0", "attributes": {"unit_of_measurement": "W/m²"}},
             "sensor.solar_panel_temperature": {"state": "35.0", "attributes": {"unit_of_measurement": "°C"}},
             "sensor.days_since_solar_maintenance": {"state": "150.0", "attributes": {"unit_of_measurement": "days"}},

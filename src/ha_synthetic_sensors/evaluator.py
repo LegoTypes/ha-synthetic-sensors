@@ -19,7 +19,7 @@ from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
 from .constants_alternate import STATE_NONE, STATE_NONE_YAML, identify_alternate_state_value
 from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_STATE, RESULT_KEY_UNAVAILABLE_DEPENDENCIES
-from .constants_formula import is_reserved_word
+from .constants_formula import ALL_OPERATORS, is_reserved_word
 from .dependency_parser import DependencyParser
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluation_common import (
@@ -66,6 +66,7 @@ from .exceptions import (
 from .formula_evaluator_service import FormulaEvaluatorService
 from .formula_preprocessor import FormulaPreprocessor
 from .hierarchical_context_dict import HierarchicalContextDict
+from .regex_helper import create_identifier_pattern
 from .type_definitions import CacheStats, DataProviderCallback, DependencyValidation, EvaluationResult, ReferenceValue
 
 _LOGGER = logging.getLogger(__name__)
@@ -303,6 +304,11 @@ class Evaluator(FormulaEvaluator):
         """Get the perform pre evaluation checks method."""
         return self._perform_pre_evaluation_checks
 
+    @property
+    def variable_resolution_phase(self) -> Any:
+        """Get the variable resolution phase."""
+        return self._variable_resolution_phase
+
     def update_integration_entities(self, entity_ids: set[str]) -> None:
         """Update the set of entities that the integration can provide (new push-based pattern)."""
         self._registered_integration_entities = entity_ids.copy()
@@ -317,14 +323,14 @@ class Evaluator(FormulaEvaluator):
         self, config: FormulaConfig, context: HierarchicalContextDict | dict[str, Any] | None
     ) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling."""
-        # ARCHITECTURE FIX: Ensure proper context is always provided
+        # : Ensure proper context is always provided
         if context is None:
             raise ValueError(
                 "No evaluation context provided. The evaluator requires a proper HierarchicalContextDict "
                 "from the sensor manager to prevent context pollution across evaluations. "
                 "This indicates a bug in the evaluation flow where context creation is bypassed."
             )
-        elif isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
+        if isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
             # Create unique context name to prevent pollution across evaluations
             unique_context_name = f"sensor_dict_conversion_{uuid.uuid4().hex[:8]}"
             hierarchical_context = HierarchicalEvaluationContext(unique_context_name)
@@ -370,14 +376,14 @@ class Evaluator(FormulaEvaluator):
         bypass_dependency_management: bool = False,
     ) -> EvaluationResult:
         """Evaluate a formula configuration with enhanced error handling and sensor context."""
-        # ARCHITECTURE FIX: Ensure proper context is always provided
+        # : Ensure proper context is always provided
         if context is None:
             raise ValueError(
                 "No evaluation context provided. The evaluator requires a proper HierarchicalContextDict "
                 "from the sensor manager to prevent context pollution across evaluations. "
                 "This indicates a bug in the evaluation flow where context creation is bypassed."
             )
-        elif isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
+        if isinstance(context, dict) and not isinstance(context, HierarchicalContextDict):
             # Create unique context name to prevent pollution across evaluations
             unique_context_name = f"sensor_dict_conversion_{uuid.uuid4().hex[:8]}"
             hierarchical_context = HierarchicalEvaluationContext(unique_context_name)
@@ -423,7 +429,6 @@ class Evaluator(FormulaEvaluator):
             # Also print the traceback to stdout for tests running with -s
             traceback.print_exc()
             result = self._error_handler.handle_evaluation_error(err_unknown, formula_name)
-        _LOGGER.debug("evaluate_formula_with_sensor_config result for %s: %s", formula_name, result)
         return result
 
     def _handle_known_errors(self, err: Exception, formula_name: str) -> EvaluationResult:
@@ -649,7 +654,6 @@ class Evaluator(FormulaEvaluator):
         # Check if the formula contains potential attribute references
         # Look for simple identifiers that could be attribute names
         # Use centralized identifier pattern from regex helper
-        from .regex_helper import create_identifier_pattern
 
         pattern = create_identifier_pattern()
 
@@ -771,24 +775,7 @@ class Evaluator(FormulaEvaluator):
             return None
 
         # Get the handler value for this alternate state
-        handler_value = None
-        if alternate_state_value == STATE_UNAVAILABLE:
-            handler_value = config.alternate_state_handler.unavailable
-            if handler_value is None:
-                handler_value = config.alternate_state_handler.fallback
-        elif alternate_state_value == STATE_UNKNOWN:
-            handler_value = config.alternate_state_handler.unknown
-            if handler_value is None:
-                handler_value = config.alternate_state_handler.fallback
-        elif alternate_state_value is None or alternate_state_value == STATE_NONE:
-            handler_value = config.alternate_state_handler.none
-            if handler_value is None:
-                handler_value = config.alternate_state_handler.fallback
-        else:
-            # Try fallback handler
-            handler_value = config.alternate_state_handler.fallback
-
-        _LOGGER.debug("Alternate state handler: state=%s, handler_value=%s", alternate_state_value, handler_value)
+        handler_value = self._get_alternate_state_handler_value(config.alternate_state_handler, alternate_state_value)
 
         if handler_value is None:
             _LOGGER.debug("No handler found for alternate state: %s", alternate_state_value)
@@ -828,7 +815,6 @@ class Evaluator(FormulaEvaluator):
 
     def _looks_like_formula(self, s: str) -> bool:
         """Check if a string looks like a formula expression."""
-        from .constants_formula import ALL_OPERATORS
 
         return any(op in s for op in ALL_OPERATORS)
 
@@ -972,10 +958,8 @@ class Evaluator(FormulaEvaluator):
 
         except AlternateStateDetected as e:
             # Handle alternate state detection using recursive evaluation
-            _LOGGER.debug("AlternateStateDetected for formula %s: %s", config.id, e.alternate_state_value)
             if config.alternate_state_handler:
                 result = self._evaluate_alternate_state_handler(e.alternate_state_value, config, handler_context, sensor_config)
-                _LOGGER.debug("Formula %s resolved using alternate state handler = %s", config.id, result)
             else:
                 # No alternate state handler configured, return the alternate state value
                 result = e.alternate_state_value
@@ -984,7 +968,7 @@ class Evaluator(FormulaEvaluator):
         final_result = self._finalize_result(result, config, context, cache_key_id, sensor_config)
 
         # Store the accumulated context for later retrieval
-        # CRITICAL FIX: Store reference to original context, not a copy
+        # : Store reference to original context, not a copy
         # This ensures that modifications during variable resolution are preserved
         return final_result
 
@@ -1207,3 +1191,22 @@ class Evaluator(FormulaEvaluator):
             The evaluated result
         """
         return self._utilities.evaluate_expression_callback(expression, context, self.evaluate_formula)
+
+    def _get_alternate_state_handler_value(self, alternate_state_handler: Any, alternate_state_value: str) -> Any:
+        """Get the handler value for a specific alternate state."""
+        if alternate_state_value == STATE_UNAVAILABLE:
+            handler_value = alternate_state_handler.unavailable
+            if handler_value is None:
+                handler_value = alternate_state_handler.fallback
+        elif alternate_state_value == STATE_UNKNOWN:
+            handler_value = alternate_state_handler.unknown
+            if handler_value is None:
+                handler_value = alternate_state_handler.fallback
+        elif alternate_state_value is None or alternate_state_value == STATE_NONE:
+            handler_value = alternate_state_handler.none
+            if handler_value is None:
+                handler_value = alternate_state_handler.fallback
+        else:
+            # Try fallback handler
+            handler_value = alternate_state_handler.fallback
+        return handler_value

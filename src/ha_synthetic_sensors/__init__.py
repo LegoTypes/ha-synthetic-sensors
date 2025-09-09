@@ -294,7 +294,7 @@ async def async_setup_synthetic_sensors(
         logger,
     )
 
-    # CRITICAL: Register sensor manager with storage manager for entity change notifications
+    # Register sensor manager with storage manager for entity change notifications
     # This must happen before loading configuration to ensure proper dependency tracking
     sensor_manager.register_with_storage_manager(storage_manager)
 
@@ -391,7 +391,7 @@ async def async_setup_synthetic_sensors_with_entities(
         sensor_manager, backing_entity_ids, sensor_to_backing_mapping, change_notifier, logger
     )
 
-    # CRITICAL: Register sensor manager with storage manager for entity change notifications
+    # Register sensor manager with storage manager for entity change notifications
     # This must happen before loading configuration to ensure proper dependency tracking
     sensor_manager.register_with_storage_manager(storage_manager)
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from .collection_resolver import CollectionResolver
 from .dependency_parser import DependencyParser
 from .exceptions import DataValidationError
+from .hierarchical_context_dict import HierarchicalContextDict
 from .validation_helper import convert_to_numeric
 
 if TYPE_CHECKING:
@@ -15,8 +16,6 @@ if TYPE_CHECKING:
 
     from .config_models import FormulaConfig, SensorConfig
     from .type_definitions import DataProviderCallback, DependencyValidation
-
-from .hierarchical_context_dict import HierarchicalContextDict
 
 _LOGGER = logging.getLogger(__name__)
 
