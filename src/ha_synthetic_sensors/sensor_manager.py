@@ -137,13 +137,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._main_formula = config.formulas[0]
         self._attribute_formulas = config.formulas[1:] if len(config.formulas) > 1 else []
 
-        # DEBUG: Check if main formula has alternate state handlers
-        _LOGGER.warning(
-            "DEBUG_MAIN_FORMULA: Main formula %s has alternate_state_handler: %s",
-            self._main_formula.id,
-            self._main_formula.alternate_state_handler is not None,
-        )
-
         # Initialize metadata and apply to sensor
         self._setup_metadata_properties(global_settings)
 
@@ -158,7 +151,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._attribute_dependency_manager = GenericDependencyManager()
 
         # Store resolved variables from main formula evaluation for attribute use
-        # ARCHITECTURE FIX: Removed _resolved_variables - hierarchical context is the single source of truth
+        #Removed _resolved_variables - hierarchical context is the single source of truth
 
         # Set base extra state attributes
         self._setup_base_attributes()
@@ -254,55 +247,12 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Start with main formula attributes
         base_attributes: dict[str, Any] = self._main_formula.attributes.copy()
 
-        _LOGGER.warning(
-            "DEBUG_BASE_ATTRS_INITIAL: %s",
-            {
-                k: f"{v} (type: {type(v).__name__})"
-                for k, v in base_attributes.items()
-                if "grace" in k.lower() or "panel_offline" in k.lower()
-            },
-        )
-
-        # ARCHITECTURE FIX: Use hierarchical context instead of extracted variables
-        # This ensures that attributes like "debug_panel_status: panel_status" show resolved values
-        if sensor_context is not None:
-            # Get the current hierarchical context with all resolved variables
-            current_context = sensor_context.get_context_for_evaluation()
-
-            for attr_name, attr_value in base_attributes.items():
-                if isinstance(attr_value, str):
-                    # Try to resolve from hierarchical context
-                    if attr_value in current_context:
-                        context_value = current_context[attr_value]
-                        resolved_value = context_value.value if isinstance(context_value, ReferenceValue) else context_value
-                        base_attributes[attr_name] = resolved_value
-                        _LOGGER.info(
-                            "CONTEXT_VAR_RESOLVED: Attribute %s = %s (from context variable %s)",
-                            attr_name,
-                            resolved_value,
-                            attr_value,
-                        )
-                    else:
-                        _LOGGER.warning(
-                            "CONTEXT_VAR_MISSING: Attribute %s references variable %s but it's not in context. Available: %s",
-                            attr_name,
-                            attr_value,
-                            [k for k in current_context if not k.startswith("_")],
-                        )
-
-                    # If not in resolved variables, this should be handled during proper attribute evaluation
-                    # Don't try to evaluate computed variables here as we don't have proper context inheritance
-                    _LOGGER.debug(
-                        "ATTR_REFERENCE_MISSING: Attribute %s references variable %s but it's not resolved. "
-                        "This should be handled during proper attribute evaluation with inherited context.",
-                        attr_name,
-                        attr_value,
-                    )
+        # Variable resolution for calculated attributes is handled separately below.
 
         # Add calculated attributes from other formulas
         base_attributes.update(self._calculated_attributes)
 
-        # ARCHITECTURE FIX: Resolve ALL attributes that reference context variables
+        #Resolve ALL attributes that reference context variables
         # This handles both calculated attributes AND simple string attributes from main formula
         if sensor_context is not None:
             current_context = sensor_context.get_context_for_evaluation()
@@ -335,7 +285,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                             [k for k in current_context if not k.startswith("_")],
                         )
 
-            # ARCHITECTURE FIX: Also process simple string attributes from main formula
+            #Also process simple string attributes from main formula
             # These are attributes like "is_within_grace_is: is_within_grace_period"
             _LOGGER.warning(
                 "DEBUG_MAIN_ATTRS: Processing %d main formula attributes: %s",
@@ -351,7 +301,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                     attr_name not in base_attributes,
                 )
 
-                # CRITICAL FIX: Skip re-evaluation of attributes that are already calculated
+                #Skip re-evaluation of attributes that are already calculated
                 # This prevents double evaluation which causes string concatenation corruption
                 if attr_name in self._calculated_attributes:
                     _LOGGER.debug(
@@ -506,7 +456,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     def _add_variables_to_sensor_context(self, formula_config: FormulaConfig, sensor_context: SensorEvaluationContext) -> None:
         """Add variables from formula config directly to the existing sensor context.
 
-        CRITICAL: This method adds variables directly to the existing hierarchical context
+        This method adds variables directly to the existing hierarchical context
         instead of creating a new one. This maintains the single context architecture.
 
         Args:
@@ -737,7 +687,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     ) -> bool:
         """Try to evaluate a computed variable attribute using inherited sensor context. Returns True if successful."""
         try:
-            # ARCHITECTURE FIX: Include alternate_state_handler from ComputedVariable in temporary FormulaConfig
+            #Include alternate_state_handler from ComputedVariable in temporary FormulaConfig
             # This ensures that alternate state handlers work correctly for computed variables
             temp_cfg = FormulaConfig(
                 id=f"{self._config.unique_id}_{formula.formula.strip()}",
@@ -745,7 +695,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 alternate_state_handler=computed_var.alternate_state_handler,
             )
 
-            # CRITICAL ARCHITECTURE FIX: Use the sensor's accumulated context instead of creating new context
+            # Use the sensor's accumulated context instead of creating new context
             # This ensures proper hierarchical context inheritance for attribute evaluation
             inherited_context = sensor_context.get_context_for_evaluation()
 
@@ -799,7 +749,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 attr_value = complete_ctx[attr_name]
                 self._calculated_attributes[attr_name] = attr_value
 
-                # ARCHITECTURE FIX: Store attribute result in hierarchical context for downstream evaluations
+                #Store attribute result in hierarchical context for downstream evaluations
                 # This ensures attributes can be referenced by other attributes or alternate states
 
                 if isinstance(attr_value, ReferenceValue):
@@ -852,7 +802,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
     ) -> HierarchicalContextDict:
         """Build base context from main result for attribute evaluation by inheriting sensor's context.
 
-        CRITICAL: This method should inherit from the sensor's accumulated context, not create a new one.
+        This method should inherit from the sensor's accumulated context, not create a new one.
         """
         # Get the sensor's accumulated context as the base
         inherited_context = sensor_context.get_context_for_evaluation()
@@ -1820,7 +1770,7 @@ class SensorManager:
         for sensor_unique_id in to_add:
             sensor_config = new_sensors[sensor_unique_id]
             if sensor_config.enabled:
-                # CRITICAL FIX: Check if sensor already exists to prevent duplicate registration
+                #Check if sensor already exists to prevent duplicate registration
                 if sensor_config.unique_id in self._sensors_by_unique_id:
                     _LOGGER.debug("Sensor %s already exists in update, skipping creation", sensor_config.unique_id)
                     continue
@@ -1850,7 +1800,7 @@ class SensorManager:
             await self.remove_sensor(old_config.unique_id)
 
             if new_config.enabled:
-                # CRITICAL FIX: Check if sensor already exists to prevent duplicate registration
+                #Check if sensor already exists to prevent duplicate registration
                 if new_config.unique_id in self._sensors_by_unique_id:
                     _LOGGER.debug("Sensor %s already exists during update, skipping creation", new_config.unique_id)
                     return
@@ -1935,7 +1885,7 @@ class SensorManager:
 
         try:
             if sensor_configs is None:
-                # CRITICAL FIX: For full sensor updates, invalidate sensor entity caches to prevent
+                #For full sensor updates, invalidate sensor entity caches to prevent
                 # state variable from resolving to sensor's own calculated result instead of backing entity
                 sensor_entity_ids = set()
                 for sensor in self._sensors_by_unique_id.values():
@@ -2403,7 +2353,7 @@ class SensorManager:
 
             # Create the sensor entity
             if sensor_config.enabled:
-                # CRITICAL FIX: Check if sensor already exists to prevent duplicate registration
+                #Check if sensor already exists to prevent duplicate registration
                 if sensor_config.unique_id in self._sensors_by_unique_id:
                     _LOGGER.debug("Sensor %s already exists, skipping individual creation", sensor_config.unique_id)
                     return True
@@ -2622,7 +2572,7 @@ class SensorManager:
                 if variable_resolution_phase and hasattr(variable_resolution_phase, "set_global_settings"):
                     variable_resolution_phase.set_global_settings(global_settings)
 
-                # CRITICAL FIX: Also update global settings on the context building phase
+                #Also update global settings on the context building phase
                 # This ensures global variables are available BEFORE computed variables are evaluated
                 context_building_phase = getattr(self._evaluator, "_context_building_phase", None)
                 if context_building_phase and hasattr(context_building_phase, "set_global_settings"):
