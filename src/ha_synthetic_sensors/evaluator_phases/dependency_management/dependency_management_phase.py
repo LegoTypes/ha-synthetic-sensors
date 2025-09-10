@@ -32,10 +32,11 @@ class DependencyManagementPhase:
     - Handle missing, unavailable, and unknown dependencies
     """
 
-    def __init__(self, hass: Any = None) -> None:
+    def __init__(self, hass: Any = None, ast_service: Any = None) -> None:
         """Initialize the dependency management phase."""
         self._hass = hass
-        self._manager_factory = DependencyManagerFactory(hass)
+        self._ast_service = ast_service
+        self._manager_factory = DependencyManagerFactory(hass, ast_service)
         self._dependency_handler = None
         self._sensor_to_backing_mapping: dict[str, str] = {}
         self._sensor_registry_phase = None

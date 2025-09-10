@@ -12,7 +12,7 @@ from typing import Any, TypedDict
 from homeassistant.core import HomeAssistant
 
 from .config_types import AttributeValue, GlobalSettingsDict
-from .dependency_parser import DependencyParser
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 
 # Default domain constant
 DEFAULT_DOMAIN = "synthetic_sensors"
@@ -137,10 +137,11 @@ class FormulaConfig:
         # - Direct entity_ids
         # - Dot notation (sensor1.battery_level)
         # - Dynamic queries (regex:, label:, device_class:, etc.)
-        parser = DependencyParser(hass)
+        ast_service = FormulaASTAnalysisService()
+        analysis = ast_service.get_formula_analysis(self.formula)
 
         # Extract static dependencies (direct entity references and variables)
-        static_deps = parser.extract_static_dependencies(self.formula, self.variables)
+        static_deps = analysis.dependencies
 
         # Note: Dynamic query patterns are extracted but resolved at runtime by evaluator
         # Dynamic dependencies cannot be pre-computed as they depend on HA state

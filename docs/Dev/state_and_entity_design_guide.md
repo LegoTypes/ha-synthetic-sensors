@@ -1602,11 +1602,38 @@ The evaluation system is organized into distinct layers, each with a specific re
 The synthetic sensor package implements a compiler-like multi-phase approach to formula evaluation, ensuring clean separation of
 concerns and extensible handler architecture.
 
+### Configuration Parsing vs Formula Evaluation
+
+The system distinguishes between two types of parsing and validation:
+
+1. **Configuration Parsing (YAML Import Time)**:
+   - Occurs when YAML is loaded via `ConfigManager`
+   - Detects cross-sensor circular dependencies
+   - Validates YAML structure and sensor definitions
+   - Happens BEFORE any sensor creation or AST parsing
+   - Uses `CrossSensorReferenceDetector` for reference analysis
+
+2. **Formula AST Parsing (Evaluation Time)**:
+   - Occurs during formula evaluation phases
+   - Uses `FormulaASTAnalysisService` for parse-once efficiency
+   - Analyzes mathematical and logical expressions
+   - Caches parsed AST for performance
+   - Handles variable extraction and dependency analysis
+
 ### Evaluation Phases
 
 #### Phase 0: Early Circular Reference Detection (Critical First Step)
 
-Circular references are detected and rejected immediately before any dependency resolution or entity resolution attempts:
+Circular references are detected at different stages depending on their type:
+
+**Cross-Sensor Circular Dependencies** (Parse Time):
+
+- Detected at YAML import time in `ConfigManager`
+- Uses `CrossSensorReferenceDetector` to analyze sensor-to-sensor references
+- Logs warnings but allows import to continue (non-fatal by design)
+- Occurs BEFORE any AST parsing or sensor creation
+
+**Intra-Sensor Circular Dependencies** (Evaluation Time):
 
 1. **Self-Reference Detection**: Attributes referencing themselves (e.g., `attr1: attr1 * 1.1`)
 2. **Attribute-to-Attribute Cycles**: Circular dependencies between attributes within the same sensor

@@ -1,10 +1,50 @@
-# Context and Referenve Value Implementation Guide
+# Context and Reference Value Implementation Guide
 
 ## Overview
 
 The synthetic sensors system has migrated from using raw values in evaluation contexts to a type-safe **ReferenceValue**
 architecture. This change ensures that handlers have access to both the original entity reference (entity ID) and the resolved
 state value, enabling features like the `metadata()` function that need to know the actual Home Assistant entity ID.
+
+## AST Service Integration with ReferenceValue Architecture
+
+The **FormulaASTAnalysisService** works seamlessly with the ReferenceValue architecture to provide efficient formula parsing and
+analysis while maintaining type safety:
+
+### Parse-Once, Reference-Many Pattern
+
+```python
+# AST service parses formula once
+analysis = ast_service.get_formula_analysis("sensor.power * 2 + temp_offset")
+
+# Analysis identifies entities and variables
+analysis.entity_references  # {'sensor.power'}
+analysis.variables          # {'temp_offset'}
+
+# Variable resolution creates ReferenceValue objects
+for entity_ref in analysis.entity_references:
+    value = hass.states.get(entity_ref).state
+    ReferenceValueManager.set_variable_with_reference_value(
+        context, entity_ref, entity_ref, value
+    )
+```
+
+### AST Analysis Drives ReferenceValue Creation
+
+The AST service identifies what needs to be wrapped in ReferenceValue objects:
+
+1. **Entity References**: AST identifies `sensor.power` → Creates `ReferenceValue("sensor.power", 1200.0)`
+2. **Variables**: AST identifies `temp_offset` → Creates `ReferenceValue("config.temp_offset", 2.0)`
+3. **Functions**: AST identifies `metadata()` calls → Preserves references for handler processing
+
+### Integration Flow
+
+```text
+Formula String → AST Service → Analysis → Variable Resolution → ReferenceValue Creation
+     ↓              ↓            ↓              ↓                      ↓
+"sensor.power"  Parse Once   Identify     Resolve Value         Wrap in ReferenceValue
+                            Dependencies   from HA State       for Type Safety
+```
 
 ## ReferenceValue Class
 
@@ -510,6 +550,78 @@ alt_context.set("warning_state", ReferenceValue("alt.warning", True))
 - **All phases inherit** the complete context from previous phases
 - **ReferenceValue objects persist** throughout the entire evaluation lifecycle
 
+## AST Service Role in Evaluation Pipeline
+
+The FormulaASTAnalysisService is the foundation that enables efficient evaluation across all phases:
+
+### Phase 0: Pre-Evaluation
+
+- **Circular Reference Detection**: AST identifies all variable dependencies for cycle detection
+
+- **Cache Key Generation**: Formula string used as cache key for AST analysis lookup
+
+### Phase 1: Variable Resolution
+
+- **Variable Identification**: AST service identifies all variables needing resolution
+- **Entity Detection**: Distinguishes between entity references and regular variables
+- **ReferenceValue Creation**: Each identified entity/variable wrapped in ReferenceValue
+
+```python
+# AST drives variable resolution
+
+analysis = ast_service.get_formula_analysis(formula)
+for var in analysis.variables:
+
+    if var not in context:
+        resolved = resolver.resolve(var)
+
+
+        ReferenceValueManager.set_variable_with_reference_value(
+            context, var, var, resolved
+
+
+
+        )
+```
+
+### Phase 2: Dependency Management
+
+- **Dependency Extraction**: AST provides complete dependency graph
+- **Collection Function Detection**: Identifies dynamic queries needing expansion
+
+- **Cross-Sensor References**: Detects references to other synthetic sensors
+
+### Phase 3: Formula Execution
+
+- **Handler Routing**: AST analysis determines which handler to use
+
+- **Metadata Detection**: `has_metadata` flag routes to MetadataHandler
+- **Formula Transformation**: Enables AST caching for transformed formulas
+
+### Phase 4: Result Processing
+
+- **Cache Management**: AST analysis results cached for next evaluation
+- **Performance Metrics**: Track cache hits/misses for optimization
+
+### AST Service Performance Benefits
+
+```python
+# Without AST Service (old approach)
+# Each component parses formula independently
+dependency_parser.parse(formula)     # Parse 1
+variable_extractor.extract(formula)  # Parse 2
+metadata_detector.detect(formula)    # Parse 3
+collection_finder.find(formula)      # Parse 4
+
+# With AST Service (new approach)
+# Single parse, multiple uses
+analysis = ast_service.get_formula_analysis(formula)  # Parse once
+dependencies = analysis.dependencies     # No parse
+variables = analysis.variables          # No parse
+has_metadata = analysis.has_metadata    # No parse
+collections = analysis.collection_functions  # No parse
+```
+
 ## Entity ID Change Resilience
 
 ### **Complete Immunity to Entity ID Renaming**
@@ -782,14 +894,40 @@ def __setitem__(self, key: str, value: ContextValue) -> None:
     stack_trace = "".join(traceback.format_stack())
 ```
 
-### Metadata Handler Architecture Flow
+### Metadata Handler Architecture Flow with AST Caching
 
-1. **Metadata Processing**: `metadata(state, 'last_changed')` → `metadata_result(_metadata_0)`
-2. **State Resolution**: `state` variable resolves to `ReferenceValue(reference='sensor.ok', value=100.0)`
-3. **Metadata Retrieval**: Handler gets `last_changed` timestamp from `sensor.ok`
-4. **Context Storage**: Metadata result stored as `_metadata_0` →
+1. **AST Analysis**: `FormulaASTAnalysisService` identifies `metadata()` function call
+2. **Metadata Processing**: `metadata(state, 'last_changed')` → `metadata_result(_metadata_0)`
+3. **State Resolution**: `state` variable resolves to `ReferenceValue(reference='sensor.ok', value=100.0)`
+4. **Metadata Retrieval**: Handler gets `last_changed` timestamp from `sensor.ok`
+5. **Context Storage**: Metadata result stored as `_metadata_0` →
    `ReferenceValue(reference='_metadata_0', value='2025-09-02T23:40:01.626918+00:00')`
-5. **SimpleEval Execution**: Formula `minutes_between(metadata_result(_metadata_0), now()) < 30` evaluates with context lookup
+6. **AST Cache**: Transformed formula `metadata_result(_metadata_0)` cached for reuse
+7. **SimpleEval Execution**: Formula `minutes_between(metadata_result(_metadata_0), now()) < 30` evaluates with context lookup
+
+### AST Service and Compilation Cache Synergy
+
+The AST service and compilation cache work together to optimize formula evaluation:
+
+```python
+# First evaluation
+formula = "metadata(sensor.power, 'last_changed')"
+
+# Step 1: AST Service analyzes formula structure
+analysis = ast_service.get_formula_analysis(formula)
+# Identifies: has_metadata=True, entity_references={'sensor.power'}
+
+# Step 2: Metadata handler transforms formula for caching
+transformed = "metadata_result(_metadata_0)"
+metadata_values = {"_metadata_0": "2025-01-01T12:00:00"}
+
+# Step 3: Compilation cache stores transformed AST
+compiled = compilation_cache.get_compiled_formula(transformed)
+# AST parsed once, cached forever
+
+# Subsequent evaluations reuse cached AST
+# Only metadata values change, formula structure stays same
+```
 
 ### Key Architectural Points
 

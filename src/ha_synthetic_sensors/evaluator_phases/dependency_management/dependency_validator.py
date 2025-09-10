@@ -35,6 +35,19 @@ class DependencyValidator(DependencyManager):
         unavailable_deps: set[str] = set()
         unknown_deps: set[str] = set()
 
+        # Log if we're seeing unexpected dependencies for power sensors
+        formula_name = kwargs.get("formula_name", "unknown")
+        if "Power" in formula_name and dependencies:
+            suspicious_deps = [
+                d
+                for d in dependencies
+                if d in ("last_valid_changed", "last_valid_state", "panel_offline_minutes", "panel_status")
+            ]
+            if suspicious_deps:
+                _LOGGER.warning(
+                    "CROSS_CONTAMINATION: Power sensor '%s' has energy sensor dependencies: %s", formula_name, suspicious_deps
+                )
+
         for dep in dependencies:
             if dep in available_entities:
                 # Dependency is available
@@ -44,6 +57,12 @@ class DependencyValidator(DependencyManager):
                 continue
             # Check if entity exists in HA
             if hass and hass.states.get(dep):
+                continue
+            # Check if this looks like a computed variable (not an entity ID pattern)
+            # These are variables that will be resolved during evaluation, not entities
+            if "." not in dep and not dep.startswith("sensor.") and not dep.startswith("binary_sensor."):
+                # This looks like a variable name, not an entity ID
+                _LOGGER.debug("Dependency validator: Skipping variable '%s' (will be resolved during evaluation)", dep)
                 continue
             # Entity not found
             missing_deps.add(dep)

@@ -120,7 +120,7 @@ class TestORAreaIntegration:
 
     def test_living_kitchen_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for living_room|kitchen areas."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="area", pattern="living_room|kitchen", function="sum")
         entities = self.resolver.resolve_collection(query)
@@ -142,7 +142,7 @@ class TestORAreaIntegration:
 
     def test_three_way_area_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for three areas."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Use pipe-separated areas as per README and design guide
         query = DynamicQuery(query_type="area", pattern="living_room|kitchen|dining_room", function="sum")
@@ -167,7 +167,7 @@ class TestORAreaIntegration:
 
     def test_bedroom_area_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for bedroom areas."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="area", pattern="master_bedroom|guest_bedroom", function="sum")
         entities = self.resolver.resolve_collection(query)
@@ -224,7 +224,7 @@ class TestORAreaIntegration:
 
     def test_collection_resolver_pipe_support_implemented(self, collection_resolver):
         """Test that collection resolver supports pipe syntax for areas."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="area", pattern="living_room|kitchen", function="count")
 

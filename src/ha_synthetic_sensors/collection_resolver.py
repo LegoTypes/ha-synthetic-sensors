@@ -26,7 +26,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er, label_registry as lr
 
 from .condition_parser import ConditionParser
-from .dependency_parser import DynamicQuery
+from .dynamic_query import DynamicQuery
 from .exceptions import InvalidCollectionPatternError, MissingDependencyError
 from .regex_helper import create_entity_reference_pattern_from_domains, create_query_type_patterns, search_case_insensitive
 from .shared_constants import get_ha_domains

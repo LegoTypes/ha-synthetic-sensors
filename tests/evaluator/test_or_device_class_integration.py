@@ -97,7 +97,7 @@ class TestORDeviceClassIntegration:
 
     def test_collection_resolver_pipe_support_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test collection resolver pipe support for device classes."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
         entities = self.resolver.resolve_collection(query)
@@ -115,7 +115,7 @@ class TestORDeviceClassIntegration:
 
     def test_door_window_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for door|window device classes."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")
         entities = self.resolver.resolve_collection(query)
@@ -133,7 +133,7 @@ class TestORDeviceClassIntegration:
 
     def test_three_way_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for three device classes."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="device_class", pattern="door|window|lock", function="count")
         entities = self.resolver.resolve_collection(query)
@@ -152,7 +152,7 @@ class TestORDeviceClassIntegration:
 
     def test_climate_power_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for climate and power device classes."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="device_class", pattern="temperature|humidity", function="sum")
         entities = self.resolver.resolve_collection(query)
@@ -165,7 +165,7 @@ class TestORDeviceClassIntegration:
 
     def test_quoted_and_unquoted_or_patterns(self):
         """Test both quoted and unquoted OR patterns."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test quoted pattern
         quoted_query = DynamicQuery(query_type="device_class", pattern="door|window", function="count")

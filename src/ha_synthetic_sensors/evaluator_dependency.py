@@ -6,8 +6,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .collection_resolver import CollectionResolver
-from .dependency_parser import DependencyParser
 from .exceptions import DataValidationError
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .hierarchical_context_dict import HierarchicalContextDict
 from .validation_helper import convert_to_numeric
 
@@ -32,7 +32,7 @@ class EvaluatorDependency:
                                    Variables automatically try backing entities first, then HA fallback.
         """
         self._hass = hass
-        self._dependency_parser = DependencyParser()
+        self._ast_service = FormulaASTAnalysisService()
         self._collection_resolver = CollectionResolver(hass)
         self._data_provider_callback = data_provider_callback
         self._registered_integration_entities: set[str] | None = None
@@ -80,8 +80,9 @@ class EvaluatorDependency:
         Returns:
             Set of entity IDs and variable names that the formula depends on
         """
-        # Use the comprehensive dependency extraction method
-        return self._dependency_parser.extract_dependencies(formula)
+        # Use the AST service for dependency extraction
+        analysis = self._ast_service.get_formula_analysis(formula)
+        return analysis.dependencies
 
     def extract_formula_dependencies(
         self, config: FormulaConfig, context: HierarchicalContextDict, sensor_config: SensorConfig | None = None

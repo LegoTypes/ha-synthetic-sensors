@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_entities import COMMON_ENTITY_DOMAINS
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
-from ...dependency_parser import DependencyParser
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
+from ...formula_ast_analysis_service import FormulaASTAnalysisService
 from ...reference_value_manager import ReferenceValueManager
 from ...regex_helper import (
     create_collection_function_extraction_pattern,
@@ -309,9 +309,10 @@ class GenericDependencyManager:
 
         # Use centralized DependencyParser instead of flawed regex helper
         # Get hass instance from sensor registry if available
-        hass = getattr(self._sensor_registry_phase, "hass", None) if hasattr(self, "_sensor_registry_phase") else None
-        parser = DependencyParser(hass)
-        identifiers = parser.extract_dependencies(formula)
+        # Use AST service for comprehensive extraction
+        ast_service = FormulaASTAnalysisService()
+        analysis = ast_service.get_formula_analysis(formula)
+        identifiers = analysis.dependencies
 
         for identifier in identifiers:
             # Skip reserved words

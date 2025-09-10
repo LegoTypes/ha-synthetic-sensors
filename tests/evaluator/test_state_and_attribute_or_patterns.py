@@ -87,7 +87,7 @@ class TestStateAndAttributeORIntegration:
 
     def test_attribute_or_resolution_implemented(self, collection_resolver):
         """Test that attribute OR pattern resolution works correctly."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test OR pattern with existing entities from shared registry
         # Pattern will match entities with battery_level>50 OR device_class==temperature
@@ -117,7 +117,7 @@ class TestStateAndAttributeORIntegration:
 
     def test_state_or_resolution_implemented(self, collection_resolver):
         """Test that state OR pattern resolution works correctly."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test OR pattern with existing entities from shared registry
         # Pattern will match entities with state=on OR state=locked using shorthand syntax
@@ -141,7 +141,7 @@ class TestStateAndAttributeORIntegration:
 
     def test_complex_attribute_or_conditions(self, collection_resolver):
         """Test OR pattern resolution for complex attribute conditions."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test complex OR conditions with existing entities
         query = DynamicQuery(query_type="attribute", pattern="battery_level>70|device_class:power", function="count")
@@ -161,7 +161,7 @@ class TestStateAndAttributeORIntegration:
 
     def test_complex_state_or_conditions(self, collection_resolver):
         """Test OR pattern resolution for complex state conditions."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test complex state OR conditions with numeric and boolean patterns
         query = DynamicQuery(query_type="state", pattern=">20|locked|!off", function="count")
@@ -186,7 +186,7 @@ class TestStateAndAttributeORIntegration:
 
     def test_device_class_negation_syntax(self, collection_resolver):
         """Test device_class pattern negation with ! prefix."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test device_class inclusion and exclusion
         query = DynamicQuery(query_type="device_class", pattern="power|!humidity", function="count")
@@ -212,7 +212,7 @@ class TestStateAndAttributeORIntegration:
 
     def test_device_class_shorthand_syntax(self, collection_resolver):
         """Test device_class pattern shorthand syntax."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test device_class shorthand: first pattern with prefix, second without
         query = DynamicQuery(query_type="device_class", pattern="power|energy", function="count")

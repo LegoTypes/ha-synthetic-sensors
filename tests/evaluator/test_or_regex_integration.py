@@ -67,7 +67,7 @@ class TestOrRegexIntegration:
 
     def test_resolve_or_regex_pattern_integration(self, collection_resolver):
         """Test that OR regex pattern integration works correctly."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test OR pattern with existing entities from shared registry
         # Pattern will match entities containing "circuit" OR "kitchen"
@@ -93,7 +93,7 @@ class TestOrRegexIntegration:
 
     def test_resolve_three_way_or_regex_integration(self, collection_resolver):
         """Test OR pattern resolution with three regex patterns."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test three-way OR pattern with existing entities from shared registry
         query = DynamicQuery(query_type="regex", pattern="bedroom.*|kitchen.*|living_room.*", function="count")
@@ -118,7 +118,7 @@ class TestOrRegexIntegration:
 
     def test_resolve_domain_or_regex_integration(self, collection_resolver):
         """Test OR pattern resolution with domain-specific regex patterns."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test domain-specific OR pattern with existing entities from shared registry
         query = DynamicQuery(query_type="regex", pattern="sensor\\.circuit.*|binary_sensor\\.door.*", function="count")
@@ -141,7 +141,7 @@ class TestOrRegexIntegration:
 
     def test_edge_case_trailing_pipe_pattern(self, collection_resolver):
         """Test edge case with trailing pipe in regex pattern."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test edge case with trailing pipe - should handle gracefully
         query = DynamicQuery(query_type="regex", pattern="circuit.*|kitchen.*|", function="count")
@@ -163,7 +163,7 @@ class TestOrRegexIntegration:
 
     def test_escaped_characters_in_or_regex(self, collection_resolver):
         """Test escaped characters in OR regex patterns."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test escaped characters in regex pattern
         query = DynamicQuery(

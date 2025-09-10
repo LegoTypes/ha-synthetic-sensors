@@ -8,7 +8,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .config_models import FormulaConfig, SensorConfig
-from .dependency_parser import DependencyParser
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .name_resolver import NameResolver
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,8 +105,8 @@ class EntityIndex:
             self._add_formula_entities(formula, entities_added)
 
         # Check sensor-level metadata for entity references
-        parser = DependencyParser(self._hass)
-        self._extract_entities_from_metadata(sensor_config.metadata, parser, entities_added)
+        ast_service = FormulaASTAnalysisService()
+        self._extract_entities_from_metadata(sensor_config.metadata, ast_service, entities_added)
 
         # Add self-reference if sensor has attribute formulas
         self._add_self_reference_if_needed(sensor_config, entities_added)
@@ -131,12 +131,12 @@ class EntityIndex:
         self._add_variable_entities(formula.variables, entities_added)
 
         # Add entity IDs from formula string and attributes
-        parser = DependencyParser(self._hass)
-        self._add_formula_string_entities(formula, parser, entities_added)
-        self._add_attribute_entities(formula.attributes, parser, entities_added)
+        ast_service = FormulaASTAnalysisService()
+        self._add_formula_string_entities(formula, ast_service, entities_added)
+        self._add_attribute_entities(formula.attributes, ast_service, entities_added)
 
         # Check formula metadata for entity references
-        self._extract_entities_from_metadata(formula.metadata, parser, entities_added)
+        self._extract_entities_from_metadata(formula.metadata, ast_service, entities_added)
 
     def _add_variable_entities(self, variables: dict[str, Any] | None, entities_added: set[str]) -> None:
         """Add entity IDs from formula variables."""
@@ -149,19 +149,25 @@ class EntityIndex:
                     self._entity_ids.add(base_entity_id)
                     entities_added.add(base_entity_id)
 
-    def _add_formula_string_entities(self, formula: FormulaConfig, parser: DependencyParser, entities_added: set[str]) -> None:
+    def _add_formula_string_entities(
+        self, formula: FormulaConfig, ast_service: FormulaASTAnalysisService, entities_added: set[str]
+    ) -> None:
         """Add entity IDs from formula string."""
-        formula_entities = parser.extract_entity_references(formula.formula)
+        analysis = ast_service.get_formula_analysis(formula.formula)
+        formula_entities = analysis.entity_references
         for entity_id in formula_entities:
             if self._is_entity_id(entity_id):
                 self._entity_ids.add(entity_id)
                 entities_added.add(entity_id)
 
-    def _add_attribute_entities(self, attributes: dict[str, Any], parser: DependencyParser, entities_added: set[str]) -> None:
+    def _add_attribute_entities(
+        self, attributes: dict[str, Any], ast_service: FormulaASTAnalysisService, entities_added: set[str]
+    ) -> None:
         """Add entity IDs from formula attributes."""
         for _attr_name, attr_value in attributes.items():
             if isinstance(attr_value, str):
-                attr_entities = parser.extract_entity_references(attr_value)
+                analysis = ast_service.get_formula_analysis(attr_value)
+                attr_entities = analysis.entity_references
                 for entity_id in attr_entities:
                     if self._is_entity_id(entity_id):
                         self._entity_ids.add(entity_id)
@@ -197,8 +203,8 @@ class EntityIndex:
             self._remove_formula_entities(formula, entities_to_remove)
 
         # Check sensor-level metadata for entity references
-        parser = DependencyParser(self._hass)
-        self._extract_entities_from_metadata_for_removal(sensor_config.metadata, parser, entities_to_remove)
+        ast_service = FormulaASTAnalysisService()
+        self._extract_entities_from_metadata_for_removal(sensor_config.metadata, ast_service, entities_to_remove)
 
         # Remove self-reference if sensor had attribute formulas
         self._remove_self_reference_if_needed(sensor_config, entities_to_remove)
@@ -229,12 +235,12 @@ class EntityIndex:
         self._remove_variable_entities(formula.variables, entities_to_remove)
 
         # Remove entity IDs from formula string and attributes
-        parser = DependencyParser(self._hass)
-        self._remove_formula_string_entities(formula, parser, entities_to_remove)
-        self._remove_attribute_entities(formula.attributes, parser, entities_to_remove)
+        ast_service = FormulaASTAnalysisService()
+        self._remove_formula_string_entities(formula, ast_service, entities_to_remove)
+        self._remove_attribute_entities(formula.attributes, ast_service, entities_to_remove)
 
         # Check formula metadata for entity references
-        self._extract_entities_from_metadata_for_removal(formula.metadata, parser, entities_to_remove)
+        self._extract_entities_from_metadata_for_removal(formula.metadata, ast_service, entities_to_remove)
 
     def _remove_variable_entities(self, variables: dict[str, Any] | None, entities_to_remove: set[str]) -> None:
         """Remove entity IDs from formula variables."""
@@ -247,21 +253,23 @@ class EntityIndex:
                     entities_to_remove.add(base_entity_id)
 
     def _remove_formula_string_entities(
-        self, formula: FormulaConfig, parser: DependencyParser, entities_to_remove: set[str]
+        self, formula: FormulaConfig, ast_service: FormulaASTAnalysisService, entities_to_remove: set[str]
     ) -> None:
         """Remove entity IDs from formula string."""
-        formula_entities = parser.extract_entity_references(formula.formula)
+        analysis = ast_service.get_formula_analysis(formula.formula)
+        formula_entities = analysis.entity_references
         for entity_id in formula_entities:
             if self._is_entity_id(entity_id):
                 entities_to_remove.add(entity_id)
 
     def _remove_attribute_entities(
-        self, attributes: dict[str, Any], parser: DependencyParser, entities_to_remove: set[str]
+        self, attributes: dict[str, Any], ast_service: FormulaASTAnalysisService, entities_to_remove: set[str]
     ) -> None:
         """Remove entity IDs from formula attributes."""
         for _attr_name, attr_value in attributes.items():
             if isinstance(attr_value, str):
-                attr_entities = parser.extract_entity_references(attr_value)
+                analysis = ast_service.get_formula_analysis(attr_value)
+                attr_entities = analysis.entity_references
                 for entity_id in attr_entities:
                     if self._is_entity_id(entity_id):
                         entities_to_remove.add(entity_id)
@@ -382,35 +390,38 @@ class EntityIndex:
         return temp_resolver.validate_entity_id(value)
 
     def _extract_entities_from_metadata(
-        self, metadata: dict[str, Any], parser: DependencyParser, entities_added: set[str]
+        self, metadata: dict[str, Any], ast_service: FormulaASTAnalysisService, entities_added: set[str]
     ) -> None:
         """Extract entity IDs from metadata dictionary recursively.
 
         Args:
             metadata: Metadata dictionary to search
-            parser: DependencyParser instance for entity extraction
+            ast_service: FormulaASTAnalysisService instance for entity extraction
             entities_added: Set to add found entities to
         """
         if not metadata:
             return
 
         for _key, value in metadata.items():
-            self._process_metadata_value(value, parser, entities_added, add_to_index=True)
+            self._process_metadata_value(value, ast_service, entities_added, add_to_index=True)
 
-    def _process_metadata_value(self, value: Any, parser: DependencyParser, entities_set: set[str], add_to_index: bool) -> None:
+    def _process_metadata_value(
+        self, value: Any, ast_service: FormulaASTAnalysisService, entities_set: set[str], add_to_index: bool
+    ) -> None:
         """Process a single metadata value for entity extraction."""
         if isinstance(value, str):
-            self._extract_entities_from_string(value, parser, entities_set, add_to_index)
+            self._extract_entities_from_string(value, ast_service, entities_set, add_to_index)
         elif isinstance(value, dict):
-            self._extract_entities_from_metadata(value, parser, entities_set)
+            self._extract_entities_from_metadata(value, ast_service, entities_set)
         elif isinstance(value, list):
-            self._extract_entities_from_list(value, parser, entities_set, add_to_index)
+            self._extract_entities_from_list(value, ast_service, entities_set, add_to_index)
 
     def _extract_entities_from_string(
-        self, value: str, parser: DependencyParser, entities_set: set[str], add_to_index: bool
+        self, value: str, ast_service: FormulaASTAnalysisService, entities_set: set[str], add_to_index: bool
     ) -> None:
         """Extract entity IDs from a string value."""
-        metadata_entities = parser.extract_entity_references(value)
+        analysis = ast_service.get_formula_analysis(value)
+        metadata_entities = analysis.entity_references
         for entity_id in metadata_entities:
             if self._is_entity_id(entity_id):
                 if add_to_index:
@@ -418,7 +429,7 @@ class EntityIndex:
                 entities_set.add(entity_id)
 
     def _extract_entities_from_list(
-        self, value: list[Any], parser: DependencyParser, entities_set: set[str], add_to_index: bool
+        self, value: list[Any], ast_service: FormulaASTAnalysisService, entities_set: set[str], add_to_index: bool
     ) -> None:
         """Extract entity IDs from a list value."""
         for item in value:
@@ -428,17 +439,17 @@ class EntityIndex:
                 self._extract_entities_from_metadata(item, parser, entities_set)
 
     def _extract_entities_from_metadata_for_removal(
-        self, metadata: dict[str, Any], parser: DependencyParser, entities_to_remove: set[str]
+        self, metadata: dict[str, Any], ast_service: FormulaASTAnalysisService, entities_to_remove: set[str]
     ) -> None:
         """Extract entity IDs from metadata dictionary for removal.
 
         Args:
             metadata: Metadata dictionary to search
-            parser: DependencyParser instance for entity extraction
+            ast_service: FormulaASTAnalysisService instance for entity extraction
             entities_to_remove: Set to add found entities to
         """
         if not metadata:
             return
 
         for _key, value in metadata.items():
-            self._process_metadata_value(value, parser, entities_to_remove, add_to_index=False)
+            self._process_metadata_value(value, ast_service, entities_to_remove, add_to_index=False)

@@ -704,7 +704,7 @@ sensors:
                 )
                 assert sensor_manager is not None
             assert any("Circular cross-sensor dependency detected" in rec.getMessage() for rec in caplog.records), (
-                "Expected a circular dependency warning to be logged"
+                "Expected a circular dependency warning to be logged - this is a known limitation in the AST refactoring"
             )
 
             # Clean up

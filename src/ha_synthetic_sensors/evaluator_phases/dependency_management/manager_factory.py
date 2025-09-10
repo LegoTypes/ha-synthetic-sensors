@@ -19,21 +19,24 @@ _LOGGER = logging.getLogger(__name__)
 class DependencyManagerFactory:
     """Factory for creating and managing dependency managers."""
 
-    def __init__(self, hass: Any = None) -> None:
+    def __init__(self, hass: Any = None, ast_service: Any = None) -> None:
         """Initialize the dependency manager factory with default managers."""
         self._hass = hass
+        self._ast_service = ast_service
         self._managers: list[DependencyManager] = []
         self._register_default_managers()
 
     def _register_default_managers(self) -> None:
         """Register the default set of managers."""
-        # Pass hass instance to managers that need domain validation
+        # Pass hass instance and AST service to managers that need them
         extractor = DependencyExtractor()
         extractor.hass = self._hass
+        if self._ast_service:
+            extractor.set_ast_service(self._ast_service)
         self.register_manager(extractor)
         self.register_manager(DependencyValidator())
         self.register_manager(CircularReferenceDetector())
-        self.register_manager(CrossSensorDependencyManager())
+        self.register_manager(CrossSensorDependencyManager(self._ast_service))
 
     def register_manager(self, manager: DependencyManager) -> None:
         """Register a manager with the factory."""

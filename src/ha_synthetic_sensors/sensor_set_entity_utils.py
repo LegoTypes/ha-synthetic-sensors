@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .config_models import AlternateStateHandler, ComputedVariable
-from .dependency_parser import DependencyParser
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .regex_helper import regex_helper, safe_entity_replacement
 
 if TYPE_CHECKING:
@@ -69,11 +69,12 @@ def _update_formula_string(formula_str: str, entity_id_changes: dict[str, str]) 
 
     # Use dependency parser to extract entity references
 
-    parser = DependencyParser()
+    ast_service = FormulaASTAnalysisService()
 
     try:
-        # Ask the parser for explicit entity references within this formula
-        referenced_entities = parser.extract_entity_references(formula_str)
+        # Ask the AST service for explicit entity references within this formula
+        analysis = ast_service.get_formula_analysis(formula_str)
+        referenced_entities = analysis.entity_references
     except Exception:
         # Fallback: if parser fails for any reason, keep original behavior of simple word-boundary replacement
         referenced_entities = set()

@@ -187,7 +187,7 @@ class TestCollectionNegationIntegration:
     async def test_negation_with_invalid_patterns(self, mock_hass):
         """Test handling of invalid negation patterns."""
         from ha_synthetic_sensors.collection_resolver import CollectionResolver
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         resolver = CollectionResolver(mock_hass)
 

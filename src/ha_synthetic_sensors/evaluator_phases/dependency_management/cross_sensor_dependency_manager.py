@@ -5,8 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from ...config_models import SensorConfig
 from ...constants_metadata import METADATA_PROPERTY_DEVICE_CLASS
-from ...dependency_parser import DependencyParser
-from ...regex_helper import create_sensor_name_search_pattern, search_pattern
+from ...formula_ast_analysis_service import FormulaASTAnalysisService
 from .base_manager import DependencyManager
 from .generic_dependency_manager import GenericDependencyManager
 
@@ -26,9 +25,10 @@ class CrossSensorDependencyManager(DependencyManager):
     - Validation of cross-sensor dependency graphs
     """
 
-    def __init__(self) -> None:
+    def __init__(self, ast_service: FormulaASTAnalysisService | None = None) -> None:
         """Initialize the cross-sensor dependency manager."""
         self._sensor_registry_phase = None
+        self._ast_service = ast_service or FormulaASTAnalysisService()
 
     def can_manage(self, manager_type: str, context: "HierarchicalContextDict") -> bool:
         """Determine if this manager can handle cross-sensor dependency management."""
@@ -73,6 +73,7 @@ class CrossSensorDependencyManager(DependencyManager):
         Returns:
             Dictionary mapping sensor names to sets of their dependencies
         """
+        _LOGGER.debug("Analyzing cross-sensor dependencies for %d sensors", len(sensors))
         dependencies: dict[str, set[str]] = {}
 
         for sensor in sensors:
@@ -80,8 +81,14 @@ class CrossSensorDependencyManager(DependencyManager):
 
             # Analyze each formula in the sensor, passing current sensor for auto self-exclusion
             for formula in sensor.formulas:
+                _LOGGER.debug(
+                    "Analyzing formula for sensor '%s': formula='%s', variables=%s",
+                    sensor.unique_id,
+                    formula.formula,
+                    formula.variables if hasattr(formula, "variables") else {},
+                )
                 formula_deps = self._extract_cross_sensor_dependencies_from_formula(
-                    formula.formula, sensor_registry, current_sensor=sensor
+                    formula.formula, sensor_registry, current_sensor=sensor, formula_config=formula
                 )
                 sensor_deps.update(formula_deps)
                 _LOGGER.debug("Sensor '%s' formula '%s' dependencies: %s", sensor.unique_id, formula.formula, formula_deps)
@@ -93,7 +100,7 @@ class CrossSensorDependencyManager(DependencyManager):
         return dependencies
 
     def _extract_cross_sensor_dependencies_from_formula(
-        self, formula: str, sensor_registry: dict[str, Any], current_sensor: Any = None
+        self, formula: str, sensor_registry: dict[str, Any], current_sensor: Any = None, formula_config: Any = None
     ) -> set[str]:
         """Extract cross-sensor dependencies from a formula.
 
@@ -101,6 +108,7 @@ class CrossSensorDependencyManager(DependencyManager):
             formula: The formula to analyze
             sensor_registry: Current sensor registry
             current_sensor: The sensor that owns this formula (for auto self-exclusion)
+            formula_config: The FormulaConfig object containing variables
 
         Returns:
             Set of sensor names that this formula depends on
@@ -122,7 +130,36 @@ class CrossSensorDependencyManager(DependencyManager):
             if sensor_name in formula and self._is_valid_cross_sensor_reference(formula, sensor_name):
                 dependencies.add(sensor_name)
 
-        # 3. Handle variable references in metadata function calls using generic dependency manager
+        # 3. NEW: Check if variables in the formula map to sensor entity IDs
+        if formula_config and hasattr(formula_config, "variables"):
+            # Get all variables used in the formula
+            analysis = self._ast_service.get_formula_analysis(formula)
+            _LOGGER.debug("Formula '%s' uses variables: %s", formula, analysis.variables)
+            _LOGGER.debug("Formula config has variables: %s", formula_config.variables)
+            for var_name in analysis.variables:
+                # Check if this variable is defined in the formula config
+                if var_name in formula_config.variables:
+                    var_value = formula_config.variables[var_name]
+                    _LOGGER.debug("Variable '%s' maps to '%s'", var_name, var_value)
+                    # Check if the variable value is an entity ID that references a synthetic sensor
+                    if isinstance(var_value, str) and var_value.startswith("sensor."):
+                        # Extract the sensor name from the entity ID (e.g., "sensor.sensor_b" -> "sensor_b")
+                        sensor_name = var_value.split(".", 1)[1] if "." in var_value else var_value
+                        _LOGGER.debug("Extracted sensor name '%s' from entity ID '%s'", sensor_name, var_value)
+                        # Check if this is a registered synthetic sensor
+                        if sensor_name in registered_sensors:
+                            dependencies.add(sensor_name)
+                            _LOGGER.debug(
+                                "Found cross-sensor dependency via variable: %s -> %s (variable %s = %s)",
+                                current_sensor.unique_id if current_sensor else "unknown",
+                                sensor_name,
+                                var_name,
+                                var_value,
+                            )
+                        else:
+                            _LOGGER.debug("Sensor '%s' not in registered sensors: %s", sensor_name, registered_sensors)
+
+        # 4. Handle variable references in metadata function calls using generic dependency manager
         generic_manager = GenericDependencyManager()
         generic_manager.set_sensor_registry_phase(self._sensor_registry_phase)
 
@@ -158,7 +195,10 @@ class CrossSensorDependencyManager(DependencyManager):
         dependencies: set[str] = set()
 
         try:
-            # Use the dependency parser to extract dynamic queries (collection functions)
+            # For now, use the legacy DependencyParser for dynamic query extraction
+            # until AST service is enhanced to extract collection function arguments properly
+            from ...dependency_parser import DependencyParser
+
             parser = DependencyParser()
             dynamic_queries = parser.extract_dynamic_queries(formula)
 
@@ -229,17 +269,12 @@ class CrossSensorDependencyManager(DependencyManager):
         Returns:
             True if the sensor name is a valid cross-sensor reference
         """
-        # This is a simplified implementation
-        # In practice, we'd use proper parsing to distinguish between:
+        # Use AST analysis to properly detect cross-sensor references
+        # This distinguishes between:
         # - Variable names that happen to contain sensor names
         # - Actual cross-sensor references
         # - String literals containing sensor names
-
-        # For now, we'll do a basic check that the sensor name is not part of a larger word
-        # Look for the sensor name as a whole word or variable
-        # Use centralized sensor name search pattern from regex helper
-        pattern = create_sensor_name_search_pattern(sensor_name)
-        return search_pattern(formula, pattern)
+        return self._ast_service.is_cross_sensor_reference(formula, sensor_name)
 
     def _get_evaluation_order(self, sensor_dependencies: dict[str, set[str]], sensor_registry: dict[str, Any]) -> list[str]:
         """Return sensors in dependency order using topological sort.
@@ -305,6 +340,7 @@ class CrossSensorDependencyManager(DependencyManager):
         Returns:
             List of sensor names involved in circular references
         """
+        _LOGGER.debug("Checking for circular dependencies in: %s", sensor_dependencies)
         circular_refs: list[str] = []
 
         # Use depth-first search to detect cycles
@@ -322,9 +358,11 @@ class CrossSensorDependencyManager(DependencyManager):
             rec_stack.add(sensor)
 
             for dep in sensor_dependencies.get(sensor, set()):
-                if has_cycle(dep):
-                    if dep not in circular_refs:
-                        circular_refs.append(dep)
+                # Extract sensor name from entity ID if needed
+                dep_sensor_name = dep.split(".")[-1] if "." in dep else dep
+                if has_cycle(dep_sensor_name):
+                    if dep_sensor_name not in circular_refs:
+                        circular_refs.append(dep_sensor_name)
                     return True
 
             rec_stack.remove(sensor)
@@ -339,6 +377,8 @@ class CrossSensorDependencyManager(DependencyManager):
         if circular_refs:
             # WFF Valid warning for HA states, typical in HA integrations
             _LOGGER.warning("Circular cross-sensor dependency detected among: %s", sorted(set(circular_refs)))
+        else:
+            _LOGGER.debug("No circular cross-sensor dependencies detected in %s sensors", len(sensor_dependencies))
         return circular_refs
 
     def _validate_cross_sensor_dependencies(

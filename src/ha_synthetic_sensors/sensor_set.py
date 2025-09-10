@@ -654,14 +654,15 @@ class SensorSet(SensorSetYamlOperationsMixin):
           serialized config and persist; then re-scan.
         - If, after the rewrite, any old IDs remain, fail fast with details.
         """
-        # Use centralized entity replacement from regex helper
-        from .dependency_parser import DependencyParser  # pylint: disable=import-outside-toplevel
+        # Use centralized entity replacement from AST service
+        from .formula_ast_analysis_service import FormulaASTAnalysisService  # pylint: disable=import-outside-toplevel
 
-        parser = DependencyParser(getattr(self.storage_manager, "hass", None))
+        ast_service = FormulaASTAnalysisService()
 
         def _extract_refs(s: str) -> set[str]:
             try:
-                return parser.extract_entity_references(s)
+                analysis = ast_service.get_formula_analysis(s)
+                return {ref for ref in analysis.entity_references}
             except Exception:
                 return set()
 
@@ -882,7 +883,6 @@ class SensorSet(SensorSetYamlOperationsMixin):
             return obj
 
         # Import required modules
-        from .dependency_parser import DependencyParser  # pylint: disable=import-outside-toplevel
 
         # Update our storage (sensor configs) only
         for sensor_config in current_sensors.values():

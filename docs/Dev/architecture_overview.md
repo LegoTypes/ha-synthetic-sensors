@@ -136,6 +136,38 @@ The system evaluates different formula artifacts in a specific order to handle d
 Each phase has specific responsibilities and cannot proceed until the previous phase completes successfully. All formula keys
 whether in the main sensor, attributes, or variables use a single formula evaluation entry point.
 
+### Parse-Time Detection and Validation
+
+The system implements **parse-time detection** for configuration issues that should be caught early, before any AST parsing or
+sensor creation occurs:
+
+#### Circular Dependency Detection at YAML Import
+
+Circular cross-sensor dependencies are detected at YAML import time in the `ConfigManager`:
+
+1. **Early Detection**: Occurs during YAML parsing, before sensor creation
+2. **Cross-Sensor Reference Analysis**: Uses the `CrossSensorReferenceDetector` to identify sensor-to-sensor references
+3. **Cycle Detection**: Applies depth-first search algorithm to detect circular dependencies
+4. **Warning Emission**: Logs warnings for circular dependencies (non-fatal by design)
+
+```python
+# In ConfigManager.load_from_yaml()
+cross_sensor_references = self._cross_sensor_detector.scan_yaml_references(yaml_data)
+if cross_sensor_references:
+    circular_refs = self._detect_circular_dependencies(cross_sensor_references)
+    if circular_refs:
+        self._logger.warning("Circular cross-sensor dependency detected among: %s", sorted(set(circular_refs)))
+```
+
+This parse-time detection is separate from and occurs before:
+
+- AST parsing and caching (which happens during formula evaluation)
+- Variable resolution and dependency management phases
+- Any sensor entity creation or registration
+
+The approach follows compiler design principles where syntactic and semantic validation occurs in distinct phases, with
+configuration-level issues caught as early as possible.
+
 ### Core Formula Evaluation Service
 
 - **Shared Service Pattern**: `FormulaEvaluatorService` provides a unified interface for all formula types using the same
@@ -631,74 +663,232 @@ Utility functions for formula processing:
 - Supports formula validation and error detection
 - Manages formula optimization opportunities
 
-### Formula Parsing Architecture: AST vs Regex
+### Formula Parsing Architecture: Unified AST Service
 
-The system uses two complementary approaches for formula parsing, each optimized for specific use cases:
+The system has migrated to a **unified AST-based parsing architecture** that implements true "parse once, execute many"
+semantics through the `FormulaASTAnalysisService`. This eliminates redundant parsing and provides consistent formula analysis
+across all components.
 
-#### AST-Based Variable Extraction (`formula_parsing/variable_extractor.py`)
+**Important Distinction**: The AST service handles **formula parsing** (parsing mathematical and logical expressions within
+formulas), which is separate from **configuration parsing** (YAML structure validation and cross-sensor reference detection).
+Configuration-level issues like circular dependencies are detected at YAML import time, before any AST parsing occurs.
 
-**Purpose**: Primary method for extracting variables and identifiers from formulas using Python's Abstract Syntax Tree.
+#### FormulaASTAnalysisService (`formula_ast_analysis_service.py`)
 
-**Use Cases**:
+**Purpose**: Centralized service that parses formulas once and caches comprehensive analysis for all subsequent requests.
 
-from .formula_parsing.variable_extractor import extract_variables, ExtractionContext
+**Architecture**:
 
-# Extract variables for dependency parsing (excludes dot notation)
+- **Single Parse**: Each formula is parsed exactly once into an AST
+- **Comprehensive Analysis**: One analysis extracts all information (variables, dependencies, functions, metadata)
+- **Shared Cache**: Analysis results are cached and reused across all evaluation phases
+- **Integration with Compilation Cache**: Works with `FormulaCompilationCache` for AST caching
 
-variables = extract_variables("battery_level + temperature", context=ExtractionContext.GENERAL)
+**Core Components**:
 
-```text
-#### Regex-Based Pattern Matching (`regex_helper.py`)
-**Purpose**: Specialized pattern matching for specific formula elements that don't require full AST parsing.
-
-- **Entity ID Detection**: Finding `domain.entity_name` patterns
-- **String Literal Extraction**: Finding quoted strings and their contents
-
-**Key Features**:
-- **Centralized Patterns**: All regex patterns defined in one location
+```python
+class FormulaASTAnalysisService:
+    """Service providing AST-based analysis with parse-once semantics."""
 
 
-- **Method-Wrapped Patterns**: Each pattern wrapped in a clear, testable method
+    def __init__(self, compilation_cache: FormulaCompilationCache | None = None):
+        self._compilation_cache = compilation_cache or FormulaCompilationCache()
 
-from .regex_helper import regex_helper
-# Extract entity references
+        self._analysis_cache: dict[str, FormulaAnalysis] = {}
 
-entities = regex_helper.extract_direct_entity_references("sensor.power + sensor.temperature")
-# Extract collection patterns
-collection_vars = regex_helper.extract_collection_pattern_variables('sum("device_class:power_type")')
+
+    def get_formula_analysis(self, formula: str) -> FormulaAnalysis:
+        """Get comprehensive analysis (cached) - main entry point."""
+
+        # Returns FormulaAnalysis with all extracted information
+```
+
+**FormulaAnalysis Data Structure**:
+
+```python
+
+@dataclass
+class FormulaAnalysis:
+    """Complete analysis results from AST parsing."""
+
+    variables: set[str]           # All variables found
+    dependencies: set[str]         # External dependencies
+    entity_references: set[str]   # Home Assistant entity IDs
+
+    functions: set[str]           # Function calls found
+    has_metadata: bool           # Contains metadata() calls
+    has_collection: bool         # Contains collection functions
+
+    collection_functions: list    # Details of collection calls
+```
+
+#### Integration Points Across the System
+
+**1. Evaluator Integration**:
+
+```python
+# In evaluator.py
+class Evaluator:
+    def __init__(self):
+
+        self._enhanced_helper = EnhancedSimpleEvalHelper()
+        # Single AST service instance shared across all phases
+        self._ast_service = FormulaASTAnalysisService(
+            self._enhanced_helper._compilation_cache
+
+
+        )
+
+        # Inject into phases that need formula analysis
+        self._variable_resolution_phase = VariableResolutionPhase(
+
+
+            ast_service=self._ast_service
+        )
+        self._dependency_phase = DependencyManagementPhase(
+            ast_service=self._ast_service
+
+
+
+        )
+```
+
+**2. Dependency Management Integration**:
+
+```python
+# In dependency_extractor.py
+
+class DependencyExtractor:
+    def _extract_dependencies_from_formula(self, formula: str) -> set[str]:
+        # Uses AST service instead of regex parsing
+
+
+        analysis = self._ast_service.get_formula_analysis(formula)
+        return analysis.dependencies
 
 ```
 
-- Need to understand formula structure and syntax
-- Require context-aware variable extraction
-- Need to distinguish between variables and function calls
+**3. Cross-Sensor Dependency Detection**:
 
-- Need to extract structured data (collection patterns, exclusions)
-- Validating domain-specific patterns
+```python
+# In cross_sensor_dependency_manager.py
 
-The two approaches work together seamlessly:
+class CrossSensorDependencyManager:
+    def _extract_collection_function_dependencies(self, formula: str):
+        # AST service provides accurate collection function detection
 
-- AST for general variable extraction
-- Regex for entity references and collection patterns
 
-**Variable Resolution**: Primarily AST-based for comprehensive variable discovery
+        analysis = self._ast_service.get_formula_analysis(formula)
 
-**Metadata Functions**: Regex-based for identifying and extracting metadata calls
+        for func_info in analysis.collection_functions:
+            # Process collection patterns with full context
 
-## Architecture Benefits
 
-**Centralization**: All regex patterns are defined in `regex_helper.py`, making them:
+```
 
-- Easy to test in isolation
-- Consistent across the entire system
-- Well-documented with clear method signatures
+**4. Variable Resolution Integration**:
 
-- AST parsing for complex, structural analysis
-- Regex for fast, pattern-based extraction
+```python
 
-**Maintainability**: Clear separation of concerns:
+# In variable_resolution_phase.py
+class VariableResolutionPhase:
 
-- Regex tests focus on pattern matching and edge cases
+
+    def _get_formula_variables(self, formula: str) -> set[str]:
+        # Direct AST service usage for variable extraction
+        analysis = self._ast_service.get_formula_analysis(formula)
+
+        return analysis.variables
+```
+
+**5. Configuration Models Integration**:
+
+```python
+# In config_models.py
+class FormulaConfig:
+
+    def _extract_dependencies(self) -> set[str]:
+        # AST service for dependency extraction from formulas
+
+
+        ast_service = FormulaASTAnalysisService()
+        analysis = ast_service.get_formula_analysis(self.formula)
+
+        return analysis.dependencies
+
+```
+
+#### AST Service Benefits
+
+**Performance**:
+
+- **Parse Once**: Each formula parsed exactly once, not repeatedly
+- **Shared Cache**: All components use the same cached analysis
+
+- **Reduced CPU**: Eliminates redundant regex matching and AST parsing
+
+- **Memory Efficient**: Single analysis object per formula
+
+**Consistency**:
+
+- **Unified Analysis**: All components see the same parse results
+- **No Divergence**: Eliminates discrepancies between different parsers
+
+- **Single Source of Truth**: One service for all formula analysis needs
+
+**Maintainability**:
+
+- **Centralized Logic**: All parsing logic in one service
+
+- **Easy Testing**: Single service to test for parsing accuracy
+- **Clear Dependencies**: Explicit service injection shows dependencies
+- **Simplified Debugging**: One place to debug parsing issues
+
+#### AST Compilation Cache Integration
+
+The AST service integrates with the compilation cache for formula execution:
+
+```python
+# AST Service → Compilation Cache flow
+1. FormulaASTAnalysisService parses formula structure
+
+2. Analysis cached for dependency/variable extraction
+3. FormulaCompilationCache compiles formula for execution
+4. Compiled AST cached for SimpleEval evaluation
+5. Both caches work together for complete optimization
+```
+
+#### Migration from Legacy Parsers
+
+The system has migrated from multiple parsing approaches:
+
+**Before (Multiple Parsers)**:
+
+- `DependencyParser`: 777-line regex-based parser
+- `variable_extractor.py`: Intermediate AST parser
+- `regex_helper.py`: Pattern matching utilities
+- Multiple parsing of same formulas
+
+**After (Unified AST Service)**:
+
+- `FormulaASTAnalysisService`: Single parsing service
+- Parse once, cache forever
+- Consistent results across all components
+- Clean service injection pattern
+
+#### Dynamic Query Extraction
+
+While most parsing is AST-based, dynamic query extraction for collection functions temporarily uses legacy regex patterns:
+
+```python
+# In formula_preprocessor.py (temporary shim)
+from .dependency_parser import DependencyParser  # Local import
+parser = DependencyParser()
+dynamic_queries = parser.extract_dynamic_queries(formula)
+# TODO: Migrate to AST service
+```
+
+This is the last remaining use of `DependencyParser` and will be migrated to the AST service to complete the unification
 
 ### 10. Collection Processing
 
@@ -730,8 +920,7 @@ Provides service interfaces for external interactions:
 - Provides service documentation and discovery
 - Supports service extensibility and customization
 
-**ConfigModels** create typed configuration objects
-**SensorManager** creates sensor entities based on configuration
+**ConfigModels** create typed configuration objects **SensorManager** creates sensor entities based on configuration
 **SensorSet** organizes sensors into manageable groups
 
 ### Evaluation Flow

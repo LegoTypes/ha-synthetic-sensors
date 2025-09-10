@@ -7,7 +7,8 @@ from homeassistant.core import HomeAssistant
 
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
-from .dependency_parser import DependencyParser, DynamicQuery
+from .dynamic_query import DynamicQuery
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .hierarchical_context_dict import HierarchicalContextDict
 from .regex_helper import (
     check_pattern_exists,
@@ -29,7 +30,7 @@ class FormulaPreprocessor:
         if hass is None:
             raise ValueError("FormulaPreprocessor requires a valid Home Assistant instance, got None")
         self._collection_resolver = collection_resolver
-        self._dependency_parser = DependencyParser()
+        self._ast_service = FormulaASTAnalysisService()
         self._hass = hass
 
     def preprocess_formula_for_evaluation(
@@ -210,8 +211,12 @@ class FormulaPreprocessor:
             # First normalize the formula to handle repeated prefixes
             normalized_formula = self._normalize_formula_patterns(formula)
 
-            # Extract dynamic queries from the normalized formula using the dependency parser
-            dynamic_queries = self._dependency_parser.extract_dynamic_queries(normalized_formula)
+            # Extract dynamic queries from the normalized formula
+            # TODO: Move this to AST service
+            from .dependency_parser import DependencyParser
+
+            temp_parser = DependencyParser()
+            dynamic_queries = temp_parser.extract_dynamic_queries(normalized_formula)
 
             if not dynamic_queries:
                 return normalized_formula  # No collection functions to resolve

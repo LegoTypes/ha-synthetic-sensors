@@ -107,7 +107,7 @@ class TestORLabelIntegration:
 
     def test_critical_important_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for critical|important label."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="label", pattern="critical|important", function="count")
         entities = self.resolver.resolve_collection(query)
@@ -130,7 +130,7 @@ class TestORLabelIntegration:
 
     def test_three_way_label_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for three tag types."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="label", pattern="critical|important|monitor", function="count")
         entities = self.resolver.resolve_collection(query)
@@ -154,7 +154,7 @@ class TestORLabelIntegration:
 
     def test_monitor_alert_label_or_resolution_implemented(self, mock_hass, mock_entity_registry, mock_states):
         """Test OR pattern resolution for monitor|alert label."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="label", pattern="monitor|alert", function="count")
         entities = self.resolver.resolve_collection(query)
@@ -199,7 +199,7 @@ class TestORLabelIntegration:
 
     def test_basic_label_or_pattern_parsing(self, collection_resolver):
         """Test basic OR pattern parsing for label."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         # Test OR pattern with existing entities from shared registry
         query = DynamicQuery(query_type="label", pattern="critical|important", function="count")
@@ -236,7 +236,7 @@ class TestORLabelIntegration:
 
     def test_collection_resolver_pipe_support_implemented(self, collection_resolver):
         """Test that collection resolver supports pipe syntax for label."""
-        from ha_synthetic_sensors.dependency_parser import DynamicQuery
+        from ha_synthetic_sensors.dynamic_query import DynamicQuery
 
         query = DynamicQuery(query_type="label", pattern="critical|important", function="count")
 

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from ha_synthetic_sensors.config_models import SensorConfig
 from ha_synthetic_sensors.exceptions import CircularDependencyError
 
-from ...dependency_parser import DependencyParser
+from ...formula_ast_analysis_service import FormulaASTAnalysisService
 from ...regex_helper import create_identifier_pattern, create_standalone_reference_pattern
 
 if TYPE_CHECKING:
@@ -115,10 +115,11 @@ class CircularReferenceValidator:
         Returns:
             True if the formula contains a self-reference
         """
-        # Use the fixed dependency parser to extract variables correctly
+        # Use the AST service to extract variables correctly
         # This handles string literals properly and won't extract 'domain' from metadata() calls
-        parser = DependencyParser(hass=None)
-        variables = parser.extract_variables(formula)
+        ast_service = FormulaASTAnalysisService()
+        analysis = ast_service.get_formula_analysis(formula)
+        variables = analysis.variables
 
         # Check if the name appears as a standalone variable reference
         # This catches direct references like "device_info" or "my_attribute"
@@ -153,10 +154,11 @@ class CircularReferenceValidator:
         dependencies: dict[str, set[str]] = {}
 
         for attr_name, attr_formula in attributes.items():
-            # Find all attribute references in this formula using fixed dependency parser
+            # Find all attribute references in this formula using AST service
             referenced_attrs = set()
-            parser = DependencyParser(hass=None)
-            variables = parser.extract_variables(attr_formula)
+            ast_service = FormulaASTAnalysisService()
+            analysis = ast_service.get_formula_analysis(attr_formula)
+            variables = analysis.variables
 
             for var in variables:
                 if var in attributes:  # This variable is another attribute

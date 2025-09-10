@@ -20,7 +20,6 @@ from .config_models import FormulaConfig, SensorConfig
 from .constants_alternate import STATE_NONE, STATE_NONE_YAML, identify_alternate_state_value
 from .constants_evaluation_results import RESULT_KEY_ERROR, RESULT_KEY_STATE, RESULT_KEY_UNAVAILABLE_DEPENDENCIES
 from .constants_formula import ALL_OPERATORS, is_reserved_word
-from .dependency_parser import DependencyParser
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluation_common import (
     check_dependency_management_conditions,
@@ -141,7 +140,6 @@ class Evaluator(FormulaEvaluator):
         self._hass = hass
 
         # Initialize components
-        self._dependency_parser = DependencyParser(hass)
         self._collection_resolver = CollectionResolver(hass)
 
         # Initialize configuration objects
@@ -159,6 +157,12 @@ class Evaluator(FormulaEvaluator):
 
         # Initialize enhanced routing (clean slate design - always enabled)
         self._enhanced_helper = EnhancedSimpleEvalHelper()
+
+        # Initialize AST analysis service for parse-once optimization
+        # Use the compilation cache from the enhanced helper
+        from .formula_ast_analysis_service import FormulaASTAnalysisService
+
+        self._ast_service = FormulaASTAnalysisService(self._enhanced_helper._compilation_cache)
 
         self._execution_engine = FormulaExecutionEngine(
             self._handler_factory,
@@ -178,9 +182,11 @@ class Evaluator(FormulaEvaluator):
         # Initialize sensor-to-backing mapping
         self._sensor_to_backing_mapping: dict[str, str] = {}
 
-        # Initialize phase modules for compiler-like evaluation
-        self._variable_resolution_phase = VariableResolutionPhase(self._sensor_to_backing_mapping, data_provider_callback, hass)
-        self._dependency_management_phase = DependencyManagementPhase(hass)
+        # Initialize phase modules for compiler-like evaluation with AST service
+        self._variable_resolution_phase = VariableResolutionPhase(
+            self._sensor_to_backing_mapping, data_provider_callback, hass, ast_service=self._ast_service
+        )
+        self._dependency_management_phase = DependencyManagementPhase(hass, ast_service=self._ast_service)
         self._context_building_phase = ContextBuildingPhase()
         self._pre_evaluation_phase = PreEvaluationPhase()
         self._sensor_registry_phase = SensorRegistryPhase()

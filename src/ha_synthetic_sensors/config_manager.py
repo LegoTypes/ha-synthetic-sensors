@@ -200,6 +200,11 @@ class ConfigManager:
         if cross_sensor_references:
             self._logger.debug("Detected cross-sensor references: %s", {k: list(v) for k, v in cross_sensor_references.items()})
 
+            # Check for circular dependencies at parse time
+            circular_refs = self._detect_circular_dependencies(cross_sensor_references)
+            if circular_refs:
+                self._logger.warning("Circular cross-sensor dependency detected among: %s", sorted(set(circular_refs)))
+
         # Parse sensors (v1.0 dict format)
         sensors_data = yaml_data.get("sensors", {})
         for sensor_key, sensor_data in sensors_data.items():
@@ -207,6 +212,46 @@ class ConfigManager:
             config.sensors.append(sensor)
 
         return config
+
+    def _detect_circular_dependencies(self, cross_sensor_references: dict[str, set[str]]) -> list[str]:
+        """Detect circular dependencies in cross-sensor references.
+
+        Args:
+            cross_sensor_references: Dict mapping sensor names to their dependencies
+
+        Returns:
+            List of sensor names involved in circular dependencies
+        """
+        visited = set()
+        rec_stack = set()
+        circular_refs = []
+
+        def has_cycle(sensor: str) -> bool:
+            """Check if there's a cycle starting from the given sensor."""
+            if sensor in rec_stack:
+                return True
+            if sensor in visited:
+                return False
+
+            visited.add(sensor)
+            rec_stack.add(sensor)
+
+            for dep in cross_sensor_references.get(sensor, set()):
+                if has_cycle(dep):
+                    if dep not in circular_refs:
+                        circular_refs.append(dep)
+                    return True
+
+            rec_stack.remove(sensor)
+            return False
+
+        # Check for cycles starting from each sensor
+        for sensor in cross_sensor_references:
+            if sensor not in visited and has_cycle(sensor):
+                if sensor not in circular_refs:
+                    circular_refs.append(sensor)
+
+        return circular_refs
 
     def _validate_raw_yaml_structure(self, yaml_content: str) -> None:
         """Validate raw YAML structure for basic flaws in phase 0.

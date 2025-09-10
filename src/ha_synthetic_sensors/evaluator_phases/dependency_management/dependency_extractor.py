@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ...config_models import ComputedVariable, FormulaConfig
-from ...dependency_parser import DependencyParser
+from ...formula_ast_analysis_service import FormulaASTAnalysisService
 from .base_manager import DependencyManager
 
 if TYPE_CHECKING:
@@ -18,6 +18,7 @@ class DependencyExtractor(DependencyManager):
     """Extractor for dependencies from formulas."""
 
     _hass: Any = None
+    _ast_service: FormulaASTAnalysisService | None = None
 
     @property
     def hass(self) -> Any:
@@ -28,6 +29,10 @@ class DependencyExtractor(DependencyManager):
     def hass(self, value: Any) -> None:
         """Set the Home Assistant instance."""
         self._hass = value
+
+    def set_ast_service(self, ast_service: FormulaASTAnalysisService) -> None:
+        """Set the AST analysis service for parse-once optimization."""
+        self._ast_service = ast_service
 
     def can_manage(self, manager_type: str, context: "HierarchicalContextDict") -> bool:
         """Determine if this manager can handle dependency extraction."""
@@ -47,14 +52,27 @@ class DependencyExtractor(DependencyManager):
         dependencies = self._extract_dependencies_from_formula(config.formula)
 
         # Add dependencies from config variables
-        if config.variables:
-            dependencies.update(self._collect_deps_from_variables(config.variables))
+        # IMPORTANT: Do NOT add variable dependencies to formulas that are just "state"
+        # The "state" token is a special resolver that should not inherit dependencies
+        # from ComputedVariable formulas in the variables section
+        if config.variables and config.formula != "state":
+            var_deps = self._collect_deps_from_variables(config.variables)
+            dependencies.update(var_deps)
+        elif config.formula == "state" and config.variables:
+            # Log for debugging but don't add dependencies
+            var_deps = self._collect_deps_from_variables(config.variables)
+            if var_deps:
+                _LOGGER.debug(
+                    "Ignoring variable dependencies for 'state' formula: %s from variables: %s",
+                    var_deps,
+                    list(config.variables.keys()),
+                )
 
         # NOTE: Do NOT include dependencies from attribute formulas here!
         # Attributes should be evaluated separately after the main formula.
         # Including attribute dependencies breaks the evaluation sequencing.
 
-        _LOGGER.debug("Dependency extractor: extracted dependencies: %s", dependencies)
+        _LOGGER.debug("Dependency extractor: extracted dependencies for '%s': %s", config.name or config.id, dependencies)
         return dependencies
 
     def _collect_deps_from_variables(self, variables: dict[str, Any]) -> set[str]:
@@ -82,12 +100,17 @@ class DependencyExtractor(DependencyManager):
         return deps
 
     def _extract_dependencies_from_formula(self, formula: str) -> set[str]:
-        """Extract entity dependencies from a formula string using the fixed DependencyParser."""
-        # Get hass instance from the manager factory context
-        # This ensures proper domain validation and prevents entity IDs from being split
-        hass = getattr(self, "_hass", None)
-        parser = DependencyParser(hass)
-        dependencies = parser.extract_dependencies(formula)
+        """Extract entity dependencies from a formula string using AST analysis."""
+        # Use AST service if available for parse-once optimization
+        if self._ast_service:
+            dependencies = self._ast_service.extract_dependencies(formula)
+            _LOGGER.debug("Dependency extractor (AST): extracted from formula '%s': %s", formula, dependencies)
+            return dependencies
 
-        _LOGGER.debug("Dependency extractor: extracted from formula '%s': %s", formula, dependencies)
+        # Initialize AST service if not already done
+        if not self._ast_service:
+            self._ast_service = FormulaASTAnalysisService()
+
+        dependencies = self._ast_service.extract_dependencies(formula)
+        _LOGGER.debug("Dependency extractor (AST): extracted from formula '%s': %s", formula, dependencies)
         return dependencies

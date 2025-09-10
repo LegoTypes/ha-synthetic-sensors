@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
-from ...dependency_parser import DependencyParser
 from ...exceptions import CircularDependencyError
+from ...formula_ast_analysis_service import FormulaASTAnalysisService
 from ...reference_value_manager import ReferenceValueManager
 from ...shared_constants import get_reserved_words
 
@@ -164,9 +164,10 @@ class AttributeDependencyManager:
 
         # Use centralized DependencyParser instead of flawed regex helper
         # Use None for hass since this is attribute-level dependency extraction
-        # The DependencyParser will handle this gracefully
-        parser = DependencyParser(hass=None)
-        identifiers = parser.extract_dependencies(formula)
+        # Use AST service for dependency extraction
+        ast_service = FormulaASTAnalysisService()
+        analysis = ast_service.get_formula_analysis(formula)
+        identifiers = analysis.dependencies
 
         for identifier in identifiers:
             # Skip reserved words

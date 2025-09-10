@@ -12,6 +12,7 @@ from ha_synthetic_sensors.constants_alternate import identify_alternate_state_va
 from ha_synthetic_sensors.constants_formula import is_reserved_word
 from ha_synthetic_sensors.evaluator_handlers.metadata_handler import MetadataHandler
 from ha_synthetic_sensors.exceptions import DataValidationError, MissingDependencyError
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
 from ha_synthetic_sensors.shared_constants import get_ha_domains
 from ha_synthetic_sensors.type_definitions import DataProviderResult, ReferenceValue
@@ -37,6 +38,7 @@ class VariableResolutionPhase:
         sensor_to_backing_mapping: dict[str, str] | None = None,
         data_provider_callback: Callable[[str], DataProviderResult] | None = None,
         hass: Any = None,
+        ast_service: FormulaASTAnalysisService | None = None,
     ) -> None:
         """Initialize the variable resolution phase."""
         self._hass = hass  # Store HA instance for factory recreation
@@ -47,6 +49,9 @@ class VariableResolutionPhase:
         # Initialize inheritance handler with no global settings by default
         # This ensures variable inheritance works even when set_global_settings is never called
         self._inheritance_handler: VariableInheritanceHandler = VariableInheritanceHandler(None)
+
+        # Initialize AST service for parse-once optimization
+        self._ast_service = ast_service or FormulaASTAnalysisService()
 
         # Track discovered entities from last resolution
         self._last_discovered_entities: set[str] = set()

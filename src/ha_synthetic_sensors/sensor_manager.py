@@ -667,12 +667,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             attr_name = self._extract_attribute_name(formula)
             if attr_name in complete_ctx and complete_ctx[attr_name] is not None:
                 attr_value = complete_ctx[attr_name]
-                _LOGGER.debug(
-                    "DEPENDENCY_MANAGER_ATTR_DEBUG: Storing attribute %s = %s (type: %s)",
-                    attr_name,
-                    attr_value,
-                    type(attr_value).__name__,
-                )
                 self._calculated_attributes[attr_name] = attr_value
 
                 # Store attribute result in hierarchical context for downstream evaluations
@@ -824,7 +818,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._last_update = datetime.now()
 
         # Evaluate calculated attributes with inherited sensor context
-        _LOGGER.warning("ATTR_EVAL_PATH_DEBUG: Main success path calling _evaluate_attributes for %s", self.entity_id)
         self._evaluate_attributes(cast(EvaluationResult, main_result_dict), sensor_context)
 
         # Update extra state attributes with calculated values using hierarchical context
@@ -1608,6 +1601,7 @@ class SensorManager:
                     raise
 
         # Validate cross-sensor dependencies after registration
+        self._logger.debug("About to validate cross-sensor dependencies after registration")
         self._validate_cross_sensor_dependencies(config.sensors)
 
         # Add entities to Home Assistant
@@ -1970,6 +1964,7 @@ class SensorManager:
         Raises:
             ValueError: If cross-sensor dependency validation fails
         """
+        self._logger.debug("Validating cross-sensor dependencies for %d sensors", len(sensor_configs))
         if not self.dependency_management_phase:
             self._logger.debug("Dependency management phase not available, skipping validation")
             return
@@ -1982,14 +1977,16 @@ class SensorManager:
             # Validate dependencies
             validation_result = dependency_phase.validate_cross_sensor_dependencies(sensor_dependencies)
 
+            # Check for circular references and log warning
+            circular_refs = validation_result.get("circular_references", [])
+            if circular_refs:
+                self._logger.warning("Circular cross-sensor dependency detected among: %s", sorted(set(circular_refs)))
+
             if not validation_result.get("valid", True):
                 issues = validation_result.get("issues", [])
-                circular_refs = validation_result.get("circular_references", [])
-
                 error_msg = f"Cross-sensor dependency validation failed: {issues}"
                 if circular_refs:
                     error_msg += f" Circular references: {circular_refs}"
-
                 self._logger.error(error_msg)
                 raise ValueError(error_msg)
 
