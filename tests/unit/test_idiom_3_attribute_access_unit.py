@@ -43,7 +43,9 @@ class TestIdiom3AttributeAccess:
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
-    def test_basic_attribute_access(self, config_manager, basic_attribute_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context):
+    def test_basic_attribute_access(
+        self, config_manager, basic_attribute_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context
+    ):
         """Test formula accesses entity attribute using dot notation."""
         config = config_manager.load_from_yaml(basic_attribute_yaml)
         sensor = config.sensors[0]
@@ -82,7 +84,7 @@ class TestIdiom3AttributeAccess:
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
-        
+
         # Create proper evaluation context
         context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
 
@@ -132,7 +134,7 @@ class TestIdiom3AttributeAccess:
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
-        
+
         # Create proper evaluation context
         context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
 
@@ -238,7 +240,7 @@ class TestIdiom3AttributeAccess:
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
-        
+
         # Create proper evaluation context
         context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
 
@@ -350,7 +352,9 @@ class TestIdiom3AttributeAccess:
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
 
-    def test_simple_state_token_works(self, config_manager, mock_hass, mock_entity_registry, mock_states, create_evaluation_context):
+    def test_simple_state_token_works(
+        self, config_manager, mock_hass, mock_entity_registry, mock_states, create_evaluation_context
+    ):
         """Test that basic state token access works (supported feature)."""
         from pathlib import Path
 

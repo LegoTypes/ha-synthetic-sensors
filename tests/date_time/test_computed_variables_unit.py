@@ -10,6 +10,7 @@ from ha_synthetic_sensors.utils_config import resolve_config_variables
 from ha_synthetic_sensors.type_definitions import ContextValue, ReferenceValue
 from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
 from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
+from ha_synthetic_sensors.formula_evaluator_service import FormulaEvaluatorService
 
 
 def create_test_context(test_data: dict[str, any]) -> HierarchicalContextDict:
@@ -181,17 +182,19 @@ class TestVariableResolution:
 
         # Mock the pipeline evaluation to return the expected result
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             # For formula "a + b", return 52.0 (10.0 + 42)
             if formula == "a + b":
                 return {"success": True, "value": 52.0}
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
-        ):
+        # Patch the class method correctly
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
+        ) as mock_pipeline:
             resolve_config_variables(eval_context, config, resolver)
 
         assert eval_context["a"].value == 10.0
@@ -217,7 +220,7 @@ class TestVariableResolution:
 
         # Mock the pipeline evaluation to return expected results for dependency chain
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             if formula == "base * multiplier":
                 return {"success": True, "value": 50.0}  # 25.0 * 2.0
@@ -225,9 +228,10 @@ class TestVariableResolution:
                 return {"success": True, "value": 150.0}  # 50.0 + 100
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             resolve_config_variables(eval_context, config, resolver)
 
@@ -256,7 +260,7 @@ class TestVariableResolution:
 
         # Mock the pipeline evaluation for complex expressions
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             if formula == "input_power * efficiency":
                 return {"success": True, "value": 1350.0}  # 1500 * 0.9
@@ -266,9 +270,10 @@ class TestVariableResolution:
                 return {"success": True, "value": 1080.0}  # max(1080, 1000)
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             resolve_config_variables(eval_context, config, resolver)
 
@@ -303,15 +308,16 @@ class TestVariableResolution:
 
         # Mock the pipeline evaluation to use existing context values
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             if formula == "a + b":
                 return {"success": True, "value": 1049.0}  # 999.0 + 50
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             resolve_config_variables(eval_context, config, resolver)
 
@@ -351,7 +357,7 @@ class TestVariableResolution:
 
         # Mock the pipeline evaluation to return sequential increments
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             # Extract variable number from formula (e.g., "var0 + 1" -> 1+1=2)
             if " + 1" in formula:
@@ -361,9 +367,10 @@ class TestVariableResolution:
                     return {"success": True, "value": var_num + 2}  # Previous var (var_num) + 1 + 1
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             # This should work - it's a valid dependency chain
             resolve_config_variables(eval_context, config, resolver)
@@ -388,7 +395,7 @@ class TestVariableResolution:
 
         # Mock the pipeline evaluation for mathematical functions
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             if formula == "abs(-42)":
                 return {"success": True, "value": 42}
@@ -398,9 +405,10 @@ class TestVariableResolution:
                 return {"success": True, "value": 200}
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             resolve_config_variables(eval_context, config, resolver)
 
@@ -498,15 +506,16 @@ class TestComputedVariablesInAttributes:
 
         # Mock the pipeline evaluation for attribute resolution
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             if formula == "raw_value * factor":
                 return {"success": True, "value": 240.0}  # 120 * 2
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
@@ -538,15 +547,16 @@ class TestComputedVariablesInAttributes:
 
         # Mock the pipeline evaluation for state reference
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             if formula == "state * multiplier":
                 return {"success": True, "value": 150.0}  # 100 * 1.5
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             resolve_config_variables(eval_context, attr_formula, mock_resolver)
 
@@ -588,7 +598,7 @@ class TestComputedVariablesInAttributes:
 
         # Mock the pipeline evaluation for complex dependency chain
         def mock_evaluate_formula_via_pipeline(
-            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False
+            formula, context, variables=None, bypass_dependency_management=False, allow_unresolved_states=False, **kwargs
         ):
             if formula == "state + offset":
                 return {"success": True, "value": 170.0}  # 120 + 50
@@ -598,9 +608,10 @@ class TestComputedVariablesInAttributes:
                 return {"success": True, "value": 204.0}  # max(204, 200)
             return {"success": False, "error": "Unknown formula"}
 
-        with patch(
-            "ha_synthetic_sensors.formula_evaluator_service.FormulaEvaluatorService.evaluate_formula_via_pipeline",
-            side_effect=mock_evaluate_formula_via_pipeline,
+        with patch.object(
+            FormulaEvaluatorService,
+            "evaluate_formula_via_pipeline",
+            mock_evaluate_formula_via_pipeline,
         ):
             resolve_config_variables(eval_context, attr_formula, mock_resolver)
 

@@ -169,7 +169,7 @@ class TestHybridDataAccess:
         # Patch dependency parser's entity registry access to use the same mock
         # This ensures entity domain recognition works properly in tests
         with (
-            patch("ha_synthetic_sensors.dependency_parser.get_ha_domains") as mock_get_domains,
+            patch("ha_synthetic_sensors.shared_constants.get_ha_domains") as mock_get_domains,
             patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_entity_registry),
         ):
             # Mock the domain function to return proper HA domains

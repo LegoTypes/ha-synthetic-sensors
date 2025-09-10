@@ -296,15 +296,14 @@ class TestCoreFormulaEvaluatorEnhanced:
                 context, "ref_value + string_ref + bool_ref"
             )
 
-        # Verify ReferenceValue objects were processed
+        # Verify ReferenceValue objects were processed (only referenced variables are extracted)
         assert enhanced_context["ref_value"] == 42
         assert enhanced_context["string_ref"] == "hello"
         assert enhanced_context["bool_ref"] is True
-        assert enhanced_context["none_ref"] is None
+        # none_ref is not referenced in the formula, so it's not extracted
 
-        # Verify non-ReferenceValue objects were preserved
-        assert enhanced_context["direct_value"] == 100
-        assert callable(enhanced_context["function"])
+        # Verify non-ReferenceValue objects were preserved (only referenced variables are extracted)
+        # direct_value and function are not referenced in the formula, so they're not extracted
 
     def test_extract_values_unreferenced_variables_not_checked(self):
         """Test that unreferenced variables are not checked for alternate states."""
@@ -326,8 +325,9 @@ class TestCoreFormulaEvaluatorEnhanced:
             )
 
         assert enhanced_context["used_var"] == 42
-        assert enhanced_context["unused_unavailable"] == STATE_UNAVAILABLE  # Present but not checked
-        assert enhanced_context["unused_unknown"] == STATE_UNKNOWN  # Present but not checked
+        # unused_unavailable and unused_unknown are not referenced in the formula, so they're not extracted
+        assert "unused_unavailable" not in enhanced_context
+        assert "unused_unknown" not in enhanced_context
 
     def test_extract_values_referenced_alternate_states_detected(self):
         """Test that referenced variables with alternate states are detected."""

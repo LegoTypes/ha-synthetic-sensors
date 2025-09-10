@@ -1301,27 +1301,28 @@ def mock_evaluator():
 @pytest.fixture
 def create_evaluation_context(mock_hass):
     """Create a proper HierarchicalContextDict for unit tests.
-    
+
     This helper creates a SensorEvaluationContext and returns its
     HierarchicalContextDict for use in unit tests that need to call
     evaluator.evaluate_formula_with_sensor_config().
     """
+
     def _create_context(entity_id: str = "sensor.test_entity", initial_state: str = "unknown"):
         from ha_synthetic_sensors.sensor_evaluation_context import SensorEvaluationContext
         from ha_synthetic_sensors.type_definitions import ReferenceValue
-        
+
         # Create a SensorEvaluationContext with correct parameter order
         sensor_context = SensorEvaluationContext(entity_id, mock_hass, entity_id)
-        
+
         # Create a ReferenceValue for the state (required by new architecture)
         state_ref_value = ReferenceValue(reference=entity_id, value=initial_state)
-        
+
         # Set initial state in the context using the underlying context
         sensor_context.context.set("state", state_ref_value)
-        
+
         # Return the HierarchicalContextDict for evaluation
         return sensor_context.get_context_for_evaluation()
-    
+
     return _create_context
 
 
