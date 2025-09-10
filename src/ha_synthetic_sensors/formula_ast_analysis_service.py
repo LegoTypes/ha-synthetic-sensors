@@ -417,6 +417,18 @@ class FormulaASTAnalysisService:
         analysis = self.get_formula_analysis(formula)
         return analysis.entity_references
 
+    def has_entity_references(self, formula: str) -> bool:
+        """Check if formula contains entity references.
+
+        Args:
+            formula: The formula to analyze
+
+        Returns:
+            True if the formula contains entity references, False otherwise
+        """
+        entity_refs = self.extract_entity_references(formula)
+        return len(entity_refs) > 0
+
     def extract_dynamic_queries(self, formula: str) -> list[DynamicQuery]:
         """Extract dynamic queries from collection function calls.
 
