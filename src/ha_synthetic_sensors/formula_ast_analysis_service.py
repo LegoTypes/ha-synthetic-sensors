@@ -234,6 +234,27 @@ class FormulaASTAnalysisService:
         self._cache_hits = 0
         self._cache_misses = 0
 
+    def validate_formula_syntax(self, formula: str) -> None:
+        """Validate formula syntax by attempting to parse it.
+
+        This method is specifically for validation and will raise SyntaxError
+        for invalid formulas, unlike get_formula_analysis which handles errors gracefully.
+
+        Args:
+            formula: The formula string to validate
+
+        Raises:
+            SyntaxError: If the formula has invalid syntax
+        """
+        try:
+            self._compilation_cache.get_compiled_formula(formula)
+        except SyntaxError:
+            # Re-raise syntax errors for validation
+            raise
+        except Exception:
+            # Other errors are not syntax issues, so don't raise them
+            pass
+
     def get_formula_analysis(self, formula: str) -> FormulaAnalysis:
         """Get comprehensive analysis for a formula (cached).
 
