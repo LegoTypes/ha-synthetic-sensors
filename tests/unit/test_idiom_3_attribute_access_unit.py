@@ -43,7 +43,7 @@ class TestIdiom3AttributeAccess:
         with open(yaml_path, "r", encoding="utf-8") as file:
             return file.read()
 
-    def test_basic_attribute_access(self, config_manager, basic_attribute_yaml, mock_hass, mock_entity_registry, mock_states):
+    def test_basic_attribute_access(self, config_manager, basic_attribute_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context):
         """Test formula accesses entity attribute using dot notation."""
         config = config_manager.load_from_yaml(basic_attribute_yaml)
         sensor = config.sensors[0]
@@ -82,14 +82,17 @@ class TestIdiom3AttributeAccess:
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
+        
+        # Create proper evaluation context
+        context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
 
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Main formula should succeed: state.voltage * state.current = 240 * 4.17 = 1000.8
         assert main_result["success"] is True
 
     def test_multiple_attribute_access(
-        self, config_manager, multiple_attributes_yaml, mock_hass, mock_entity_registry, mock_states
+        self, config_manager, multiple_attributes_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context
     ):
         """Test formula accesses multiple attributes from same entity."""
         config = config_manager.load_from_yaml(multiple_attributes_yaml)
@@ -129,14 +132,17 @@ class TestIdiom3AttributeAccess:
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
+        
+        # Create proper evaluation context
+        context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
 
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Main formula should succeed: state.voltage * state.current * state.power_factor = 240 * 4.17 * 0.95
         assert main_result["success"] is True
 
     def test_nested_attribute_access(
-        self, config_manager, nested_attributes_yaml, mock_hass, mock_entity_registry, mock_states
+        self, config_manager, nested_attributes_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context
     ):
         """Test formula accesses nested attribute structures."""
         config = config_manager.load_from_yaml(nested_attributes_yaml)
@@ -176,13 +182,15 @@ class TestIdiom3AttributeAccess:
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Create proper evaluation context
+        context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Main formula should succeed: state.attributes.voltage * state.attributes.current = 240 * 4.17 = 1000.8
         assert main_result["success"] is True
 
     def test_missing_attribute_error(
-        self, config_manager, missing_attribute_yaml, mock_hass, mock_entity_registry, mock_states
+        self, config_manager, missing_attribute_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context
     ):
         """Test formula references non-existent attribute."""
         config = config_manager.load_from_yaml(missing_attribute_yaml)
@@ -230,17 +238,20 @@ class TestIdiom3AttributeAccess:
         # Test main formula evaluation
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
+        
+        # Create proper evaluation context
+        context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
 
         # Should fail because the attribute doesn't exist
         with pytest.raises(MissingDependencyError) as exc_info:
-            evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+            evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Should fail due to missing attribute
         error_message = str(exc_info.value)
         assert "nonexistent_attribute" in error_message or "not found" in error_message.lower()
 
     def test_attribute_access_in_variables(
-        self, config_manager, nested_attributes_yaml, mock_hass, mock_entity_registry, mock_states
+        self, config_manager, nested_attributes_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context
     ):
         """Test accessing nested attributes in variables."""
         config = config_manager.load_from_yaml(nested_attributes_yaml)
@@ -274,13 +285,15 @@ class TestIdiom3AttributeAccess:
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Create proper evaluation context
+        context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Main formula should succeed: voltage_attr * current_attr = 240 * 4.17 = 1000.8
         assert main_result["success"] is True
 
     def test_attribute_access_in_attributes(
-        self, config_manager, nested_attributes_yaml, mock_hass, mock_entity_registry, mock_states
+        self, config_manager, nested_attributes_yaml, mock_hass, mock_entity_registry, mock_states, create_evaluation_context
     ):
         """Test accessing nested attributes in attribute formulas."""
         config = config_manager.load_from_yaml(nested_attributes_yaml)
@@ -322,19 +335,22 @@ class TestIdiom3AttributeAccess:
         # Test main formula evaluation first
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Create proper evaluation context
+        context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
         assert main_result["success"] is True
         assert main_result["value"] == 1100.0  # state * 1.1 = 1000 * 1.1 = 1100
 
         # Test attribute formula evaluation with context from main result
         if len(sensor.formulas) > 1:
             attribute_formula = sensor.formulas[1]
-            context = {"state": main_result["value"]}
+            # Create proper evaluation context with the result from main formula
+            context = create_evaluation_context("sensor.span_panel_instantaneous_power", str(main_result["value"]))
 
             attr_result = evaluator.evaluate_formula_with_sensor_config(attribute_formula, context, sensor)
             assert attr_result["success"] is True
 
-    def test_simple_state_token_works(self, config_manager, mock_hass, mock_entity_registry, mock_states):
+    def test_simple_state_token_works(self, config_manager, mock_hass, mock_entity_registry, mock_states, create_evaluation_context):
         """Test that basic state token access works (supported feature)."""
         from pathlib import Path
 
@@ -371,7 +387,9 @@ class TestIdiom3AttributeAccess:
         evaluator = sensor_manager._evaluator
         main_formula = sensor.formulas[0]
 
-        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, None, sensor)
+        # Create proper evaluation context
+        context = create_evaluation_context("sensor.span_panel_instantaneous_power", "1000.0")
+        main_result = evaluator.evaluate_formula_with_sensor_config(main_formula, context, sensor)
 
         # Main formula should succeed: state * 1.1 = 1000 * 1.1 = 1100
         assert main_result["success"] is True

@@ -157,7 +157,7 @@ class VariableResolutionPhase:
             unavailable_dependencies = list({*unavailable_dependencies, *simple_ha_deps})
         # Continue with remaining resolution steps
         resolved_formula = VariableProcessors.resolve_variable_attribute_references(
-            resolved_formula, eval_context, self._ast_service
+            resolved_formula, eval_context, self._ast_service, self._resolver_factory
         )
 
         # Resolve entity references even without sensor config

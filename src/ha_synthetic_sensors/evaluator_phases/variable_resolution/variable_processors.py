@@ -10,6 +10,7 @@ from ha_synthetic_sensors.type_definitions import ReferenceValue
 from ha_synthetic_sensors.utils_resolvers import resolve_via_data_provider_attribute, resolve_via_hass_attribute
 
 from .attribute_reference_resolver import AttributeReferenceResolver
+from .entity_attribute_resolver import EntityAttributeResolver
 
 if TYPE_CHECKING:
     from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
@@ -121,10 +122,9 @@ class VariableProcessors:
         raise MissingDependencyError(f"Could not resolve attribute {entity_id}.{attribute_name}")
 
     @staticmethod
-    def resolve_variable_attribute_references(formula: str, eval_context: "HierarchicalContextDict", ast_service: Any) -> str:
+    def resolve_variable_attribute_references(formula: str, eval_context: "HierarchicalContextDict", ast_service: Any, resolver_factory: Any = None) -> str:
         """Resolve variable.attribute references where variable is already in context."""
         # Use regex helper for variable.attribute pattern matching
-
         # Extract attribute pairs and replace them
         attribute_pairs = extract_attribute_access_pairs(formula)
         resolved_formula = formula
@@ -137,37 +137,72 @@ class VariableProcessors:
                 if isinstance(context_value, ReferenceValue):
                     # The reference should be an entity ID - use it for attribute resolution
                     entity_id = context_value.reference
-                    _LOGGER.debug("Resolving %s.%s using ReferenceValue entity_id: %s", var_name, attr_name, entity_id)
                     try:
-                        # Use the attribute reference resolver
+                        # Use the resolver factory to resolve entity.attribute patterns
+                        if resolver_factory:
+                            # Try to resolve using the configured resolver factory
+                            attribute_value = resolver_factory.resolve_variable(
+                                f"{var_name}.{attr_name}", f"{var_name}.{attr_name}", eval_context
+                            )
+                            if attribute_value is not None:
+                                # Replace the variable.attribute pattern in the formula
+                                resolved_formula = regex_helper.replace_entity_references(
+                                    resolved_formula, f"{var_name}.{attr_name}", str(attribute_value)
+                                )
+                                continue
+                        
+                        # Fallback: use AttributeReferenceResolver directly
                         resolver = AttributeReferenceResolver()
-                        attribute_value = resolver.resolve(f"{entity_id}.{attr_name}", f"{entity_id}.{attr_name}", eval_context)
-                        _LOGGER.debug("Resolved %s.%s to: %s", var_name, attr_name, attribute_value)
-
-                        # Replace the variable.attribute pattern in the formula
-                        resolved_formula = regex_helper.replace_entity_references(
-                            resolved_formula, f"{var_name}.{attr_name}", str(attribute_value)
-                        )
+                        attribute_value = resolver.resolve(f"{var_name}.{attr_name}", f"{var_name}.{attr_name}", eval_context)
+                        if attribute_value is not None:
+                            # Replace the variable.attribute pattern in the formula
+                            resolved_formula = regex_helper.replace_entity_references(
+                                resolved_formula, f"{var_name}.{attr_name}", str(attribute_value)
+                            )
+                        else:
+                            # If resolution failed, raise MissingDependencyError
+                            raise MissingDependencyError(f"Could not resolve attribute '{attr_name}' of variable '{var_name}'")
+                    except MissingDependencyError:
+                        # Re-raise MissingDependencyError - this should not be caught and ignored
+                        raise
                     except Exception as e:
                         _LOGGER.debug("Could not resolve %s.%s: %s", var_name, attr_name, e)
-                        continue  # Keep original on failure
+                        continue  # Keep original on failure for other exceptions
 
                 # Handle direct entity ID strings
                 elif isinstance(context_value, str) and "." in context_value:
                     # Assume it's an entity ID
                     entity_id = context_value
-                    _LOGGER.debug("Resolving %s.%s using direct entity_id: %s", var_name, attr_name, entity_id)
                     try:
+                        # Use the resolver factory to resolve entity.attribute patterns
+                        if resolver_factory:
+                            # Try to resolve using the configured resolver factory
+                            attribute_value = resolver_factory.resolve_variable(
+                                f"{var_name}.{attr_name}", f"{var_name}.{attr_name}", eval_context
+                            )
+                            if attribute_value is not None:
+                                # Replace the variable.attribute pattern in the formula
+                                resolved_formula = regex_helper.replace_entity_references(
+                                    resolved_formula, f"{var_name}.{attr_name}", str(attribute_value)
+                                )
+                                continue
+                        
+                        # Fallback: use AttributeReferenceResolver directly
                         resolver = AttributeReferenceResolver()
-                        attribute_value = resolver.resolve(f"{entity_id}.{attr_name}", f"{entity_id}.{attr_name}", eval_context)
-                        _LOGGER.debug("Resolved %s.%s to: %s", var_name, attr_name, attribute_value)
-
-                        # Replace the variable.attribute pattern in the formula
-                        resolved_formula = regex_helper.replace_entity_references(
-                            resolved_formula, f"{var_name}.{attr_name}", str(attribute_value)
-                        )
+                        attribute_value = resolver.resolve(f"{var_name}.{attr_name}", f"{var_name}.{attr_name}", eval_context)
+                        if attribute_value is not None:
+                            # Replace the variable.attribute pattern in the formula
+                            resolved_formula = regex_helper.replace_entity_references(
+                                resolved_formula, f"{var_name}.{attr_name}", str(attribute_value)
+                            )
+                        else:
+                            # If resolution failed, raise MissingDependencyError
+                            raise MissingDependencyError(f"Could not resolve attribute '{attr_name}' of variable '{var_name}'")
+                    except MissingDependencyError:
+                        # Re-raise MissingDependencyError - this should not be caught and ignored
+                        raise
                     except Exception as e:
                         _LOGGER.debug("Could not resolve %s.%s: %s", var_name, attr_name, e)
-                        continue  # Keep original on failure
+                        continue  # Keep original on failure for other exceptions
 
         return resolved_formula

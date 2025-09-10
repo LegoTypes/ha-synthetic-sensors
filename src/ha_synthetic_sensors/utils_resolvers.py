@@ -298,6 +298,9 @@ def resolve_via_hass_attribute(
             entity_id,
         )
         raise MissingDependencyError(f"Attribute '{attribute_name}' not found in entity '{entity_id}'")
+    except MissingDependencyError:
+        # Re-raise MissingDependencyError - this should not be caught and converted to None
+        raise
     except Exception as e:
         _LOGGER.warning("Error resolving entity attribute '%s' of '%s' via HASS: %s", attribute_name, entity_id, e)
 
