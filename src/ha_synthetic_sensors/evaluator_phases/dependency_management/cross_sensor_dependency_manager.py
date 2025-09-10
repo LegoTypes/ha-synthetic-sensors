@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from ...config_models import SensorConfig
 from ...constants_metadata import METADATA_PROPERTY_DEVICE_CLASS
+from ...dependency_resolver import detect_circular_dependencies_simple
 from ...formula_ast_analysis_service import FormulaASTAnalysisService
 from .base_manager import DependencyManager
 from .generic_dependency_manager import GenericDependencyManager
@@ -195,12 +196,8 @@ class CrossSensorDependencyManager(DependencyManager):
         dependencies: set[str] = set()
 
         try:
-            # For now, use the legacy DependencyParser for dynamic query extraction
-            # until AST service is enhanced to extract collection function arguments properly
-            from ...dependency_parser import DependencyParser
-
-            parser = DependencyParser()
-            dynamic_queries = parser.extract_dynamic_queries(formula)
+            # Use AST service for dynamic query extraction
+            dynamic_queries = self._ast_service.extract_dynamic_queries(formula)
 
             if not dynamic_queries:
                 return dependencies
@@ -341,37 +338,12 @@ class CrossSensorDependencyManager(DependencyManager):
             List of sensor names involved in circular references
         """
         _LOGGER.debug("Checking for circular dependencies in: %s", sensor_dependencies)
-        circular_refs: list[str] = []
 
-        # Use depth-first search to detect cycles
-        visited = set()
-        rec_stack = set()
+        # Extract sensor name from entity ID if needed
+        def extract_sensor_name(dep: str) -> str:
+            return dep.split(".")[-1] if "." in dep else dep
 
-        def has_cycle(sensor: str) -> bool:
-            """Check if there's a cycle starting from this sensor."""
-            if sensor in rec_stack:
-                return True
-            if sensor in visited:
-                return False
-
-            visited.add(sensor)
-            rec_stack.add(sensor)
-
-            for dep in sensor_dependencies.get(sensor, set()):
-                # Extract sensor name from entity ID if needed
-                dep_sensor_name = dep.split(".")[-1] if "." in dep else dep
-                if has_cycle(dep_sensor_name):
-                    if dep_sensor_name not in circular_refs:
-                        circular_refs.append(dep_sensor_name)
-                    return True
-
-            rec_stack.remove(sensor)
-            return False
-
-        # Check for cycles starting from each sensor
-        for sensor in sensor_dependencies:
-            if sensor not in visited and has_cycle(sensor) and sensor not in circular_refs:
-                circular_refs.append(sensor)
+        circular_refs = detect_circular_dependencies_simple(sensor_dependencies, extract_sensor_name)
 
         # POLICY: Cross-sensor cycles are allowed; emit a warning and return the list without raising.
         if circular_refs:

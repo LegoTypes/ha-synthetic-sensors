@@ -163,9 +163,9 @@ class TestCollectionNegationIntegration:
 
     async def test_negation_parsing_validation(self, mock_hass):
         """Test that negation syntax is parsed correctly."""
-        from ha_synthetic_sensors.dependency_parser import DependencyParser
+        from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-        parser = DependencyParser(mock_hass)
+        parser = FormulaASTAnalysisService()
 
         # Test various negation syntaxes
         test_cases = [

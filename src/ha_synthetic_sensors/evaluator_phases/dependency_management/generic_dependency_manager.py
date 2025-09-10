@@ -8,7 +8,7 @@ from ...config_models import FormulaConfig, SensorConfig
 from ...constants_entities import COMMON_ENTITY_DOMAINS
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
-from ...formula_ast_analysis_service import FormulaASTAnalysisService
+from ...formula_utils import extract_attribute_name, extract_formula_dependencies
 from ...reference_value_manager import ReferenceValueManager
 from ...regex_helper import (
     create_collection_function_extraction_pattern,
@@ -17,7 +17,6 @@ from ...regex_helper import (
     find_all_match_objects,
     regex_helper,
 )
-from ...shared_constants import get_reserved_words
 from ...type_definitions import ReferenceValue
 
 if TYPE_CHECKING:
@@ -288,10 +287,7 @@ class GenericDependencyManager:
 
     def _extract_attribute_name(self, formula: FormulaConfig, sensor_unique_id: str) -> str:
         """Extract attribute name from formula ID."""
-        if formula.id.startswith(f"{sensor_unique_id}_"):
-            return formula.id[len(sensor_unique_id) + 1 :]
-        # Fallback: use the full formula ID if it doesn't match expected pattern
-        return formula.id
+        return extract_attribute_name(formula, sensor_unique_id)
 
     def _extract_all_dependencies(self, formula: str) -> set[tuple[str, DependencyType]]:
         """
@@ -307,18 +303,10 @@ class GenericDependencyManager:
         """
         dependencies = set()
 
-        # Use centralized DependencyParser instead of flawed regex helper
-        # Get hass instance from sensor registry if available
-        # Use AST service for comprehensive extraction
-        ast_service = FormulaASTAnalysisService()
-        analysis = ast_service.get_formula_analysis(formula)
-        identifiers = analysis.dependencies
+        # Use centralized dependency extraction utility
+        identifiers = extract_formula_dependencies(formula)
 
         for identifier in identifiers:
-            # Skip reserved words
-            if identifier in get_reserved_words():
-                continue
-
             # Classify the dependency type
             dep_type = self._classify_dependency(identifier, formula)
             if dep_type:

@@ -219,9 +219,9 @@ class TestPublicAPIIntegration:
 
             # Test that the tabs attribute is treated as a literal string
             # This should not extract 'tabs' as a dependency
-            from ha_synthetic_sensors.dependency_parser import DependencyParser
+            from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-            parser = DependencyParser()
+            parser = FormulaASTAnalysisService()
             dependencies = parser.extract_dependencies("tabs [3]")
             assert "tabs" not in dependencies, (
                 f"Expected 'tabs' not to be extracted as dependency from 'tabs [3]', got: {dependencies}"

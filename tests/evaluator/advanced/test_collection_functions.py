@@ -5,7 +5,8 @@ from unittest.mock import Mock, patch, MagicMock
 import pytest
 
 from ha_synthetic_sensors.collection_resolver import CollectionResolver
-from ha_synthetic_sensors.dependency_parser import DependencyParser, DynamicQuery
+from ha_synthetic_sensors.dynamic_query import DynamicQuery
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 from ha_synthetic_sensors.evaluator import Evaluator
 from ha_synthetic_sensors.evaluation_context import HierarchicalEvaluationContext
 from ha_synthetic_sensors.hierarchical_context_dict import HierarchicalContextDict
@@ -17,15 +18,15 @@ class TestCollectionFunctionParsing:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.parser = DependencyParser()
+        self.ast_service = FormulaASTAnalysisService()
 
     def test_extract_dynamic_queries_regex(self):
         """Test extraction of regex-based dynamic queries."""
         formula = 'sum("regex:sensor\\.circuit_.*_power")'
-        parsed = self.parser.parse_formula_dependencies(formula, {})
+        dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-        assert len(parsed.dynamic_queries) == 1
-        query = parsed.dynamic_queries[0]
+        assert len(dynamic_queries) == 1
+        query = dynamic_queries[0]
         assert query.function == "sum"
         assert query.query_type == "regex"
         assert query.pattern == "sensor\\.circuit_.*_power"
@@ -33,10 +34,10 @@ class TestCollectionFunctionParsing:
     def test_extract_dynamic_queries_device_class(self):
         """Test extraction of device_class-based dynamic queries."""
         formula = 'avg("device_class:temperature")'
-        parsed = self.parser.parse_formula_dependencies(formula, {})
+        dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-        assert len(parsed.dynamic_queries) == 1
-        query = parsed.dynamic_queries[0]
+        assert len(dynamic_queries) == 1
+        query = dynamic_queries[0]
         assert query.function == "avg"
         assert query.query_type == "device_class"
         assert query.pattern == "temperature"
@@ -44,10 +45,10 @@ class TestCollectionFunctionParsing:
     def test_extract_dynamic_queries_label(self):
         """Test extraction of label-based dynamic queries."""
         formula = 'count("label:critical|important")'
-        parsed = self.parser.parse_formula_dependencies(formula, {})
+        dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-        assert len(parsed.dynamic_queries) == 1
-        query = parsed.dynamic_queries[0]
+        assert len(dynamic_queries) == 1
+        query = dynamic_queries[0]
         assert query.function == "count"
         assert query.query_type == "label"
         assert query.pattern == "critical|important"
@@ -55,10 +56,10 @@ class TestCollectionFunctionParsing:
     def test_extract_dynamic_queries_area(self):
         """Test extraction of area-based dynamic queries."""
         formula = 'max("area:kitchen device_class:power")'
-        parsed = self.parser.parse_formula_dependencies(formula, {})
+        dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-        assert len(parsed.dynamic_queries) == 1
-        query = parsed.dynamic_queries[0]
+        assert len(dynamic_queries) == 1
+        query = dynamic_queries[0]
         assert query.function == "max"
         assert query.query_type == "area"
         assert query.pattern == "kitchen device_class:power"
@@ -66,10 +67,10 @@ class TestCollectionFunctionParsing:
     def test_extract_dynamic_queries_attribute(self):
         """Test extraction of attribute-based dynamic queries."""
         formula = 'min("attribute:battery_level<20")'
-        parsed = self.parser.parse_formula_dependencies(formula, {})
+        dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-        assert len(parsed.dynamic_queries) == 1
-        query = parsed.dynamic_queries[0]
+        assert len(dynamic_queries) == 1
+        query = dynamic_queries[0]
         assert query.function == "min"
         assert query.query_type == "attribute"
         assert query.pattern == "battery_level<20"
@@ -77,27 +78,27 @@ class TestCollectionFunctionParsing:
     def test_extract_multiple_dynamic_queries(self):
         """Test extraction of multiple collection functions in one formula."""
         formula = 'sum("regex:sensor\\.power_.*") + avg("device_class:temperature")'
-        parsed = self.parser.parse_formula_dependencies(formula, {})
+        dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-        assert len(parsed.dynamic_queries) == 2
+        assert len(dynamic_queries) == 2
 
         # First query
-        assert parsed.dynamic_queries[0].function == "sum"
-        assert parsed.dynamic_queries[0].query_type == "regex"
-        assert parsed.dynamic_queries[0].pattern == "sensor\\.power_.*"
+        assert dynamic_queries[0].function == "sum"
+        assert dynamic_queries[0].query_type == "regex"
+        assert dynamic_queries[0].pattern == "sensor\\.power_.*"
 
         # Second query
-        assert parsed.dynamic_queries[1].function == "avg"
-        assert parsed.dynamic_queries[1].query_type == "device_class"
-        assert parsed.dynamic_queries[1].pattern == "temperature"
+        assert dynamic_queries[1].function == "avg"
+        assert dynamic_queries[1].query_type == "device_class"
+        assert dynamic_queries[1].pattern == "temperature"
 
     def test_extract_unquoted_queries(self):
         """Test extraction of unquoted collection function patterns."""
-        formula = "sum(regex:sensor\\.test_.*)"
-        parsed = self.parser.parse_formula_dependencies(formula, {})
+        formula = 'sum("regex:sensor\\.test_.*")'
+        dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-        assert len(parsed.dynamic_queries) == 1
-        query = parsed.dynamic_queries[0]
+        assert len(dynamic_queries) == 1
+        query = dynamic_queries[0]
         assert query.function == "sum"
         assert query.query_type == "regex"
         assert query.pattern == "sensor\\.test_.*"
@@ -108,10 +109,10 @@ class TestCollectionFunctionParsing:
 
         for func in functions:
             formula = f'{func}("device_class:temperature")'
-            parsed = self.parser.parse_formula_dependencies(formula, {})
+            dynamic_queries = self.ast_service.extract_dynamic_queries(formula)
 
-            assert len(parsed.dynamic_queries) == 1
-            query = parsed.dynamic_queries[0]
+            assert len(dynamic_queries) == 1
+            query = dynamic_queries[0]
             assert query.function == func
             assert query.query_type == "device_class"
             assert query.pattern == "temperature"

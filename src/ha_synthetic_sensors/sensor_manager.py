@@ -48,6 +48,7 @@ from .exceptions import (
     MissingDependencyError,
     SyntheticSensorsConfigError,
 )
+from .formula_utils import extract_attribute_name
 from .hierarchical_context_dict import HierarchicalContextDict
 from .metadata_handler import MetadataHandler
 from .name_resolver import NameResolver
@@ -1178,10 +1179,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
     def _extract_attribute_name(self, formula: FormulaConfig) -> str:
         """Extract attribute name from formula ID."""
-        if formula.id.startswith(f"{self._config.unique_id}_"):
-            return formula.id[len(self._config.unique_id) + 1 :]
-        # Fallback: use the full formula ID if it doesn't match expected pattern
-        return formula.id
+        return extract_attribute_name(formula, self._config.unique_id)
 
     async def async_update(self) -> None:
         """Update the sensor value and calculated attributes (public method)."""

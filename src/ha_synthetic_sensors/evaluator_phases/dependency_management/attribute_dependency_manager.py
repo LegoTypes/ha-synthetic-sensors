@@ -6,9 +6,8 @@ from typing import TYPE_CHECKING, Any
 from ...config_models import FormulaConfig, SensorConfig
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError
-from ...formula_ast_analysis_service import FormulaASTAnalysisService
+from ...formula_utils import extract_attribute_name, extract_formula_dependencies
 from ...reference_value_manager import ReferenceValueManager
-from ...shared_constants import get_reserved_words
 
 if TYPE_CHECKING:
     from ...hierarchical_context_dict import HierarchicalContextDict
@@ -148,10 +147,7 @@ class AttributeDependencyManager:
 
     def _extract_attribute_name(self, formula: FormulaConfig, sensor_unique_id: str) -> str:
         """Extract attribute name from formula ID."""
-        if formula.id.startswith(f"{sensor_unique_id}_"):
-            return formula.id[len(sensor_unique_id) + 1 :]
-        # Fallback: use the full formula ID if it doesn't match expected pattern
-        return formula.id
+        return extract_attribute_name(formula, sensor_unique_id)
 
     def _extract_attribute_dependencies(self, formula: str) -> set[str]:
         """
@@ -162,18 +158,10 @@ class AttributeDependencyManager:
         """
         dependencies = set()
 
-        # Use centralized DependencyParser instead of flawed regex helper
-        # Use None for hass since this is attribute-level dependency extraction
-        # Use AST service for dependency extraction
-        ast_service = FormulaASTAnalysisService()
-        analysis = ast_service.get_formula_analysis(formula)
-        identifiers = analysis.dependencies
+        # Use centralized dependency extraction utility
+        identifiers = extract_formula_dependencies(formula)
 
         for identifier in identifiers:
-            # Skip reserved words
-            if identifier in get_reserved_words():
-                continue
-
             # Skip if it looks like an entity ID (contains dot)
             if "." in identifier:
                 continue

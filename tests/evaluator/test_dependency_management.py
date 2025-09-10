@@ -2,7 +2,7 @@
 
 import pytest
 
-from ha_synthetic_sensors.dependency_parser import DependencyParser
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
 
 from unittest.mock import patch
@@ -20,7 +20,7 @@ class TestDependencyParser:
     @pytest.fixture
     def parser(self, mock_hass):
         """Create a DependencyParser instance."""
-        return DependencyParser(mock_hass)
+        return FormulaASTAnalysisService(mock_hass)
 
     def test_initialization(self, parser):
         """Test parser initialization."""

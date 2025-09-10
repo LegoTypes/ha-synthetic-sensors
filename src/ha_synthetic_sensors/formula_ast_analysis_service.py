@@ -9,9 +9,21 @@ from dataclasses import dataclass, field
 import logging
 from typing import Any
 
+from .constants_entities import COMMON_ENTITY_DOMAINS
+from .constants_formula import FORMULA_RESERVED_WORDS
+from .dynamic_query import DynamicQuery
 from .formula_compilation_cache import CompiledFormula, FormulaCompilationCache
+from .regex_helper import regex_helper
 
 _LOGGER = logging.getLogger(__name__)
+
+# Get valid query types from regex helper
+_QUERY_TYPE_PATTERNS = regex_helper.create_query_type_patterns()
+VALID_QUERY_TYPES = frozenset(_QUERY_TYPE_PATTERNS.keys())
+
+# Collection/aggregation functions for AST analysis
+# These are the functions that should be tracked as collection functions
+AGGREGATION_FUNCTIONS = frozenset({"sum", "avg", "mean", "min", "max", "count", "median", "stdev", "std", "var"})
 
 
 @dataclass
@@ -52,39 +64,23 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
             var_name = node.id
 
             # Check if this looks like a domain name that would be part of an entity ID
-            is_likely_domain = var_name in {
-                "sensor",
-                "binary_sensor",
-                "switch",
-                "light",
-                "climate",
-                "cover",
-                "fan",
-                "lock",
-                "media_player",
-                "automation",
-                "script",
-                "input_boolean",
-                "input_number",
-                "input_text",
-                "states",  # Also exclude 'states' which is used in states['sensor.name']
-            }
+            is_likely_domain = var_name in COMMON_ENTITY_DOMAINS or var_name == "states"
 
-            # Don't add function names or domain names as variables
-            if var_name not in self._function_names and not is_likely_domain:
+            # Check for special tokens first
+            if var_name == "state":
+                self.has_state_token = True
+                # 'state' is always treated as a variable and dependency
                 self.variables.add(var_name)
-
-                # Check for special tokens
-                if var_name == "state":
-                    self.has_state_token = True
-                    # 'state' is a special token handled by state resolver, not a dependency
-                elif var_name == "self":
-                    self.has_self_reference = True
-                    # 'self' is a special token for self-reference, not a dependency
-                else:
-                    # Add to dependencies if it's not a built-in or function
-                    if not self._is_builtin_or_function(var_name):
-                        self.dependencies.add(var_name)
+                self.dependencies.add(var_name)
+            elif var_name == "self":
+                self.has_self_reference = True
+                # 'self' is always treated as a variable and dependency
+                self.variables.add(var_name)
+                self.dependencies.add(var_name)
+            elif var_name not in self._function_names and not is_likely_domain and not self._is_builtin_or_function(var_name):
+                # Regular variables (excluding builtins like 'on', 'off')
+                self.variables.add(var_name)
+                self.dependencies.add(var_name)
 
         self.generic_visit(node)
 
@@ -103,10 +99,14 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
                 return
 
             # Track attribute access for dependency analysis
-            # Only add base_name if it's already a known variable (not a domain name)
-            if base_name in self.variables:
-                # This is variable.attribute access
-                self.dependencies.add(base_name)
+            # Check if this looks like a domain name that would be part of an entity ID
+            is_likely_domain = base_name in COMMON_ENTITY_DOMAINS or base_name == "states"
+
+            if not is_likely_domain:
+                # This is variable.attribute access - add base as variable and dependency
+                self.variables.add(base_name)
+                if not self._is_builtin_or_function(base_name):
+                    self.dependencies.add(base_name)
 
         self.generic_visit(node)
 
@@ -134,11 +134,11 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
                 attr_arg = extracted_args[1] if len(extracted_args) > 1 else None
                 if entity_arg and attr_arg:
                     self.metadata_calls.append((entity_arg, attr_arg))
-                    # Add entity to dependencies if it's a variable (but not special tokens)
-                    if not self._is_string_literal(node.args[0]) and entity_arg not in ("state", "self"):
+                    # Add entity to dependencies if it's a variable
+                    if not self._is_string_literal(node.args[0]):
                         self.dependencies.add(entity_arg)
 
-            elif func_name in ["mean", "sum", "min", "max", "count", "median", "stdev"]:
+            elif func_name in AGGREGATION_FUNCTIONS:
                 # Collection/aggregation functions
                 self.collection_functions.append(func_name)
                 # Add all arguments as dependencies
@@ -163,7 +163,7 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
-        """Extract subscript access like states['sensor.name']."""
+        """Extract subscript access like states['sensor.name'] but avoid treating subscript base as variable."""
         if (
             isinstance(node.value, ast.Name)
             and node.value.id == "states"
@@ -174,8 +174,12 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
             entity_id = node.slice.value
             self.entity_references.add(entity_id)
             self.dependencies.add(entity_id)
-
-        self.generic_visit(node)
+            # Don't visit the 'states' name node to avoid adding it as a variable
+            self.visit(node.slice)
+        else:
+            # For other subscript patterns like tabs[3], don't treat the base as a variable
+            # Only visit the slice part
+            self.visit(node.slice)
 
     def _extract_arg_value(self, node: ast.AST) -> str | None:
         """Extract value from an AST node (string literal or variable name)."""
@@ -201,70 +205,14 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
         if len(parts) >= 2:
             # Basic entity ID validation
             domain = parts[0]
-            # Common HA domains
-            common_domains = {
-                "sensor",
-                "binary_sensor",
-                "switch",
-                "light",
-                "climate",
-                "cover",
-                "fan",
-                "lock",
-                "media_player",
-                "automation",
-                "script",
-                "input_boolean",
-                "input_number",
-                "input_text",
-            }
-            return domain in common_domains
+            return domain in COMMON_ENTITY_DOMAINS
         return False
 
     def _is_builtin_or_function(self, name: str) -> bool:
         """Check if name is a built-in constant or function."""
-        builtins = {
-            "True",
-            "False",
-            "None",
-            "int",
-            "float",
-            "str",
-            "bool",
-            "len",
-            "abs",
-            "min",
-            "max",
-            "sum",
-            "round",
-            "now",
-            "today",
-            "yesterday",
-            "tomorrow",
-            "utcnow",
-            # Home Assistant boolean constants
-            "on",
-            "off",  # These are special constants in HA formulas
-            # Add common HA formula functions
-            "metadata",
-            "mean",
-            "median",
-            "stdev",
-            "count",
-            "entity",
-            "minutes_between",
-            "hours_between",
-            "days_between",
-            "is_number",
-            "is_string",
-            "is_boolean",
-            "is_datetime",
-            "to_number",
-            "to_string",
-            "to_boolean",
-            "to_datetime",
-        }
-        return name in builtins
+        # Include HA boolean constants that should not be treated as variables
+        ha_boolean_constants = {"on", "off"}
+        return name in FORMULA_RESERVED_WORDS or name in ha_boolean_constants
 
 
 class FormulaASTAnalysisService:
@@ -432,3 +380,140 @@ class FormulaASTAnalysisService:
         analysis = self.get_formula_analysis(formula)
         # Check if the sensor name appears as a variable (not in strings)
         return sensor_name in analysis.variables
+
+    def extract_entity_references(self, formula: str) -> set[str]:
+        """Extract entity references from formula using AST analysis.
+
+        This is a convenience method that replaces the legacy DependencyParser
+        extract_entity_references method.
+
+        Args:
+            formula: The formula to analyze
+
+        Returns:
+            Set of entity references found in the formula
+        """
+        analysis = self.get_formula_analysis(formula)
+        return analysis.entity_references
+
+    def extract_dynamic_queries(self, formula: str) -> list[DynamicQuery]:
+        """Extract dynamic queries from collection function calls.
+
+        This method analyzes collection function calls and extracts dynamic query
+        patterns that need runtime resolution. Since negation syntax like !'sensor1'
+        is not valid Python syntax, we use regex-based extraction before AST parsing.
+
+        Args:
+            formula: The formula to analyze
+
+        Returns:
+            List of DynamicQuery objects representing runtime queries
+        """
+        queries = []
+
+        # Use regex helper for collection function pattern matching
+        aggregation_pattern = regex_helper.create_aggregation_function_pattern()
+
+        for match in aggregation_pattern.finditer(formula):
+            func_name = match.group(1).lower()
+            args_str = match.group(2)
+
+            # Parse arguments - split by comma but handle quoted strings
+            args = self._parse_function_arguments(args_str)
+
+            # Extract query pattern and exclusions
+            query_pattern = None
+            exclusions = []
+
+            for arg in args:
+                # arg is already unquoted by _parse_function_arguments
+                arg = arg.strip()
+                if arg.startswith("!"):
+                    # This is an exclusion pattern
+                    exclusion = arg[1:]  # Remove the '!' prefix
+                    exclusions.append(exclusion)
+                elif self._is_query_pattern(arg):
+                    # This is the main query pattern
+                    query_pattern = arg
+
+            # Create query if we found a pattern
+            if query_pattern:
+                query_type, pattern = self._parse_query_pattern(query_pattern)
+                if query_type and pattern:
+                    queries.append(
+                        DynamicQuery(
+                            query_type=query_type,
+                            pattern=pattern,
+                            function=func_name,
+                            exclusions=exclusions,
+                        )
+                    )
+
+        return queries
+
+    def _is_query_pattern(self, text: str) -> bool:
+        """Check if text looks like a query pattern (e.g., 'regex:pattern', 'label:value')."""
+        if not isinstance(text, str):
+            return False
+
+        # Use regex helper for query pattern detection
+        return regex_helper.is_query_pattern(text)
+
+    def _parse_query_pattern(self, text: str) -> tuple[str | None, str | None]:
+        """Parse a query pattern into type and pattern.
+
+        Args:
+            text: Query pattern like 'regex:door.*' or 'label:bedroom'
+
+        Returns:
+            Tuple of (query_type, pattern) or (None, None) if not a valid pattern
+        """
+        if ":" not in text:
+            return None, None
+
+        parts = text.split(":", 1)
+        if len(parts) != 2:
+            return None, None
+
+        query_type = parts[0].strip()
+        pattern = parts[1].strip()
+
+        # Validate query type
+        if query_type not in VALID_QUERY_TYPES:
+            return None, None
+
+        return query_type, pattern
+
+    def _parse_function_arguments(self, args_str: str) -> list[str]:
+        """Parse function arguments from a string, handling quoted strings and negation syntax.
+
+        Args:
+            args_str: String containing function arguments like "'device_class:power', !'sensor1'"
+
+        Returns:
+            List of argument strings with quotes removed
+        """
+
+        # Simple approach: split by comma first, then handle each part
+        raw_args = [arg.strip() for arg in args_str.split(",")]
+
+        args = []
+        for raw_arg in raw_args:
+            # Remove outer quotes but preserve negation
+            if raw_arg.startswith("!'") and raw_arg.endswith("'"):
+                # Negated single-quoted string: !'sensor1' -> !sensor1
+                args.append("!" + raw_arg[2:-1])
+            elif raw_arg.startswith('!"') and raw_arg.endswith('"'):
+                # Negated double-quoted string: !"sensor1" -> !sensor1
+                args.append("!" + raw_arg[2:-1])
+            elif raw_arg.startswith("'") and raw_arg.endswith("'"):
+                # Single-quoted string: 'device_class:power' -> device_class:power
+                args.append(raw_arg[1:-1])
+            elif raw_arg.startswith('"') and raw_arg.endswith('"'):
+                # Double-quoted string: "device_class:power" -> device_class:power
+                args.append(raw_arg[1:-1])
+            else:
+                # Unquoted string
+                args.append(raw_arg)
+
+        return args

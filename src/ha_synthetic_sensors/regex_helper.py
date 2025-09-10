@@ -629,13 +629,15 @@ class RegexHelper:
     def create_collection_normalization_pattern(self) -> re.Pattern[str]:
         """Create pattern for normalizing collection functions with repeated prefixes.
 
-        Converts patterns like: count(device_class:door|device_class:window|device_class:motion)
-        to: count(device_class:door|window|motion)
+        Converts patterns like: count("device_class:door|device_class:window|device_class:motion")
+        to: count("device_class:door|window|motion")
         """
         pattern_str = (
             r"\b(sum|avg|count|min|max|std|var)\s*\(\s*"
+            r"[\"']?"  # Optional opening quote
             r"([a-zA-Z_]+):"  # First prefix (e.g., "device_class:")
-            r"([^)]+)"  # Everything until the closing paren
+            r"([^)\"']+)"  # Everything until the closing paren or quote
+            r"[\"']?"  # Optional closing quote
             r"\)"
         )
         return self._get_pattern("collection_normalization", pattern_str, re.IGNORECASE)

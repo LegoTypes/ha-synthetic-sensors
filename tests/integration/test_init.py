@@ -55,7 +55,6 @@ class TestLoggingUtilities:
                 "ha_synthetic_sensors.config_manager",
                 "ha_synthetic_sensors.sensor_manager",
                 "ha_synthetic_sensors.name_resolver",
-                "ha_synthetic_sensors.dependency_parser",
                 "ha_synthetic_sensors.integration",
             ]
 

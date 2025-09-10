@@ -28,9 +28,9 @@ def yaml_config_path():
 @pytest.fixture
 def dependency_parser():
     """Create a dependency parser instance."""
-    from ha_synthetic_sensors.dependency_parser import DependencyParser
+    from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-    return DependencyParser()
+    return FormulaASTAnalysisService()
 
 
 @pytest.fixture

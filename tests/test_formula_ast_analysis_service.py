@@ -160,8 +160,7 @@ class TestFormulaASTAnalysisService:
         variables = service.extract_variables("var1 + var2 + sensor.test")
         assert "var1" in variables
         assert "var2" in variables
-        assert "sensor" in variables  # 'sensor' is the base variable name
-        # Note: 'test' is an attribute, not a separate variable
+        # Note: 'sensor.test' is treated as an entity reference, not a variable
 
         # Test extract_dependencies
         dependencies = service.extract_dependencies("var1 + sensor.temperature")

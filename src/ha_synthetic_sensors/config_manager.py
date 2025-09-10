@@ -23,6 +23,7 @@ from .config_types import AttributeConfig, AttributeValue, ConfigDict, GlobalSet
 from .config_yaml_converter import ConfigYamlConverter
 from .constants_alternate import STATE_NONE_YAML
 from .cross_sensor_reference_detector import CrossSensorReferenceDetector
+from .dependency_resolver import detect_circular_dependencies_simple
 from .schema_validator import validate_yaml_config
 from .utils_config import validate_computed_variable_references
 from .validation_utils import load_yaml_file
@@ -222,35 +223,7 @@ class ConfigManager:
         Returns:
             List of sensor names involved in circular dependencies
         """
-        visited = set()
-        rec_stack = set()
-        circular_refs = []
-
-        def has_cycle(sensor: str) -> bool:
-            """Check if there's a cycle starting from the given sensor."""
-            if sensor in rec_stack:
-                return True
-            if sensor in visited:
-                return False
-
-            visited.add(sensor)
-            rec_stack.add(sensor)
-
-            for dep in cross_sensor_references.get(sensor, set()):
-                if has_cycle(dep):
-                    if dep not in circular_refs:
-                        circular_refs.append(dep)
-                    return True
-
-            rec_stack.remove(sensor)
-            return False
-
-        # Check for cycles starting from each sensor
-        for sensor in cross_sensor_references:
-            if sensor not in visited and has_cycle(sensor) and sensor not in circular_refs:
-                circular_refs.append(sensor)
-
-        return circular_refs
+        return detect_circular_dependencies_simple(cross_sensor_references)
 
     def _validate_raw_yaml_structure(self, yaml_content: str) -> None:
         """Validate raw YAML structure for basic flaws in phase 0.

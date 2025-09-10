@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import yaml
 
 from ha_synthetic_sensors.collection_resolver import CollectionResolver
-from ha_synthetic_sensors.dependency_parser import DependencyParser, DynamicQuery
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService, DynamicQuery
 from ha_synthetic_sensors.evaluator import Evaluator
 
 

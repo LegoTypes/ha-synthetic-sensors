@@ -264,9 +264,9 @@ class TestLiteralAttributes:
 
     def test_tabs_literal_dependency_extraction(self) -> None:
         """Test that tabs literals don't extract 'tabs' as a dependency."""
-        from ha_synthetic_sensors.dependency_parser import DependencyParser
+        from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-        parser = DependencyParser()
+        parser = FormulaASTAnalysisService()
 
         # Test various tabs literal formats
         test_cases = [
@@ -285,9 +285,9 @@ class TestLiteralAttributes:
 
     def test_normal_variable_extraction_still_works(self) -> None:
         """Test that normal variable extraction still works for formulas with operators."""
-        from ha_synthetic_sensors.dependency_parser import DependencyParser
+        from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-        parser = DependencyParser()
+        parser = FormulaASTAnalysisService()
 
         # Test that normal formulas with variables still extract dependencies correctly
         formula = "temp + humidity * 2"
@@ -299,9 +299,9 @@ class TestLiteralAttributes:
 
     def test_quoted_tabs_literal_handling(self) -> None:
         """Test that quoted tabs literals like 'tabs [3]' are treated as string literals, not variables."""
-        from ha_synthetic_sensors.dependency_parser import DependencyParser
+        from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-        parser = DependencyParser()
+        parser = FormulaASTAnalysisService()
 
         # Test quoted tabs literal formats
         test_cases = [
@@ -416,9 +416,9 @@ class TestLiteralAttributes:
         )
 
         # Test that dependency extraction doesn't extract 'tabs' as a variable
-        from ha_synthetic_sensors.dependency_parser import DependencyParser
+        from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-        parser = DependencyParser()
+        parser = FormulaASTAnalysisService()
         dependencies = parser.extract_dependencies("tabs [3]")
         assert "tabs" not in dependencies, f"Expected 'tabs' not to be extracted as dependency, got: {dependencies}"
 

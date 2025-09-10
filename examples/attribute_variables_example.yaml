@@ -112,9 +112,9 @@ sensors:
           unit_of_measurement: "active"
         variables:
           security_devices:
-            formula: "count(device_class:door|device_class:window|device_class:motion)"
+            formula: 'count("device_class:door|device_class:window|device_class:motion")'
           untriggered_security_devices:
-            formula: "count(device_class:door|window|motion !state:unavailable|unknown|off)"
+            formula: 'count("device_class:door|window|motion !state:unavailable|unknown|off")'
 
       # Numeric literals in attribute variables
       energy_cost_projection:

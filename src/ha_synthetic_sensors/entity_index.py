@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -165,7 +166,7 @@ class EntityIndex:
     ) -> None:
         """Add entity IDs from formula attributes."""
         for _attr_name, attr_value in attributes.items():
-            if isinstance(attr_value, str):
+            if isinstance(attr_value, str) and self._looks_like_formula(attr_value):
                 analysis = ast_service.get_formula_analysis(attr_value)
                 attr_entities = analysis.entity_references
                 for entity_id in attr_entities:
@@ -267,7 +268,7 @@ class EntityIndex:
     ) -> None:
         """Remove entity IDs from formula attributes."""
         for _attr_name, attr_value in attributes.items():
-            if isinstance(attr_value, str):
+            if isinstance(attr_value, str) and self._looks_like_formula(attr_value):
                 analysis = ast_service.get_formula_analysis(attr_value)
                 attr_entities = analysis.entity_references
                 for entity_id in attr_entities:
@@ -389,6 +390,65 @@ class EntityIndex:
         temp_resolver = NameResolver(self._hass, {})
         return temp_resolver.validate_entity_id(value)
 
+    def _looks_like_formula(self, value: str) -> bool:
+        """Check if a string value looks like a formula that should be analyzed.
+
+        This helps avoid analyzing literal values like dates, units, or names.
+        """
+        if not value or len(value.strip()) == 0:
+            return False
+
+        # Skip simple literal values that clearly aren't formulas
+        if len(value) < 3:  # Very short strings are likely literals
+            return False
+
+        # Skip common literal patterns
+        literal_patterns = [
+            # Dates: 2024-01-15, 2024/01/15
+            r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}$",
+            # Units: %, °C, kWh, etc.
+            r"^[%°$£€¥]+$",
+            r"^[a-zA-Z]{1,3}$",  # Short units like W, kW, °C
+            # Version numbers: 1.2.3, 2.1.0
+            r"^\d+\.\d+\.\d+$",
+            # Simple names without operators: "Living Room", "Bedroom"
+            r"^[A-Z][a-z]+ [A-Z][a-z]+$",
+            # Serial numbers or IDs: SI-2024-001
+            r"^[A-Z]{2}-\d{4}-\d{3}$",
+        ]
+
+        for pattern in literal_patterns:
+            if re.match(pattern, value.strip()):
+                return False
+
+        # If it contains typical formula elements, it's likely a formula
+        formula_indicators = [
+            "(",
+            ")",
+            "+",
+            "-",
+            "*",
+            "/",
+            "=",
+            "<",
+            ">",
+            "sensor.",
+            "binary_sensor.",
+            "switch.",
+            "light.",
+            "state(",
+            "metadata(",
+            "sum(",
+            "avg(",
+            "count(",
+            "min(",
+            "max(",
+            "mean(",
+            "median(",
+        ]
+
+        return any(indicator in value for indicator in formula_indicators)
+
     def _extract_entities_from_metadata(
         self, metadata: dict[str, Any], ast_service: FormulaASTAnalysisService, entities_added: set[str]
     ) -> None:
@@ -420,13 +480,14 @@ class EntityIndex:
         self, value: str, ast_service: FormulaASTAnalysisService, entities_set: set[str], add_to_index: bool
     ) -> None:
         """Extract entity IDs from a string value."""
-        analysis = ast_service.get_formula_analysis(value)
-        metadata_entities = analysis.entity_references
-        for entity_id in metadata_entities:
-            if self._is_entity_id(entity_id):
-                if add_to_index:
-                    self._entity_ids.add(entity_id)
-                entities_set.add(entity_id)
+        if self._looks_like_formula(value):
+            analysis = ast_service.get_formula_analysis(value)
+            metadata_entities = analysis.entity_references
+            for entity_id in metadata_entities:
+                if self._is_entity_id(entity_id):
+                    if add_to_index:
+                        self._entity_ids.add(entity_id)
+                    entities_set.add(entity_id)
 
     def _extract_entities_from_list(
         self, value: list[Any], ast_service: FormulaASTAnalysisService, entities_set: set[str], add_to_index: bool

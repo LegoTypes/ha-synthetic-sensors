@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from ha_synthetic_sensors.config_manager import ConfigManager
-from ha_synthetic_sensors.dependency_parser import DependencyParser
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
 
 class TestDependencyParser:
@@ -21,7 +21,7 @@ class TestDependencyParser:
     @pytest.fixture
     def parser(self):
         """Create a DependencyParser instance."""
-        return DependencyParser()
+        return FormulaASTAnalysisService()
 
     def test_extract_static_dependencies_with_variables(self, parser):
         """Test extraction of static dependencies including variables."""
@@ -190,7 +190,7 @@ class TestComplexFormulaParsing:
     @pytest.fixture
     def parser(self):
         """Create a DependencyParser instance."""
-        return DependencyParser()
+        return FormulaASTAnalysisService()
 
     def test_mixed_dependency_types(self, parser):
         """Test formula with static deps, dynamic queries, and dot notation."""

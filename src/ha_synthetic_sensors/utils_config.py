@@ -19,9 +19,9 @@ from .context_utils import safe_context_contains, safe_context_set
 from .enhanced_formula_evaluation import EnhancedSimpleEvalHelper
 from .evaluator_helpers import EvaluatorHelpers
 from .exceptions import FatalEvaluationError, MissingDependencyError
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .formula_compilation_cache import FormulaCompilationCache
 from .formula_evaluator_service import FormulaEvaluatorService
-from .formula_parsing.variable_extractor import ExtractionContext, extract_variables
 from .hierarchical_context_dict import HierarchicalContextDict
 from .math_functions import MathFunctions
 from .reference_value_manager import ReferenceValueManager
@@ -88,13 +88,8 @@ def _extract_variable_references(formula: str) -> list[str]:
     Returns:
         List of potential variable names found in the formula
     """
-    return list(
-        extract_variables(
-            formula,
-            context=ExtractionContext.CONFIG_VALIDATION,
-            allow_dot_notation=True,  # utils_config allows dot notation
-        )
-    )
+    ast_service = FormulaASTAnalysisService()
+    return list(ast_service.extract_variables(formula))
 
 
 _COMPUTED_VARIABLE_COMPILATION_CACHE = FormulaCompilationCache(max_entries=500)
@@ -141,6 +136,9 @@ def validate_computed_variable_references(
     always_available.update(DURATION_FUNCTIONS)  # Add duration functions
     always_available.update(DATETIME_FUNCTIONS)  # Add datetime functions
     always_available.update(MathFunctions.get_all_functions().keys())  # Add enhanced math functions
+
+    # Add Home Assistant boolean constants
+    always_available.update({"on", "off", "True", "False", "None"})  # HA boolean constants
     available_vars.update(always_available)
 
     # Check each computed variable for references to undefined variables

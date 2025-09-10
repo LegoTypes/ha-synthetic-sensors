@@ -6,7 +6,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .collection_resolver import CollectionResolver
-from .dependency_parser import DependencyParser
 from .exceptions import DataValidationError
 from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .hierarchical_context_dict import HierarchicalContextDict
@@ -35,7 +34,6 @@ class EvaluatorDependency:
         self._hass = hass
         self._ast_service = FormulaASTAnalysisService()
         self._collection_resolver = CollectionResolver(hass)
-        self._dependency_parser = DependencyParser(hass)
         self._data_provider_callback = data_provider_callback
         self._registered_integration_entities: set[str] | None = None
 
@@ -127,15 +125,15 @@ class EvaluatorDependency:
                     dependencies.add(var_value)
 
         # Extract entity references from collection patterns
-        parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
+        dynamic_queries = self._ast_service.extract_dynamic_queries(config.formula)
 
-        for query in parsed_deps.dynamic_queries:
+        for query in dynamic_queries:
             # Look for entity references within the pattern using collection resolver's pattern
             entity_refs = self._collection_resolver.entity_reference_pattern.findall(query.pattern)
             dependencies.update(entity_refs)
 
         # Extract regular dependencies (non-collection function entities)
-        static_deps = self._dependency_parser.extract_entity_references(config.formula)
+        static_deps = self._ast_service.extract_entity_references(config.formula)
         dependencies.update(static_deps)
 
         return dependencies
@@ -156,9 +154,9 @@ class EvaluatorDependency:
         dependencies = self.extract_formula_dependencies(config, context, sensor_config)
 
         # Identify collection pattern entities that don't need numeric validation
-        parsed_deps = self._dependency_parser.parse_formula_dependencies(config.formula, {})
+        dynamic_queries = self._ast_service.extract_dynamic_queries(config.formula)
         collection_pattern_entities = set()
-        for query in parsed_deps.dynamic_queries:
+        for query in dynamic_queries:
             entity_refs = self._collection_resolver.entity_reference_pattern.findall(query.pattern)
             collection_pattern_entities.update(entity_refs)
 

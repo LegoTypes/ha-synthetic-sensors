@@ -7,7 +7,6 @@ from homeassistant.core import HomeAssistant
 
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
-from .dependency_parser import DependencyParser
 from .dynamic_query import DynamicQuery
 from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .hierarchical_context_dict import HierarchicalContextDict
@@ -212,15 +211,8 @@ class FormulaPreprocessor:
             # First normalize the formula to handle repeated prefixes
             normalized_formula = self._normalize_formula_patterns(formula)
 
-            # Extract dynamic queries from the normalized formula
-            # TODO: Move this to AST service
-            temp_parser = DependencyParser()
-            parsed_deps = temp_parser.parse_formula_dependencies(normalized_formula, {})
-            # Convert DependencyDynamicQuery to DynamicQuery
-            dynamic_queries = [
-                DynamicQuery(query_type=q.query_type, pattern=q.pattern, function=q.function, exclusions=q.exclusions)
-                for q in parsed_deps.dynamic_queries
-            ]
+            # Extract dynamic queries from the normalized formula using AST service
+            dynamic_queries = self._ast_service.extract_dynamic_queries(normalized_formula)
 
             if not dynamic_queries:
                 return normalized_formula  # No collection functions to resolve

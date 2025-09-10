@@ -6,7 +6,7 @@ This module tests OR-style logic for both state and attribute collection pattern
 import pytest
 from unittest.mock import patch, Mock
 from ha_synthetic_sensors.collection_resolver import CollectionResolver
-from ha_synthetic_sensors.dependency_parser import DependencyParser, DynamicQuery
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService, DynamicQuery
 from ha_synthetic_sensors.evaluator import Evaluator
 from pathlib import Path
 
@@ -28,9 +28,9 @@ def yaml_config_path():
 @pytest.fixture
 def dependency_parser():
     """Create a dependency parser instance."""
-    from ha_synthetic_sensors.dependency_parser import DependencyParser
+    from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
-    return DependencyParser()
+    return FormulaASTAnalysisService()
 
 
 @pytest.fixture

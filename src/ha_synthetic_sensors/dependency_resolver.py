@@ -6,7 +6,58 @@ This module provides dependency tracking and circular dependency detection.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from homeassistant.core import HomeAssistant
+
+
+def detect_circular_dependencies_simple(
+    dependencies: dict[str, set[str]], dependency_extractor: Callable[[str], str] | None = None
+) -> list[str]:
+    """Detect circular dependencies using depth-first search.
+
+    This is a simplified version that returns just the sensors involved in cycles,
+    used by multiple modules to avoid code duplication.
+
+    Args:
+        dependencies: Dictionary mapping sensor names to their dependencies
+        dependency_extractor: Optional function to extract sensor name from dependency
+                             (e.g., to extract sensor name from entity ID)
+
+    Returns:
+        List of sensor names involved in circular references
+    """
+    circular_refs: list[str] = []
+    visited = set()
+    rec_stack = set()
+
+    def has_cycle(sensor: str) -> bool:
+        """Check if there's a cycle starting from this sensor."""
+        if sensor in rec_stack:
+            return True
+        if sensor in visited:
+            return False
+
+        visited.add(sensor)
+        rec_stack.add(sensor)
+
+        for dep in dependencies.get(sensor, set()):
+            # Extract sensor name from dependency if extractor provided
+            dep_sensor_name = dependency_extractor(dep) if dependency_extractor else dep
+            if has_cycle(dep_sensor_name):
+                if dep_sensor_name not in circular_refs:
+                    circular_refs.append(dep_sensor_name)
+                return True
+
+        rec_stack.remove(sensor)
+        return False
+
+    # Check for cycles starting from each sensor
+    for sensor in dependencies:
+        if sensor not in visited and has_cycle(sensor) and sensor not in circular_refs:
+            circular_refs.append(sensor)
+
+    return circular_refs
 
 
 class DependencyResolver:

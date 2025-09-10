@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Any
 
 from .config_models import FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
-from .dependency_parser import DependencyParser
 from .entity_index import EntityIndex
 from .exceptions import SensorUpdateError, SyntheticSensorsError
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .regex_helper import safe_entity_replacement
 from .sensor_set_bulk_ops import SensorSetBulkOps
 from .sensor_set_entity_index import SensorSetEntityIndex
@@ -656,8 +656,6 @@ class SensorSet(SensorSetYamlOperationsMixin):
         - If, after the rewrite, any old IDs remain, fail fast with details.
         """
         # Use centralized entity replacement from AST service
-        from .formula_ast_analysis_service import FormulaASTAnalysisService  # pylint: disable=import-outside-toplevel
-
         ast_service = FormulaASTAnalysisService()
 
         def _extract_refs(s: str) -> set[str]:
@@ -861,8 +859,8 @@ class SensorSet(SensorSetYamlOperationsMixin):
             new_s = s
             # Extract explicit entity references and replace only those
             try:
-                local_parser = DependencyParser(getattr(self.storage_manager, "hass", None))
-                refs = local_parser.extract_entity_references(s)
+                ast_service = FormulaASTAnalysisService()
+                refs = ast_service.extract_entity_references(s)
             except Exception:
                 refs = set()
             for old_id, new_id in sorted(entity_changes.items(), key=lambda x: len(x[0]), reverse=True):

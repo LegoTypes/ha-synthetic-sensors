@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch
 
-from ha_synthetic_sensors.dependency_parser import DependencyParser
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 
 
 class TestMetadataDependencyExtraction:
@@ -22,7 +22,7 @@ class TestMetadataDependencyExtraction:
 
         with patch("ha_synthetic_sensors.constants_entities.er") as mock_er:
             mock_er.async_get.return_value = mock_registry
-            yield DependencyParser(mock_hass)
+            yield FormulaASTAnalysisService(mock_hass)
 
     def test_metadata_function_string_literals_not_extracted_as_dependencies(self, parser):
         """Test that string literals in metadata function calls are not extracted as dependencies.

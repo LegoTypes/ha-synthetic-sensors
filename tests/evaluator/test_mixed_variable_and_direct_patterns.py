@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from ha_synthetic_sensors.dependency_parser import DependencyParser
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 from ha_synthetic_sensors.name_resolver import NameResolver
 
 
@@ -16,7 +16,7 @@ class TestMixedVariableAndDirectPatterns:
     @pytest.fixture
     def parser(self, mock_hass, mock_entity_registry, mock_states):
         """Create a dependency parser instance."""
-        return DependencyParser(mock_hass)
+        return FormulaASTAnalysisService(mock_hass)
 
     @pytest.fixture
     def storage_complex_config(self):

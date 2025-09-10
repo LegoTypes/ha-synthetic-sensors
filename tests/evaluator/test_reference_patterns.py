@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 from ha_synthetic_sensors.config_manager import ConfigManager
-from ha_synthetic_sensors.dependency_parser import DependencyParser
+from ha_synthetic_sensors.formula_ast_analysis_service import FormulaASTAnalysisService
 from ha_synthetic_sensors.evaluator import Evaluator
 
 
@@ -300,7 +300,7 @@ sensors:
         assert "sensor.energy_cost_analysis" in battery_formula.formula
 
         # The formula should parse correctly with dependency extraction
-        parser = DependencyParser()
+        parser = FormulaASTAnalysisService()
         parsed = parser.parse_formula_dependencies(battery_formula.formula, battery_formula.variables)
 
         # Should detect the dot notation reference
