@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .collection_resolver import CollectionResolver
+from .dependency_parser import DependencyParser
 from .exceptions import DataValidationError
 from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .hierarchical_context_dict import HierarchicalContextDict
@@ -34,6 +35,7 @@ class EvaluatorDependency:
         self._hass = hass
         self._ast_service = FormulaASTAnalysisService()
         self._collection_resolver = CollectionResolver(hass)
+        self._dependency_parser = DependencyParser(hass)
         self._data_provider_callback = data_provider_callback
         self._registered_integration_entities: set[str] | None = None
 

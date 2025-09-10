@@ -32,7 +32,7 @@ class FormulaAnalysis:
 class ComprehensiveASTVisitor(ast.NodeVisitor):
     """AST visitor that extracts all relevant information in a single pass."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the visitor."""
         self.variables: set[str] = set()
         self.entity_references: set[str] = set()
@@ -119,19 +119,19 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
             self._function_names.add(func_name)
 
             # Extract function arguments
-            args = []
+            extracted_args: list[str] = []
             for arg in node.args:
                 arg_value = self._extract_arg_value(arg)
                 if arg_value is not None:
-                    args.append(arg_value)
+                    extracted_args.append(arg_value)
 
-            self.function_calls.append((func_name, args))
+            self.function_calls.append((func_name, extracted_args))
 
             # Handle specific function types
-            if func_name == "metadata" and len(args) >= 2:
+            if func_name == "metadata" and len(extracted_args) >= 2:
                 # metadata(entity, 'attribute')
-                entity_arg = args[0] if args else None
-                attr_arg = args[1] if len(args) > 1 else None
+                entity_arg = extracted_args[0] if extracted_args else None
+                attr_arg = extracted_args[1] if len(extracted_args) > 1 else None
                 if entity_arg and attr_arg:
                     self.metadata_calls.append((entity_arg, attr_arg))
                     # Add entity to dependencies if it's a variable (but not special tokens)
@@ -142,14 +142,14 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
                 # Collection/aggregation functions
                 self.collection_functions.append(func_name)
                 # Add all arguments as dependencies
-                for arg in args:
-                    if arg and not arg.startswith(("'", '"')):
-                        self.dependencies.add(arg)
+                for arg_str in extracted_args:
+                    if not arg_str.startswith(("'", '"')):
+                        self.dependencies.add(arg_str)
 
             elif func_name == "entity":
                 # entity('sensor.name') function calls
-                if args and self._is_string_literal(node.args[0]):
-                    entity_id = args[0].strip("'\"")
+                if extracted_args and self._is_string_literal(node.args[0]):
+                    entity_id = extracted_args[0].strip("'\"")
                     self.entity_references.add(entity_id)
                     self.dependencies.add(entity_id)
 
@@ -164,12 +164,16 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
         """Extract subscript access like states['sensor.name']."""
-        if isinstance(node.value, ast.Name) and node.value.id == "states":
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == "states"
+            and isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)
+        ):
             # states['sensor.name'] pattern
-            if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
-                entity_id = node.slice.value
-                self.entity_references.add(entity_id)
-                self.dependencies.add(entity_id)
+            entity_id = node.slice.value
+            self.entity_references.add(entity_id)
+            self.dependencies.add(entity_id)
 
         self.generic_visit(node)
 
@@ -177,12 +181,11 @@ class ComprehensiveASTVisitor(ast.NodeVisitor):
         """Extract value from an AST node (string literal or variable name)."""
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value
-        elif isinstance(node, ast.Name):
+        if isinstance(node, ast.Name):
             return node.id
-        elif isinstance(node, ast.Attribute):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
             # Handle nested attributes like sensor.attribute
-            if isinstance(node.value, ast.Name):
-                return f"{node.value.id}.{node.attr}"
+            return f"{node.value.id}.{node.attr}"
         return None
 
     def _is_string_literal(self, node: ast.AST) -> bool:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from .config_models import FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
+from .dependency_parser import DependencyParser
 from .entity_index import EntityIndex
 from .exceptions import SensorUpdateError, SyntheticSensorsError
 from .regex_helper import safe_entity_replacement
@@ -662,7 +663,7 @@ class SensorSet(SensorSetYamlOperationsMixin):
         def _extract_refs(s: str) -> set[str]:
             try:
                 analysis = ast_service.get_formula_analysis(s)
-                return {ref for ref in analysis.entity_references}
+                return set(analysis.entity_references)
             except Exception:
                 return set()
 

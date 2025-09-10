@@ -62,6 +62,7 @@ from .exceptions import (
     MissingDependencyError,
     SensorMappingError,
 )
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .formula_evaluator_service import FormulaEvaluatorService
 from .formula_preprocessor import FormulaPreprocessor
 from .hierarchical_context_dict import HierarchicalContextDict
@@ -160,8 +161,6 @@ class Evaluator(FormulaEvaluator):
 
         # Initialize AST analysis service for parse-once optimization
         # Use the compilation cache from the enhanced helper
-        from .formula_ast_analysis_service import FormulaASTAnalysisService
-
         self._ast_service = FormulaASTAnalysisService(self._enhanced_helper._compilation_cache)
 
         self._execution_engine = FormulaExecutionEngine(

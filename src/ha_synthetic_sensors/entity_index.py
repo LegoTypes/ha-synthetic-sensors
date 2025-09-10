@@ -434,9 +434,9 @@ class EntityIndex:
         """Extract entity IDs from a list value."""
         for item in value:
             if isinstance(item, str):
-                self._extract_entities_from_string(item, parser, entities_set, add_to_index)
+                self._extract_entities_from_string(item, ast_service, entities_set, add_to_index)
             elif isinstance(item, dict):
-                self._extract_entities_from_metadata(item, parser, entities_set)
+                self._extract_entities_from_metadata(item, ast_service, entities_set)
 
     def _extract_entities_from_metadata_for_removal(
         self, metadata: dict[str, Any], ast_service: FormulaASTAnalysisService, entities_to_remove: set[str]

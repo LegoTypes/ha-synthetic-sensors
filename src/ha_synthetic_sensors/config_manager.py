@@ -247,9 +247,8 @@ class ConfigManager:
 
         # Check for cycles starting from each sensor
         for sensor in cross_sensor_references:
-            if sensor not in visited and has_cycle(sensor):
-                if sensor not in circular_refs:
-                    circular_refs.append(sensor)
+            if sensor not in visited and has_cycle(sensor) and sensor not in circular_refs:
+                circular_refs.append(sensor)
 
         return circular_refs
 
