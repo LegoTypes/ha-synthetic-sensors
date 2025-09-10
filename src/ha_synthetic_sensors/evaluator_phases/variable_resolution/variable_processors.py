@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from ha_synthetic_sensors.config_models import FormulaConfig
 from ha_synthetic_sensors.exceptions import MissingDependencyError
-from ha_synthetic_sensors.regex_helper import extract_attribute_access_pairs, extract_variable_references_no_dots, regex_helper
+from ha_synthetic_sensors.regex_helper import extract_attribute_access_pairs, regex_helper
 from ha_synthetic_sensors.type_definitions import ReferenceValue
 from ha_synthetic_sensors.utils_resolvers import resolve_via_data_provider_attribute, resolve_via_hass_attribute
 
@@ -22,17 +22,16 @@ class VariableProcessors:
 
     @staticmethod
     def resolve_simple_variables_with_usage_tracking(
-        formula: str, eval_context: "HierarchicalContextDict"
+        formula: str, eval_context: "HierarchicalContextDict", ast_service: Any
     ) -> tuple[str, set[str]]:
         """Resolve simple variable references and track which variables were used."""
-        # Use regex helper for variable pattern matching
-        # Negative look-ahead ensures we do NOT match names that are immediately
-        # followed by a dot (these are part of variable.attribute token chains)
+        # Use AST service for parse-once optimization to extract variables
+        # This replaces regex-based extraction for better performance and accuracy
 
         used_variables: set[str] = set()
 
-        # Extract variables and replace them
-        variables = extract_variable_references_no_dots(formula)
+        # Extract variables and replace them using AST service for parse-once optimization
+        variables = ast_service.extract_variables(formula)
         resolved_formula = formula
         for var_name in variables:
             if var_name in eval_context:
@@ -122,7 +121,7 @@ class VariableProcessors:
         raise MissingDependencyError(f"Could not resolve attribute {entity_id}.{attribute_name}")
 
     @staticmethod
-    def resolve_variable_attribute_references(formula: str, eval_context: "HierarchicalContextDict") -> str:
+    def resolve_variable_attribute_references(formula: str, eval_context: "HierarchicalContextDict", ast_service: Any) -> str:
         """Resolve variable.attribute references where variable is already in context."""
         # Use regex helper for variable.attribute pattern matching
 

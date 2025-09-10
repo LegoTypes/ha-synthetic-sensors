@@ -10,7 +10,6 @@ from ...regex_helper import (
     create_attribute_access_pattern,
     create_metadata_function_pattern,
     create_single_token_pattern,
-    extract_variable_references_from_metadata,
     match_pattern,
 )
 from .resolution_types import HADependency, VariableResolutionResult
@@ -87,7 +86,9 @@ class FormulaHelpers:
         return protected_ranges
 
     @staticmethod
-    def identify_variables_for_attribute_access(formula: str, formula_config: FormulaConfig | None) -> set[str]:
+    def identify_variables_for_attribute_access(
+        formula: str, formula_config: FormulaConfig | None, ast_service: Any
+    ) -> set[str]:
         """Identify variables that need entity IDs for attribute access patterns.
 
         Supports both dot notation (variable.attribute) and metadata function calls (metadata(variable, 'attribute')).
@@ -118,7 +119,9 @@ class FormulaHelpers:
                     )
 
         # 2. Check metadata function calls (metadata(variable, 'attribute'))
-        metadata_vars = extract_variable_references_from_metadata(formula)
+        # Use AST service for parse-once optimization
+        metadata_calls = ast_service.extract_metadata_calls(formula)
+        metadata_vars = {entity for entity, _ in metadata_calls}
 
         for var_name in metadata_vars:
             # Handle special case: 'state' token is always resolved to an entity ID

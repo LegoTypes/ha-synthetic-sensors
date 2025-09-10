@@ -161,7 +161,7 @@ class CrossSensorDependencyManager(DependencyManager):
                             _LOGGER.debug("Sensor '%s' not in registered sensors: %s", sensor_name, registered_sensors)
 
         # 4. Handle variable references in metadata function calls using generic dependency manager
-        generic_manager = GenericDependencyManager()
+        generic_manager = GenericDependencyManager(self._ast_service)
         generic_manager.set_sensor_registry_phase(self._sensor_registry_phase)
 
         metadata_cross_sensor_deps = generic_manager.extract_cross_sensor_dependencies_with_context(formula, current_sensor)

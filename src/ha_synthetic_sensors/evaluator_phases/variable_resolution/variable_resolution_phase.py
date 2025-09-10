@@ -156,7 +156,9 @@ class VariableResolutionPhase:
         if simple_ha_deps:
             unavailable_dependencies = list({*unavailable_dependencies, *simple_ha_deps})
         # Continue with remaining resolution steps
-        resolved_formula = VariableProcessors.resolve_variable_attribute_references(resolved_formula, eval_context)
+        resolved_formula = VariableProcessors.resolve_variable_attribute_references(
+            resolved_formula, eval_context, self._ast_service
+        )
 
         # Resolve entity references even without sensor config
         # This is needed for formulas like "switch.test + 1" to work in tests and simple evaluations
@@ -458,8 +460,8 @@ class VariableResolutionPhase:
         formula_config: FormulaConfig | None = None,
     ) -> str:
         """Resolve cross-sensor references (e.g., base_power_sensor -> 1000.0)."""
-        # Use centralized regex helper instead of inline pattern
-        sensor_references = regex_helper.extract_variable_references(formula)
+        # Use AST service for parse-once optimization instead of regex
+        sensor_references = self._ast_service.extract_variables(formula)
 
         # Process extracted sensor references instead of using pattern substitution
         result_formula = formula
@@ -519,8 +521,8 @@ class VariableResolutionPhase:
         """Resolve simple variable references from the evaluation context - Phase 1: Variable Resolution (only build context)."""
         # In Phase 1, we validate variables exist in context but don't substitute values
         # The actual substitution happens in Phase 3
-        # Use centralized regex helper instead of inline pattern
-        variable_references = regex_helper.extract_variable_references_no_dots(formula)
+        # Use AST service for parse-once optimization instead of regex
+        variable_references = self._ast_service.extract_variables(formula)
 
         # Process extracted variable references instead of using pattern substitution
         # Validate variables exist but don't substitute - keep original formula structure
@@ -884,9 +886,8 @@ class VariableResolutionPhase:
         """Resolve simple variable references with first-class EntityReference support."""
         # Don't extract values from ReferenceValue objects
         # Keep the original variable names in the formula and let handlers access ReferenceValue objects from context
-        # Same negative look-ahead to avoid variable.attribute premature resolution
-        # Use centralized regex helper instead of inline pattern
-        variable_references = regex_helper.extract_variable_references_no_dots(formula)
+        # Use AST service for parse-once optimization instead of regex
+        variable_references = self._ast_service.extract_variables(formula)
         entity_mappings: dict[str, str] = {}
         ha_dependencies: list[HADependency] = []
 
@@ -1022,7 +1023,9 @@ class VariableResolutionPhase:
 
         # State.attribute references are handled by StateAttributeResolver in the resolver system
         # STEP 1: Pre-scan for variable.attribute patterns to identify variables that need entity ID preservation
-        variables_needing_entity_ids = FormulaHelpers.identify_variables_for_attribute_access(resolved_formula, formula_config)
+        variables_needing_entity_ids = FormulaHelpers.identify_variables_for_attribute_access(
+            resolved_formula, formula_config, self._ast_service
+        )
         # STEP 2: Resolve config variables with special handling for attribute access variables
         if formula_config:
             # First do the attribute preservation (no tracking)

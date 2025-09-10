@@ -194,7 +194,7 @@ class Evaluator(FormulaEvaluator):
         self._formula_processor = FormulaProcessor(self._variable_resolution_phase)
 
         # Initialize generic dependency manager for universal dependency tracking
-        self._generic_dependency_manager = GenericDependencyManager()
+        self._generic_dependency_manager = GenericDependencyManager(self._ast_service)
         self._generic_dependency_manager.set_sensor_registry_phase(self._sensor_registry_phase)
 
         # Initialize alternate state processor with evaluator injection for proper pipeline processing

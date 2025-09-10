@@ -48,6 +48,7 @@ from .exceptions import (
     MissingDependencyError,
     SyntheticSensorsConfigError,
 )
+from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .formula_utils import extract_attribute_name
 from .hierarchical_context_dict import HierarchicalContextDict
 from .metadata_handler import MetadataHandler
@@ -149,7 +150,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._calculated_attributes: dict[str, Any] = {}
 
         # Initialize attribute dependency manager for proper evaluation order
-        self._attribute_dependency_manager = GenericDependencyManager()
+        self._attribute_dependency_manager = GenericDependencyManager(FormulaASTAnalysisService())
 
         # Store resolved variables from main formula evaluation for attribute use
         # Removed _resolved_variables - hierarchical context is the single source of truth

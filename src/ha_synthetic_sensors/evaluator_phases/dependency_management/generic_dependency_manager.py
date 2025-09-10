@@ -8,12 +8,12 @@ from ...config_models import FormulaConfig, SensorConfig
 from ...constants_entities import COMMON_ENTITY_DOMAINS
 from ...constants_evaluation_results import RESULT_KEY_SUCCESS, RESULT_KEY_VALUE
 from ...exceptions import CircularDependencyError, FormulaEvaluationError
+from ...formula_ast_analysis_service import FormulaASTAnalysisService
 from ...formula_utils import extract_attribute_name, extract_formula_dependencies
 from ...reference_value_manager import ReferenceValueManager
 from ...regex_helper import (
     create_collection_function_extraction_pattern,
     extract_entity_references_from_metadata,
-    extract_variable_references_from_metadata,
     find_all_match_objects,
     regex_helper,
 )
@@ -58,11 +58,13 @@ class GenericDependencyManager:
     design principles for dependency resolution.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, ast_service: Any = None) -> None:
         """Initialize the generic dependency manager."""
         self._dependency_graph: dict[str, DependencyNode] = {}
         self._evaluation_order: list[str] = []
         self._sensor_registry_phase = None
+
+        self._ast_service = ast_service or FormulaASTAnalysisService()
 
     def set_sensor_registry_phase(self, sensor_registry_phase: Any) -> None:
         """Set the sensor registry phase for cross-sensor dependency resolution."""
@@ -339,7 +341,9 @@ class GenericDependencyManager:
         if not current_sensor:
             return set()
 
-        metadata_variables = extract_variable_references_from_metadata(formula)
+        # Use AST service for parse-once optimization
+        metadata_calls = self._ast_service.extract_metadata_calls(formula)
+        metadata_variables = {entity for entity, _ in metadata_calls}
 
         cross_sensor_deps = set()
         for variable in metadata_variables:
