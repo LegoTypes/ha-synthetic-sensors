@@ -347,8 +347,21 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             except (ValueError, TypeError):
                 self._attr_native_value = last_state.state
 
-        # Note: State change tracking removed - integration change notifier handles all updates
-        # Dependencies are resolved during evaluation, not through HA state tracking
+        # CRITICAL FIX: Set up HA state change listeners for attribute dependencies
+        # This enables automatic updates when HA entities referenced in attributes change
+        if self._dependencies:
+            self._update_listeners.append(
+                async_track_state_change_event(
+                    self._hass,
+                    list(self._dependencies),
+                    self._handle_dependency_change,
+                )
+            )
+            _LOGGER.debug(
+                "Set up HA state change listeners for sensor %s with dependencies: %s",
+                self.unique_id,
+                self._dependencies
+            )
 
     async def async_will_remove_from_hass(self) -> None:
         """Handle entity removal."""
@@ -358,15 +371,29 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         self._update_listeners.clear()
 
     @callback
-    @callback
     def _handle_dependency_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle when a dependency entity changes.
 
-        Note: Individual sensor dependency tracking is disabled to prevent infinite loops.
-        The integration should handle updates via sensor_manager.async_update_sensors_for_entities()
-        when backing entities change.
+        Records HA entity changes for batched processing by the SensorManager.
+        This prevents infinite loops while ensuring all dependencies trigger updates.
         """
-        # Do nothing - let the integration handle updates via async_update_sensors_for_entities
+        if self._sensor_manager._update_in_progress:
+            # Ignore changes during update processing to prevent recursion
+            return
+
+        changed_entity_id = event.data["entity_id"]
+
+        # Record the change for batched processing
+        self._sensor_manager._pending_ha_entity_changes.add(changed_entity_id)
+
+        # Schedule batched update (debounced)
+        self._sensor_manager._schedule_batched_ha_entity_update()
+
+        _LOGGER.debug(
+            "Recorded HA entity change for batched update: %s (sensor: %s)",
+            changed_entity_id,
+            self.unique_id
+        )
 
     def _add_variables_to_sensor_context(self, formula_config: FormulaConfig, sensor_context: SensorEvaluationContext) -> None:
         """Add variables from formula config directly to the existing sensor context.
@@ -1237,6 +1264,11 @@ class SensorManager:
         self._change_notifier: DataProviderChangeNotifier | None = None  # Callback for data change notifications
         self._sensor_to_backing_mapping: dict[str, str] = {}  # Mapping from sensor keys to backing entity IDs
 
+        # HA entity change tracking for batched updates
+        self._pending_ha_entity_changes: set[str] = set()  # HA entities that changed and need processing
+        self._update_in_progress: bool = False  # Prevents recursion during update processing
+        self._update_timer: asyncio.TimerHandle | None = None  # Debounced update timer
+
         # Configuration tracking
         self._current_config: Config | None = None
         self._setup_complete: bool = False  # Guard against multiple initial setups
@@ -1759,6 +1791,13 @@ class SensorManager:
 
     async def cleanup_all_sensors(self) -> None:
         """Remove all managed sensors - public cleanup method."""
+        # Cancel any pending update timer
+        if self._update_timer:
+            self._update_timer.cancel()
+            self._update_timer = None
+
+        # Clear pending changes
+        self._pending_ha_entity_changes.clear()
         await self._remove_all_sensors()
 
     async def create_sensors(self, config: Config) -> list[DynamicSensor]:
@@ -2194,9 +2233,22 @@ class SensorManager:
         # Find sensors that will be updated
         directly_affected_sensors = []
         for sensor in self._sensors_by_unique_id.values():
+            # Check both backing entities AND all HA entity dependencies
             sensor_backing_entities = self._extract_backing_entities_from_sensor(sensor.config)
-            if sensor_backing_entities.intersection(changed_entity_ids):
+            sensor_all_dependencies = self._extract_all_dependencies_from_sensor(sensor.config)
+
+            _LOGGER.debug(
+                "Checking sensor %s: backing_entities=%s, all_dependencies=%s, changed_entity_ids=%s",
+                sensor.unique_id,
+                sensor_backing_entities,
+                sensor_all_dependencies,
+                changed_entity_ids
+            )
+
+            # Sensor is affected if any of its dependencies (backing or HA entities) changed
+            if sensor_backing_entities.intersection(changed_entity_ids) or sensor_all_dependencies.intersection(changed_entity_ids):
                 directly_affected_sensors.append(sensor.config)
+                _LOGGER.debug("Sensor %s is affected by changes", sensor.unique_id)
 
         # Find all affected sensors (including indirect dependencies)
         all_affected_sensors = self._find_all_affected_sensors(directly_affected_sensors)
@@ -2232,6 +2284,52 @@ class SensorManager:
                 _LOGGER.debug("Completed enhanced async sensor updates")
             finally:
                 self._evaluator.end_update_cycle()
+
+    def _schedule_batched_ha_entity_update(self) -> None:
+        """Schedule a batched update for pending HA entity changes.
+
+        Uses debouncing to handle rapid successive changes efficiently.
+        """
+        if self._update_timer:
+            self._update_timer.cancel()
+
+        # Debounce rapid changes with a small delay
+        self._update_timer = self._hass.loop.call_later(
+            0.1,  # 100ms debounce
+            lambda: asyncio.create_task(self._process_pending_ha_entity_changes())
+        )
+
+    async def _process_pending_ha_entity_changes(self) -> None:
+        """Process all pending HA entity changes in a single batched update.
+
+        Uses copy-and-clear pattern to prevent recursion during update processing.
+        """
+        if not self._pending_ha_entity_changes or self._update_in_progress:
+            return
+
+        # Copy-and-clear pattern: prevents recursion from cascading updates
+        changes_to_process = self._pending_ha_entity_changes.copy()
+        self._pending_ha_entity_changes.clear()
+        self._update_in_progress = True
+        self._update_timer = None
+
+        try:
+            _LOGGER.debug(
+                "Processing batched HA entity changes: %s",
+                changes_to_process
+            )
+
+            # Use existing batched update system - now enhanced to handle HA entities
+            await self.async_update_sensors_for_entities(changes_to_process)
+
+        except Exception as e:
+            _LOGGER.error("Error processing HA entity changes: %s", e)
+        finally:
+            self._update_in_progress = False
+
+            # If new changes accumulated during processing, schedule another update
+            if self._pending_ha_entity_changes:
+                self._schedule_batched_ha_entity_update()
 
     def _find_all_affected_sensors(self, directly_affected_sensors: list[SensorConfig]) -> list[SensorConfig]:
         """Find all sensors affected by changes, including indirect dependencies.
@@ -2318,6 +2416,46 @@ class SensorManager:
                 backing_entities.add(backing_entity_id)
 
         return backing_entities
+
+    def _extract_all_dependencies_from_sensor(self, sensor_config: SensorConfig) -> set[str]:
+        """Extract ALL entity dependencies from a sensor configuration.
+
+        This includes both backing entities AND HA entities referenced in formulas/variables.
+        Used for comprehensive dependency tracking to handle HA entity changes.
+
+        Args:
+            sensor_config: The sensor configuration to analyze
+
+        Returns:
+            Set of all entity IDs that this sensor depends on (backing + HA entities)
+        """
+        all_dependencies = set()
+
+        # Get backing entities (existing logic)
+        backing_entities = self._extract_backing_entities_from_sensor(sensor_config)
+        all_dependencies.update(backing_entities)
+
+        # Get ALL dependencies from formulas (including HA entities)
+        for formula in sensor_config.formulas:
+            # Get dependencies from the formula itself
+            formula_dependencies = formula.get_dependencies(self._hass)
+            all_dependencies.update(formula_dependencies)
+            
+            _LOGGER.debug(
+                "Formula %s dependencies: %s (formula: %s)",
+                formula.id,
+                formula_dependencies,
+                formula.formula
+            )
+
+        _LOGGER.debug(
+            "Sensor %s all dependencies: backing=%s, total=%s",
+            sensor_config.unique_id,
+            backing_entities,
+            all_dependencies
+        )
+
+        return all_dependencies
 
     def _extract_backing_entities_from_sensors(self, sensor_configs: list[SensorConfig]) -> set[str]:
         """Extract all backing entity IDs from a list of sensor configurations.
