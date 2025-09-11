@@ -1,0 +1,30 @@
+# Focused YAML fixture for debugging direct entity reference in attributes
+# Testing panel status attribute updates when main sensor is None but uses fallback
+
+version: "1.0"
+
+global_settings:
+  device_identifier: "test_device_123"
+
+sensors:
+  panel_status_fallback_test:
+    name: "Panel Status Fallback Test"
+    entity_id: sensor.test_synthetic_sensor
+    formula: state
+    alternate_states:
+      FALLBACK:
+        formula: "42.0"  # Fallback value when main sensor is None
+    variables:
+      panel_status:
+        formula: binary_sensor.virtual_panel_status_test
+    attributes:
+      debug_panel_status_is:
+        formula: panel_status
+      debug_panel_status_direct:
+        formula: binary_sensor.virtual_panel_status_test
+      debug_main_sensor_state:
+        formula: state
+      debug_fallback_used:
+        formula: state is None
+    metadata:
+      device_class: "energy"

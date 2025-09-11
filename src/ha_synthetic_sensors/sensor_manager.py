@@ -520,7 +520,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
     def _evaluate_attributes(self, main_result: EvaluationResult, sensor_context: SensorEvaluationContext) -> None:
         """Evaluate calculated attributes using the main result context and inherited sensor context."""
-        _LOGGER.warning("ATTR_EVAL_CALL_DEBUG: _evaluate_attributes called for %s", self.entity_id)
         if not self._attribute_formulas:
             return
 
@@ -533,7 +532,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
     def _evaluate_attributes_with_context(self, sensor_context: SensorEvaluationContext) -> None:
         """Evaluate calculated attributes using the hierarchical context."""
-        _LOGGER.warning("ATTR_EVAL_CALL_DEBUG: _evaluate_attributes_with_context called for %s", self.entity_id)
         if not self._attribute_formulas:
             return
 
@@ -553,13 +551,20 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             try:
                 # Check if it's a simple reference to a computed variable
                 token = formula.formula.strip()
+                _LOGGER.debug("ATTR_EVAL_DEBUG: Processing attribute %s with token '%s'", attr_name, token)
+                _LOGGER.debug("ATTR_EVAL_DEBUG: Token '%s' in eval_context: %s", token, token in eval_context)
                 if token in eval_context:
                     # Direct reference to an existing variable
                     value = eval_context[token]
+                    _LOGGER.debug(
+                        "ATTR_EVAL_DEBUG: Found token '%s' in context with value: %s (type: %s)", token, value, type(value)
+                    )
                     if isinstance(value, ReferenceValue):
                         self._calculated_attributes[attr_name] = value.value
+                        _LOGGER.debug("ATTR_EVAL_DEBUG: Set attribute %s to ReferenceValue.value: %s", attr_name, value.value)
                     else:
                         self._calculated_attributes[attr_name] = value
+                        _LOGGER.debug("ATTR_EVAL_DEBUG: Set attribute %s to direct value: %s", attr_name, value)
                 else:
                     # Evaluate the formula with the accumulated context
                     current_context = sensor_context.get_context_for_evaluation()
@@ -692,9 +697,19 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         for formula in formulas:
             try:
+                _LOGGER.debug("ATTR_EVAL_DEBUG: Evaluating attribute formula: %s", formula.formula.strip())
                 attr_ctx = self._build_base_context_from_main_result(main_result_dict, sensor_context)
+                _LOGGER.debug(
+                    "ATTR_EVAL_DEBUG: Built context with keys: %s",
+                    list(attr_ctx.keys()) if hasattr(attr_ctx, "keys") else "not dict-like",
+                )
                 attr_result = self._evaluator.evaluate_formula(formula, attr_ctx)
                 attr_result_dict = cast(dict[str, Any], attr_result)
+                _LOGGER.debug(
+                    "ATTR_EVAL_DEBUG: Formula result: success=%s, value=%s",
+                    attr_result_dict.get("success"),
+                    attr_result_dict.get("value"),
+                )
 
                 if attr_result_dict[RESULT_KEY_SUCCESS]:
                     attr_name = self._extract_attribute_name(formula)
@@ -1811,16 +1826,13 @@ class SensorManager:
 
         try:
             if sensor_configs is None:
-                # For full sensor updates, invalidate sensor entity caches to prevent
-                # state variable from resolving to sensor's own calculated result instead of backing entity
-                sensor_entity_ids = set()
-                for sensor in self._sensors_by_unique_id.values():
-                    if sensor.config.entity_id:
-                        sensor_entity_ids.add(sensor.config.entity_id)
-
-                if sensor_entity_ids:
-                    ReferenceValueManager.invalidate_entities(sensor_entity_ids)
-                    _LOGGER.debug("SensorManager: Invalidated sensor entity caches for full update: %s", sensor_entity_ids)
+                # For full sensor updates, clear the entire ReferenceValue cache to ensure fresh entity resolution
+                # This prevents stale entity values when HA entity states change between evaluations
+                # Only do this for full updates to avoid interfering with selective updates
+                ReferenceValueManager.clear_cache()
+                _LOGGER.debug(
+                    "SensorManager: Cleared ReferenceValue cache for full sensor update to ensure fresh entity resolution"
+                )
 
                 # Update all managed sensors with cross-sensor evaluation order
                 evaluation_order = self._get_cross_sensor_evaluation_order()
@@ -2160,10 +2172,12 @@ class SensorManager:
         return self._registered_entities.copy()
 
     async def async_update_sensors_for_entities(self, changed_entity_ids: set[str]) -> None:
-        """Update only sensors that use the specified backing entities.
+        """Update sensors affected by backing entity changes using batched dependency resolution.DEBUG (MainThread) [ha_synthetic_sensors.sensor_manager.SensorManager] Completed enhanced async sensor updates
 
-        This method provides selective sensor updates based on which backing entities
-        have changed, improving efficiency over updating all sensors.
+        This method eliminates double processing by:
+        1. Only invalidating backing entities (not sensor entities)
+        2. Finding all affected sensors (direct + indirect dependencies) upfront
+        3. Updating them in dependency order in a single coordinated batch
 
         Args:
             changed_entity_ids: Set of backing entity IDs that have changed
@@ -2171,35 +2185,102 @@ class SensorManager:
         if not changed_entity_ids:
             return
 
-        # Invalidate cached ReferenceValues for changed entities
-        # This ensures that fresh values are read from the data provider instead of using stale cached values
-
-        # Find all sensor entity IDs that depend on the changed backing entities
-        # We need to invalidate both the backing entities AND the sensors that depend on them
+        # OPTIMIZATION: Selective cache invalidation strategy
+        # - Always invalidate backing entities (changed data)
+        # - Only invalidate sensor entities that will be updated in this cycle
+        # This reduces cache churn while ensuring attribute dependencies work correctly
         entities_to_invalidate = set(changed_entity_ids)
 
-        for sensor in self._sensors_by_unique_id.values():
-            sensor_backing_entities = self._extract_backing_entities_from_sensor(sensor.config)
-            if sensor_backing_entities.intersection(changed_entity_ids) and sensor.config.entity_id:
-                # This sensor depends on a changed backing entity, so invalidate its cache too
-                entities_to_invalidate.add(sensor.config.entity_id)
-
-        ReferenceValueManager.invalidate_entities(entities_to_invalidate)
-        _LOGGER.debug(
-            "SensorManager: Invalidated ReferenceValue cache for entities: %s (changed: %s)",
-            entities_to_invalidate,
-            changed_entity_ids,
-        )
-
-        # Find sensors that use any of the changed backing entities
-        affected_sensor_configs = []
+        # Find sensors that will be updated
+        directly_affected_sensors = []
         for sensor in self._sensors_by_unique_id.values():
             sensor_backing_entities = self._extract_backing_entities_from_sensor(sensor.config)
             if sensor_backing_entities.intersection(changed_entity_ids):
-                affected_sensor_configs.append(sensor.config)
+                directly_affected_sensors.append(sensor.config)
 
-        if affected_sensor_configs:
-            await self.async_update_sensors(affected_sensor_configs)
+        # Find all affected sensors (including indirect dependencies)
+        all_affected_sensors = self._find_all_affected_sensors(directly_affected_sensors)
+
+        # Add only the sensors that will be updated to invalidation set
+        # This ensures sensors depending on attributes of other sensors can access fresh values
+        for sensor_config in all_affected_sensors:
+            if sensor_config.entity_id:
+                entities_to_invalidate.add(sensor_config.entity_id)
+
+        ReferenceValueManager.invalidate_entities(entities_to_invalidate)
+
+        if not directly_affected_sensors:
+            return
+
+        _LOGGER.debug(
+            "SensorManager: Found %d directly affected sensors, %d total affected sensors",
+            len(directly_affected_sensors),
+            len(all_affected_sensors),
+        )
+
+        # Update all affected sensors in dependency order in a single batch
+        if all_affected_sensors:
+            # CRITICAL: Update sensors directly using the internal update method
+            # Bypass async_update_sensors to prevent additional dependency analysis
+            self._update_global_settings_on_evaluator()
+            self._evaluator.start_update_cycle()
+
+            try:
+                # Get proper evaluation order for the affected sensors
+                evaluation_order = self._get_cross_sensor_evaluation_order_for_sensors(all_affected_sensors)
+                await self._update_sensors_in_order(evaluation_order)
+                _LOGGER.debug("Completed enhanced async sensor updates")
+            finally:
+                self._evaluator.end_update_cycle()
+
+    def _find_all_affected_sensors(self, directly_affected_sensors: list[SensorConfig]) -> list[SensorConfig]:
+        """Find all sensors affected by changes, including indirect dependencies.
+
+        This method uses the existing dependency management system to identify sensors
+        that depend on the directly affected sensors, preventing cascading updates.
+
+        Args:
+            directly_affected_sensors: List of sensors directly affected by backing entity changes
+
+        Returns:
+            List of all affected sensor configurations (direct + indirect dependencies)
+        """
+        if not self.dependency_management_phase:
+            # Fallback to direct sensors only if dependency management not available
+            return directly_affected_sensors
+
+        try:
+            # Get all sensor configurations for dependency analysis
+            all_sensor_configs = [sensor.config for sensor in self._sensors_by_unique_id.values()]
+
+            # Analyze cross-sensor dependencies
+            dependency_phase = self.dependency_management_phase
+            sensor_dependencies = dependency_phase.analyze_cross_sensor_dependencies(all_sensor_configs)
+
+            # Find all sensors that depend on directly affected sensors (transitively)
+            directly_affected_ids = {sensor.unique_id for sensor in directly_affected_sensors}
+            all_affected_ids = set(directly_affected_ids)
+
+            # Iteratively find sensors that depend on already affected sensors
+            changed = True
+            while changed:
+                changed = False
+                for sensor_id, deps in sensor_dependencies.items():
+                    if sensor_id not in all_affected_ids and deps.intersection(all_affected_ids):
+                        all_affected_ids.add(sensor_id)
+                        changed = True
+
+            # Convert back to sensor configs, maintaining original order for consistency
+            all_affected_sensors = []
+            for sensor_config in all_sensor_configs:
+                if sensor_config.unique_id in all_affected_ids:
+                    all_affected_sensors.append(sensor_config)
+
+            return all_affected_sensors
+
+        except Exception as e:
+            self._logger.warning("Failed to analyze indirect dependencies, falling back to direct sensors only: %s", e)
+            return directly_affected_sensors
 
     def _extract_backing_entities_from_sensor(self, sensor_config: SensorConfig) -> set[str]:
         """Extract backing entity IDs from a sensor configuration.

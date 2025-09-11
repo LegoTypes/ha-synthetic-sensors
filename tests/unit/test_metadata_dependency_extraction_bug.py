@@ -31,7 +31,7 @@ class TestMetadataDependencyExtraction:
         like 'domain', 'last_changed' were incorrectly extracted as dependencies.
         """
         # Test case 1: metadata domain call
-        formula = "metadata('binary_sensor.panel_status', 'domain')"
+        formula = "metadata(binary_sensor.panel_status, 'domain')"
         dependencies = parser.extract_dependencies(formula)
         entities = parser.extract_entity_references(formula)
 
@@ -41,7 +41,7 @@ class TestMetadataDependencyExtraction:
         assert "metadata" not in dependencies, "Function name 'metadata' should not be extracted as dependency"
 
         # Test case 2: metadata last_changed call
-        formula = "metadata('sensor.temperature', 'last_changed')"
+        formula = "metadata(sensor.temperature, 'last_changed')"
         dependencies = parser.extract_dependencies(formula)
         entities = parser.extract_entity_references(formula)
 
@@ -51,9 +51,9 @@ class TestMetadataDependencyExtraction:
 
         # Test case 3: metadata with other properties
         test_cases = [
-            ("metadata('binary_sensor.panel_status', 'last_updated')", "last_updated"),
-            ("metadata('sensor.power', 'friendly_name')", "friendly_name"),
-            ("metadata('switch.outlet', 'object_id')", "object_id"),
+            ("metadata(binary_sensor.panel_status, 'last_updated')", "last_updated"),
+            ("metadata(sensor.power, 'friendly_name')", "friendly_name"),
+            ("metadata(switch.outlet, 'object_id')", "object_id"),
         ]
 
         for formula, string_literal in test_cases:
@@ -70,7 +70,7 @@ class TestMetadataDependencyExtraction:
         """
         # This is the exact scenario that caused the circular dependency
         attribute_name = "debug_metadata_domain"
-        formula = "metadata('binary_sensor.panel_status', 'domain')"
+        formula = "metadata(binary_sensor.panel_status, 'domain')"
 
         dependencies = parser.extract_dependencies(formula)
 

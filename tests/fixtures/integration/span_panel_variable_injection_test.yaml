@@ -31,7 +31,7 @@ sensors:
       panel_status:
         formula: binary_sensor.panel_status
       panel_offline_minutes:
-        formula: minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), '2025-01-01T12:00:00+00:00') if not panel_status else 0
+        formula: minutes_between(metadata(binary_sensor.panel_status, 'last_changed'), '2025-01-01T12:00:00+00:00') if not panel_status else 0
         alternate_states:
           FALLBACK: 0
       is_within_grace_period:
@@ -55,6 +55,6 @@ sensors:
       debug_panel_status: panel_status
       debug_panel_status_entity: binary_sensor.panel_status
       debug_conditional_result:
-        formula: 0 if panel_status else minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), '2025-01-01T12:00:00+00:00')
+        formula: 0 if panel_status else minutes_between(metadata(binary_sensor.panel_status, 'last_changed'), '2025-01-01T12:00:00+00:00')
         alternate_states:
           FALLBACK: unknown

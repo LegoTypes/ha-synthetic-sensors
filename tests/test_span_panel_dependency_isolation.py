@@ -42,7 +42,7 @@ def test_energy_sensor_dependencies():
             "last_valid_changed": ComputedVariable(formula="metadata(state, 'last_valid_changed')"),
             "panel_status": ComputedVariable(formula="binary_sensor.panel_status"),
             "panel_offline_minutes": ComputedVariable(
-                formula="minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), utc_now()) if not panel_status else 0"
+                formula="minutes_between(metadata(binary_sensor.panel_status, 'last_changed'), utc_now()) if not panel_status else 0"
             ),
             "is_within_grace_period": ComputedVariable(
                 formula="last_valid_state is not None and last_valid_state != 'unknown' and last_valid_changed != 'unknown' and not panel_status and panel_offline_minutes < energy_grace_period_minutes"
@@ -84,7 +84,7 @@ def test_dependency_isolation_between_sensors():
             "last_valid_state": ComputedVariable(formula="metadata(state, 'last_valid_state')"),
             "is_within_grace_period": ComputedVariable(formula="panel_offline_minutes < 15"),
             "panel_offline_minutes": ComputedVariable(
-                formula="minutes_between(metadata('binary_sensor.panel_status', 'last_changed'), utc_now())"
+                formula="minutes_between(metadata(binary_sensor.panel_status, 'last_changed'), utc_now())"
             ),
         },
     )

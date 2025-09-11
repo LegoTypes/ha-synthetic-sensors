@@ -37,10 +37,6 @@ class ReferenceValueManager:
             resolved_value: The resolved state value
             force_update: If True, force creation of new ReferenceValue even if entity is cached
         """
-        # Debug: Check what type of context we received
-        _LOGGER.debug(
-            "REF_VALUE_MGR_CONTEXT_TYPE: Received context type %s for variable %s", type(eval_context).__name__, var_name
-        )
 
         # Use internal cache for entity deduplication (hidden from user context)
         entity_reference = var_value if isinstance(var_value, str) else str(var_value)

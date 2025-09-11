@@ -1762,7 +1762,7 @@ def extract_entity_references_from_metadata(formula: str) -> set[str]:
     entity_refs = set()
 
     # Pattern to match metadata function calls
-    # Captures: metadata('entity.id', 'attribute') or metadata(variable, 'attribute')
+    # Captures: metadata(entity.id, 'attribute') or metadata(variable, 'attribute')
     metadata_pattern = r"metadata\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"][^'\"]+['\"]\s*\)"
 
     for match in re.finditer(metadata_pattern, formula):

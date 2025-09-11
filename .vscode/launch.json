@@ -196,6 +196,24 @@
       "python": "${workspaceFolder}/.venv/bin/python",
       "justMyCode": false,
       "stopOnEntry": false
+    },
+    {
+      "name": "Debug Direct Entity Reference Issue",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/test_boolean_variable_debug.py::TestDirectEntityReferenceDebug::test_direct_entity_reference_in_attributes",
+        "-v",
+        "-s",
+        "--log-cli-level=DEBUG"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "justMyCode": false,
+      "stopOnEntry": false
     }
   ]
 }

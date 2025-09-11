@@ -23,7 +23,7 @@ sensors:
         formula: "True"
     variables:
       is_within_grace_period:
-        formula: "metadata('sensor.span_panel_instant_power', 'last_changed') is not None"
+        formula: "metadata(sensor.span_panel_instant_power, 'last_changed') is not None"
     attributes:
       is_within_grace_period_value:
         formula: "is_within_grace_period"

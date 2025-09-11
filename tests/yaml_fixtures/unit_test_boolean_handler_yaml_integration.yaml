@@ -64,3 +64,17 @@ sensors:
         formula: "binary_sensor.test_direct == on"  # Formula that tests boolean
     metadata:
       device_class: "safety"
+
+  boolean_variable_conditional:
+    name: "Boolean Variable Conditional Test"
+    formula: "state"
+    variables:
+      door_status: "binary_sensor.front_door"
+    attributes:
+      debug_door_status: door_status
+      debug_conditional_result:
+        formula: "'closed' if not door_status else 'open'"
+        alternate_states:
+          FALLBACK: unknown
+    metadata:
+      device_class: "door"

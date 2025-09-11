@@ -26,15 +26,22 @@ class ConfigVariableResolver(VariableResolver):
 
     def can_resolve(self, variable_name: str, variable_value: str | Any) -> bool:
         """Determine if this resolver can handle config variables."""
+        _LOGGER.debug("CONFIG_RESOLVER_DEBUG: Checking if can resolve '%s' with value '%s'", variable_name, variable_value)
         # Check if other resolvers can handle this first
         if self._resolver_factory:
             for resolver in self._resolver_factory.get_all_resolvers():
                 if resolver is not self and resolver.can_resolve(variable_name, variable_value):
                     # Another resolver can handle this, so we shouldn't
+                    _LOGGER.debug(
+                        "CONFIG_RESOLVER_DEBUG: Another resolver (%s) can handle '%s', declining",
+                        resolver.get_resolver_name(),
+                        variable_value,
+                    )
                     return False
 
         # Config variables can be any type (direct values) or entity references
         # This resolver handles cases that aren't handled by other specialized resolvers
+        _LOGGER.debug("CONFIG_RESOLVER_DEBUG: No other resolver can handle '%s', accepting as config variable", variable_value)
         return True
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:

@@ -45,11 +45,9 @@ class ContextBuildingPhase:
         if hasattr(context, "hierarchical_context"):
             # This is our HierarchicalContextDict - use unified setter
             context.hierarchical_context.set(key, value)
-            _LOGGER.debug("SAFE_CONTEXT_SET: Used unified setter for %s", key)
         else:
             # Regular dict - use direct assignment
             context[key] = value
-            _LOGGER.debug("SAFE_CONTEXT_SET: Used direct assignment for %s", key)
 
     def set_evaluator_dependencies(
         self,

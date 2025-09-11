@@ -45,7 +45,7 @@ class TestFormulaASTAnalysisService:
         assert "state" in analysis.dependencies  # Variable should be a dependency
 
         # Test metadata with string literal entity
-        analysis2 = service.get_formula_analysis("metadata('sensor.test', 'unit_of_measurement')")
+        analysis2 = service.get_formula_analysis("metadata(sensor.test, 'unit_of_measurement')")
 
         assert ("sensor.test", "unit_of_measurement") in analysis2.metadata_calls
 

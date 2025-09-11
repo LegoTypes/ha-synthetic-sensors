@@ -122,9 +122,17 @@ class VariableResolverFactory:
 
     def get_resolver_for_variable(self, variable_name: str, variable_value: str | Any) -> VariableResolver | None:
         """Get the appropriate resolver for a given variable."""
+        _LOGGER.debug(
+            "RESOLVER_FACTORY_DEBUG: Looking for resolver for variable '%s' with value '%s'", variable_name, variable_value
+        )
         for resolver in self._resolvers:
-            if resolver.can_resolve(variable_name, variable_value):
+            resolver_name = resolver.get_resolver_name()
+            can_resolve = resolver.can_resolve(variable_name, variable_value)
+            _LOGGER.debug("RESOLVER_FACTORY_DEBUG: Checking %s - can_resolve: %s", resolver_name, can_resolve)
+            if can_resolve:
+                _LOGGER.debug("RESOLVER_FACTORY_DEBUG: Selected resolver: %s for '%s'", resolver_name, variable_value)
                 return resolver
+        _LOGGER.debug("RESOLVER_FACTORY_DEBUG: No resolver found for '%s'", variable_value)
         return None
 
     def resolve_variable(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> Any | None:

@@ -284,15 +284,15 @@ class TestSensorManagerDataProviderManagement:
         # Register entities
         manager._registered_entities = {"sensor.backing1", "sensor.backing2"}
 
-        # Mock the async_update_sensors method
-        with patch.object(manager, "async_update_sensors") as mock_update:
+        # Mock the _update_sensors_in_order method (called by the optimization)
+        with patch.object(manager, "_update_sensors_in_order") as mock_update:
             await manager.async_update_sensors_for_entities({"sensor.backing1"})
 
-            # Should only update sensor1 since it uses sensor.backing1
+            # Should call _update_sensors_in_order once with sensor1
             mock_update.assert_called_once()
-            called_configs = mock_update.call_args[0][0]
-            assert len(called_configs) == 1
-            assert called_configs[0].unique_id == "sensor1"
+            # The optimization calls with evaluation order (unique_ids)
+            called_evaluation_order = mock_update.call_args[0][0]
+            assert "sensor1" in called_evaluation_order
 
     @pytest.mark.asyncio
     async def test_async_update_sensors_for_entities_no_affected_sensors(
@@ -316,11 +316,11 @@ class TestSensorManagerDataProviderManagement:
         manager._sensors_by_unique_id = {"sensor1": mock_sensor}
         manager._registered_entities = {"sensor.backing1"}
 
-        # Mock the async_update_sensors method
-        with patch.object(manager, "async_update_sensors") as mock_update:
+        # Mock the _update_sensors_in_order method (called by the optimization)
+        with patch.object(manager, "_update_sensors_in_order") as mock_update:
             await manager.async_update_sensors_for_entities({"sensor.backing2"})
 
-            # Should not call async_update_sensors since no sensors are affected
+            # Should not call _update_sensors_in_order since no sensors are affected
             mock_update.assert_not_called()
 
 

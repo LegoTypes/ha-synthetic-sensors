@@ -255,30 +255,12 @@ class GenericDependencyManager:
                             enhanced_context[sensor_name] = sensor_value
                         else:
                             # Wrap raw sensor values in ReferenceValue objects
-                            _LOGGER.debug(
-                                "DEPENDENCY_MANAGER_DEBUG: Setting %s = %s (type: %s)",
-                                sensor_name,
-                                sensor_value,
-                                type(sensor_value).__name__,
-                            )
                             ReferenceValueManager.set_variable_with_reference_value(
                                 enhanced_context, sensor_name, sensor_name, sensor_value
                             )
-                        _LOGGER.debug("Added cross-sensor value '%s' = %s to evaluation context", sensor_name, sensor_value)
 
             # Use the evaluator's fallback method with enhanced context
             result = evaluator.fallback_to_normal_evaluation(formula, enhanced_context, sensor_config)
-
-            # Diagnostic: log when direct evaluation returns success with None value
-            try:
-                if result and result.get(RESULT_KEY_SUCCESS) and result.get(RESULT_KEY_VALUE) is None:
-                    _LOGGER.debug(
-                        "DIRECT_EVAL_DEBUG: direct evaluation for '%s' returned success with None (state=%s)",
-                        getattr(formula, "id", formula.formula),
-                        result.get("state"),
-                    )
-            except Exception as exc:  # Log unexpected structure instead of silencing
-                _LOGGER.exception("Unexpected result structure during direct evaluation debug check: %s", exc)
 
             # Return the full result dict for caller to inspect success/state/value
             return result
