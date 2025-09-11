@@ -15,7 +15,6 @@ import yaml as yaml_lib
 
 from .config_models import FormulaConfig, SensorConfig
 from .constants_alternate import FALLBACK_KEY, NONE_KEY, STATE_NONE_YAML, UNAVAILABLE_KEY, UNKNOWN_KEY
-from .constants_formula import ARITHMETIC_OPERATORS
 from .constants_metadata import (
     METADATA_PROPERTY_DEVICE_CLASS,
     METADATA_PROPERTY_ICON,
@@ -353,16 +352,10 @@ class YamlHandler:
 
         return main_formula, attributes_dict
 
-    def _build_attribute_dict(self, formula: FormulaConfig) -> dict[str, Any] | int | float | str | bool:
+    def _build_attribute_dict(self, formula: FormulaConfig) -> dict[str, Any]:
         """Build attribute dictionary from formula configuration."""
-        # Check if this is a literal value formula (e.g., formula="240" with no variables)
-        if not formula.variables and formula.formula:
-            literal_value = self._parse_literal_value(formula.formula)
-            if literal_value is not None:
-                # Return the literal value directly (not wrapped in a dict)
-                return literal_value
-
-        # Handle as formula object (existing behavior)
+        # Always preserve formula structure - never flatten to literals
+        # If something was parsed as a FormulaConfig, it should be exported as a formula
         attr_dict: dict[str, Any] = {"formula": formula.formula}
 
         if formula.variables:
@@ -493,11 +486,18 @@ class YamlHandler:
         return None
 
     def _parse_simple_string_literal(self, formula: str) -> str | None:
-        """Parse simple string literal without operators."""
+        """Parse simple string literal without operators.
+
+        Only returns a value for actual string literals that are clearly not:
+        - Variable references (e.g., panel_status)
+        - Entity references (e.g., sensor.power_meter)
+        - Function calls (e.g., state, utc_now())
+        """
         try:
-            # Check if it contains any mathematical operators
-            if not any(op in formula for op in ARITHMETIC_OPERATORS):
-                return formula
+            # Don't treat variable names, entity IDs, or function calls as literals
+            # Only treat actual quoted strings as literals here
+            if (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
+                return formula[1:-1]  # Remove quotes
         except (ValueError, AttributeError):
             pass
         return None
