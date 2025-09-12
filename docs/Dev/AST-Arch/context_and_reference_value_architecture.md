@@ -1,9 +1,5 @@
 # Context and Reference Value Implementation Guide
 
-> Status: Updated to reflect AST binding plans and lazy context population. The previous "build a complete AST-driven context
-> once, for all formulas" concept is deprecated. The system keeps the existing 0–4 phase pipeline and uses per-formula binding
-> plans to achieve performance without over-allocating context.
-
 ## Overview
 
 The synthetic sensors system uses a **unified AST-driven architecture** that aligns parse-once analysis with per-formula binding
@@ -20,183 +16,12 @@ plans and lazy context population:
                                                    resolves on access
 ```
 
-This unified architecture ensures that:
+This architecture ensures that:
 
 1. **AST Parse-Once Foundation**: `FormulaASTAnalysisService` analyzes formulas and caches results
 2. **Binding Plans**: A lightweight plan per formula provides referenced names, function kinds, and resolution strategies
 3. **Lazy Context Population**: Phases create only the variables required by the current formula and resolve values on first use
 4. **Architectural Alignment**: Parse-once → Plan-once → Evaluate lazily
-
-This eliminates wasted work from pre-allocating unused variables while maintaining context integrity and inheritance across
-phases.
-
-## Implementation Plan and Next Steps
-
-The goal is full "parse once" across all evaluation paths while preserving the 0–4 phase pipeline. We will implement the
-following steps in order. Tests are added first and expanded at each step.
-
-### Code Quality Requirements
-
-All implementation must adhere to strict quality standards:
-
-- **Type Safety**: Use strict typing with no `Any` types - use `TypedDict` or proper type hints
-- **Imports**: ALL imports at the top of files (except test files where method-level imports are acceptable)
-- **Zero Linting Errors**: Code must pass `mypy --strict`, `pylint`, and `ruff` with zero errors
-- **Formatting**: Use the precommit formatting scripts for formattting avoiding model driven formatting
-- **Testing**: Tests do not require mypy/pylint compliance but must have meaningful assertions
-- **No Fallback Code**: Ensure deterministic behavior - no fallback patterns allowed
-
-1. AST service: add BindingPlan
-   - Define `BindingPlan` (names, function kinds, collection flags, resolution strategies)
-   - Expose `build_binding_plan(formula: str) -> BindingPlan` in `FormulaASTAnalysisService`
-
-2. Collections in AST service
-   - Migrate collection parsing from the legacy shim into the AST service
-   - Normalize query keys (device_class/area/label/predicate) to support targeted caching/invalidation
-
-3. Minimal context preparation and lazy resolution
-   - Implement `_prepare_minimal_layer(context, plan)` to add only required names
-   - Add a lazy resolver that resolves values on first access and memoizes for the current cycle
-
-4. Phase consumption of plans
-   - Update `VariableResolutionPhase` (and dependent phases) to consume `BindingPlan` instead of broad extraction
-   - Preserve Option C dynamic discovery (listeners update at runtime)
-
-5. Metadata handler write path
-   - Ensure `_metadata_*` keys are set via the unified setter and wrapped as `ReferenceValue`
-
-6. Phase 4 correctness for booleans
-   - Audit result consolidation to use `is None` checks (preserve `False` values)
-   - Add a regression test for the `False` preservation path
-
-7. Per-cycle batching
-   - Batch HA state lookups per cycle and cache a states view for the duration of the cycle
-
-8. Tests and metrics
-   - New tests: plan construction, minimal layer prep, lazy resolution memoization, metadata injection, `False` preservation
-   - Integrations: run full suite after new tests pass; add lightweight metrics (compilation cache hit rate, context/object
-     churn)
-
-9. Retire legacy shim
-   - Remove `DependencyParser` shim and update docs
-
-## Execution Order (Tests First)
-
-### Milestone 0: Performance Baseline
-
-- Measure current evaluation times for SPAN sensors
-- Count ReferenceValue object creations per cycle
-- Record compilation cache hit rates
-- Document current memory usage patterns
-
-### Milestone A: Test Suite Creation
-
-- Add binding plan construction tests
-- Add minimal layer preparation tests
-- Add lazy resolution memoization tests
-- Add boolean False preservation tests
-- Add metadata injection tests
-- Ensure all new tests fail before implementation
-
-### Milestone B: Core Implementation
-
-- Implement BindingPlan dataclass and builder
-- Implement \_prepare_minimal_layer() function
-- Create LazyResolver with memoization
-- Ensure code passes mypy --strict, pylint, ruff
-
-### Milestone C: Phase Integration
-
-- Update VariableResolutionPhase to use binding plans
-- Fix metadata handler to use unified setter
-- Audit Phase 4 for is None checks (False preservation)
-- Run formatters (black, isort) on all modified files
-
-### Milestone D: Collections and Optimization
-
-- Migrate collection parsing to AST service
-- Implement HA state batching
-- Add performance metrics collection
-- Verify no regression in benchmarks
-
-### Milestone E: Cleanup and Validation
-
-- Remove DependencyParser legacy shim
-- Run full integration test suite
-- Compare performance against baseline
-- Update documentation
-
-## Critical Implementation Details
-
-### Phase 4 Boolean Preservation Fix
-
-```python
-def process_phase_4_result(result: Any, alternate_state_type: str = None) -> EvaluationResult:
-    """Process Phase 4 result with explicit False preservation."""
-    # CRITICAL: Use 'is None' not truthiness checks
-    if result is None:
-        return EvaluationResult(success=False, value=None, error="Result is None")
-
-    # Preserve False explicitly
-    if result is False:
-        return EvaluationResult(success=True, value=False)
-
-    # Handle other falsy values that should be preserved
-    if result == 0 or result == 0.0:
-        return EvaluationResult(success=True, value=result)
-
-    if result == "":  # Empty string
-        return EvaluationResult(success=True, value=result)
-
-    # Normal processing for truthy values
-    return EvaluationResult(success=True, value=result)
-```
-
-### Metadata Handler Unified Setter Fix
-
-```python
-class MetadataHandler:
-    """Handler for metadata() function calls."""
-
-    def evaluate(self, formula: str, context: EvaluationContext) -> tuple[str, dict[str, Any]]:
-        """Transform metadata calls for AST caching and inject results."""
-        # Parse metadata calls from formula
-        metadata_calls = self._extract_metadata_calls(formula)
-        transformed_formula = formula
-        metadata_results = {}
-
-        for idx, (entity_ref, metadata_key) in enumerate(metadata_calls):
-            # Get entity reference from context
-            ref_value = context.get(entity_ref)
-            if isinstance(ref_value, ReferenceValue):
-                entity_id = ref_value.reference
-            else:
-                entity_id = entity_ref
-
-            # Retrieve metadata value
-            metadata_value = self._get_metadata(entity_id, metadata_key)
-
-            # Transform formula for AST caching
-            key = f"_metadata_{idx}"
-            old_call = f"metadata({entity_ref}, '{metadata_key}')"
-            new_call = f"metadata_result({key})"
-            transformed_formula = transformed_formula.replace(old_call, new_call)
-
-            # CRITICAL: Use unified setter for context injection
-            # This ensures _metadata_* keys are wrapped as ReferenceValue
-            metadata_ref = ReferenceValue(reference=key, value=metadata_value)
-
-            # Get underlying hierarchical context to use unified setter
-            if hasattr(context, 'get_hierarchical_context'):
-                context.get_hierarchical_context().set(key, metadata_ref)
-            else:
-                # Fallback for testing
-                context[key] = metadata_ref
-
-            metadata_results[key] = metadata_value
-
-        return (transformed_formula, metadata_results)
-```
 
 ### Collection Query Normalization
 
@@ -235,19 +60,6 @@ def _normalize_predicate(predicate: str) -> str:
         return f"{parts[0]}=={parts[1]}"
     return predicate
 ```
-
-## Success Criteria
-
-- New plan/lazy-context tests pass first
-- Full integration test suite passes with no behavior regressions
-- Boolean False values preserved through entire pipeline
-- Metadata handler uses unified setter for _metadata_\* keys
-- Collection queries normalized for consistent caching
-- Dependency on `DependencyParser` shim removed
-- Equal or improved evaluation timings in benchmarks
-- Reduced object churn across cycles (measured via Milestone 0 baseline)
-
-## Unified AST-Driven Architecture Components
 
 The system consists of three tightly integrated components that work together to provide complete AST-driven evaluation:
 
@@ -481,11 +293,6 @@ Use formula to construct binding plan (main / attribute / alt-state)
          ↓                       ↓                       ↓
     Parse Once              Context Once            Evaluate Many
     (Cached Forever)        (Pre-Built Complete)    (Perfect Inheritance)
-
-Benefits:
-✅ Architectural Consistency   ✅ No Missing Variables     ✅ Perfect Context Inheritance
-✅ Parse-Once Performance     ✅ Testable Contracts       ✅ Deterministic Evaluation
-✅ Complete Context Guarantee ✅ Lazy Value Resolution    ✅ Zero Context Violations
 ```
 
 ## ReferenceValue Class
@@ -613,7 +420,7 @@ local_ref = formula_context.get("local_power")
 assert global_ref is local_ref  # Same object across layers!
 ```
 
-### Key Benefits
+### Benefits
 
 1. **Memory Efficiency**: Single `ReferenceValue` instance per unique entity across all layers
 2. **Consistency**: All variables referencing the same entity use identical objects regardless of layer
@@ -668,7 +475,7 @@ attribute_context.set("is_critical", ReferenceValue("attr.is_critical", False))
 # The internal cache ensures they share the same ReferenceValue object
 ```
 
-**Key Benefits of This Architecture**:
+**Benefits of This Architecture**:
 
 - **Cross-Layer Consistency**: Same entity gets same object regardless of which layer it's referenced in
 - **Memory Efficiency**: No duplicate ReferenceValue objects for the same entity
@@ -677,7 +484,7 @@ attribute_context.set("is_critical", ReferenceValue("attr.is_critical", False))
 
 ## Unified AST-Driven Architecture Implementation
 
-The system implements a **unified AST-driven architecture** where parse-once analysis, context pre-building, and evaluation work
+The system implements a **AST-driven architecture** where parse-once analysis, context pre-building, and evaluation work
 together as an integrated system. This replaces the legacy on-the-fly variable resolution approach.
 
 ### AST-Driven Pipeline Workflow
@@ -686,54 +493,6 @@ together as an integrated system. This replaces the legacy on-the-fly variable r
 2. **AST Context Pre-Building**: `ASTDrivenContextBuilder` uses cached analysis to build complete contexts
 3. **AST Evaluation**: `ASTDrivenEvaluator` uses pre-built contexts for all evaluation phases
 4. **Perfect Alignment**: Each component uses the output of the previous component
-
-### Architectural Consistency Benefits
-
-- **Parse-Once → Context-Once → Evaluate-Many**: Perfect architectural alignment
-- **Complete Context Guarantee**: All variables exist before any evaluation begins
-- **Perfect Context Inheritance**: Every evaluation phase receives identical complete context
-- **Zero Missing Variables**: Alternate state handlers never encounter `None` variables
-- **Testable Architecture**: Both AST analysis and context structure can be validated
-- **Performance Optimization**: AST analysis cached, context pre-built, evaluation efficient
-
-**SPAN Integration Example - Unified AST Architecture**:
-
-```python
-# Complete AST-driven evaluation solving the last_valid_state = None problem
-
-class UnifiedASTEvaluationPipeline:
-    def evaluate_span_sensor(self, sensor_config: SensorConfig) -> SensorResult:
-        # Step 1: AST Parse-Once Analysis (Component 1)
-        sensor_analysis = self.ast_service.analyze_complete_sensor(sensor_config)
-        # Analyzes ALL formulas:
-        # - main: "state"
-        # - variable_last_valid_state: "metadata(state, 'last_valid_state')"
-        # - main_alt_FALLBACK: "last_valid_state if is_within_grace_period else 'unknown'"
-        # - variable_is_within_grace_period: "last_valid_state is not None and ..."
-
-        # Step 2: AST Context Pre-Building (Component 2)
-        complete_context = self.context_builder.build_complete_context(sensor_analysis)
-        # Creates complete context with ALL variables:
-        # ✅ last_valid_state: ReferenceValue("metadata(state, 'last_valid_state')", None)
-        # ✅ is_within_grace_period: ReferenceValue("formula_result", None)
-        # ✅ state: ReferenceValue("state", None)
-        # ✅ literal_unknown: ReferenceValue("literal.unknown", "unknown")
-
-        # Step 3: AST Evaluation (Component 3) - All phases use same context
-        main_result = self.evaluator.evaluate_with_ast_context("state", complete_context)
-
-        # When alternate state handler runs:
-        alt_result = self.evaluator.evaluate_with_ast_context(
-            "last_valid_state if is_within_grace_period else 'unknown'",
-            complete_context  # Same context! All variables guaranteed to exist!
-        )
-        # ✅ SUCCESS: No more "last_valid_state = None" errors!
-
-        return SensorResult(main_result, alt_result)
-
-# The unified architecture ensures:
-# Parse-Once (AST) → Context-Once (Complete) → Evaluate-Many (Perfect Inheritance)
-```
 
 ### Resolver Hierarchy
 
@@ -769,25 +528,6 @@ resolved_value = resolver_factory.resolve_variable(
     variable_value=entity_id,
     context=eval_context
 )
-```
-
-### Resolution Benefits
-
-1. **Single Code Path**: Direct factory usage eliminates adapter complexity
-2. **Type Safety**: Resolvers return raw values for formula substitution, then values are wrapped in ReferenceValue objects
-3. **Performance**: No tuple packing/unpacking overhead
-4. **Modular Design**: Each resolver handles specific resolution patterns
-5. **Extensible**: Easy to add new resolution strategies
-6. **Simple Error Handling**: Direct exception propagation without translation
-
-## Entity ID Collision Handling
-
-When multiple sensors reference the same entity ID, the system automatically adds suffixes:
-
-```python
-# Original entity: sensor.power_meter
-# After collision detection: sensor.power_meter_2
-ReferenceValue(reference="sensor.power_meter_2", value=1000.0)
 ```
 
 ### Collision Resolution Process
@@ -1398,7 +1138,7 @@ compiled = compilation_cache.get_compiled_formula(transformed)
 # Only metadata values change, formula structure stays same
 ```
 
-### Key Architectural Points
+### Architectural Points
 
 - **`ReferenceValue` Wrapping**: Metadata results must be wrapped in `ReferenceValue` objects before storage
 - **Unified Setter Usage**: All context modifications must go through `HierarchicalEvaluationContext.set()`
@@ -1407,7 +1147,7 @@ compiled = compilation_cache.get_compiled_formula(transformed)
 
 ## Hierarchical Context Architecture
 
-The enhanced architecture introduces **hierarchical context management** with **cumulative ReferenceValue persistence**:
+The architecture introduces **hierarchical context management** with **cumulative ReferenceValue persistence**:
 
 ### Complete YAML Evaluation Flow
 
@@ -1442,7 +1182,7 @@ must use the output of the previous component to ensure perfect architectural al
 5. **NEVER allow context inheritance violations** - All evaluation phases receive identical complete context
 6. **ALWAYS validate architectural consistency** - AST analysis → AST context → AST evaluation must be verifiable
 
-#### Unified AST Architecture Pattern
+#### AST Architecture Pattern
 
 ```python
 # CORRECT: Unified AST-driven architecture
@@ -1640,16 +1380,6 @@ for key, value in updated_context.items():
         sensor_context.context.set(key, value)  # Unified setter
 ```
 
-### Benefits of Hierarchical Context
-
-1. **Context Persistence**: Resolved variables never disappear between evaluation phases
-2. **Scoping Rules**: Attribute variables can override sensor variables naturally
-3. **Integrity Tracking**: Detect context corruption with instance ID, counters, checksums
-4. **Single Source of Truth**: One context per sensor evaluation eliminates confusion
-5. **Unified Modification**: All context changes go through validated setter
-6. **Reference Immutability**: ReferenceValue.reference never changes, only .value updates
-7. **Cumulative Growth**: Context only grows, never loses variables
-
 ### Context Scoping Example
 
 ```python
@@ -1728,5 +1458,4 @@ def process_variables(self, variables: dict, existing_context: HierarchicalConte
 ### **Summary: Context Inheritance is MANDATORY**
 
 This hierarchical context architecture ensures that computed variables are properly accumulated and persist throughout the
-entire sensor evaluation lifecycle, eliminating the `False` to `None` conversion issue and providing a robust foundation for
-complex formula dependencies.
+entire sensor evaluation lifecycle.

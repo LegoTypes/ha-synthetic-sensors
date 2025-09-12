@@ -5,10 +5,11 @@
 This document provides a comprehensive testing strategy for validating the unified AST-driven architecture. It addresses gaps
 identified in the main architecture document and provides concrete test implementations.
 
-## Updated Testing Scope (Binding Plans + Lazy Context)
+## Testing Scope (Binding Plans + Lazy Context)
 
-This guide updates the test plan to validate the plan-driven, lazy-context approach that preserves the 0–4 phase pipeline while
-improving performance. The focus shifts from pre-building complete contexts to:
+This guide provides the test plan to validate the plan-driven, lazy-context approach that is now the standard implementation.
+There is no backward compatibility mode or legacy routes. The system uses the 0–4 phase pipeline with binding plans as the only
+approach. The focus is on:
 
 - Verifying binding plan construction from `FormulaASTAnalysisService`
 - Ensuring only the current formula’s names are prepared per phase

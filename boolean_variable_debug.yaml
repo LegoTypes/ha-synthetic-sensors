@@ -9,7 +9,8 @@ global_settings:
 sensors:
   boolean_variable_conditional:
     name: "Boolean Variable Conditional Test"
-    formula: "state"
+    entity_id: "binary_sensor.front_door"  # Use the door as backing entity
+    formula: "state"  # This will be the door state
     variables:
       door_status: "binary_sensor.front_door"
     attributes:

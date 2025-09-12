@@ -147,6 +147,67 @@ class GenericDependencyManager:
 
         return self._evaluation_order.copy()
 
+    def _create_formula_lookup(self, sensor_config: SensorConfig) -> dict[str, FormulaConfig]:
+        """Create lookup table mapping node IDs to formula configurations."""
+        formula_lookup = {}
+
+        # Add main formula
+        if sensor_config.formulas:
+            main_formula = sensor_config.formulas[0]
+            main_node_id = f"{sensor_config.unique_id}_main"
+            formula_lookup[main_node_id] = main_formula
+
+        # Add attribute formulas
+        for formula in sensor_config.formulas[1:]:
+            attr_name = self._extract_attribute_name(formula, sensor_config.unique_id)
+            attr_node_id = f"{sensor_config.unique_id}_{attr_name}"
+            formula_lookup[attr_node_id] = formula
+
+        return formula_lookup
+
+    def _extract_main_sensor_value(self, context: "HierarchicalContextDict", sensor_config: SensorConfig) -> Any:
+        """Extract main sensor value from context."""
+        if "state" not in context:
+            raise FormulaEvaluationError(f"Main sensor result not found in context for {sensor_config.unique_id}")
+
+        state_ref = context["state"]
+        if isinstance(state_ref, ReferenceValue):
+            main_sensor_value = state_ref.value
+            _LOGGER.error("TEMP_DEBUG: Using existing main sensor value from context: %s", main_sensor_value)
+            return main_sensor_value
+
+        # Handle non-ReferenceValue state_ref - should be a simple value
+        # Cast to ensure type compatibility
+        main_sensor_value = state_ref if isinstance(state_ref, str | int | float | type(None)) else None
+        _LOGGER.error("TEMP_DEBUG: Using existing main sensor value (raw): %s", main_sensor_value)
+        return main_sensor_value
+
+    def _process_attribute_node(
+        self,
+        node_id: str,
+        formula: FormulaConfig,
+        context: "HierarchicalContextDict",
+        evaluator: Any,
+        sensor_config: SensorConfig,
+        main_sensor_value: Any,
+    ) -> None:
+        """Process an attribute node during evaluation."""
+        # Ensure state is in context for attribute formulas
+        if main_sensor_value is not None and "state" not in context:
+            # Use ReferenceValueManager for state token in attributes
+            entity_id = sensor_config.entity_id if sensor_config else "state"
+            ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
+
+        eval_result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
+        if eval_result and eval_result.get(RESULT_KEY_SUCCESS):
+            attr_name = self._extract_attribute_name(formula, sensor_config.unique_id)
+            # Use ReferenceValueManager to preserve reference metadata for attributes
+            ReferenceValueManager.set_variable_with_reference_value(
+                context, attr_name, f"{sensor_config.unique_id}_{attr_name}", eval_result.get(RESULT_KEY_VALUE)
+            )
+        else:
+            raise FormulaEvaluationError(f"Failed to evaluate attribute '{node_id}' for {sensor_config.unique_id}")
+
     def build_evaluation_context(
         self, sensor_config: SensorConfig, evaluator: Any, base_context: "HierarchicalContextDict"
     ) -> "HierarchicalContextDict":
@@ -168,65 +229,25 @@ class GenericDependencyManager:
         # Don't copy the context since HierarchicalContextDict is a singleton
         context = base_context
 
-        # Get evaluation order
+        # Get evaluation order and create formula lookup
         evaluation_order = self.get_evaluation_order(sensor_config)
-
-        # Create formula lookup
-        formula_lookup = {}
-
-        # Add main formula
-        if sensor_config.formulas:
-            main_formula = sensor_config.formulas[0]
-            main_node_id = f"{sensor_config.unique_id}_main"
-            formula_lookup[main_node_id] = main_formula
-
-        # Add attribute formulas
-        for formula in sensor_config.formulas[1:]:
-            attr_name = self._extract_attribute_name(formula, sensor_config.unique_id)
-            attr_node_id = f"{sensor_config.unique_id}_{attr_name}"
-            formula_lookup[attr_node_id] = formula
+        formula_lookup = self._create_formula_lookup(sensor_config)
 
         # Evaluate formulas in dependency order, building context as we go
         main_sensor_value = None
 
         for node_id in evaluation_order:
-            if node_id in formula_lookup:
-                formula = formula_lookup[node_id]
-                node = self._dependency_graph[node_id]
+            if node_id not in formula_lookup:
+                continue
 
-                # Use existing main sensor result from context instead of re-evaluating
-                if node.node_type == "main":
-                    # Main sensor has already been evaluated - get the result from context
-                    if "state" in context:
-                        state_ref = context["state"]
-                        if isinstance(state_ref, ReferenceValue):
-                            main_sensor_value = state_ref.value
-                            _LOGGER.error("TEMP_DEBUG: Using existing main sensor value from context: %s", main_sensor_value)
-                        else:
-                            # Handle non-ReferenceValue state_ref - should be a simple value
-                            # Cast to ensure type compatibility
-                            main_sensor_value = state_ref if isinstance(state_ref, str | int | float | type(None)) else None
-                            _LOGGER.error("TEMP_DEBUG: Using existing main sensor value (raw): %s", main_sensor_value)
-                    else:
-                        raise FormulaEvaluationError(f"Main sensor result not found in context for {sensor_config.unique_id}")
+            formula = formula_lookup[node_id]
+            node = self._dependency_graph[node_id]
 
-                elif node.node_type == "attribute":
-                    # Attribute evaluation
-                    # Ensure state is in context for attribute formulas
-                    if main_sensor_value is not None and "state" not in context:
-                        # Use ReferenceValueManager for state token in attributes
-                        entity_id = sensor_config.entity_id if sensor_config else "state"
-                        ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
-
-                    eval_result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
-                    if eval_result and eval_result.get(RESULT_KEY_SUCCESS):
-                        attr_name = self._extract_attribute_name(formula, sensor_config.unique_id)
-                        # Use ReferenceValueManager to preserve reference metadata for attributes
-                        ReferenceValueManager.set_variable_with_reference_value(
-                            context, attr_name, f"{sensor_config.unique_id}_{attr_name}", eval_result.get(RESULT_KEY_VALUE)
-                        )
-                    else:
-                        raise FormulaEvaluationError(f"Failed to evaluate attribute '{node_id}' for {sensor_config.unique_id}")
+            # Use existing main sensor result from context instead of re-evaluating
+            if node.node_type == "main":
+                main_sensor_value = self._extract_main_sensor_value(context, sensor_config)
+            elif node.node_type == "attribute":
+                self._process_attribute_node(node_id, formula, context, evaluator, sensor_config, main_sensor_value)
 
         return context
 

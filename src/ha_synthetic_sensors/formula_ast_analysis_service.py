@@ -5,9 +5,10 @@ while maintaining clean architecture and phase independence.
 """
 
 import ast
+import contextlib
 from dataclasses import dataclass, field
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from .constants_entities import COMMON_ENTITY_DOMAINS
 from .constants_formula import FORMULA_RESERVED_WORDS
@@ -39,6 +40,22 @@ class FormulaAnalysis:
     function_calls: list[tuple[str, list[str]]] = field(default_factory=list)
     has_state_token: bool = False
     has_self_reference: bool = False
+
+
+@dataclass(frozen=True)
+class BindingPlan:
+    """Immutable plan describing formula requirements for minimal context population.
+
+    This plan is built from AST analysis and describes exactly what a formula needs
+    for evaluation, enabling minimal context preparation and lazy resolution.
+    """
+
+    names: frozenset[str]
+    has_metadata: bool
+    has_collections: bool
+    strategies: dict[str, Literal["ha_state", "data_provider", "literal", "computed", "cross_sensor"]]
+    collection_queries: list[str] = field(default_factory=list)
+    metadata_calls: list[tuple[str, str]] = field(default_factory=list)
 
 
 class ComprehensiveASTVisitor(ast.NodeVisitor):
@@ -231,6 +248,7 @@ class FormulaASTAnalysisService:
         """
         self._compilation_cache = compilation_cache or FormulaCompilationCache()
         self._analysis_cache: dict[str, FormulaAnalysis] = {}
+        self._plan_cache: dict[str, BindingPlan] = {}
         self._cache_hits = 0
         self._cache_misses = 0
 
@@ -246,14 +264,10 @@ class FormulaASTAnalysisService:
         Raises:
             SyntaxError: If the formula has invalid syntax
         """
-        try:
+        with contextlib.suppress(ValueError, TypeError, AttributeError, ImportError, MemoryError):
+            # Non-syntax errors that can occur during compilation but aren't syntax issues
+            # These are not syntax validation concerns, so we ignore them
             self._compilation_cache.get_compiled_formula(formula)
-        except SyntaxError:
-            # Re-raise syntax errors for validation
-            raise
-        except Exception:
-            # Other errors are not syntax issues, so don't raise them
-            pass
 
     def get_formula_analysis(self, formula: str) -> FormulaAnalysis:
         """Get comprehensive analysis for a formula (cached).
@@ -550,3 +564,111 @@ class FormulaASTAnalysisService:
                 args.append(raw_arg)
 
         return args
+
+    def build_binding_plan(self, formula: str) -> BindingPlan:
+        """Build a binding plan from formula AST analysis.
+
+        The binding plan describes exactly what a formula needs for evaluation,
+        enabling minimal context preparation and lazy resolution.
+
+        Args:
+            formula: The formula string to analyze
+
+        Returns:
+            BindingPlan with names, strategies, and metadata about the formula
+        """
+        # Check cache first
+        cache_key = formula
+        if cache_key in self._plan_cache:
+            self._cache_hits += 1
+            return self._plan_cache[cache_key]
+
+        self._cache_misses += 1
+
+        # Get AST analysis
+        analysis = self.get_formula_analysis(formula)
+
+        # Collect all names needed
+        names = set()
+        names.update(analysis.variables)
+        names.update(analysis.entity_references)
+        names.update(analysis.dependencies)
+
+        # Add cross-sensor references
+        names.update(analysis.cross_sensor_refs)
+
+        # Determine resolution strategies
+        strategies: dict[str, Literal["ha_state", "data_provider", "literal", "computed", "cross_sensor"]] = {}
+        for name in names:
+            # Determine strategy based on name characteristics
+            if name in analysis.entity_references:
+                strategies[name] = "ha_state"
+            elif name in analysis.cross_sensor_refs:
+                strategies[name] = "cross_sensor"
+            elif name in analysis.variables:
+                # Variables could be literals, data provider, or computed
+                # For now, default to ha_state (will be refined based on context)
+                strategies[name] = "ha_state"
+            else:
+                strategies[name] = "computed"
+
+        # Build the plan
+        plan = BindingPlan(
+            names=frozenset(names),
+            has_metadata=len(analysis.metadata_calls) > 0,
+            has_collections=len(analysis.collection_functions) > 0,
+            strategies=strategies,
+            collection_queries=self._normalize_collection_queries(analysis),
+            metadata_calls=analysis.metadata_calls,
+        )
+
+        # Cache the plan
+        self._plan_cache[cache_key] = plan
+
+        return plan
+
+    def _normalize_collection_queries(self, analysis: FormulaAnalysis) -> list[str]:
+        """Normalize collection queries for consistent caching.
+
+        Args:
+            analysis: The formula analysis containing collection functions
+
+        Returns:
+            List of normalized query strings
+        """
+        queries = []
+
+        for func_call in analysis.function_calls:
+            func_name, args = func_call
+
+            # Check if this is a collection function
+            if func_name in ["select", "filter", "expand"]:
+                # Normalize the query arguments
+                query_parts = []
+
+                for arg in args:
+                    # Parse query type if present
+                    if ":" in arg:
+                        query_type, pattern = arg.split(":", 1)
+                        query_parts.append(f"{query_type}:{pattern.strip()}")
+                    else:
+                        query_parts.append(arg.strip())
+
+                # Create normalized query string
+                if query_parts:
+                    normalized = "|".join(sorted(query_parts))
+                    queries.append(normalized)
+
+        return queries
+
+    def normalize_collection_queries(self, formula: str) -> list[str]:
+        """Public method to normalize collection queries from a formula.
+
+        Args:
+            formula: The formula string to analyze
+
+        Returns:
+            List of normalized query strings
+        """
+        analysis = self.get_formula_analysis(formula)
+        return self._normalize_collection_queries(analysis)

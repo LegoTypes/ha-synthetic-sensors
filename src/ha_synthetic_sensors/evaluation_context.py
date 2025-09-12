@@ -87,21 +87,34 @@ class HierarchicalEvaluationContext:
         This method enforces the ReferenceValue architecture by preventing raw values
         from being stored in context. All variables must be ReferenceValue objects.
 
+        Infrastructure keys (prefixed with _) can store raw values as they are
+        part of the evaluation infrastructure, not entity values.
+
         Args:
             key: The key to set
             value: The value to set (must be ReferenceValue or allowed type)
 
         Raises:
-            RuntimeError: If attempting to store raw values in context
+            RuntimeError: If attempting to store raw entity values in context
         """
-        # Enforce ReferenceValue architecture at the hierarchical level
+        # Allow infrastructure metadata as first-class elements
+        if key.startswith("_"):
+            # Infrastructure keys: _strategy_*, _binding_plan, _lazy_resolver, etc.
+            # These are allowed to be raw values as they're part of the evaluation infrastructure
+            if not self._layers:
+                # Create first layer if none exists
+                self.push_layer("root")
+            self._layers[-1][key] = value
+            return
+
+        # Enforce ReferenceValue architecture for entity values
         if not isinstance(value, ReferenceValue) and not (callable(value) or isinstance(value, dict) or value is None):
             # This is a raw value being stored in context - this violates the architecture
             stack_trace = "".join(traceback.format_stack())
 
             raise ValueError(
                 f"Attempted to store raw value '{value}' (type: {type(value).__name__}) "
-                f"for key '{key}' in HierarchicalEvaluationContext. All variables must be ReferenceValue objects "
+                f"for key '{key}' in HierarchicalEvaluationContext. All entity values must be ReferenceValue objects "
                 f"to track their origin. StateType and State objects must be wrapped in ReferenceValue. "
                 f"Only Callables, dict[str, Any], and None are allowed as raw values. "
                 f"This indicates a critical bug in the variable resolution system.\n"

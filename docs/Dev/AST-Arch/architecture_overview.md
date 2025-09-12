@@ -100,15 +100,20 @@ processing, eliminating duplicate logic across phases.
 
 ### AST Binding Plans and Lazy Context Population
 
-To maximize performance without changing the orchestrator, the system leverages the AST service to precompute lightweight
-per-formula "binding plans" and uses lazy, minimal context population at runtime:
+The system leverages the AST service to precompute lightweight per-formula "binding plans" and uses minimal context population
+at runtime. This is the standard approach with no backward compatibility or legacy routes.
+
+"Parse once" happens during the FIRST EVALUATION of a formula, not during YAML import. The AST is parsed and cached when a
+formula is first evaluated, then reused for all subsequent evaluations. See
+[binding_plan_explanation.md](binding_plan_explanation.md) for detailed explanation.
 
 - **Binding Plan (per formula)**: A compact structure extracted from `FormulaASTAnalysisService` that contains:
   - Referenced names (variables, entity references, special tokens like `state`)
   - Function kinds used (e.g., `metadata()`, datetime/duration helpers, collection functions)
   - Resolution strategy per name: HA state lookup, data-provider, constant/literal, or computed reference
-- **Lazy Resolution**: The evaluation context creates `ReferenceValue` entries only for names that the current formula requires
-  and resolves values on first access by the handler/evaluator. Resolved values are memoized for the remainder of the cycle.
+- **Minimal Context**: The evaluation context creates `ReferenceValue` entries only for names that the current formula requires.
+  Currently all values are resolved immediately during the variable resolution phase. True lazy resolution (on-demand) is
+  planned but not yet implemented.
 - **Object Reuse**: Per-sensor small objects (like `ReferenceValue` shells for stable names) can be pooled and only `.value`
   replaced each cycle to reduce Python object churn.
 - **Batch Lookups**: The plan enables grouping related HA lookups during a cycle to lower per-entity access overhead.

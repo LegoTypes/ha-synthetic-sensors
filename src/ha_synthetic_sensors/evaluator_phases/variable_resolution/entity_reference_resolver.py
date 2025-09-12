@@ -42,23 +42,20 @@ class EntityReferenceResolver(VariableResolver):
                 # Entity name should not be empty
                 if domain and entity_name and domain[0].isalpha() and all(c.isalnum() or c == "_" for c in domain):
                     return True
-                else:
-                    _LOGGER.debug(
-                        "ENTITY_RESOLVER_DEBUG: '%s' - Basic format check FAILED (domain='%s', entity='%s')",
-                        variable_value,
-                        domain,
-                        entity_name,
-                    )
+                _LOGGER.debug(
+                    "ENTITY_RESOLVER_DEBUG: '%s' - Basic format check FAILED (domain='%s', entity='%s')",
+                    variable_value,
+                    domain,
+                    entity_name,
+                )
 
             # Also check HA registry if available for additional validation
             hass = getattr(self._dependency_handler, "hass", None) if self._dependency_handler else None
             if hass is not None:
                 registry_result = is_valid_entity_id(variable_value, hass)
                 return registry_result
-            else:
-                raise ValueError("No HASS instance available for registry check")
-        else:
-            _LOGGER.debug("ENTITY_RESOLVER_DEBUG: '%s' - Not a string, cannot resolve", variable_value)
+            raise ValueError("No HASS instance available for registry check")
+        _LOGGER.debug("ENTITY_RESOLVER_DEBUG: '%s' - Not a string, cannot resolve", variable_value)
         return False
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:

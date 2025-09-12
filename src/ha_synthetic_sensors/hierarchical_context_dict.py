@@ -52,15 +52,26 @@ class HierarchicalContextDict:
         return self._hierarchical_context
 
     def __setitem__(self, key: str, value: ContextValue) -> None:
-        """Override assignment to use hierarchical context unified setter."""
-        # Enforce ReferenceValue architecture at the earliest point
+        """Override assignment to use hierarchical context unified setter.
+
+        Infrastructure keys (prefixed with _) can store raw values.
+        Entity values must be ReferenceValue objects.
+        """
+        # Allow infrastructure metadata as first-class elements
+        if key.startswith("_"):
+            # Infrastructure keys: _strategy_*, _binding_plan, _lazy_resolver, etc.
+            # These are allowed to be raw values as they're part of the evaluation infrastructure
+            self._hierarchical_context.set(key, value)
+            return
+
+        # Enforce ReferenceValue architecture for entity values
         if not isinstance(value, ReferenceValue):
             # This is a raw value being stored in context - this violates the architecture
             stack_trace = "".join(traceback.format_stack())
 
             raise ValueError(
                 f"Attempted to store raw value '{value}' (type: {type(value).__name__}) "
-                f"for key '{key}' in HierarchicalContextDict. All variables must be ReferenceValue objects. "
+                f"for key '{key}' in HierarchicalContextDict. All entity values must be ReferenceValue objects. "
                 f"This indicates a critical bug in the variable resolution system where raw values "
                 f"are reaching the context instead of being properly wrapped in ReferenceValue objects.\n"
                 f"Stack trace:\n{stack_trace}"
@@ -71,15 +82,8 @@ class HierarchicalContextDict:
             self._internal_dict[key] = value
             return
 
-        # BULLETPROOF: Throw exception on direct assignment to catch violations
-        stack_trace = "".join(traceback.format_stack())
-
-        raise RuntimeError(
-            f"DIRECT_ASSIGNMENT_VIOLATION: Attempted direct assignment {key} = {value} "
-            f"bypasses hierarchical context unified setter!\n"
-            f"Use context.set('{key}', value) instead of context['{key}'] = value\n"
-            f"Stack trace:\n{stack_trace}"
-        )
+        # Use the unified setter for ReferenceValue entity values
+        self._hierarchical_context.set(key, value)
 
     def _temporary_direct_assignment(self) -> DirectAssignmentContext:
         """Context manager to temporarily allow direct assignment."""

@@ -3,6 +3,7 @@
 import logging
 from typing import Any, cast
 
+from ...binding_plan_helpers import prepare_minimal_layer
 from ...config_models import FormulaConfig, SensorConfig
 from ...exceptions import DataValidationError, MissingDependencyError
 from ...hierarchical_context_dict import HierarchicalContextDict
@@ -389,3 +390,22 @@ class ContextBuildingPhase:
                 return attributes[attribute_name]
 
         return None
+
+    def prepare_minimal_layer(
+        self,
+        ctx: HierarchicalContextDict,
+        plan: Any,  # BindingPlan from AST service
+        lazy_resolver: Any | None = None,
+    ) -> None:
+        """Prepare minimal context layer with only required names from plan.
+
+        This method creates a minimal context layer containing only the names
+        specified in the binding plan, with ReferenceValue shells that will be
+        resolved lazily on first access.
+
+        Args:
+            ctx: The hierarchical context to prepare
+            plan: BindingPlan describing what the formula needs
+            lazy_resolver: Optional lazy resolver for value resolution
+        """
+        prepare_minimal_layer(ctx, plan, lazy_resolver)

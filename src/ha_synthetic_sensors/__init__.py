@@ -37,7 +37,7 @@ from .sensor_set import SensorSet
 from .storage_manager import StorageManager
 
 # Public API - Type definitions
-from .type_definitions import DataProviderCallback, DataProviderChangeNotifier, DataProviderResult
+from .type_definitions import DataProviderCallback, DataProviderChangeNotifier, DataProviderResult, ReferenceValue
 
 
 def _register_backing_entities_and_mappings(
@@ -502,6 +502,7 @@ __all__ = [
     "DataProviderResult",
     "DeviceAssociationHelper",
     "FormulaConfig",
+    "ReferenceValue",
     "SensorConfig",
     "SensorManager",
     "SensorSet",

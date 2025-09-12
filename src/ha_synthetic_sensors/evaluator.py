@@ -14,6 +14,7 @@ from homeassistant.helpers.typing import StateType
 
 from .alternate_state_eval import evaluate_formula_alternate
 from .alternate_state_processor import AlternateStateProcessor
+from .binding_plan_helpers import prepare_minimal_layer
 from .cache import CacheConfig
 from .collection_resolver import CollectionResolver
 from .config_models import FormulaConfig, SensorConfig
@@ -66,6 +67,7 @@ from .formula_ast_analysis_service import FormulaASTAnalysisService
 from .formula_evaluator_service import FormulaEvaluatorService
 from .formula_preprocessor import FormulaPreprocessor
 from .hierarchical_context_dict import HierarchicalContextDict
+from .lazy_resolver import LazyResolver
 from .regex_helper import create_identifier_pattern
 from .type_definitions import CacheStats, DataProviderCallback, DependencyValidation, EvaluationResult, ReferenceValue
 
@@ -209,6 +211,9 @@ class Evaluator(FormulaEvaluator):
         # Store the last accumulated evaluation context
         self._last_accumulated_context: HierarchicalContextDict | None = None
 
+        # Initialize lazy resolver for binding plan optimization
+        self._lazy_resolver = LazyResolver(hass, data_provider_callback)
+
         # Set dependencies for context building phase (after all attributes are initialized)
         self._context_building_phase.set_evaluator_dependencies(
             hass, data_provider_callback, self._dependency_handler, self._sensor_to_backing_mapping
@@ -273,6 +278,9 @@ class Evaluator(FormulaEvaluator):
         self._context_building_phase.set_evaluator_dependencies(
             self._hass, value, self._dependency_handler, self._sensor_to_backing_mapping
         )
+
+        # Update lazy resolver with new data provider
+        self._lazy_resolver = LazyResolver(self._hass, value)
 
     @property
     def execution_engine(self) -> Any:
@@ -484,8 +492,22 @@ class Evaluator(FormulaEvaluator):
     def _perform_variable_resolution(
         self, config: FormulaConfig, sensor_config: SensorConfig | None, eval_context: HierarchicalContextDict
     ) -> Any:
-        """Perform variable resolution with HA state detection."""
+        """Perform variable resolution with HA state detection using binding plans.
+
+        Currently in migration: Some integration tests may fail as we complete
+        the full pipeline integration of binding plans and lazy resolution.
+        """
         try:
+            # Build binding plan for this formula using AST analysis
+            if self._ast_service:
+                plan = self._ast_service.build_binding_plan(config.formula)
+
+                # Prepare minimal context layer with only required names and lazy resolver
+                prepare_minimal_layer(eval_context, plan, self._lazy_resolver)
+
+                # Store plan for use by phases
+                eval_context.hierarchical_context.set("_current_binding_plan", plan)  # type: ignore[arg-type]
+
             resolution_result = self._variable_resolution_phase.resolve_all_references_with_ha_detection(
                 config.formula, sensor_config, eval_context, config
             )
