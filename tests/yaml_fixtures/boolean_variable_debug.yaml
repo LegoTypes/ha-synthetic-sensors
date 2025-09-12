@@ -12,8 +12,10 @@ sensors:
     entity_id: sensor.test_synthetic_sensor
     formula: state
     alternate_states:
+      NONE:
+        formula: "42.0"  # When state is None
       FALLBACK:
-        formula: "42.0"  # Fallback value when main sensor is None
+        formula: "99.0"  # General fallback
     variables:
       panel_status:
         formula: binary_sensor.virtual_panel_status_test
