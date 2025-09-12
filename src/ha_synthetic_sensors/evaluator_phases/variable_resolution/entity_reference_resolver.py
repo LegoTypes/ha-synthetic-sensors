@@ -31,19 +31,16 @@ class EntityReferenceResolver(VariableResolver):
     def can_resolve(self, variable_name: str, variable_value: str | Any) -> bool:
         """Determine if this resolver can handle entity references."""
         if isinstance(variable_value, str):
-            _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Checking if can resolve '%s'", variable_value)
             # Check if it looks like an entity ID (basic format check)
             # This allows both HA entities and integration entities to be tried
             if "." in variable_value:
                 parts = variable_value.split(".", 1)  # Split on first dot only
                 if len(parts) < 2:
-                    _LOGGER.debug("ENTITY_RESOLVER_DEBUG: '%s' - Less than 2 parts after split", variable_value)
                     return False
                 domain, entity_name = parts[0], parts[1]
                 # Domain should start with a letter and contain only letters, numbers, and underscores
                 # Entity name should not be empty
                 if domain and entity_name and domain[0].isalpha() and all(c.isalnum() or c == "_" for c in domain):
-                    _LOGGER.debug("ENTITY_RESOLVER_DEBUG: '%s' - Basic format check PASSED", variable_value)
                     return True
                 else:
                     _LOGGER.debug(
@@ -57,10 +54,9 @@ class EntityReferenceResolver(VariableResolver):
             hass = getattr(self._dependency_handler, "hass", None) if self._dependency_handler else None
             if hass is not None:
                 registry_result = is_valid_entity_id(variable_value, hass)
-                _LOGGER.debug("ENTITY_RESOLVER_DEBUG: '%s' - Registry check result: %s", variable_value, registry_result)
                 return registry_result
             else:
-                _LOGGER.debug("ENTITY_RESOLVER_DEBUG: '%s' - No HASS instance available for registry check", variable_value)
+                raise ValueError("No HASS instance available for registry check")
         else:
             _LOGGER.debug("ENTITY_RESOLVER_DEBUG: '%s' - Not a string, cannot resolve", variable_value)
         return False
@@ -78,20 +74,14 @@ class EntityReferenceResolver(VariableResolver):
             return context_result
 
         # Try data provider resolution first
-        _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Trying data provider resolution for '%s'", variable_value)
         data_provider_result = resolve_via_data_provider_entity(self._dependency_handler, variable_value, variable_value)
         if data_provider_result is not None:
-            _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Data provider resolved '%s' to %s", variable_value, data_provider_result)
             return data_provider_result  # type: ignore[no-any-return]
         _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Data provider could not resolve '%s'", variable_value)
 
         # Try HASS state lookup
-        _LOGGER.debug("ENTITY_RESOLVER_DEBUG: Trying HASS state lookup for '%s'", variable_value)
         hass_result = resolve_via_hass_entity(self._dependency_handler, variable_value, variable_value)
         if hass_result is not None:
-            _LOGGER.debug(
-                "ENTITY_RESOLVER_DEBUG: HASS resolved '%s' to %s (type: %s)", variable_value, hass_result, type(hass_result)
-            )
             return hass_result  # type: ignore[no-any-return]
         _LOGGER.debug("ENTITY_RESOLVER_DEBUG: HASS could not resolve '%s'", variable_value)
 

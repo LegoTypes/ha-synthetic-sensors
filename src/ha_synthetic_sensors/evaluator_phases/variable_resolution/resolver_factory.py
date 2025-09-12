@@ -92,11 +92,9 @@ class VariableResolverFactory:
         """Set the sensor registry phase for resolvers that need it."""
         if self._cross_sensor_resolver and hasattr(self._cross_sensor_resolver, "set_sensor_registry_phase"):
             self._cross_sensor_resolver.set_sensor_registry_phase(sensor_registry_phase)
-            _LOGGER.debug("Updated cross-sensor resolver with sensor registry phase")
 
         if self._self_reference_resolver and hasattr(self._self_reference_resolver, "set_sensor_registry_phase"):
             self._self_reference_resolver.set_sensor_registry_phase(sensor_registry_phase)
-            _LOGGER.debug("Updated self-reference resolver with sensor registry phase")
 
     def set_dependency_handler(self, dependency_handler: Any) -> None:
         """Set the dependency handler for entity resolution."""
@@ -105,7 +103,6 @@ class VariableResolverFactory:
                 resolver.set_dependency_handler(dependency_handler)
             if hasattr(resolver, "set_resolver_factory"):
                 resolver.set_resolver_factory(self)
-        _LOGGER.debug("Updated resolvers with dependency handler and resolver factory")
 
     def update_data_provider_callback(self, data_provider_callback: Callable[[str], DataProviderResult] | None) -> None:
         """Update the data provider callback without recreating the factory."""
@@ -113,12 +110,10 @@ class VariableResolverFactory:
         # Update the state resolver with the new data provider callback
         if self._state_resolver:
             self._state_resolver.set_data_provider_callback(data_provider_callback)
-        _LOGGER.debug("Updated data provider callback on existing resolver factory")
 
     def register_resolver(self, resolver: VariableResolver) -> None:
         """Register a resolver with the factory."""
         self._resolvers.append(resolver)
-        _LOGGER.debug("Registered resolver: %s", resolver.get_resolver_name())
 
     def get_resolver_for_variable(self, variable_name: str, variable_value: str | Any) -> VariableResolver | None:
         """Get the appropriate resolver for a given variable."""
@@ -167,8 +162,6 @@ class VariableResolverFactory:
             resolver.set_sensor_to_backing_mapping(self.sensor_to_backing_mapping)
             if data_provider_callback:
                 resolver.set_data_provider_callback(self.data_provider_callback)
-
-        _LOGGER.debug("Updated resolver factory with sensor-to-backing mapping: %d mappings", len(sensor_to_backing_mapping))
 
     def clear_resolvers(self) -> None:
         """Clear all registered resolvers."""

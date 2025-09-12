@@ -1,11 +1,13 @@
 """Focused test for debugging boolean variable issue."""
 
-from pathlib import Path
+import logging
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from ha_synthetic_sensors import StorageManager, async_setup_synthetic_sensors
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class TestBooleanVariableDebug:
@@ -68,7 +70,7 @@ class TestBooleanVariableDebug:
             )
 
             # Load the focused YAML fixture
-            with open("boolean_variable_debug.yaml", "r") as f:
+            with open("boolean_variable_debug.yaml") as f:
                 yaml_content = f.read()
 
             result = await storage_manager.async_from_yaml(yaml_content=yaml_content, sensor_set_id=sensor_set_id)
@@ -91,60 +93,43 @@ class TestBooleanVariableDebug:
             assert boolean_conditional_sensor.unique_id == "boolean_variable_conditional"
 
             # Add debug logging to trace the issue
-            print(f"DEBUG: Mock state for binary_sensor.front_door: {mock_states['binary_sensor.front_door'].state}")
-            
+            _LOGGER.debug("Mock state for binary_sensor.front_door: %s", mock_states['binary_sensor.front_door'].state)
+
             # Check the evaluator and dependency handler setup
-            print(f"DEBUG: sensor_manager type: {type(sensor_manager)}")
-            print(f"DEBUG: sensor_manager has _evaluator: {hasattr(sensor_manager, '_evaluator')}")
-            
-            if hasattr(sensor_manager, '_evaluator'):
+            _LOGGER.debug("sensor_manager type: %s", type(sensor_manager))
+            _LOGGER.debug("sensor_manager has _evaluator: %s", hasattr(sensor_manager, '_evaluator'))
+
+            if hasattr(sensor_manager, "_evaluator"):
                 evaluator = sensor_manager._evaluator
-                print(f"DEBUG: evaluator type: {type(evaluator)}")
-                print(f"DEBUG: evaluator has dependency_handler: {hasattr(evaluator, 'dependency_handler')}")
-                
-                if hasattr(evaluator, 'dependency_handler'):
+
+                if hasattr(evaluator, "dependency_handler"):
                     dep_handler = evaluator.dependency_handler
-                    print(f"DEBUG: dependency_handler type: {type(dep_handler)}")
-                    print(f"DEBUG: dependency_handler has hass: {hasattr(dep_handler, 'hass')}")
-                    if hasattr(dep_handler, 'hass'):
-                        print(f"DEBUG: hass type: {type(dep_handler.hass)}")
-                        print(f"DEBUG: hass.states type: {type(dep_handler.hass.states) if hasattr(dep_handler.hass, 'states') else 'No states'}")
-                        
-                        # Test if we can resolve the entity directly
-                        if hasattr(dep_handler.hass, 'states'):
-                            test_state = dep_handler.hass.states.get('binary_sensor.front_door')
-                            print(f"DEBUG: Direct HASS lookup for binary_sensor.front_door: {test_state}")
-                            if test_state:
-                                print(f"DEBUG: test_state.state: {test_state.state}")
-                
+                    if hasattr(dep_handler, "hass") and hasattr(dep_handler.hass, "states"):
+                        test_state = dep_handler.hass.states.get("binary_sensor.front_door")
+                        if test_state:
+                            pass
+
                 # Test the variable resolution phase
-                if hasattr(evaluator, '_variable_resolution_phase'):
+                if hasattr(evaluator, "_variable_resolution_phase"):
                     var_phase = evaluator._variable_resolution_phase
-                    print(f"DEBUG: variable_resolution_phase type: {type(var_phase)}")
-                    if hasattr(var_phase, '_resolver_factory'):
+                    if hasattr(var_phase, "_resolver_factory"):
                         resolver_factory = var_phase._resolver_factory
-                        print(f"DEBUG: resolver_factory type: {type(resolver_factory)}")
-                        
+
                         # Skip the direct resolver test for now - focus on the dependency handler issue
-                        print(f"DEBUG: Skipping direct resolver test - dependency handler missing")
-                            
+
                 # Check if the resolver factory has the dependency handler set
-                if hasattr(evaluator, '_variable_resolution_phase'):
+                if hasattr(evaluator, "_variable_resolution_phase"):
                     var_phase = evaluator._variable_resolution_phase
-                    if hasattr(var_phase, '_resolver_factory'):
+                    if hasattr(var_phase, "_resolver_factory"):
                         resolver_factory = var_phase._resolver_factory
-                        print(f"DEBUG: resolver_factory._hass: {getattr(resolver_factory, '_hass', 'Not found')}")
-                        print(f"DEBUG: resolver_factory has _dependency_handler: {hasattr(resolver_factory, '_dependency_handler')}")
-                        
+
                         # Check individual resolvers
-                        if hasattr(resolver_factory, '_resolvers'):
-                            print(f"DEBUG: Number of resolvers: {len(resolver_factory._resolvers)}")
-                            for i, resolver in enumerate(resolver_factory._resolvers):
-                                print(f"DEBUG: Resolver {i}: {type(resolver).__name__}")
-                                if hasattr(resolver, '_dependency_handler'):
-                                    print(f"DEBUG:   - has dependency_handler: {resolver._dependency_handler is not None}")
-                                if hasattr(resolver, '_hass'):
-                                    print(f"DEBUG:   - has _hass: {resolver._hass is not None}")
+                        if hasattr(resolver_factory, "_resolvers"):
+                            for _i, resolver in enumerate(resolver_factory._resolvers):
+                                if hasattr(resolver, "_dependency_handler"):
+                                    pass
+                                if hasattr(resolver, "_hass"):
+                                    pass
 
             # Evaluate the sensor
             await boolean_conditional_sensor.async_update()
@@ -152,18 +137,15 @@ class TestBooleanVariableDebug:
             # Get the attributes
             attributes = boolean_conditional_sensor.extra_state_attributes
 
-            print(f"DEBUG: door_status value: {attributes.get('debug_door_status')}")
-            print(f"DEBUG: conditional result: {attributes.get('debug_conditional_result')}")
 
             # The door_status should be 0.0 (converted from 'off')
-            door_status_value = attributes.get('debug_door_status')
-            print(f"DEBUG: door_status type: {type(door_status_value)}")
-            
+            door_status_value = attributes.get("debug_door_status")
+
             # The conditional should evaluate to 'closed' because not door_status should be True when door_status is falsy
-            conditional_result = attributes.get('debug_conditional_result')
-            
+            conditional_result = attributes.get("debug_conditional_result")
+
             # This is the key test - if door_status is 0.0 (falsy), then 'not door_status' should be True
             # and the conditional should return 'closed'
-            assert conditional_result == 'closed', (
+            assert conditional_result == "closed", (
                 f"Expected 'closed' when door_status={door_status_value} (should be falsy), got '{conditional_result}'"
             )

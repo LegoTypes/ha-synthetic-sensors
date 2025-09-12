@@ -232,24 +232,24 @@ class TestSpanPanelVariableInjection:
     ):
         """Test the scenario when panel is offline."""
 
-        # Set up test data - panel offline scenario
+        # Set up test data - panel offline scenario (within grace period)
         mock_states["binary_sensor.panel_status"] = self.create_mock_state(
             STATE_OFF,
             {
-                "last_changed": "2025-01-01T11:45:00+00:00",  # 15 minutes ago
-                "last_updated": "2025-01-01T11:45:00+00:00",
+                "last_changed": "2025-01-01T11:59:00+00:00",  # 1 minute ago (within 2 minute grace period)
+                "last_updated": "2025-01-01T11:59:00+00:00",
                 "friendly_name": "Panel Status",
             },
             entity_id="binary_sensor.panel_status",
         )
 
+        # Backing entity is None (simulating panel offline) - no last_valid_state initially
         mock_states["sensor.air_conditioner_energy_produced"] = self.create_mock_state(
-            "3707.60",
+            None,  # None value simulating offline panel
             {
                 "unit_of_measurement": "Wh",
                 "device_class": "energy",
-                "last_valid_state": "3707.6",
-                "last_valid_changed": "2025-01-01T11:30:00+00:00",
+                # No last_valid_state initially - sensor has never had a successful evaluation
             },
             entity_id="sensor.air_conditioner_energy_produced",
         )
@@ -339,9 +339,9 @@ class TestSpanPanelVariableInjection:
                 sensor_attributes = dict(air_conditioner_sensor.extra_state_attributes or {})
 
                 # Add the engine-managed attributes that should be available for metadata() calls
-                # These are initialized by our fix in sensor_manager.py
+                # Simulate a sensor that has never had a successful evaluation (like real SPAN sensors)
                 if "last_valid_state" not in sensor_attributes:
-                    sensor_attributes["last_valid_state"] = "unknown"
+                    sensor_attributes["last_valid_state"] = "unknown"  # Never had a successful evaluation
                 if "last_valid_changed" not in sensor_attributes:
                     from datetime import datetime as dt, timezone as tz
 
@@ -360,20 +360,29 @@ class TestSpanPanelVariableInjection:
                 # Get the attributes
                 attributes = air_conditioner_sensor.extra_state_attributes
 
-                # panel_offline_minutes should be 15 (minutes between 11:45 and 12:00)
-                assert attributes.get("panel_offline_minutes_is") == 15, (
-                    f"Expected 15, got {attributes.get('panel_offline_minutes_is')}"
+                print(f"DEBUG: Final sensor state: {air_conditioner_sensor.state}")
+                print(f"DEBUG: Final attributes: {attributes}")
+
+                # panel_offline_minutes should be 1 (minutes between 11:59 and 12:00)
+                assert attributes.get("panel_offline_minutes_is") == 1, (
+                    f"Expected 1, got {attributes.get('panel_offline_minutes_is')}"
                 )
 
-                # is_within_grace_period should be False since last_valid_state is None for a new sensor
-                # The formula: last_valid_state is not None and ... evaluates to False when last_valid_state is None
+                # is_within_grace_period should be False since:
+                # - last_valid_state is 'unknown' (never had a successful evaluation)
+                # This matches the real SPAN sensor behavior
                 assert attributes.get("is_within_grace_is") is False, (
                     f"Expected False, got {attributes.get('is_within_grace_is')}"
                 )
 
-                # debug_conditional_result should be 15 because panel_status is falsy
-                assert attributes.get("debug_conditional_result") == 15, (
-                    f"Expected 15, got {attributes.get('debug_conditional_result')}"
+                # The sensor should show None (alternate state result) since no grace period
+                assert air_conditioner_sensor.state is None, (
+                    f"Expected None (no grace period), got {air_conditioner_sensor.state}"
+                )
+
+                # debug_conditional_result should be 1 because panel_status is falsy
+                assert attributes.get("debug_conditional_result") == 1, (
+                    f"Expected 1, got {attributes.get('debug_conditional_result')}"
                 )
 
 

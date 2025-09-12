@@ -47,7 +47,6 @@ class VariableInheritanceHandler:
             global_vars = self._global_settings.get("variables", {})
             if global_vars:
                 inherited_variables.update(global_vars)
-                _LOGGER.debug("Inherited %d global variables for attribute '%s'", len(global_vars), formula_config.id)
 
     def _add_parent_sensor_variables(
         self,
@@ -59,11 +58,6 @@ class VariableInheritanceHandler:
         main_formula = self._get_main_formula(sensor_config)
         if main_formula:
             inherited_variables.update(main_formula.variables)
-            _LOGGER.debug(
-                "Inherited %d variables from parent sensor for attribute '%s'",
-                len(main_formula.variables),
-                formula_config.id,
-            )
 
     def _is_attribute_formula(self, formula_config: FormulaConfig) -> bool:
         """Check if this is an attribute formula (not the main sensor formula)."""
@@ -88,12 +82,10 @@ class VariableInheritanceHandler:
         """Process a single variable with all the necessary checks and resolution."""
         # Skip ComputedVariable instances - they are handled by resolve_config_variables
         if isinstance(var_value, ComputedVariable):
-            _LOGGER.debug("INHERITANCE_DEBUG: Skipping ComputedVariable '%s'", var_name)
             return
 
         # If this variable is used in .attribute patterns, override with entity ID
         if var_name in variables_needing_entity_ids:
-            _LOGGER.debug("Overriding variable '%s' with entity ID (used in .attribute pattern): %s", var_name, var_value)
             # Use centralized ReferenceValueManager for type safety
             ReferenceValueManager.set_variable_with_reference_value(
                 eval_context,
@@ -105,7 +97,6 @@ class VariableInheritanceHandler:
 
         # Skip if this variable is already set in context (context has higher priority)
         if var_name in eval_context:
-            _LOGGER.debug("Skipping config variable %s (already set in context)", var_name)
             return
 
         # Otherwise, resolve normally

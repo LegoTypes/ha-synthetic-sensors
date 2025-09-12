@@ -3,7 +3,7 @@ version: "1.0"
 global_settings:
   device_identifier: "test_span_panel_variable_injection"
   variables:
-    energy_grace_period_minutes: 15
+    energy_grace_period_minutes: 2
 
 sensors:
   air_conditioner_produced_energy:
@@ -31,7 +31,7 @@ sensors:
       panel_status:
         formula: binary_sensor.panel_status
       panel_offline_minutes:
-        formula: minutes_between(metadata(binary_sensor.panel_status, 'last_changed'), '2025-01-01T12:00:00+00:00') if not panel_status else 0
+        formula: minutes_between(metadata(binary_sensor.panel_status, 'last_changed'), utc_now()) if not panel_status else 0
         alternate_states:
           FALLBACK: 0
       is_within_grace_period:

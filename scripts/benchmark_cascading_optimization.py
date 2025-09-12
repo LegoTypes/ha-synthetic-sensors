@@ -19,18 +19,18 @@ class PerformanceBenchmark:
         self.mock_hass = MagicMock()
         self.mock_name_resolver = MagicMock()
         self.mock_add_entities_callback = MagicMock()
-        
+
     def create_span_like_sensor_configs(self, num_circuits: int = 24) -> list[SensorConfig]:
         """Create sensor configurations that mirror a SPAN panel setup.
-        
+
         Args:
             num_circuits: Number of circuits to simulate (default 24 like real SPAN panel)
-            
+
         Returns:
             List of sensor configurations with dependencies similar to SPAN panel
         """
         configs = []
-        
+
         # Create power sensors for each circuit (direct backing entity dependencies)
         for i in range(num_circuits):
             circuit_name = f"circuit_{i:02d}"
@@ -44,7 +44,7 @@ class PerformanceBenchmark:
                     name=f"{circuit_name}_power_formula"
                 )]
             ))
-            
+
             # Create energy sensors that depend on power sensors (indirect dependencies)
             configs.append(SensorConfig(
                 unique_id=f"{circuit_name}_energy_produced",
@@ -56,7 +56,7 @@ class PerformanceBenchmark:
                     name=f"{circuit_name}_energy_produced_formula"
                 )]
             ))
-            
+
             configs.append(SensorConfig(
                 unique_id=f"{circuit_name}_energy_consumed",
                 entity_id=f"sensor.{circuit_name}_energy_consumed",
@@ -67,7 +67,7 @@ class PerformanceBenchmark:
                     name=f"{circuit_name}_energy_consumed_formula"
                 )]
             ))
-            
+
             # Create net energy sensors that depend on both energy sensors (deeper dependencies)
             configs.append(SensorConfig(
                 unique_id=f"{circuit_name}_net_energy",
@@ -79,7 +79,7 @@ class PerformanceBenchmark:
                     name=f"{circuit_name}_net_energy_formula"
                 )]
             ))
-        
+
         # Add aggregate sensors that depend on multiple circuits
         configs.extend([
             SensorConfig(
@@ -113,13 +113,13 @@ class PerformanceBenchmark:
                 )]
             ),
         ])
-        
+
         return configs
 
     def create_mock_evaluator(self, sensor_configs: list[SensorConfig]) -> MagicMock:
         """Create a mock evaluator with realistic dependency analysis."""
         evaluator = MagicMock()
-        
+
         # Build dependency map
         dependencies = {}
         for config in sensor_configs:
@@ -135,11 +135,11 @@ class PerformanceBenchmark:
                         if unique_id != config.unique_id:  # Don't depend on self
                             deps.add(unique_id)
             dependencies[config.unique_id] = deps
-        
+
         dependency_phase = MagicMock()
         dependency_phase.analyze_cross_sensor_dependencies.return_value = dependencies
         evaluator.dependency_management_phase = dependency_phase
-        
+
         return evaluator
 
     def create_sensor_manager(self, sensor_configs: list[SensorConfig]) -> SensorManager:
@@ -147,42 +147,42 @@ class PerformanceBenchmark:
         evaluator = self.create_mock_evaluator(sensor_configs)
         manager = SensorManager(self.mock_hass, self.mock_name_resolver, self.mock_add_entities_callback)
         manager._evaluator = evaluator
-        
+
         # Add mock sensors
         for config in sensor_configs:
             mock_sensor = MagicMock()
             mock_sensor.config = config
             mock_sensor.async_update_sensor = AsyncMock()
             manager._sensors_by_unique_id[config.unique_id] = mock_sensor
-            
+
         return manager
 
     async def benchmark_optimization(self, num_circuits: int = 24) -> dict[str, Any]:
         """Benchmark the optimization with a realistic SPAN panel scenario.
-        
+
         Args:
             num_circuits: Number of circuits to simulate
-            
+
         Returns:
             Dictionary with benchmark results
         """
         print(f"\n🔬 Benchmarking Cascading Update Optimization ({num_circuits} circuits)")
         print("=" * 70)
-        
+
         # Create sensor configurations
         sensor_configs = self.create_span_like_sensor_configs(num_circuits)
         total_sensors = len(sensor_configs)
-        
+
         print(f"📊 Test Setup:")
         print(f"   • Total sensors: {total_sensors}")
         print(f"   • Power sensors: {num_circuits} (direct dependencies)")
         print(f"   • Energy sensors: {num_circuits * 2} (indirect dependencies)")
         print(f"   • Net energy sensors: {num_circuits} (deeper dependencies)")
         print(f"   • Aggregate sensors: 3 (multi-dependency)")
-        
+
         # Create sensor manager
         manager = self.create_sensor_manager(sensor_configs)
-        
+
         # Mock the backing entity extraction to work with our test setup
         def mock_extract_backing_entities(config):
             backing_entities = set()
@@ -192,24 +192,24 @@ class PerformanceBenchmark:
                     matches = re.findall(r"state\('(sensor\.span_backing_[^']+)'\)", formula.formula)
                     backing_entities.update(matches)
             return backing_entities
-        
+
         manager._extract_backing_entities_from_sensor = mock_extract_backing_entities
-        
+
         # Simulate backing entity changes (like SPAN panel coordinator update)
         changed_backing_entities = {f"sensor.span_backing_circuit_{i:02d}_power" for i in range(num_circuits)}
-        
+
         print(f"\n⚡ Simulating coordinator update with {len(changed_backing_entities)} changed backing entities")
-        
+
         # Mock ReferenceValueManager.invalidate_entities to track calls
         invalidation_calls = []
-        
+
         def mock_invalidate(entities):
             invalidation_calls.append(entities.copy())
-            
+
         # Mock async_update_sensors to track calls and measure time
         update_calls = []
         update_times = []
-        
+
         async def mock_update_sensors(configs):
             start_time = time.perf_counter()
             # Simulate realistic update time
@@ -217,25 +217,25 @@ class PerformanceBenchmark:
             end_time = time.perf_counter()
             update_times.append(end_time - start_time)
             update_calls.append([config.unique_id for config in configs])
-        
+
         with patch.object(ReferenceValueManager, 'invalidate_entities', side_effect=mock_invalidate):
             with patch.object(manager, 'async_update_sensors', side_effect=mock_update_sensors):
-                
+
                 # Measure the optimized update
                 start_time = time.perf_counter()
                 await manager.async_update_sensors_for_entities(changed_backing_entities)
                 end_time = time.perf_counter()
-                
+
                 total_time = end_time - start_time
-        
+
         # Analyze results
-        directly_affected = sum(1 for config in sensor_configs 
+        directly_affected = sum(1 for config in sensor_configs
                               if any(f"span_backing_{config.unique_id.replace('_power', '')}_power" in changed_backing_entities
                                    for formula in config.formulas))
-        
+
         total_updated = sum(len(call) for call in update_calls)
         unique_updated = len(set().union(*update_calls)) if update_calls else 0
-        
+
         results = {
             "total_sensors": total_sensors,
             "changed_backing_entities": len(changed_backing_entities),
@@ -248,11 +248,11 @@ class PerformanceBenchmark:
             "avg_time_per_sensor": total_time / unique_updated if unique_updated > 0 else 0,
             "entities_invalidated": sum(len(call) for call in invalidation_calls),
             "backing_entities_only": all(
-                all("span_backing_" in entity for entity in call) 
+                all("span_backing_" in entity for entity in call)
                 for call in invalidation_calls
             ) if invalidation_calls else True
         }
-        
+
         # Print results
         print(f"\n📈 Optimization Results:")
         print(f"   • Update calls: {results['update_calls']} (should be 1 for optimal batching)")
@@ -261,7 +261,7 @@ class PerformanceBenchmark:
         print(f"   • Avg time per sensor: {results['avg_time_per_sensor']:.6f} seconds")
         print(f"   • Entities invalidated: {results['entities_invalidated']}")
         print(f"   • Only backing entities invalidated: {results['backing_entities_only']}")
-        
+
         # Calculate theoretical improvement
         if results['update_calls'] == 1:
             print(f"\n✅ Optimization SUCCESS:")
@@ -271,21 +271,21 @@ class PerformanceBenchmark:
             print(f"   • Proper dependency ordering maintained")
         else:
             print(f"\n❌ Optimization issues detected - multiple update calls: {results['update_calls']}")
-            
+
         return results
 
 
 async def main():
     """Run the benchmark."""
     benchmark = PerformanceBenchmark()
-    
+
     # Test with different scales
     for num_circuits in [6, 12, 24]:
         results = await benchmark.benchmark_optimization(num_circuits)
-        
+
         # Brief pause between tests
         await asyncio.sleep(0.1)
-    
+
     print(f"\n🎯 Summary:")
     print(f"   The optimization eliminates double processing by:")
     print(f"   1. Only invalidating backing entities (not sensor entities)")

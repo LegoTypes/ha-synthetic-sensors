@@ -22,18 +22,16 @@ class TestYamlFormulaPreservation:
         """Test that variable references are preserved as formula objects, not flattened to strings."""
         # Create main formula
         main_formula = FormulaConfig(id="test_sensor", formula="state")
-        
+
         # Create attribute formula with variable reference (no variables defined)
         attr_formula = FormulaConfig(
-            id="test_sensor_debug_panel_status", 
-            formula="panel_status"  # This should be preserved as a formula
+            id="test_sensor_debug_panel_status",
+            formula="panel_status",  # This should be preserved as a formula
         )
 
         # Create sensor config
         sensor_config = SensorConfig(
-            unique_id="test_sensor", 
-            formulas=[main_formula, attr_formula], 
-            device_identifier="test-device"
+            unique_id="test_sensor", formulas=[main_formula, attr_formula], device_identifier="test-device"
         )
 
         # Mock storage manager
@@ -50,12 +48,13 @@ class TestYamlFormulaPreservation:
 
         # Parse the YAML to check structure
         import yaml
+
         parsed_yaml = yaml.safe_load(yaml_content)
-        
+
         # Check that the attribute is preserved as a formula object
         sensor_data = parsed_yaml["sensors"]["test_sensor"]
         debug_attr = sensor_data["attributes"]["debug_panel_status"]
-        
+
         # Should be a dict with "formula" key, not a flattened string
         assert isinstance(debug_attr, dict), f"Expected dict but got {type(debug_attr)}: {debug_attr}"
         assert "formula" in debug_attr, f"Expected 'formula' key in {debug_attr}"
@@ -65,8 +64,8 @@ class TestYamlFormulaPreservation:
         """Test that entity references are preserved as formula objects, not flattened to strings."""
         # Create attribute formula with entity reference (no variables defined)
         attr_formula = FormulaConfig(
-            id="test_sensor_debug_entity", 
-            formula="sensor.power_meter"  # This should be preserved as a formula
+            id="test_sensor_debug_entity",
+            formula="sensor.power_meter",  # This should be preserved as a formula
         )
 
         # Create main formula
@@ -74,9 +73,7 @@ class TestYamlFormulaPreservation:
 
         # Create sensor config
         sensor_config = SensorConfig(
-            unique_id="test_sensor", 
-            formulas=[main_formula, attr_formula], 
-            device_identifier="test-device"
+            unique_id="test_sensor", formulas=[main_formula, attr_formula], device_identifier="test-device"
         )
 
         # Mock storage manager
@@ -93,12 +90,13 @@ class TestYamlFormulaPreservation:
 
         # Parse the YAML to check structure
         import yaml
+
         parsed_yaml = yaml.safe_load(yaml_content)
-        
+
         # Check that the attribute is preserved as a formula object
         sensor_data = parsed_yaml["sensors"]["test_sensor"]
         debug_attr = sensor_data["attributes"]["debug_entity"]
-        
+
         # Should be a dict with "formula" key, not a flattened string
         assert isinstance(debug_attr, dict), f"Expected dict but got {type(debug_attr)}: {debug_attr}"
         assert "formula" in debug_attr, f"Expected 'formula' key in {debug_attr}"
@@ -108,8 +106,8 @@ class TestYamlFormulaPreservation:
         """Test that function calls are preserved as formula objects, not flattened to strings."""
         # Create attribute formula with function call (no variables defined)
         attr_formula = FormulaConfig(
-            id="test_sensor_debug_function", 
-            formula="utc_now()"  # This should be preserved as a formula
+            id="test_sensor_debug_function",
+            formula="utc_now()",  # This should be preserved as a formula
         )
 
         # Create main formula
@@ -117,9 +115,7 @@ class TestYamlFormulaPreservation:
 
         # Create sensor config
         sensor_config = SensorConfig(
-            unique_id="test_sensor", 
-            formulas=[main_formula, attr_formula], 
-            device_identifier="test-device"
+            unique_id="test_sensor", formulas=[main_formula, attr_formula], device_identifier="test-device"
         )
 
         # Mock storage manager
@@ -136,12 +132,13 @@ class TestYamlFormulaPreservation:
 
         # Parse the YAML to check structure
         import yaml
+
         parsed_yaml = yaml.safe_load(yaml_content)
-        
+
         # Check that the attribute is preserved as a formula object
         sensor_data = parsed_yaml["sensors"]["test_sensor"]
         debug_attr = sensor_data["attributes"]["debug_function"]
-        
+
         # Should be a dict with "formula" key, not a flattened string
         assert isinstance(debug_attr, dict), f"Expected dict but got {type(debug_attr)}: {debug_attr}"
         assert "formula" in debug_attr, f"Expected 'formula' key in {debug_attr}"
@@ -151,18 +148,18 @@ class TestYamlFormulaPreservation:
         """Test that even literal values are preserved as formula structures when they come from FormulaConfig."""
         # Create attribute formulas with literal values
         number_formula = FormulaConfig(
-            id="test_sensor_number", 
-            formula="42"  # This should be preserved as formula
+            id="test_sensor_number",
+            formula="42",  # This should be preserved as formula
         )
-        
+
         string_formula = FormulaConfig(
-            id="test_sensor_string", 
-            formula='"hello world"'  # This should be preserved as formula
+            id="test_sensor_string",
+            formula='"hello world"',  # This should be preserved as formula
         )
-        
+
         bool_formula = FormulaConfig(
-            id="test_sensor_bool", 
-            formula="True"  # This should be preserved as formula
+            id="test_sensor_bool",
+            formula="True",  # This should be preserved as formula
         )
 
         # Create main formula
@@ -170,9 +167,9 @@ class TestYamlFormulaPreservation:
 
         # Create sensor config
         sensor_config = SensorConfig(
-            unique_id="test_sensor", 
-            formulas=[main_formula, number_formula, string_formula, bool_formula], 
-            device_identifier="test-device"
+            unique_id="test_sensor",
+            formulas=[main_formula, number_formula, string_formula, bool_formula],
+            device_identifier="test-device",
         )
 
         # Mock storage manager
@@ -189,23 +186,24 @@ class TestYamlFormulaPreservation:
 
         # Parse the YAML to check structure
         import yaml
+
         parsed_yaml = yaml.safe_load(yaml_content)
-        
+
         # Check that literals are preserved as formula structures
         sensor_data = parsed_yaml["sensors"]["test_sensor"]
-        
+
         # Number should be preserved as formula
         number_attr = sensor_data["attributes"]["number"]
         assert isinstance(number_attr, dict), f"Expected dict but got {type(number_attr)}: {number_attr}"
         assert "formula" in number_attr, f"Expected 'formula' key in {number_attr}"
         assert number_attr["formula"] == "42"
-        
+
         # String should be preserved as formula
         string_attr = sensor_data["attributes"]["string"]
         assert isinstance(string_attr, dict), f"Expected dict but got {type(string_attr)}: {string_attr}"
         assert "formula" in string_attr, f"Expected 'formula' key in {string_attr}"
         assert string_attr["formula"] == '"hello world"'
-        
+
         # Boolean should be preserved as formula
         bool_attr = sensor_data["attributes"]["bool"]
         assert isinstance(bool_attr, dict), f"Expected dict but got {type(bool_attr)}: {bool_attr}"

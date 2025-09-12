@@ -9,21 +9,19 @@ global_settings:
 sensors:
   panel_status_fallback_test:
     name: "Panel Status Fallback Test"
-    entity_id: sensor.test_synthetic_sensor
+    entity_id: sensor.main_energy_sensor
     formula: state
     alternate_states:
-      NONE:
-        formula: "42.0"  # When state is None
       FALLBACK:
-        formula: "99.0"  # General fallback
+        formula: "42.0"  # Fallback value when main sensor is None
     variables:
       panel_status:
-        formula: binary_sensor.virtual_panel_status_test
+        formula: binary_sensor.panel_status
     attributes:
       debug_panel_status_is:
         formula: panel_status
       debug_panel_status_direct:
-        formula: binary_sensor.virtual_panel_status_test
+        formula: binary_sensor.panel_status
       debug_main_sensor_state:
         formula: state
       debug_fallback_used:

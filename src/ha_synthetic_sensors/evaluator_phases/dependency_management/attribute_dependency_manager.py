@@ -122,8 +122,6 @@ class AttributeDependencyManager:
             if attr_name in attribute_formulas:
                 formula = attribute_formulas[attr_name]
 
-                _LOGGER.debug("Evaluating attribute '%s' with context: %s", attr_name, list(context.keys()))
-
                 # Evaluate the attribute formula with current context
                 result = evaluator.evaluate_formula_with_sensor_config(formula, context, sensor_config)
 

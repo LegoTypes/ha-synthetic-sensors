@@ -69,10 +69,6 @@ class ContextBuildingPhase:
         evaluated, fixing the empty context issue.
         """
         self._global_settings = global_settings
-        _LOGGER.debug(
-            "Context building phase: set global settings with %d variables",
-            len(global_settings.get("variables", {})) if global_settings else 0,
-        )
 
     def build_evaluation_context(
         self,
@@ -90,8 +86,8 @@ class ContextBuildingPhase:
         else:
             raise ValueError("Home Assistant instance is required for context building phase")
 
-        # Add Home Assistant constants to evaluation context (lowest priority)
-        self._add_ha_constants_to_context(eval_context)
+        # Home Assistant constants are provided via lazy-loading in formula_constants
+        # and no longer need to be pre-loaded here.
 
         # Create modern resolver factory
         resolver_factory = self._create_resolver_factory(context)
@@ -108,7 +104,6 @@ class ContextBuildingPhase:
                 ReferenceValue(reference="sensor_config.entity_id", value=sensor_config.entity_id),
                 "current_sensor",
             )
-            _LOGGER.debug("Added current sensor entity_id to context: %s", sensor_config.entity_id)
 
         # Add global variables BEFORE resolving computed variables
         # This ensures global variables are available when computed variables are evaluated
@@ -132,7 +127,6 @@ class ContextBuildingPhase:
         # Use the same resolver factory as context is managed within individual resolvers
         self._resolve_config_variables(eval_context, config, resolver_factory, sensor_config)
 
-        _LOGGER.debug("Context building phase: built context with %d variables", len(eval_context))
         return eval_context
 
     def _add_state_to_context(self, eval_context: HierarchicalContextDict, resolver_factory: Any) -> None:
@@ -146,7 +140,6 @@ class ContextBuildingPhase:
         if (
             isinstance(existing_state, ReferenceValue) and existing_state.reference and existing_state.reference != "state"
         ):  # Has proper entity_id reference
-            _LOGGER.debug("Context building: State already properly set with entity_id reference: %s", existing_state.reference)
             return
 
         _LOGGER.debug("Context building: State needs to be set using prior state resolution")
@@ -156,7 +149,6 @@ class ContextBuildingPhase:
             sensor_config_raw = eval_context.hierarchical_context.get("_sensor_config")
         except KeyError:
             # No sensor config available - this can happen for computed variables or cross-sensor references
-            _LOGGER.debug("Context building: No _sensor_config in context - setting basic state reference")
             # Set a basic state reference for computed variables
             basic_state_ref = ReferenceValue(reference="state", value=None)
             self._safe_context_set(eval_context, "state", basic_state_ref)
@@ -172,32 +164,22 @@ class ContextBuildingPhase:
                 state_resolver = None
                 if hasattr(resolver_factory, "resolvers"):
                     for resolver in resolver_factory.resolvers:
-                        if hasattr(resolver, "resolve_prior_state_reference"):
+                        if hasattr(resolver, "setup_initial_state_reference"):
                             state_resolver = resolver
                             break
 
                 if state_resolver:
-                    # Use the new prior state resolution method
-                    prior_state_ref = state_resolver.resolve_prior_state_reference(sensor_config, eval_context)
-                    if prior_state_ref:
-                        self._safe_context_set(eval_context, "state", prior_state_ref)
-                        _LOGGER.debug(
-                            "Context building: Set prior state reference for sensor %s: %s",
-                            sensor_config.unique_id,
-                            prior_state_ref.value,
-                        )
+                    # Use the initial state setup method
+                    initial_state_ref = state_resolver.setup_initial_state_reference(sensor_config, eval_context)
+                    if initial_state_ref:
+                        self._safe_context_set(eval_context, "state", initial_state_ref)
                     else:
                         # No prior state available - set basic reference
                         basic_state_ref = ReferenceValue(
                             reference=sensor_config.entity_id if sensor_config.entity_id else "state", value=None
                         )
                         self._safe_context_set(eval_context, "state", basic_state_ref)
-                        _LOGGER.debug(
-                            "Context building: No prior state available for sensor %s - set basic reference",
-                            sensor_config.unique_id,
-                        )
                 else:
-                    _LOGGER.warning("Context building: No StateResolver found in resolver factory")
                     # Fallback to basic state reference
                     basic_state_ref = ReferenceValue(
                         reference=sensor_config.entity_id if sensor_config.entity_id else "state", value=None
@@ -212,7 +194,6 @@ class ContextBuildingPhase:
                 )
                 self._safe_context_set(eval_context, "state", basic_state_ref)
         else:
-            _LOGGER.debug("Context building: Invalid sensor_config - setting basic state reference")
             # Set a basic state reference
             basic_state_ref = ReferenceValue(reference="state", value=None)
             self._safe_context_set(eval_context, "state", basic_state_ref)
@@ -247,21 +228,9 @@ class ContextBuildingPhase:
             else:
                 # Wrap intermediate raw values with ReferenceValue from computed variable results
                 if isinstance(value, (int | float | str | bool)):
-                    _LOGGER.debug(
-                        "Converting raw value '%s'=%s (type: %s) to ReferenceValue for context",
-                        key,
-                        value,
-                        type(value).__name__,
-                    )
                     ReferenceValueManager.set_variable_with_reference_value(eval_context, key, key, value)
                 else:
                     # ERROR: Other raw values should not exist at this point
-                    _LOGGER.error(
-                        "CONTEXT_BUG: Raw value '%s'=%s (type: %s) found in context - this indicates an upstream bug",
-                        key,
-                        value,
-                        type(value).__name__,
-                    )
                     # Fail fast to expose the problem
                     raise TypeError(
                         f"Raw value found in context: {key}={value}. Context should only contain ReferenceValue objects."
@@ -286,7 +255,6 @@ class ContextBuildingPhase:
             # Store global variable as ReferenceValue with original value
             # Let the handler/type analyzer system handle conversion during evaluation
             ReferenceValueManager.set_variable_with_reference_value(eval_context, var_name, var_name, var_value)
-            _LOGGER.debug("Context building: Added global variable '%s' = %s", var_name, var_value)
 
     def _resolve_entity_dependencies(
         self, eval_context: HierarchicalContextDict, dependencies: set[str], resolver_factory: VariableResolverFactory
@@ -295,7 +263,6 @@ class ContextBuildingPhase:
         for entity_id in dependencies:
             # Skip dependencies that are already in context
             if entity_id in eval_context:
-                _LOGGER.debug("Dependency '%s' already in context, skipping resolution", entity_id)
                 continue
 
             try:
@@ -365,18 +332,7 @@ class ContextBuildingPhase:
 
     def _handle_config_variable_none_value(self, var_name: str, config: FormulaConfig) -> None:
         """Handle config variable with None value."""
-        _LOGGER.warning("Config variable '%s' in formula '%s' resolved to None", var_name, config.name or config.id)
-
-    def _add_ha_constants_to_context(self, eval_context: HierarchicalContextDict) -> None:
-        """Add Home Assistant constants to the evaluation context.
-
-        With lazy loading in place via formula_constants.__getattr__,
-        HA constants are available on-demand without pre-loading.
-        This method is kept for compatibility but no longer pre-loads constants.
-        """
-        # Note: HA constants are now available via lazy loading in formula_constants
-        # No need to pre-load constants as they're resolved on-demand
-        _LOGGER.debug("HA constants available via lazy loading - no pre-loading needed")
+        _LOGGER.debug("Config variable '%s' in formula '%s' resolved to None", var_name, config.name or config.id)
 
     def _is_attribute_reference(self, var_value: str) -> bool:
         """Check if a variable value is an attribute reference."""

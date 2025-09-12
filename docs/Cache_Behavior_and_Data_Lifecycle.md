@@ -624,6 +624,24 @@ cache_config = CacheConfig(
 4. **Don't manually clear caches** during normal operation
 5. **Test with realistic update patterns**
 
+### Minimal Context Population and Binding Plans
+
+In addition to the two-tier caches, the evaluator minimizes per-cycle work using AST binding plans and lazy context population:
+
+- **Plan Once**: For each formula, the AST service provides a binding plan (referenced names, function kinds, resolution
+  strategies). Plans are cached alongside compilation artifacts.
+- **Populate Minimally**: Phases create only variables required by the current formula. Literals are injected once; dynamic
+  sources (HA/data-provider) are resolved on first access and memoized for the remainder of the cycle.
+- **Object Reuse**: Where possible, reuse `ReferenceValue` shells per variable name and replace `.value` each cycle instead of
+  recreating objects.
+- **Batch Lookups**: Use the plan to group HA state reads to reduce overhead.
+- **Collections**: Maintain runtime expansion with targeted caching keyed by normalized query
+  (device_class/area/label/predicate) and invalidate on relevant HA registry changes. The AST plan marks presence of collections
+  to route to this path.
+
+This strategy preserves Option C dynamic discovery and the existing 0–4 phase pipeline while lowering Python object churn and
+unnecessary per-cycle preparation.
+
 ### Cache Strategy for Different Integration Types
 
 **High-Frequency Polling (< 30 seconds)**:

@@ -178,9 +178,24 @@ class MetadataHandler(FormulaHandler):
             # The entity_ref might be a variable name or an entity ID
             # If it's a variable name, we need to resolve it to the entity ID
             # If it's already an entity ID, use it directly
+            _LOGGER.error(
+                "TEMP_DEBUG: Resolving entity_ref='%s' for metadata_key='%s'",
+                entity_ref,
+                metadata_key,
+            )
             try:
                 resolved_entity_id = self._resolve_entity_reference(entity_ref, context)
+                _LOGGER.error(
+                    "TEMP_DEBUG: Resolved entity_ref='%s' to entity_id='%s'",
+                    entity_ref,
+                    resolved_entity_id,
+                )
             except Exception as e:
+                _LOGGER.error(
+                    "TEMP_DEBUG: Failed to resolve entity_ref='%s': %s",
+                    entity_ref,
+                    str(e),
+                )
                 raise ValueError(f"Cannot resolve entity reference: {e}") from e
 
             # Check 1: Is the entity reference itself an alternate state?
@@ -328,13 +343,8 @@ class MetadataHandler(FormulaHandler):
                 raise  # Re-raise our custom error
             # Not a number, continue normal processing
 
-        _LOGGER.debug("Resolving entity reference: '%s'", clean_ref)
-        _LOGGER.debug("MetadataHandler context keys: %s", list(context.keys()) if context else "None")
-
         # Try variable resolution first
-        _LOGGER.debug("MetadataHandler: About to call _try_resolve_variable_reference for '%s'", clean_ref)
         resolved_entity = self._try_resolve_variable_reference(clean_ref, context)
-        _LOGGER.debug("MetadataHandler: _try_resolve_variable_reference returned: %s", resolved_entity)
         if resolved_entity:
             return resolved_entity
 
@@ -352,7 +362,6 @@ class MetadataHandler(FormulaHandler):
 
     def _try_resolve_variable_reference(self, clean_ref: str, context: HierarchicalContextDict) -> str | None:
         """Try to resolve entity reference from variables in context."""
-        _LOGGER.debug("MetadataHandler: _try_resolve_variable_reference called with clean_ref='%s'", clean_ref)
         if not context:
             _LOGGER.debug("MetadataHandler: No context provided, returning None")
             return None
@@ -363,14 +372,8 @@ class MetadataHandler(FormulaHandler):
             _LOGGER.debug("MetadataHandler: Invalid lookup_context (type: %s), returning None", type(lookup_context).__name__)
             return None
 
-        # Debug: Log what's in the context
-        _LOGGER.debug(
-            "MetadataHandler: Trying to resolve variable '%s' in context with keys: %s", clean_ref, list(lookup_context.keys())
-        )
-
         # First, try direct variable lookup
         if clean_ref in lookup_context:
-            _LOGGER.debug("MetadataHandler: Found '%s' in context", clean_ref)
             context_value = lookup_context[clean_ref]
 
             if isinstance(context_value, ReferenceValue):
@@ -378,12 +381,6 @@ class MetadataHandler(FormulaHandler):
                 ref_value_obj: ReferenceValue = context_value
                 reference = ref_value_obj.reference
                 value = ref_value_obj.value
-                _LOGGER.debug(
-                    "✅ SUCCESS: Resolved variable '%s' to ReferenceValue with reference=%s, value=%s",
-                    clean_ref,
-                    reference,
-                    value,
-                )
 
                 # Use the reference as the entity ID
                 entity_id = reference
@@ -420,12 +417,10 @@ class MetadataHandler(FormulaHandler):
 
         # Check if it's a direct entity ID (contains a dot for domain.entity pattern)
         if "." in clean_ref:
-            _LOGGER.debug("Treating as direct entity ID: %s", clean_ref)
             return clean_ref
 
         # Handle direct variable name references
         if clean_ref == "external_sensor":
-            _LOGGER.debug("Mapped global variable 'external_sensor' to entity: sensor.external_power_meter")
             return "sensor.external_power_meter"
 
         # Handle variable context resolution
@@ -435,7 +430,6 @@ class MetadataHandler(FormulaHandler):
         """Resolve the 'state' token to current sensor entity ID."""
         entity_id = self._get_current_sensor_entity_id_from_context(context)
         if entity_id:
-            _LOGGER.debug("Resolved 'state' token to entity: %s", entity_id)
             return entity_id
 
         # If no context or entity ID available, this is an error
@@ -458,7 +452,6 @@ class MetadataHandler(FormulaHandler):
             }
             if clean_ref in entity_mapping:
                 mapped_entity = entity_mapping[clean_ref]
-                _LOGGER.debug("Mapped variable '%s' to entity: %s", clean_ref, mapped_entity)
                 return mapped_entity
 
         # Handle ReferenceValue objects properly
@@ -472,7 +465,6 @@ class MetadataHandler(FormulaHandler):
 
         # Check if resolved value looks like an entity ID
         if isinstance(resolved_value, str) and "." in resolved_value:
-            _LOGGER.debug("Variable '%s' resolved to entity ID: %s", clean_ref, resolved_value)
             return resolved_value
 
         # This is the problematic case - variable resolved to a value instead of entity ID
@@ -505,6 +497,13 @@ class MetadataHandler(FormulaHandler):
         if not self._hass:
             raise ValueError(ERROR_METADATA_HASS_NOT_AVAILABLE)
 
+        # Debug logging for metadata calls
+        _LOGGER.error(
+            "TEMP_DEBUG: _get_metadata_value called with entity_id='%s', metadata_key='%s'",
+            entity_id,
+            metadata_key,
+        )
+
         state_obj = self._hass.states.get(entity_id)
 
         # Handle case where entity doesn't exist
@@ -516,14 +515,23 @@ class MetadataHandler(FormulaHandler):
         # First check state attributes dict for the key (most common case)
         if isinstance(getattr(state_obj, "attributes", None), dict) and metadata_key in state_obj.attributes:
             value = state_obj.attributes[metadata_key]
-            _LOGGER.debug(
-                "METADATA_FROM_ATTRIBUTES: Retrieved attribute metadata %s for %s: %s (type: %s)",
+            _LOGGER.error(
+                "TEMP_DEBUG: METADATA_FROM_ATTRIBUTES: Retrieved attribute metadata %s for %s: %s (type: %s)",
                 metadata_key,
                 entity_id,
                 value,
                 type(value).__name__,
             )
             return value
+
+        # Debug: Log when metadata key is not found in attributes
+        if metadata_key == "last_valid_state":
+            _LOGGER.error(
+                "TEMP_DEBUG: METADATA_NOT_FOUND: %s not found in attributes for %s. Available attributes: %s",
+                metadata_key,
+                entity_id,
+                list(state_obj.attributes.keys()) if hasattr(state_obj, "attributes") else "No attributes",
+            )
 
         # Then check for direct attribute on the state object (e.g., last_changed)
         if hasattr(state_obj, metadata_key):

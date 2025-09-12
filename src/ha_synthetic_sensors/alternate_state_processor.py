@@ -171,9 +171,13 @@ class AlternateStateProcessor:
 
         # Handle exceptions separately in helper
         if exception is not None:
+            self._logger.debug("ALTERNATE_STATE_PROCESSOR: Processing exception: %s", exception)
             # Process all exceptions (including AlternateStateDetected) through the unified handler
             handled, output = self._process_exception(
                 exception, context, config, sensor_config, core_evaluator, resolve_all_references_in_formula
+            )
+            self._logger.debug(
+                "ALTERNATE_STATE_PROCESSOR: Exception handled=%s, output=%s (type: %s)", handled, output, type(output)
             )
             if handled:
                 # Convert raw output to proper EvaluationResult format
@@ -375,6 +379,11 @@ class AlternateStateProcessor:
         Returns:
             Result from the alternate state handler
         """
+        self._logger.error(
+            "TEMP_DEBUG: ALTERNATE_HANDLER_TRIGGER: Processing state_type=%s, handler=%s",
+            exception.alternate_state_type,
+            handler,
+        )
         # Determine which handler to use based on priority
         handler_value = None
         state_type = exception.alternate_state_type
@@ -393,21 +402,21 @@ class AlternateStateProcessor:
         self._logger.debug("Handler selection: state_type='%s', checking handlers...", state_type)
 
         if state_type == ALTERNATE_STATE_NONE and hasattr(handler, "none"):
-            handler_value = handler.none
-            handler_found = True
-            self._logger.debug("✓ Using NONE handler: %s", handler_value)
+            # Check if none handler is explicitly set (not None)
+            if handler.none is not None:
+                handler_value = handler.none
+                handler_found = True
+                self._logger.debug("✓ Using NONE handler: %s", handler_value)
         elif state_type == ALTERNATE_STATE_UNKNOWN and hasattr(handler, "unknown"):
             # Check if unknown handler is explicitly set (not None)
             if handler.unknown is not None:
                 handler_value = handler.unknown
                 handler_found = True
                 self._logger.debug("✓ Using UNKNOWN handler: %s", handler_value)
-        elif state_type == ALTERNATE_STATE_UNAVAILABLE and hasattr(handler, "unavailable"):
-            # Check if unavailable handler is explicitly set (not None)
-            if handler.unavailable is not None:
-                handler_value = handler.unavailable
-                handler_found = True
-                self._logger.debug("✓ Using UNAVAILABLE handler: %s", handler_value)
+        elif state_type == ALTERNATE_STATE_UNAVAILABLE and hasattr(handler, "unavailable") and handler.unavailable is not None:
+            handler_value = handler.unavailable
+            handler_found = True
+            self._logger.debug("✓ Using UNAVAILABLE handler: %s", handler_value)
 
         # Try FALLBACK handler if no specific handler was found - FALLBACK catches all alternate state types
         if not handler_found and hasattr(handler, "fallback") and handler.fallback is not None:
@@ -420,7 +429,11 @@ class AlternateStateProcessor:
             return None
 
         # Evaluate the handler using the standard formula evaluation pipeline
-        return self._evaluate_handler_value(handler_value, context, config, sensor_config)
+        result = self._evaluate_handler_value(handler_value, context, config, sensor_config)
+        self._logger.error(
+            "TEMP_DEBUG: ALTERNATE_HANDLER_RESULT: Returning %s (type: %s) for state_type=%s", result, type(result), state_type
+        )
+        return result
 
     def _evaluate_handler_value(
         self,
@@ -435,19 +448,37 @@ class AlternateStateProcessor:
         evaluation pipeline as main formulas, attributes, and computed variables.
         """
         result: float | str | bool | None = None
+        self._logger.error(
+            "TEMP_DEBUG: _evaluate_handler_value called with handler_value: %s (type: %s)", handler_value, type(handler_value)
+        )
         try:
             # Handle literal values directly
             if handler_value is None:
                 result = None
+                self._logger.error("TEMP_DEBUG: Handler value is None, returning None")
             elif isinstance(handler_value, bool | int | float):
                 result = handler_value
+                self._logger.error("TEMP_DEBUG: Handler value is literal number/bool: %s", result)
             elif isinstance(handler_value, str) and not any(op in handler_value for op in ALL_OPERATORS):
                 # Simple string without operators - treat as literal
                 result = handler_value
+                self._logger.error("TEMP_DEBUG: Handler value is literal string: %s", result)
             elif isinstance(handler_value, dict) and "formula" in handler_value:
                 # Object form: Use FormulaEvaluatorService directly to avoid recursive pre-evaluation checks
                 # Alternate handlers should not go through the full evaluation pipeline
                 # since they're already handling an alternate state
+                self._logger.error("TEMP_DEBUG: Evaluating formula handler: %s", handler_value["formula"])
+                # Log key grace period variables if they exist
+                if "is_within_grace_period" in context:
+                    self._logger.error("TEMP_DEBUG: is_within_grace_period = %s", context.get("is_within_grace_period"))
+                if "last_valid_state" in context:
+                    self._logger.error("TEMP_DEBUG: last_valid_state = %s", context.get("last_valid_state"))
+                if "panel_offline_minutes" in context:
+                    self._logger.error("TEMP_DEBUG: panel_offline_minutes = %s", context.get("panel_offline_minutes"))
+                if "energy_grace_period_minutes" in context:
+                    self._logger.error(
+                        "TEMP_DEBUG: energy_grace_period_minutes = %s", context.get("energy_grace_period_minutes")
+                    )
                 result = FormulaEvaluatorService.evaluate_formula(
                     handler_value["formula"],
                     handler_value["formula"],
@@ -465,11 +496,18 @@ class AlternateStateProcessor:
                     allow_unresolved_states=True,
                 )
 
+        except AlternateStateDetected as e:
+            # Alternate state handlers are allowed to return alternate state values
+            # Extract the actual result from the exception
+            result = e.alternate_state_value
+            self._logger.error("TEMP_DEBUG: Alternate handler returned alternate state value: %s", result)
         except Exception as e:
-            self._logger.debug("Alternate handler evaluation failed: %s", str(e))
+            self._logger.error("TEMP_DEBUG: Alternate handler evaluation failed: %s", str(e))
             # Fallback to literal value for simple types
             result = handler_value if isinstance(handler_value, bool | int | float | str) else None
+            self._logger.error("TEMP_DEBUG: Exception fallback result: %s", result)
 
+        self._logger.error("TEMP_DEBUG: _evaluate_handler_value final result: %s (type: %s)", result, type(result))
         return result
 
 

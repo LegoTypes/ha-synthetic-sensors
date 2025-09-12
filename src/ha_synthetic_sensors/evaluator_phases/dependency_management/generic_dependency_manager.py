@@ -194,21 +194,21 @@ class GenericDependencyManager:
                 formula = formula_lookup[node_id]
                 node = self._dependency_graph[node_id]
 
-                _LOGGER.debug("Evaluating %s '%s' with context: %s", node.node_type, node_id, list(context.keys()))
-
-                # Evaluate the formula with current context
+                # Use existing main sensor result from context instead of re-evaluating
                 if node.node_type == "main":
-                    # Main sensor evaluation - use direct evaluation to avoid recursion
-                    eval_result = self._evaluate_formula_directly(formula, context, evaluator, sensor_config)
-                    # Accept successful result even when the value is None (state reflection)
-                    if eval_result and eval_result.get(RESULT_KEY_SUCCESS):
-                        main_sensor_value = eval_result.get(RESULT_KEY_VALUE)
-                        # Use ReferenceValueManager for state token
-                        entity_id = sensor_config.entity_id if sensor_config else "state"
-                        ReferenceValueManager.set_variable_with_reference_value(context, "state", entity_id, main_sensor_value)
-                        _LOGGER.debug("Main sensor value: %s", main_sensor_value)
+                    # Main sensor has already been evaluated - get the result from context
+                    if "state" in context:
+                        state_ref = context["state"]
+                        if isinstance(state_ref, ReferenceValue):
+                            main_sensor_value = state_ref.value
+                            _LOGGER.error("TEMP_DEBUG: Using existing main sensor value from context: %s", main_sensor_value)
+                        else:
+                            # Handle non-ReferenceValue state_ref - should be a simple value
+                            # Cast to ensure type compatibility
+                            main_sensor_value = state_ref if isinstance(state_ref, str | int | float | type(None)) else None
+                            _LOGGER.error("TEMP_DEBUG: Using existing main sensor value (raw): %s", main_sensor_value)
                     else:
-                        raise FormulaEvaluationError(f"Failed to evaluate main sensor for {sensor_config.unique_id}")
+                        raise FormulaEvaluationError(f"Main sensor result not found in context for {sensor_config.unique_id}")
 
                 elif node.node_type == "attribute":
                     # Attribute evaluation
@@ -225,7 +225,6 @@ class GenericDependencyManager:
                         ReferenceValueManager.set_variable_with_reference_value(
                             context, attr_name, f"{sensor_config.unique_id}_{attr_name}", eval_result.get(RESULT_KEY_VALUE)
                         )
-                        _LOGGER.debug("Added attribute '%s' = %s to context", attr_name, eval_result.get(RESULT_KEY_VALUE))
                     else:
                         raise FormulaEvaluationError(f"Failed to evaluate attribute '{node_id}' for {sensor_config.unique_id}")
 

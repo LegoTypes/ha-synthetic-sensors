@@ -52,12 +52,6 @@ class ReferenceValueManager:
             if isinstance(var_value, str) and var_value != var_name and "." in var_value:
                 safe_context_set(eval_context, var_value, existing_ref_value)
 
-            _LOGGER.debug(
-                "ReferenceValueManager: %s reusing existing ReferenceValue for entity %s: value=%s",
-                var_name,
-                entity_reference,
-                getattr(existing_ref_value, "value", existing_ref_value),
-            )
         else:
             # Create new ReferenceValue for this entity
             # Prevent double wrapping of ReferenceValue objects

@@ -89,8 +89,7 @@ Formula evaluation follows a multi-phase approach with distinct responsibilities
 
 - **Phase 0**: Pre-evaluation validation and preparation
 - **Phase 1**: Entity ID resolution and ReferenceValue creation with early result detection
-- **Phase 2**: Metadata function processing and context building
-- **Phase 2**: Dependency management and evaluation routing
+- **Phase 2**: Dependency management and context building (includes metadata pre-processing)
 - **Phase 3**: Value resolution and formula execution
 - **Phase 4**: Consolidated result processing, alternate state handling, and caching
 
@@ -98,6 +97,26 @@ This phased approach ensures proper evaluation order, particularly for evaluatio
 entity references rather than resolved values. All formula artifacts (main sensor formulas, computed variables, and attributes)
 share the same pipeline via a core evaluation service. Phase 4 serves as the single consolidation point for all alternate state
 processing, eliminating duplicate logic across phases.
+
+### AST Binding Plans and Lazy Context Population
+
+To maximize performance without changing the orchestrator, the system leverages the AST service to precompute lightweight
+per-formula "binding plans" and uses lazy, minimal context population at runtime:
+
+- **Binding Plan (per formula)**: A compact structure extracted from `FormulaASTAnalysisService` that contains:
+  - Referenced names (variables, entity references, special tokens like `state`)
+  - Function kinds used (e.g., `metadata()`, datetime/duration helpers, collection functions)
+  - Resolution strategy per name: HA state lookup, data-provider, constant/literal, or computed reference
+- **Lazy Resolution**: The evaluation context creates `ReferenceValue` entries only for names that the current formula requires
+  and resolves values on first access by the handler/evaluator. Resolved values are memoized for the remainder of the cycle.
+- **Object Reuse**: Per-sensor small objects (like `ReferenceValue` shells for stable names) can be pooled and only `.value`
+  replaced each cycle to reduce Python object churn.
+- **Batch Lookups**: The plan enables grouping related HA lookups during a cycle to lower per-entity access overhead.
+- **Collections**: Collection functions are handled by a dedicated path. The AST plan captures their presence and normalized
+  query keys; expansion remains runtime-driven with focused caching and targeted invalidation.
+
+This approach preserves Option C dynamic discovery (runtime listener updates), avoids pre-allocating unused variables, and keeps
+the five-phase pipeline intact while reducing per-cycle work.
 
 ## Formula Evaluation Order by Artifact Type
 

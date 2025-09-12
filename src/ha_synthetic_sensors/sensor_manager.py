@@ -22,7 +22,6 @@ from homeassistant.util import slugify
 
 from .config_models import ComputedVariable, Config, FormulaConfig, SensorConfig
 from .config_types import GlobalSettingsDict
-from .constants_alternate import STATE_NONE
 from .constants_evaluation_results import (
     RESULT_KEY_ERROR,
     RESULT_KEY_STATE,
@@ -358,9 +357,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 )
             )
             _LOGGER.debug(
-                "Set up HA state change listeners for sensor %s with dependencies: %s",
-                self.unique_id,
-                self._dependencies
+                "Set up HA state change listeners for sensor %s with dependencies: %s", self.unique_id, self._dependencies
             )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -377,23 +374,19 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         Records HA entity changes for batched processing by the SensorManager.
         This prevents infinite loops while ensuring all dependencies trigger updates.
         """
-        if self._sensor_manager._update_in_progress:
+        if self._sensor_manager.update_in_progress:
             # Ignore changes during update processing to prevent recursion
             return
 
         changed_entity_id = event.data["entity_id"]
 
         # Record the change for batched processing
-        self._sensor_manager._pending_ha_entity_changes.add(changed_entity_id)
+        self._sensor_manager.pending_ha_entity_changes.add(changed_entity_id)
 
         # Schedule batched update (debounced)
-        self._sensor_manager._schedule_batched_ha_entity_update()
+        self._sensor_manager.schedule_batched_ha_entity_update()
 
-        _LOGGER.debug(
-            "Recorded HA entity change for batched update: %s (sensor: %s)",
-            changed_entity_id,
-            self.unique_id
-        )
+        _LOGGER.debug("Recorded HA entity change for batched update: %s (sensor: %s)", changed_entity_id, self.unique_id)
 
     def _add_variables_to_sensor_context(self, formula_config: FormulaConfig, sensor_context: SensorEvaluationContext) -> None:
         """Add variables from formula config directly to the existing sensor context.
@@ -724,19 +717,9 @@ class DynamicSensor(RestoreEntity, SensorEntity):
 
         for formula in formulas:
             try:
-                _LOGGER.debug("ATTR_EVAL_DEBUG: Evaluating attribute formula: %s", formula.formula.strip())
                 attr_ctx = self._build_base_context_from_main_result(main_result_dict, sensor_context)
-                _LOGGER.debug(
-                    "ATTR_EVAL_DEBUG: Built context with keys: %s",
-                    list(attr_ctx.keys()) if hasattr(attr_ctx, "keys") else "not dict-like",
-                )
                 attr_result = self._evaluator.evaluate_formula(formula, attr_ctx)
                 attr_result_dict = cast(dict[str, Any], attr_result)
-                _LOGGER.debug(
-                    "ATTR_EVAL_DEBUG: Formula result: success=%s, value=%s",
-                    attr_result_dict.get("success"),
-                    attr_result_dict.get("value"),
-                )
 
                 if attr_result_dict[RESULT_KEY_SUCCESS]:
                     attr_name = self._extract_attribute_name(formula)
@@ -811,10 +794,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 hass=self._hass,
             )
 
-            # Use StateResolver to get the prior state reference
+            # Use StateResolver to set up the initial state reference
             # Create HierarchicalContextDict wrapper for the evaluation context
             context_dict = HierarchicalContextDict(sensor_context.context)
-            state_ref = state_resolver.resolve_prior_state_reference(self._config, context_dict)
+            state_ref = state_resolver.setup_initial_state_reference(self._config, context_dict)
 
             if state_ref:
                 # Set the resolved state in the sensor context
@@ -844,8 +827,10 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             self._handle_unknown_state_result(main_result_dict)
             return
 
-        if main_result_dict[RESULT_KEY_SUCCESS] and self._is_alternate_state_none(main_result_dict):
-            self._handle_alternate_state_result(main_result_dict, sensor_context)
+        # Remove double alternate state handling - let the alternate state processor handle it properly
+        # and treat the result as a normal successful result
+        if main_result_dict[RESULT_KEY_SUCCESS]:
+            self._handle_successful_result(main_result_dict, sensor_context)
             return
 
         self._handle_evaluation_failure(main_result)
@@ -854,6 +839,7 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         """Handle successful formula evaluation result."""
         # Unwrap ReferenceValue if present
         value = main_result_dict[RESULT_KEY_VALUE]
+        _LOGGER.error("TEMP_DEBUG: Setting sensor %s to value: %s (type: %s)", self.entity_id, value, type(value))
         if isinstance(value, dict) and RESULT_KEY_SUCCESS in value:
             # Nested EvaluationResult - prefer its value
             value = value.get(RESULT_KEY_VALUE)
@@ -864,11 +850,18 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         # Evaluate calculated attributes with inherited sensor context
         self._evaluate_attributes(cast(EvaluationResult, main_result_dict), sensor_context)
 
+        # Preserve last_valid_* attributes before updating extra state attributes
+        preserved_attributes = self._preserve_last_valid_attributes()
+
         # Update extra state attributes with calculated values using hierarchical context
         self._update_extra_state_attributes(sensor_context)
 
         # Update last-good attributes on successful (non-alternate) results
         self._update_last_valid_attributes(main_result_dict)
+
+        # Restore last_valid_* attributes if they weren't updated (e.g., during alternate state processing)
+        if main_result_dict.get(RESULT_KEY_STATE) != STATE_OK:
+            self._restore_last_valid_attributes(preserved_attributes)
 
         # Notify sensor manager of successful update
         self._sensor_manager.on_sensor_updated(
@@ -890,28 +883,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
             self.entity_id,
             main_result_dict,
         )
-
-    def _is_alternate_state_none(self, main_result_dict: dict[str, Any]) -> bool:
-        """Check if result represents alternate state with STATE_NONE."""
-        return main_result_dict.get(RESULT_KEY_STATE) == STATE_NONE or main_result_dict.get(RESULT_KEY_STATE) == "STATE_NONE"
-
-    def _handle_alternate_state_result(self, main_result_dict: dict[str, Any], sensor_context: SensorEvaluationContext) -> None:
-        """Handle successful alternate state handler result."""
-        self._attr_native_value = main_result_dict[RESULT_KEY_VALUE]
-        self._attr_available = True
-        self._last_update = datetime.now()
-
-        # RECURSION FIX: Don't re-evaluate attributes in alternate state path
-        # Attributes should have already been evaluated in the main success path
-        # Re-evaluating them here causes context pollution and string reference issues
-        _LOGGER.debug(
-            "ALTERNATE_STATE_DEBUG: Skipping attribute re-evaluation for %s (attributes already evaluated)", self.entity_id
-        )
-
-        # Preserve and restore last-valid attributes during alternate state processing
-        preserved_attributes = self._preserve_last_valid_attributes()
-        self._update_extra_state_attributes(sensor_context)
-        self._restore_last_valid_attributes(preserved_attributes)
 
     def _preserve_last_valid_attributes(self) -> tuple[str | None, str | None]:
         """Preserve existing last_valid_state attributes before processing."""
@@ -971,6 +942,13 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 )
 
                 self._attr_extra_state_attributes = attrs
+                _LOGGER.error("TEMP_DEBUG: Updated last_valid_state for %s to %s", self.entity_id, attrs[LAST_VALID_STATE_KEY])
+            else:
+                _LOGGER.error(
+                    "TEMP_DEBUG: Skipping last_valid_state update for %s - state not OK: %s",
+                    self.entity_id,
+                    main_result_dict.get(RESULT_KEY_STATE),
+                )
         except Exception:  # defensive - should never fail
             _LOGGER.debug("Failed to update __last_valid_* attributes for %s", self.entity_id, exc_info=True)
 
@@ -1300,6 +1278,20 @@ class SensorManager:
     def manager_config(self) -> Any:
         """Return the manager configuration."""
         return self._manager_config
+
+    @property
+    def update_in_progress(self) -> bool:
+        """Return whether an update is currently in progress."""
+        return self._update_in_progress
+
+    @property
+    def pending_ha_entity_changes(self) -> set[str]:
+        """Return the set of pending HA entity changes."""
+        return self._pending_ha_entity_changes
+
+    def schedule_batched_ha_entity_update(self) -> None:
+        """Schedule a batched HA entity update."""
+        return self._schedule_batched_ha_entity_update()
 
     def _get_existing_device_info(self, device_identifier: str) -> DeviceInfo | None:
         """Get device info for an existing device by identifier."""
@@ -2242,11 +2234,13 @@ class SensorManager:
                 sensor.unique_id,
                 sensor_backing_entities,
                 sensor_all_dependencies,
-                changed_entity_ids
+                changed_entity_ids,
             )
 
             # Sensor is affected if any of its dependencies (backing or HA entities) changed
-            if sensor_backing_entities.intersection(changed_entity_ids) or sensor_all_dependencies.intersection(changed_entity_ids):
+            if sensor_backing_entities.intersection(changed_entity_ids) or sensor_all_dependencies.intersection(
+                changed_entity_ids
+            ):
                 directly_affected_sensors.append(sensor.config)
                 _LOGGER.debug("Sensor %s is affected by changes", sensor.unique_id)
 
@@ -2296,7 +2290,7 @@ class SensorManager:
         # Debounce rapid changes with a small delay
         self._update_timer = self._hass.loop.call_later(
             0.1,  # 100ms debounce
-            lambda: asyncio.create_task(self._process_pending_ha_entity_changes())
+            lambda: asyncio.create_task(self._process_pending_ha_entity_changes()),
         )
 
     async def _process_pending_ha_entity_changes(self) -> None:
@@ -2314,10 +2308,7 @@ class SensorManager:
         self._update_timer = None
 
         try:
-            _LOGGER.debug(
-                "Processing batched HA entity changes: %s",
-                changes_to_process
-            )
+            _LOGGER.debug("Processing batched HA entity changes: %s", changes_to_process)
 
             # Use existing batched update system - now enhanced to handle HA entities
             await self.async_update_sensors_for_entities(changes_to_process)
@@ -2440,19 +2431,10 @@ class SensorManager:
             # Get dependencies from the formula itself
             formula_dependencies = formula.get_dependencies(self._hass)
             all_dependencies.update(formula_dependencies)
-            
-            _LOGGER.debug(
-                "Formula %s dependencies: %s (formula: %s)",
-                formula.id,
-                formula_dependencies,
-                formula.formula
-            )
+            _LOGGER.debug("Formula %s dependencies: %s (formula: %s)", formula.id, formula_dependencies, formula.formula)
 
         _LOGGER.debug(
-            "Sensor %s all dependencies: backing=%s, total=%s",
-            sensor_config.unique_id,
-            backing_entities,
-            all_dependencies
+            "Sensor %s all dependencies: backing=%s, total=%s", sensor_config.unique_id, backing_entities, all_dependencies
         )
 
         return all_dependencies

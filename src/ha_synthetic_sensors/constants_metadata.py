@@ -68,6 +68,8 @@ METADATA_FUNCTION_VALID_KEYS: frozenset[str] = frozenset(
         "domain",
         "object_id",
         "friendly_name",
+        LAST_VALID_STATE_KEY,
+        LAST_VALID_CHANGED_KEY,
     }
 )
 

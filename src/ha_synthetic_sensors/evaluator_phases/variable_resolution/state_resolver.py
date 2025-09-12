@@ -1,7 +1,6 @@
 """State resolver for handling standalone state token references."""
 
 from collections.abc import Callable
-from datetime import UTC, datetime
 import logging
 from typing import Any
 
@@ -42,23 +41,23 @@ class StateResolver(VariableResolver):
         self._data_provider_callback = data_provider_callback
         self._hass = hass
 
-    def resolve_prior_state_reference(
+    def setup_initial_state_reference(
         self, sensor_config: SensorConfig | None, context: HierarchicalContextDict
     ) -> ReferenceValue | None:
-        """Resolve prior state reference for context building without triggering evaluation.
+        """Set up initial state reference for context building without triggering evaluation.
 
-        This method gets the backing entity value or prior state for context initialization,
-        avoiding the full evaluation pipeline that could trigger alternate state processing.
+        This method gets the current backing entity value and sets up the initial state reference
+        in the evaluation context, preserving None values for alternate state handler processing.
 
         Args:
             sensor_config: The sensor configuration (required for backing entity mapping)
             context: The evaluation context
 
         Returns:
-            ReferenceValue with prior state or None if no prior state available
+            ReferenceValue with current backing entity state or None if no backing entity available
         """
         if not sensor_config:
-            _LOGGER.debug("StateResolver: No sensor_config provided for prior state resolution")
+            _LOGGER.debug("StateResolver: No sensor_config provided for initial state setup")
             return None
 
         # Try to get backing entity value first
@@ -66,36 +65,20 @@ class StateResolver(VariableResolver):
         if backing_entity_id and self._data_provider_callback:
             try:
                 result = self._data_provider_callback(backing_entity_id)
-                if result and result.get("exists") and result.get("value") is not None:
-                    _LOGGER.debug(
-                        "StateResolver: Found prior state from backing entity %s: %s", backing_entity_id, result["value"]
-                    )
+                if result and result.get("exists"):
+                    # Preserve None values from backing entities - let alternate state handlers process them
+                    backing_value = result.get("value")
+                    _LOGGER.debug("StateResolver: Found backing entity %s value: %s", backing_entity_id, backing_value)
                     # Use the existing unified state reference method
-                    state_ref = self._set_unified_state_reference(context, sensor_config, result["value"])
+                    state_ref = self._set_unified_state_reference(context, sensor_config, backing_value)
 
-                    _LOGGER.debug("StateResolver: Set up prior state reference using unified method: %s", result["value"])
+                    _LOGGER.debug("StateResolver: Set up initial state reference using unified method: %s", backing_value)
                     return state_ref
             except Exception as e:
                 _LOGGER.debug("StateResolver: Failed to get backing entity value: %s", e)
 
-        # Try to get previous state from HA state registry
-        if self._hass and sensor_config.entity_id:
-            try:
-                state_obj = self._hass.states.get(sensor_config.entity_id)
-                if state_obj and state_obj.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE, "unknown", "unavailable"):
-                    _LOGGER.debug(
-                        "StateResolver: Found prior state from HA registry %s: %s", sensor_config.entity_id, state_obj.state
-                    )
-                    # Use the existing unified state reference method
-                    state_ref = self._set_unified_state_reference(context, sensor_config, state_obj.state)
-
-                    _LOGGER.debug("StateResolver: Set up prior state reference using unified method: %s", state_obj.state)
-                    return state_ref
-            except Exception as e:
-                _LOGGER.debug("StateResolver: Failed to get HA state: %s", e)
-
-        # No prior state available - return None reference for calculated sensors
-        _LOGGER.debug("StateResolver: No prior state available for sensor %s", sensor_config.unique_id)
+        # No backing entity available - return None reference for calculated sensors
+        _LOGGER.debug("StateResolver: No backing entity available for sensor %s", sensor_config.unique_id)
         return ReferenceValue(reference=sensor_config.entity_id if sensor_config.entity_id else "state", value=None)
 
     def update_state_with_main_result(
@@ -174,21 +157,45 @@ class StateResolver(VariableResolver):
             return None
 
         # First, check if state is already in context with a meaningful value (e.g., for attribute formulas or previous value)
+        should_attempt_self_reference = False
         if "state" in context:
             state_value = context["state"]
 
-            # If it's already a ReferenceValue, return it directly
-            # Don't try to re-resolve None values as this can cause recursive loops
-            # and interfere with alternate state handling
+            # If it's already a ReferenceValue, check if we should return it or attempt re-resolution
             if isinstance(state_value, ReferenceValue):
-                _LOGGER.debug(
-                    "State resolver: Found existing ReferenceValue for 'state' with value=%s, returning as-is",
-                    state_value.value,
-                )
-                return state_value
+                # For None values, check if we should attempt self-reference resolution
+                if state_value.value is None:
+                    # Get sensor and formula config to determine if self-reference should be attempted
+                    sensor_config_raw = context.get("_sensor_config")
+                    formula_config_raw = context.get("_formula_config")
+                    sensor_config = sensor_config_raw if isinstance(sensor_config_raw, SensorConfig) else None
+                    formula_config = formula_config_raw if isinstance(formula_config_raw, FormulaConfig) else None
 
-            # Convert raw value to ReferenceValue for consistency, but only if not None
-            if state_value is not None:
+                    # If this is a main formula and sensor has entity_id, attempt self-reference resolution
+                    if self._should_resolve_sensor_own_state(sensor_config, formula_config):
+                        _LOGGER.debug(
+                            "State resolver: Found ReferenceValue with None, attempting self-reference resolution for sensor %s",
+                            sensor_config.unique_id if sensor_config else "unknown",
+                        )
+                        # Set flag to attempt self-reference and break out of this context check
+                        should_attempt_self_reference = True
+                    else:
+                        _LOGGER.debug(
+                            "State resolver: Found existing ReferenceValue for 'state' with value=%s, returning as-is",
+                            state_value.value,
+                        )
+                        return state_value
+                else:
+                    # Non-None value - return as-is
+                    _LOGGER.debug(
+                        "State resolver: Found existing ReferenceValue for 'state' with value=%s, returning as-is",
+                        state_value.value,
+                    )
+                    return state_value
+
+            # Only process raw values if we're not attempting self-reference
+            if not should_attempt_self_reference and state_value is not None:
+                # Convert raw value to ReferenceValue for consistency
                 # Get sensor_config from context to use unified method for proper sharing
                 sensor_config_raw = context.get("_sensor_config")
                 if isinstance(sensor_config_raw, SensorConfig):
@@ -201,7 +208,7 @@ class StateResolver(VariableResolver):
                     "StateResolver requires _sensor_config in context for proper state reference sharing. "
                     "This indicates improper context initialization or direct resolver usage without proper setup."
                 )
-            # Fall through to backing entity resolution if value is None
+                # Fall through to backing entity resolution if value is None
 
         # If not in context, use the common resolution logic
         return self._resolve_state_from_context_or_backing_entity(context)
@@ -234,7 +241,20 @@ class StateResolver(VariableResolver):
 
         # No backing entity mapping - try to fall back to sensor's own HA state
         if sensor_config and sensor_config.entity_id and self._should_resolve_sensor_own_state(sensor_config, formula_config):
+            _LOGGER.debug(
+                "State resolver: Attempting to resolve sensor's own HA state for %s (entity_id: %s)",
+                sensor_config.unique_id,
+                sensor_config.entity_id,
+            )
             return self._resolve_sensor_own_state(sensor_config, context)
+
+        _LOGGER.debug(
+            "State resolver: Not resolving sensor's own state for %s - sensor_config=%s, entity_id=%s, should_resolve=%s",
+            sensor_config.unique_id if sensor_config else "None",
+            sensor_config is not None,
+            sensor_config.entity_id if sensor_config else "None",
+            self._should_resolve_sensor_own_state(sensor_config, formula_config) if sensor_config else False,
+        )
 
         # For pure calculation sensors or when no backing entity/HA state is available,
         # state refers to the sensor's calculated value. During dependency resolution,
@@ -320,34 +340,25 @@ class StateResolver(VariableResolver):
         last_valid_state_ref = f"{sensor_entity_id}.{LAST_VALID_STATE_KEY}"
         last_valid_changed_ref = f"{sensor_entity_id}.{LAST_VALID_CHANGED_KEY}"
 
-        # Try to get actual values for last_valid_* from backing entity or HA state
+        # Try to get actual values for last_valid_* from sensor's stored attributes
         last_valid_state_value = None
         last_valid_changed_value = None
 
-        # Try to get values from backing entity first
-        backing_entity_id = (
-            self._sensor_to_backing_mapping.get(sensor_config.unique_id) if self._sensor_to_backing_mapping else None
-        )
-        if backing_entity_id and self._data_provider_callback:
-            try:
-                result = self._data_provider_callback(backing_entity_id)
-                if result and result.get("exists"):
-                    # For backing entities, use the current state as last_valid_state
-                    last_valid_state_value = result.get("value")
-                    # Use current time as last_valid_changed (since we don't have historical data)
-                    last_valid_changed_value = datetime.now(UTC).isoformat()
-            except Exception as e:
-                _LOGGER.debug("StateResolver: Failed to get last_valid values from backing entity: %s", e)
-
-        # Fallback to HA state if available
-        if last_valid_state_value is None and self._hass and sensor_config.entity_id:
+        # Get last_valid_* from the sensor's extra state attributes (where they are stored)
+        if self._hass and sensor_config.entity_id:
             try:
                 state_obj = self._hass.states.get(sensor_config.entity_id)
-                if state_obj:
-                    last_valid_state_value = state_obj.state
-                    last_valid_changed_value = state_obj.last_changed.isoformat() if state_obj.last_changed else None
+                if state_obj and state_obj.attributes:
+                    # Get the stored last_valid_state and last_valid_changed from sensor attributes
+                    last_valid_state_value = state_obj.attributes.get(LAST_VALID_STATE_KEY)
+                    last_valid_changed_value = state_obj.attributes.get(LAST_VALID_CHANGED_KEY)
+                    _LOGGER.debug(
+                        "StateResolver: Retrieved last_valid values from sensor attributes: state=%s, changed=%s",
+                        last_valid_state_value,
+                        last_valid_changed_value,
+                    )
             except Exception as e:
-                _LOGGER.debug("StateResolver: Failed to get last_valid values from HA state: %s", e)
+                _LOGGER.debug("StateResolver: Failed to get last_valid values from sensor attributes: %s", e)
 
         # Set context variables using ReferenceValueManager for consistency
         ReferenceValueManager.set_variable_with_reference_value(
