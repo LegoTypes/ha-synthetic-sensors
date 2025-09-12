@@ -797,15 +797,11 @@ class VariableResolutionPhase:
         hass: Any,
     ) -> None:
         """Process a single config variable."""
-        if var_name == "last_valid_state":
-            _LOGGER.error("TEMP_DEBUG: Processing config variable '%s' with value '%s'", var_name, var_value)
         # Track entity mapping if var_value looks like an entity ID
         if isinstance(var_value, str) and any(var_value.startswith(f"{domain}.") for domain in get_ha_domains(hass)):
             entity_mappings[var_name] = var_value
         # Check if this variable is already resolved
         if self._should_skip_variable(var_name, var_value, eval_context, entity_mappings, ha_dependencies):
-            if var_name == "last_valid_state":
-                _LOGGER.error("TEMP_DEBUG: Skipping variable '%s' - already resolved", var_name)
             return
         # Resolve the variable
         self._resolve_and_track_variable(var_name, var_value, eval_context, entity_mappings, ha_dependencies, config)
@@ -850,21 +846,7 @@ class VariableResolutionPhase:
     ) -> None:
         """Resolve variable and track its state."""
         try:
-            # Debug logging for variable resolution
-            if var_name == "last_valid_state":
-                _LOGGER.error(
-                    "TEMP_DEBUG: Resolving variable '%s' with value '%s'",
-                    var_name,
-                    var_value,
-                )
             resolved_value = self._resolver_factory.resolve_variable(var_name, var_value, eval_context)
-            if var_name == "last_valid_state":
-                _LOGGER.error(
-                    "TEMP_DEBUG: Variable '%s' resolved to: %s (type: %s)",
-                    var_name,
-                    resolved_value,
-                    type(resolved_value),
-                )
             if resolved_value is not None:
                 # Use centralized ReferenceValueManager for type safety
                 ResolutionHelpers.log_and_set_resolved_variable(
@@ -893,8 +875,6 @@ class VariableResolutionPhase:
             # Propagate DataValidationError according to the reference guide's error propagation idiom
             raise
         except Exception as err:
-            if var_name == "last_valid_state":
-                _LOGGER.error("TEMP_DEBUG: Exception resolving variable %s: %s", var_name, err)
             raise MissingDependencyError(f"Error resolving config variable {var_name}: {err}") from err
 
     def _resolve_simple_variables_with_tracking(

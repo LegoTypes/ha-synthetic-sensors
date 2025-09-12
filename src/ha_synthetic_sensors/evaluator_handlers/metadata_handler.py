@@ -178,24 +178,9 @@ class MetadataHandler(FormulaHandler):
             # The entity_ref might be a variable name or an entity ID
             # If it's a variable name, we need to resolve it to the entity ID
             # If it's already an entity ID, use it directly
-            _LOGGER.error(
-                "TEMP_DEBUG: Resolving entity_ref='%s' for metadata_key='%s'",
-                entity_ref,
-                metadata_key,
-            )
             try:
                 resolved_entity_id = self._resolve_entity_reference(entity_ref, context)
-                _LOGGER.error(
-                    "TEMP_DEBUG: Resolved entity_ref='%s' to entity_id='%s'",
-                    entity_ref,
-                    resolved_entity_id,
-                )
             except Exception as e:
-                _LOGGER.error(
-                    "TEMP_DEBUG: Failed to resolve entity_ref='%s': %s",
-                    entity_ref,
-                    str(e),
-                )
                 raise ValueError(f"Cannot resolve entity reference: {e}") from e
 
             # Check 1: Is the entity reference itself an alternate state?
@@ -498,11 +483,6 @@ class MetadataHandler(FormulaHandler):
             raise ValueError(ERROR_METADATA_HASS_NOT_AVAILABLE)
 
         # Debug logging for metadata calls
-        _LOGGER.error(
-            "TEMP_DEBUG: _get_metadata_value called with entity_id='%s', metadata_key='%s'",
-            entity_id,
-            metadata_key,
-        )
 
         state_obj = self._hass.states.get(entity_id)
 
@@ -515,23 +495,7 @@ class MetadataHandler(FormulaHandler):
         # First check state attributes dict for the key (most common case)
         if isinstance(getattr(state_obj, "attributes", None), dict) and metadata_key in state_obj.attributes:
             value = state_obj.attributes[metadata_key]
-            _LOGGER.error(
-                "TEMP_DEBUG: METADATA_FROM_ATTRIBUTES: Retrieved attribute metadata %s for %s: %s (type: %s)",
-                metadata_key,
-                entity_id,
-                value,
-                type(value).__name__,
-            )
             return value
-
-        # Debug: Log when metadata key is not found in attributes
-        if metadata_key == "last_valid_state":
-            _LOGGER.error(
-                "TEMP_DEBUG: METADATA_NOT_FOUND: %s not found in attributes for %s. Available attributes: %s",
-                metadata_key,
-                entity_id,
-                list(state_obj.attributes.keys()) if hasattr(state_obj, "attributes") else "No attributes",
-            )
 
         # Then check for direct attribute on the state object (e.g., last_changed)
         if hasattr(state_obj, metadata_key):

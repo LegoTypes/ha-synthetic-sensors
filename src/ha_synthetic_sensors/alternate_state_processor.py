@@ -379,11 +379,6 @@ class AlternateStateProcessor:
         Returns:
             Result from the alternate state handler
         """
-        self._logger.error(
-            "TEMP_DEBUG: ALTERNATE_HANDLER_TRIGGER: Processing state_type=%s, handler=%s",
-            exception.alternate_state_type,
-            handler,
-        )
         # Determine which handler to use based on priority
         handler_value = None
         state_type = exception.alternate_state_type
@@ -430,9 +425,6 @@ class AlternateStateProcessor:
 
         # Evaluate the handler using the standard formula evaluation pipeline
         result = self._evaluate_handler_value(handler_value, context, config, sensor_config)
-        self._logger.error(
-            "TEMP_DEBUG: ALTERNATE_HANDLER_RESULT: Returning %s (type: %s) for state_type=%s", result, type(result), state_type
-        )
         return result
 
     def _evaluate_handler_value(
@@ -448,37 +440,19 @@ class AlternateStateProcessor:
         evaluation pipeline as main formulas, attributes, and computed variables.
         """
         result: float | str | bool | None = None
-        self._logger.error(
-            "TEMP_DEBUG: _evaluate_handler_value called with handler_value: %s (type: %s)", handler_value, type(handler_value)
-        )
         try:
             # Handle literal values directly
             if handler_value is None:
                 result = None
-                self._logger.error("TEMP_DEBUG: Handler value is None, returning None")
             elif isinstance(handler_value, bool | int | float):
                 result = handler_value
-                self._logger.error("TEMP_DEBUG: Handler value is literal number/bool: %s", result)
             elif isinstance(handler_value, str) and not any(op in handler_value for op in ALL_OPERATORS):
                 # Simple string without operators - treat as literal
                 result = handler_value
-                self._logger.error("TEMP_DEBUG: Handler value is literal string: %s", result)
             elif isinstance(handler_value, dict) and "formula" in handler_value:
                 # Object form: Use FormulaEvaluatorService directly to avoid recursive pre-evaluation checks
                 # Alternate handlers should not go through the full evaluation pipeline
                 # since they're already handling an alternate state
-                self._logger.error("TEMP_DEBUG: Evaluating formula handler: %s", handler_value["formula"])
-                # Log key grace period variables if they exist
-                if "is_within_grace_period" in context:
-                    self._logger.error("TEMP_DEBUG: is_within_grace_period = %s", context.get("is_within_grace_period"))
-                if "last_valid_state" in context:
-                    self._logger.error("TEMP_DEBUG: last_valid_state = %s", context.get("last_valid_state"))
-                if "panel_offline_minutes" in context:
-                    self._logger.error("TEMP_DEBUG: panel_offline_minutes = %s", context.get("panel_offline_minutes"))
-                if "energy_grace_period_minutes" in context:
-                    self._logger.error(
-                        "TEMP_DEBUG: energy_grace_period_minutes = %s", context.get("energy_grace_period_minutes")
-                    )
                 result = FormulaEvaluatorService.evaluate_formula(
                     handler_value["formula"],
                     handler_value["formula"],
@@ -500,14 +474,10 @@ class AlternateStateProcessor:
             # Alternate state handlers are allowed to return alternate state values
             # Extract the actual result from the exception
             result = e.alternate_state_value
-            self._logger.error("TEMP_DEBUG: Alternate handler returned alternate state value: %s", result)
-        except Exception as e:
-            self._logger.error("TEMP_DEBUG: Alternate handler evaluation failed: %s", str(e))
+        except Exception:
             # Fallback to literal value for simple types
             result = handler_value if isinstance(handler_value, bool | int | float | str) else None
-            self._logger.error("TEMP_DEBUG: Exception fallback result: %s", result)
 
-        self._logger.error("TEMP_DEBUG: _evaluate_handler_value final result: %s (type: %s)", result, type(result))
         return result
 
 

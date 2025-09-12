@@ -839,7 +839,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
         """Handle successful formula evaluation result."""
         # Unwrap ReferenceValue if present
         value = main_result_dict[RESULT_KEY_VALUE]
-        _LOGGER.error("TEMP_DEBUG: Setting sensor %s to value: %s (type: %s)", self.entity_id, value, type(value))
         if isinstance(value, dict) and RESULT_KEY_SUCCESS in value:
             # Nested EvaluationResult - prefer its value
             value = value.get(RESULT_KEY_VALUE)
@@ -942,13 +941,6 @@ class DynamicSensor(RestoreEntity, SensorEntity):
                 )
 
                 self._attr_extra_state_attributes = attrs
-                _LOGGER.error("TEMP_DEBUG: Updated last_valid_state for %s to %s", self.entity_id, attrs[LAST_VALID_STATE_KEY])
-            else:
-                _LOGGER.error(
-                    "TEMP_DEBUG: Skipping last_valid_state update for %s - state not OK: %s",
-                    self.entity_id,
-                    main_result_dict.get(RESULT_KEY_STATE),
-                )
         except Exception:  # defensive - should never fail
             _LOGGER.debug("Failed to update __last_valid_* attributes for %s", self.entity_id, exc_info=True)
 

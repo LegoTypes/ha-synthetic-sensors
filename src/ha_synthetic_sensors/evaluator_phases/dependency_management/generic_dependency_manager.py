@@ -173,13 +173,11 @@ class GenericDependencyManager:
         state_ref = context["state"]
         if isinstance(state_ref, ReferenceValue):
             main_sensor_value = state_ref.value
-            _LOGGER.error("TEMP_DEBUG: Using existing main sensor value from context: %s", main_sensor_value)
             return main_sensor_value
 
         # Handle non-ReferenceValue state_ref - should be a simple value
         # Cast to ensure type compatibility
         main_sensor_value = state_ref if isinstance(state_ref, str | int | float | type(None)) else None
-        _LOGGER.error("TEMP_DEBUG: Using existing main sensor value (raw): %s", main_sensor_value)
         return main_sensor_value
 
     def _process_attribute_node(

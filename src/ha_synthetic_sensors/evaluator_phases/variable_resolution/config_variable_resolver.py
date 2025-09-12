@@ -46,31 +46,19 @@ class ConfigVariableResolver(VariableResolver):
 
     def resolve(self, variable_name: str, variable_value: str | Any, context: "HierarchicalContextDict") -> ContextValue:
         """Resolve a config variable."""
-        _LOGGER.error(
-            "CONFIG_VAR_RESOLVER_DEBUG: Resolving variable_name='%s', variable_value='%s'", variable_name, variable_value
-        )
-        _LOGGER.error(
-            "CONFIG_VAR_RESOLVER_DEBUG: Context keys: %s",
-            list(context.keys()) if hasattr(context, "keys") else "no keys method",
-        )
 
         # Check if the variable is already resolved in the context first
         if variable_name in context:
             resolved_value = context[variable_name]
-            _LOGGER.error("CONFIG_VAR_RESOLVER_DEBUG: Found variable_name in context: %s", resolved_value)
             # Only return the context value if it's already resolved (not a raw entity ID)
             if resolved_value != variable_value:
                 _LOGGER.debug("Config variable resolver: context value '%s' = %s", variable_name, resolved_value)
                 return resolved_value
             # If the context value is the same as variable_value (raw entity ID), continue to resolve it
-            _LOGGER.error("CONFIG_VAR_RESOLVER_DEBUG: Context value equals variable_value, continuing to resolve")
-        else:
-            _LOGGER.error("CONFIG_VAR_RESOLVER_DEBUG: variable_name '%s' NOT found in context", variable_name)
 
         # Check if the entity ID is directly available in context
         if isinstance(variable_value, str) and variable_value in context:
             resolved_value = context[variable_value]
-            _LOGGER.error("CONFIG_VAR_RESOLVER_DEBUG: Found variable_value '%s' in context: %s", variable_value, resolved_value)
             return resolved_value
 
         # For direct values (non-strings), return as ReferenceValue for consistency
